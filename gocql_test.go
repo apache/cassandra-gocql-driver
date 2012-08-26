@@ -88,23 +88,13 @@ func TestWiki(t *testing.T) {
 		}
 	}
 
-	rowCount := 0
-	rows, err := db.Query(`SELECT revid FROM page`)
-	if err != nil {
-		t.Fatal(err)
+	row := db.QueryRow(`SELECT count(*) FROM page`)
+	var count int
+	if err := row.Scan(&count); err != nil {
+		t.Error(err)
 	}
-	for rows.Next() {
-		var revid uuid.UUID
-		if err := rows.Scan(&revid); err != nil {
-			t.Fatal(err)
-		}
-		rowCount++
-	}
-	if err := rows.Err(); err != nil {
-		t.Fatal(err)
-	}
-	if rowCount != len(pages) {
-		t.Fatalf("expected %d rows, got %d", len(pages), rowCount)
+	if count != len(pages) {
+		t.Fatalf("expected %d rows, got %d", len(pages), count)
 	}
 
 	for _, page := range pages {
@@ -126,7 +116,7 @@ func TestWiki(t *testing.T) {
 		}
 	}
 
-	row := db.QueryRow(`SELECT title, revid, body, hits, protected,
+	row = db.QueryRow(`SELECT title, revid, body, hits, protected,
         modified, attachment
         FROM page WHERE title = ? ORDER BY revid DESC`, "Frontpage")
 	var p Page
@@ -142,4 +132,5 @@ func TestWiki(t *testing.T) {
 		!bytes.Equal(page.Attachment, p.Attachment) {
 		t.Errorf("expected %#v got %#v", *page, p)
 	}
+
 }

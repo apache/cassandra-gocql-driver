@@ -48,6 +48,8 @@ func decode(b []byte, t uint16) driver.Value {
 		return string(b)
 	case typeInt:
 		return int64(int32(binary.BigEndian.Uint32(b)))
+	case typeBigInt:
+		return int64(binary.BigEndian.Uint64(b))
 	case typeFloat:
 		return float64(math.Float32frombits(binary.BigEndian.Uint32(b)))
 	case typeDouble:
@@ -60,7 +62,6 @@ func decode(b []byte, t uint16) driver.Value {
 	case typeUUID, typeTimeUUID:
 		return uuid.FromBytes(b)
 	default:
-		fmt.Println("unsupprted type")
 		panic("unsupported type")
 	}
 	return b
