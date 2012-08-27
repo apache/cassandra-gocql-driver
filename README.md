@@ -31,6 +31,8 @@ Example
         // ...
     }
 
+Please see `gocql_test.go` for some more advanced examples.
+
 Features
 --------
 
