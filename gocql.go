@@ -28,11 +28,14 @@
 package gocql
 
 import (
+	"bytes"
+	"code.google.com/p/snappy-go/snappy"
 	"database/sql"
 	"database/sql/driver"
 	"encoding/binary"
 	"fmt"
 	"io"
+	"math/rand"
 	"net"
 	"strings"
 )
@@ -56,6 +59,8 @@ const (
 	flagCompressed byte = 0x01
 )
 
+var rnd = rand.New(rand.NewSource(0))
+
 type drv struct{}
 
 func (d drv) Open(name string) (driver.Conn, error) {
@@ -63,31 +68,64 @@ func (d drv) Open(name string) (driver.Conn, error) {
 }
 
 type connection struct {
-	c net.Conn
+	c           net.Conn
+	compression string
 }
 
 func Open(name string) (*connection, error) {
 	parts := strings.Split(name, " ")
 	address := ""
 	if len(parts) >= 1 {
-		address = parts[0]
+		addresses := strings.Split(parts[0], ",")
+		if len(addresses) > 0 {
+			address = addresses[rnd.Intn(len(addresses))]
+		}
 	}
 	c, err := net.Dial("tcp", address)
 	if err != nil {
 		return nil, err
 	}
-	cn := &connection{c: c}
 
-	version := []byte("3.0.0")
-	body := make([]byte, 4+len(version))
-	binary.BigEndian.PutUint16(body[0:2], uint16(len(version)))
-	copy(body[2:len(body)-2], version)
-	binary.BigEndian.PutUint16(body[len(body)-2:], 0)
-	if err := cn.send(opStartup, body); err != nil {
+	version := "3.0.0"
+	keyspace := ""
+	compression := ""
+	for i := 1; i < len(parts); i++ {
+		switch {
+		case parts[i] == "":
+			continue
+		case strings.HasPrefix(parts[i], "keyspace="):
+			keyspace = strings.TrimSpace(parts[i][9:])
+		case strings.HasPrefix(parts[i], "compression="):
+			compression = strings.TrimSpace(parts[i][12:])
+			if compression != "snappy" {
+				return nil, fmt.Errorf("unknown compression algorithm %q",
+					compression)
+			}
+		case strings.HasPrefix(parts[i], "version="):
+			compression = strings.TrimSpace(parts[i][8:])
+		default:
+			return nil, fmt.Errorf("unsupported option %q", parts[i])
+		}
+	}
+
+	cn := &connection{c: c, compression: compression}
+
+	b := &bytes.Buffer{}
+	binary.Write(b, binary.BigEndian, uint16(len(version)))
+	b.WriteString(version)
+	if compression != "" {
+		binary.Write(b, binary.BigEndian, uint16(1))
+		binary.Write(b, binary.BigEndian, uint16(1))
+		binary.Write(b, binary.BigEndian, uint16(len(compression)))
+		b.WriteString(compression)
+	} else {
+		binary.Write(b, binary.BigEndian, uint16(0))
+	}
+	if err := cn.send(opStartup, b.Bytes()); err != nil {
 		return nil, err
 	}
 
-	opcode, body, err := cn.recv()
+	opcode, _, err := cn.recv()
 	if err != nil {
 		return nil, err
 	}
@@ -95,17 +133,6 @@ func Open(name string) (*connection, error) {
 		return nil, fmt.Errorf("connection not ready")
 	}
 
-	keyspace := ""
-	for i := 1; i < len(parts); i++ {
-		switch {
-		case parts[i] == "":
-			continue
-		case strings.HasPrefix(parts[i], "keyspace="):
-			keyspace = parts[i][9:]
-		default:
-			return nil, fmt.Errorf("unsupported option %q", parts[i])
-		}
-	}
 	if keyspace != "" {
 		st, err := cn.Prepare(fmt.Sprintf("USE %s", keyspace))
 		if err != nil {
@@ -144,6 +171,13 @@ func (cn *connection) recv() (byte, []byte, error) {
 	if length > 0 {
 		body = make([]byte, length)
 		if _, err := cn.c.Read(body); err != nil {
+			return 0, nil, err
+		}
+	}
+	if header[1]&flagCompressed != 0 && cn.compression == "snappy" {
+		var err error
+		body, err = snappy.Decode(nil, body)
+		if err != nil {
 			return 0, nil, err
 		}
 	}

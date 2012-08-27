@@ -53,7 +53,7 @@ var pages = []*Page{
 }
 
 func TestWiki(t *testing.T) {
-	db, err := sql.Open("gocql", "localhost:8000")
+	db, err := sql.Open("gocql", "localhost:8000 compression=snappy")
 	if err != nil {
 		t.Fatal(err)
 	}

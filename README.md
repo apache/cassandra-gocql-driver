@@ -37,6 +37,7 @@ Features
 * Modern Cassandra client that is based on Cassandra's new native protocol
 * Compatible with Go's `database/sql` package
 * Built-In support for UUIDs (version 1 and 4)
+* Optional frame compression (using snappy)
 
 License
 -------
