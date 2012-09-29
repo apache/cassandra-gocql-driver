@@ -59,8 +59,7 @@ func TestWiki(t *testing.T) {
 	}
 	db.Exec("DROP KEYSPACE gocql_wiki")
 	if _, err := db.Exec(`CREATE KEYSPACE gocql_wiki
-        WITH strategy_class = 'SimpleStrategy'
-        AND strategy_options:replication_factor = 1`); err != nil {
+	                      WITH replication = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 }`); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := db.Exec("USE gocql_wiki"); err != nil {
