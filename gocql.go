@@ -58,6 +58,9 @@ const (
 	opExecute      byte = 0x0A
 
 	flagCompressed byte = 0x01
+
+	keyVersion  string = "CQL_VERSION"
+	keyCompression string = "COMPRESSION"
 )
 
 var rnd = rand.New(rand.NewSource(0))
@@ -112,16 +115,25 @@ func Open(name string) (*connection, error) {
 	cn := &connection{c: c, compression: compression}
 
 	b := &bytes.Buffer{}
+
+	if compression != "" {
+		binary.Write(b, binary.BigEndian, uint16(2))
+	} else {
+		binary.Write(b, binary.BigEndian, uint16(1))
+	}
+
+	binary.Write(b, binary.BigEndian, uint16(len(keyVersion)))
+	b.WriteString(keyVersion)
 	binary.Write(b, binary.BigEndian, uint16(len(version)))
 	b.WriteString(version)
+
 	if compression != "" {
-		binary.Write(b, binary.BigEndian, uint16(1))
-		binary.Write(b, binary.BigEndian, uint16(1))
+		binary.Write(b, binary.BigEndian, uint16(len(keyCompression)))
+		b.WriteString(keyCompression)
 		binary.Write(b, binary.BigEndian, uint16(len(compression)))
 		b.WriteString(compression)
-	} else {
-		binary.Write(b, binary.BigEndian, uint16(0))
 	}
+
 	if err := cn.send(opStartup, b.Bytes()); err != nil {
 		return nil, err
 	}
