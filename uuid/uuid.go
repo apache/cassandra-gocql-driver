@@ -1,5 +1,6 @@
-// Copyright (c) 2012 by Christoph Hack <christoph@tux21b.org>
-// All rights reserved. Distributed under the Simplified BSD License.
+// Copyright (c) 2012 The gocql Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
 
 // The uuid package can be used to generate and parse universally unique
 // identifiers, a standardized format in the form of a 128 bit number.

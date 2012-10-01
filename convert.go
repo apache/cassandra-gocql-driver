@@ -1,5 +1,6 @@
-// Copyright (c) 2012 by Christoph Hack <christoph@tux21b.org>
-// All rights reserved. Distributed under the Simplified BSD License.
+// Copyright (c) 2012 The gocql Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
 
 package gocql
 
@@ -45,7 +46,7 @@ func decode(b []byte, t uint16) driver.Value {
 	case typeBlob:
 		return b
 	case typeVarchar, typeText, typeAscii:
-		return string(b)
+		return b
 	case typeInt:
 		return int64(int32(binary.BigEndian.Uint32(b)))
 	case typeBigInt:
