@@ -59,7 +59,7 @@ const (
 
 	flagCompressed byte = 0x01
 
-	keyVersion  string = "CQL_VERSION"
+	keyVersion     string = "CQL_VERSION"
 	keyCompression string = "COMPRESSION"
 )
 
@@ -233,8 +233,9 @@ func (cn *connection) Prepare(query string) (driver.Stmt, error) {
 	if opcode != opResult || binary.BigEndian.Uint32(body) != 4 {
 		return nil, fmt.Errorf("expected prepared result")
 	}
-	prepared := int(binary.BigEndian.Uint32(body[4:]))
-	columns, meta, _ := parseMeta(body[8:])
+	n := int(binary.BigEndian.Uint16(body[4:]))
+	prepared := body[6 : 6+n]
+	columns, meta, _ := parseMeta(body[6+n:])
 	return &statement{cn: cn, query: query,
 		prepared: prepared, columns: columns, meta: meta}, nil
 }
@@ -242,7 +243,7 @@ func (cn *connection) Prepare(query string) (driver.Stmt, error) {
 type statement struct {
 	cn       *connection
 	query    string
-	prepared int
+	prepared []byte
 	columns  []string
 	meta     []uint16
 }
@@ -286,15 +287,16 @@ func parseMeta(body []byte) ([]string, []uint16, int) {
 }
 
 func (st *statement) exec(v []driver.Value) error {
-	sz := 8
+	sz := 6 + len(st.prepared)
 	for i := range v {
 		if b, ok := v[i].([]byte); ok {
 			sz += len(b) + 4
 		}
 	}
-	body, p := make([]byte, sz), 6
-	binary.BigEndian.PutUint32(body, uint32(st.prepared))
-	binary.BigEndian.PutUint16(body[4:], uint16(len(v)))
+	body, p := make([]byte, sz), 4+len(st.prepared)
+	binary.BigEndian.PutUint16(body, uint16(len(st.prepared)))
+	copy(body[2:], st.prepared)
+	binary.BigEndian.PutUint16(body[p-2:], uint16(len(v)))
 	for i := range v {
 		b, ok := v[i].([]byte)
 		if !ok {
@@ -373,7 +375,6 @@ func (r *rows) Next(values []driver.Value) error {
 			values[column] = decode(r.body[:n], r.meta[column])
 			r.body = r.body[n:]
 		} else {
-			fmt.Println(column, n)
 			values[column] = nil
 		}
 	}
