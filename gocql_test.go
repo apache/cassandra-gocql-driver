@@ -134,3 +134,44 @@ func TestWiki(t *testing.T) {
 	}
 
 }
+
+func TestTypes(t *testing.T) {
+	db, err := sql.Open("gocql", "localhost:9042 compression=snappy")
+	if err != nil {
+		t.Fatal(err)
+	}
+	db.Exec("DROP KEYSPACE gocql_types")
+	if _, err := db.Exec(`CREATE KEYSPACE gocql_types
+	                      WITH replication = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 }`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec("USE gocql_types"); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := db.Exec(`CREATE TABLE stuff (
+        id bigint,
+		foo text,
+        PRIMARY KEY (id)
+        )`); err != nil {
+		t.Fatal(err)
+	}
+
+	id := int64(-1 << 63)
+
+	if _, err := db.Exec(`INSERT INTO stuff (id, foo) VALUES (?, ?);`, id, "test"); err != nil {
+		t.Fatal(err)
+	}
+
+	var rid int64
+
+	row := db.QueryRow(`SELECT id FROM stuff WHERE id = ?`, id)
+
+	if err := row.Scan(&rid); err != nil {
+		t.Error(err)
+	}
+
+	if id != rid {
+		t.Errorf("expected %v got %v", id, rid)
+	}
+}
