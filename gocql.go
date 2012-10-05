@@ -12,7 +12,7 @@
 //
 // Example Usage:
 //
-//     db, err := sql.Open("gocql", "localhost:8000 keyspace=system")
+//     db, err := sql.Open("gocql", "localhost:9042 keyspace=system")
 //     // ...
 //     rows, err := db.Query("SELECT keyspace_name FROM schema_keyspaces")
 //     // ...
