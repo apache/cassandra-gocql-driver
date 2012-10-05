@@ -13,7 +13,7 @@ import (
 )
 
 func TestSimple(t *testing.T) {
-	db, err := sql.Open("gocql", "localhost:8000 keyspace=system")
+	db, err := sql.Open("gocql", "localhost:9042 keyspace=system")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -54,7 +54,7 @@ var pages = []*Page{
 }
 
 func TestWiki(t *testing.T) {
-	db, err := sql.Open("gocql", "localhost:8000 compression=snappy")
+	db, err := sql.Open("gocql", "localhost:9042 compression=snappy")
 	if err != nil {
 		t.Fatal(err)
 	}
