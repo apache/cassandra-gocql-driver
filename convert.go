@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"github.com/tux21b/gocql/uuid"
 	"math"
+	"reflect"
 	"strconv"
 	"time"
 )
@@ -76,6 +77,8 @@ func (e *columnEncoder) ColumnConverter(idx int) ValueConverter {
 	switch e.columnTypes[idx] {
 	case typeInt:
 		return ValueConverter(encInt)
+	case typeBigInt:
+		return ValueConverter(encBigInt)
 	case typeFloat:
 		return ValueConverter(encFloat)
 	case typeDouble:
@@ -118,6 +121,13 @@ func encInt(v interface{}) (driver.Value, error) {
 	}
 	b := make([]byte, 4)
 	binary.BigEndian.PutUint32(b, uint32(x.(int64)))
+	return b, nil
+}
+
+func encBigInt(v interface{}) (driver.Value, error) {
+	x := reflect.Indirect(reflect.ValueOf(v)).Interface()
+	b := make([]byte, 8)
+	binary.BigEndian.PutUint64(b, uint64(x.(int64)))
 	return b, nil
 }
 
