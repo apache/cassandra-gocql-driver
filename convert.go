@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"github.com/tux21b/gocql/uuid"
 	"math"
+	"reflect"
 	"strconv"
 	"time"
 )
@@ -124,8 +125,9 @@ func encInt(v interface{}) (driver.Value, error) {
 }
 
 func encBigInt(v interface{}) (driver.Value, error) {
+	x := reflect.Indirect(reflect.ValueOf(v)).Interface()
 	b := make([]byte, 8)
-	binary.BigEndian.PutUint64(b, uint64(v.(int64)))
+	binary.BigEndian.PutUint64(b, uint64(x.(int64)))
 	return b, nil
 }
 

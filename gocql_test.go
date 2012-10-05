@@ -159,7 +159,7 @@ func TestTypes(t *testing.T) {
 
 	id := int64(-1 << 63)
 
-	if _, err := db.Exec(`INSERT INTO stuff (id, foo) VALUES (?, ?);`, id, "test"); err != nil {
+	if _, err := db.Exec(`INSERT INTO stuff (id, foo) VALUES (?, ?);`, &id, "test"); err != nil {
 		t.Fatal(err)
 	}
 
