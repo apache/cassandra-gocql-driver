@@ -9,6 +9,11 @@ CQL 3.0 and the new native protocol. The native protocol is still considered
 beta and must be enabled manually in Cassandra 1.2 by setting
 "start_native_transport" to true in conf/cassandra.yaml.
 
+**Note:** gocql requires the tip version of Go, as some changes in the 
+`database/sql` have not made it into 1.0.x yet. There is 
+[a fork](https://github.com/titanous/gocql) that backports these changes 
+to Go 1.0.3.
+
 Installation
 ------------
 
