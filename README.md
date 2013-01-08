@@ -23,18 +23,37 @@ Example
 -------
 
 ```go
-db, err := sql.Open("gocql", "localhost:8000 keyspace=system")
-// ...
-rows, err := db.Query("SELECT keyspace_name FROM schema_keyspaces")
-// ...
-for rows.Next() {
-     var keyspace string
-     err = rows.Scan(&keyspace)
-     // ...
-     fmt.Println(keyspace)
-}
-if err := rows.Err(); err != nil {
-    // ...
+package main
+
+import (
+	"database/sql"
+	"fmt"
+	_ "github.com/tux21b/gocql"
+)
+
+func main() {
+	db, err := sql.Open("gocql", "localhost:9042 keyspace=system")
+	if err != nil {
+		fmt.Println("Open error: %s\n", err)
+	}
+
+	rows, err := db.Query("SELECT keyspace_name FROM schema_keyspaces")
+	if err != nil {
+		fmt.Printf("Query error: %s\n", err)
+	}
+
+	for rows.Next() {
+		var keyspace string
+		if err := rows.Scan(&keyspace); err != nil {
+			fmt.Printf("Scan error: %s\n", err)
+		}
+		fmt.Println(keyspace)
+	}
+
+	if err = rows.Err(); err != nil {
+		fmt.Printf("Iteration error: %s\n", err)
+		return
+	}
 }
 ```
 
