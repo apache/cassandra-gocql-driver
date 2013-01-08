@@ -44,7 +44,8 @@ func main() {
 
 	for rows.Next() {
 		var keyspace string
-		if err := rows.Scan(&keyspace); err != nil {
+		err = rows.Scan(&keyspace)
+		if err != nil {
 			fmt.Printf("Scan error: %s\n", err)
 		}
 		fmt.Println(keyspace)
