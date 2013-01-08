@@ -22,19 +22,21 @@ Installation
 Example
 -------
 
-    db, err := sql.Open("gocql", "localhost:8000 keyspace=system")
+```go
+db, err := sql.Open("gocql", "localhost:8000 keyspace=system")
+// ...
+rows, err := db.Query("SELECT keyspace_name FROM schema_keyspaces")
+// ...
+for rows.Next() {
+     var keyspace string
+     err = rows.Scan(&keyspace)
+     // ...
+     fmt.Println(keyspace)
+}
+if err := rows.Err(); err != nil {
     // ...
-    rows, err := db.Query("SELECT keyspace_name FROM schema_keyspaces")
-    // ...
-    for rows.Next() {
-         var keyspace string
-         err = rows.Scan(&keyspace)
-         // ...
-         fmt.Println(keyspace)
-    }
-    if err := rows.Err(); err != nil {
-        // ...
-    }
+}
+```
 
 Please see `gocql_test.go` for some more advanced examples.
 
