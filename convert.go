@@ -37,8 +37,8 @@ const (
 	typeSet       uint16 = 0x0022
 )
 
-func decode(b []byte, t uint16) driver.Value {
-	switch t {
+func decode(b []byte, t []uint16) driver.Value {
+	switch t[0] {
 	case typeBool:
 		if len(b) >= 1 && b[0] != 0 {
 			return true
@@ -63,6 +63,36 @@ func decode(b []byte, t uint16) driver.Value {
 		return time.Unix(sec, nsec)
 	case typeUUID, typeTimeUUID:
 		return uuid.FromBytes(b)
+	case typeMap:
+		// map collection type has the following byte order:
+		//
+		// 0 23 - 0 3 - 1 2 3 - 0 1 - 66 .... repeats
+		// It says there are 23 pairs, the first pair's key has 3 bytes, which are
+		// 1, 2, and 3, and the pair's value has one byte and the value is 66.
+		//
+		// It only supports map[string][string] right now.
+		if t[1] == typeVarchar && t[2] == typeVarchar {
+			collLen := int(binary.BigEndian.Uint16(b[:2]))
+			coll := make(map[string]string, collLen)
+
+			for pairNum, bpointer := 0, 2; pairNum < collLen; pairNum++ {
+				keyLen := int(binary.BigEndian.Uint16(b[bpointer : bpointer+2]))
+				bpointer += 2
+				key := string(b[bpointer : bpointer+keyLen])
+				bpointer += keyLen
+
+				valueLen := int(binary.BigEndian.Uint16(b[bpointer : bpointer+2]))
+				bpointer += 2
+				value := string(b[bpointer : bpointer+valueLen])
+				bpointer += valueLen
+
+				coll[key] = value
+			}
+
+			return coll
+		} else {
+			panic("unsupported map collection type")
+		}
 	default:
 		panic("unsupported type")
 	}
@@ -70,11 +100,11 @@ func decode(b []byte, t uint16) driver.Value {
 }
 
 type columnEncoder struct {
-	columnTypes []uint16
+	columnTypes [][]uint16
 }
 
 func (e *columnEncoder) ColumnConverter(idx int) ValueConverter {
-	switch e.columnTypes[idx] {
+	switch e.columnTypes[idx][0] {
 	case typeInt:
 		return ValueConverter(encInt)
 	case typeBigInt:
