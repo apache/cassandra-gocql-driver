@@ -5,6 +5,7 @@
 package gocql
 
 import (
+	"bytes"
 	"database/sql/driver"
 	"encoding/binary"
 	"fmt"
@@ -123,6 +124,8 @@ func (e *columnEncoder) ColumnConverter(idx int) ValueConverter {
 		return ValueConverter(encTimestamp)
 	case typeUUID, typeTimeUUID:
 		return ValueConverter(encUUID)
+	case typeMap:
+		return ValueConverter(encMap)
 	}
 	panic("not implemented")
 }
@@ -267,4 +270,39 @@ func encUUID(v interface{}) (driver.Value, error) {
 		return nil, fmt.Errorf("can not convert %T to a UUID", v)
 	}
 	return u.Bytes(), nil
+}
+
+func encMap(v interface{}) (driver.Value, error) {
+	var err error
+
+	// It only supports map[string][string] right now.
+	if values, passed := v.(map[string]string); passed {
+		buf := new(bytes.Buffer)
+
+		// number of pairs
+		err = binary.Write(buf, binary.BigEndian, uint16(len(values)))
+		if err != nil {
+			return nil, err
+		}
+
+		for mk, mv := range values {
+			// number of pair key in bytes + key
+			err = binary.Write(buf, binary.BigEndian, uint16(len(mk)))
+			if err != nil {
+				return nil, err
+			}
+			buf.Write([]byte(mk)) // err is always nil, skip the checking
+
+			// number of pair value in bytes + value
+			err = binary.Write(buf, binary.BigEndian, uint16(len(mv)))
+			if err != nil {
+				return nil, err
+			}
+			buf.Write([]byte(mv)) // err is always nil, skip the checking
+		}
+
+		return buf.Bytes(), nil
+	}
+
+	return nil, fmt.Errorf("doesn't support the given type %T", v)
 }

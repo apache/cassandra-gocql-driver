@@ -347,8 +347,10 @@ func parseMeta(body []byte) ([]string, [][]uint16, int) {
 
 		// Collection types have a different number of bytes for the meta data
 		//
-		// For example, a map collection type map<text, text> will have the following byte order:
+		// For example, a map collection type map<text, text> has the following byte order:
 		// 0 33, 0 13, 0 13
+		//
+		// where, 33 is Map and 13 is Varchar
 		dataType := binary.BigEndian.Uint16(body[i:])
 
 		// Right now only map collection type is implemented.
