@@ -65,25 +65,33 @@ func decode(b []byte, t []uint16) driver.Value {
 	case typeUUID, typeTimeUUID:
 		return uuid.FromBytes(b)
 	case typeMap:
-		// map collection type has the following byte order:
+		// A Map is stored as the number of tuples followed by the sequence of tuples.
+		// Each name and value are stored as a byte count followed by the raw bytes.
 		//
+		// Example:
 		// 0 23 - 0 3 - 1 2 3 - 0 1 - 66 .... repeats
-		// It says there are 23 pairs, the first pair's key has 3 bytes, which are
-		// 1, 2, and 3, and the pair's value has one byte and the value is 66.
+		//
+		// In this example, there are 23 tuples. The first tuple's name has 3 bytes,
+		// which are 1, 2, and 3, and the tuple's value has 1 byte, which is 66.
 		//
 		// It only supports map[string][string] right now.
 		if t[1] == typeVarchar && t[2] == typeVarchar {
+			// Read the number of tuples
 			collLen := int(binary.BigEndian.Uint16(b[:2]))
 			coll := make(map[string]string, collLen)
 
 			for pairNum, bpointer := 0, 2; pairNum < collLen; pairNum++ {
+				// Read the byte count for the tuple's name
 				keyLen := int(binary.BigEndian.Uint16(b[bpointer : bpointer+2]))
 				bpointer += 2
+				// Read the tuple's name according to the byte count
 				key := string(b[bpointer : bpointer+keyLen])
 				bpointer += keyLen
 
+				// Read the byte count for the tuple's value
 				valueLen := int(binary.BigEndian.Uint16(b[bpointer : bpointer+2]))
 				bpointer += 2
+				// Read the tuple's value according to the byte count
 				value := string(b[bpointer : bpointer+valueLen])
 				bpointer += valueLen
 

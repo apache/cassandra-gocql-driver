@@ -176,14 +176,12 @@ func Open(name string) (*connection, error) {
 // close a connection actively, typically used when there's an error and we want to ensure
 // we don't repeatedly try to use the broken connection
 func (cn *connection) close() {
-	cn.c.Close()
-	cn.c = nil // ensure we generate ErrBadConn when cn gets reused
+        cn.c.Close()
+        cn.c = nil // ensure we generate ErrBadConn when cn gets reused
 }
 
 func (cn *connection) send(opcode byte, body []byte) error {
-	if cn.c == nil {
-		return driver.ErrBadConn
-	}
+	if cn.c == nil { return driver.ErrBadConn }
 	frame := make([]byte, len(body)+8)
 	frame[0] = protoRequest
 	frame[1] = 0
@@ -203,18 +201,18 @@ func (cn *connection) recv() (byte, []byte, error) {
 	}
 	header := make([]byte, 8)
 	if _, err := io.ReadFull(cn.c, header); err != nil {
-		cn.close() // better assume that the connection is broken (may have read some bytes)
+                cn.close() // better assume that the connection is broken (may have read some bytes)
 		return 0, nil, err
 	}
-	// verify that the frame starts with version==1 and req/resp flag==response
-	// this may be overly conservative in that future versions may be backwards compatible
-	// in that case simply amend the check...
+        // verify that the frame starts with version==1 and req/resp flag==response
+        // this may be overly conservative in that future versions may be backwards compatible
+        // in that case simply amend the check...
 	if header[0] != protoResponse {
 		cn.close()
 		return 0, nil, fmt.Errorf("unsupported frame version or not a response: 0x%x (header=%v)", header[0], header)
 	}
-	// verify that the flags field has only a single flag set, again, this may
-	// be overly conservative if additional flags are backwards-compatible
+        // verify that the flags field has only a single flag set, again, this may
+        // be overly conservative if additional flags are backwards-compatible
 	if header[1] > 1 {
 		cn.close()
 		return 0, nil, fmt.Errorf("unsupported frame flags: 0x%x (header=%v)", header[1], header)
@@ -233,7 +231,7 @@ func (cn *connection) recv() (byte, []byte, error) {
 		}
 		body = make([]byte, length)
 		if _, err := io.ReadFull(cn.c, body); err != nil {
-			cn.close() // better assume that the connection is broken
+                        cn.close() // better assume that the connection is broken
 			return 0, nil, err
 		}
 	}
@@ -255,31 +253,23 @@ func (cn *connection) recv() (byte, []byte, error) {
 }
 
 func (cn *connection) Begin() (driver.Tx, error) {
-	if cn.c == nil {
-		return nil, driver.ErrBadConn
-	}
+	if cn.c == nil { return nil, driver.ErrBadConn }
 	return cn, nil
 }
 
 func (cn *connection) Commit() error {
-	if cn.c == nil {
-		return driver.ErrBadConn
-	}
+	if cn.c == nil { return driver.ErrBadConn }
 	return nil
 }
 
 func (cn *connection) Close() error {
-	if cn.c == nil {
-		return driver.ErrBadConn
-	}
+	if cn.c == nil { return driver.ErrBadConn }
 	cn.close()
-	return nil
+        return nil
 }
 
 func (cn *connection) Rollback() error {
-	if cn.c == nil {
-		return driver.ErrBadConn
-	}
+	if cn.c == nil { return driver.ErrBadConn }
 	return nil
 }
 
@@ -345,7 +335,7 @@ func parseMeta(body []byte) ([]string, [][]uint16, int) {
 		columns[c] = string(body[i+2 : i+2+l])
 		i += 2 + l
 
-		// Collection types have a different number of bytes for the meta data
+		// Collection types have a variable number of bytes for the meta data
 		//
 		// For example, a map collection type map<text, text> has the following byte order:
 		// 0 33, 0 13, 0 13
