@@ -50,7 +50,7 @@ func decode(b []byte, t uint16) driver.Value {
 		return b
 	case typeInt:
 		return int64(int32(binary.BigEndian.Uint32(b)))
-	case typeBigInt:
+	case typeBigInt,typeCounter :
 		return int64(binary.BigEndian.Uint64(b))
 	case typeFloat:
 		return float64(math.Float32frombits(binary.BigEndian.Uint32(b)))
