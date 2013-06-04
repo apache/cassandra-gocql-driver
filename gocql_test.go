@@ -7,7 +7,7 @@ package gocql
 import (
 	"bytes"
 	"database/sql"
-	"github.com/tux21b/gocql/uuid"
+	uuid "github.com/streadway/simpleuuid"
 	"testing"
 	"time"
 )
@@ -45,12 +45,17 @@ type Page struct {
 }
 
 var pages = []*Page{
-	&Page{"Frontpage", uuid.TimeUUID(), "Hello world!", 0, false,
+	&Page{"Frontpage", randomTimeUUID(), "Hello world!", 0, false,
 		time.Date(2012, 8, 20, 10, 0, 0, 0, time.UTC), nil},
-	&Page{"Frontpage", uuid.TimeUUID(), "Hello modified world!", 0, false,
+	&Page{"Frontpage", randomTimeUUID(), "Hello modified world!", 0, false,
 		time.Date(2012, 8, 22, 10, 0, 0, 0, time.UTC), []byte("img data\x00")},
-	&Page{"LoremIpsum", uuid.TimeUUID(), "Lorem ipsum dolor sit amet", 12,
+	&Page{"LoremIpsum", randomTimeUUID(), "Lorem ipsum dolor sit amet", 12,
 		true, time.Date(2012, 8, 22, 10, 0, 8, 0, time.UTC), nil},
+}
+
+func randomTimeUUID() uuid.UUID {
+	uid, _ := uuid.NewTime(time.Now())
+	return uid
 }
 
 func TestWiki(t *testing.T) {
@@ -108,7 +113,7 @@ func TestWiki(t *testing.T) {
 			t.Fatal(err)
 		}
 		p.Modified = p.Modified.In(time.UTC)
-		if page.Title != p.Title || page.RevID != p.RevID ||
+		if page.Title != p.Title || page.RevID.Compare(p.RevID) != 0 ||
 			page.Body != p.Body || page.Modified != p.Modified ||
 			page.Hits != p.Hits || page.Protected != p.Protected ||
 			!bytes.Equal(page.Attachment, p.Attachment) {
@@ -126,7 +131,7 @@ func TestWiki(t *testing.T) {
 	}
 	p.Modified = p.Modified.In(time.UTC)
 	page := pages[1]
-	if page.Title != p.Title || page.RevID != p.RevID ||
+	if page.Title != p.Title || page.RevID.Compare(p.RevID) != 0 ||
 		page.Body != p.Body || page.Modified != p.Modified ||
 		page.Hits != p.Hits || page.Protected != p.Protected ||
 		!bytes.Equal(page.Attachment, p.Attachment) {
