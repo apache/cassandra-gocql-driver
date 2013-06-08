@@ -175,3 +175,51 @@ func TestTypes(t *testing.T) {
 		t.Errorf("expected %v got %v", id, rid)
 	}
 }
+
+
+func TestNullColumnValues(t *testing.T) {
+	db, err := sql.Open("gocql", "localhost:9042 compression=snappy")
+	if err != nil {
+		t.Fatal(err)
+	}
+	db.Exec("DROP KEYSPACE gocql_nullvalues")
+	if _, err := db.Exec(`CREATE KEYSPACE gocql_nullvalues
+	                      WITH replication = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec("USE gocql_nullvalues"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`CREATE TABLE stuff (
+        id bigint,
+        subid bigint,
+				foo text,
+				bar text,
+        PRIMARY KEY (id, subid)
+        )`); err != nil {
+		t.Fatal(err)
+	}
+	id := int64(-1 << 63)
+
+	if _, err := db.Exec(`INSERT INTO stuff (id, subid, foo) VALUES (?, ?, ?);`, id, int64(4), "test"); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := db.Exec(`INSERT INTO stuff (id, subid, bar) VALUES (?, ?, ?);`, id, int64(6), "test2"); err != nil {
+		t.Fatal(err)
+	}
+
+	var rid int64
+	var sid int64
+	var data1 []byte
+	var data2 []byte
+	if rows, err := db.Query(`SELECT id, subid, foo, bar FROM stuff`); err == nil {
+			for rows.Next() {
+					if err := rows.Scan(&rid, &sid, &data1, &data2); err != nil {
+				t.Error(err)
+			}
+		}
+	} else {
+		t.Fatal(err)
+	}
+}

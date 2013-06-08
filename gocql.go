@@ -434,7 +434,7 @@ func (r *rows) Next(values []driver.Value) error {
 		return io.EOF
 	}
 	for column := 0; column < len(r.columns); column++ {
-		n := int(binary.BigEndian.Uint32(r.body))
+		n := int32(binary.BigEndian.Uint32(r.body))
 		r.body = r.body[4:]
 		if n >= 0 {
 			values[column] = decode(r.body[:n], r.meta[column])
