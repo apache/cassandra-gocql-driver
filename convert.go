@@ -5,6 +5,7 @@
 package gocql
 
 import (
+	"bytes"
 	"database/sql/driver"
 	"encoding/binary"
 	"fmt"
@@ -37,8 +38,8 @@ const (
 	typeSet       uint16 = 0x0022
 )
 
-func decode(b []byte, t uint16) driver.Value {
-	switch t {
+func decode(b []byte, t []uint16) driver.Value {
+	switch t[0] {
 	case typeBool:
 		if len(b) >= 1 && b[0] != 0 {
 			return true
@@ -63,6 +64,44 @@ func decode(b []byte, t uint16) driver.Value {
 		return time.Unix(sec, nsec)
 	case typeUUID, typeTimeUUID:
 		return uuid.FromBytes(b)
+	case typeMap:
+		// A Map is stored as the number of tuples followed by the sequence of tuples.
+		// Each name and value are stored as a byte count followed by the raw bytes.
+		//
+		// Example:
+		// 0 23 - 0 3 - 1 2 3 - 0 1 - 66 .... repeats
+		//
+		// In this example, there are 23 tuples. The first tuple's name has 3 bytes,
+		// which are 1, 2, and 3, and the tuple's value has 1 byte, which is 66.
+		//
+		// It only supports map[string][string] right now.
+		if t[1] == typeVarchar && t[2] == typeVarchar {
+			// Read the number of tuples
+			collLen := int(binary.BigEndian.Uint16(b[:2]))
+			coll := make(map[string]string, collLen)
+
+			for pairNum, bpointer := 0, 2; pairNum < collLen; pairNum++ {
+				// Read the byte count for the tuple's name
+				keyLen := int(binary.BigEndian.Uint16(b[bpointer : bpointer+2]))
+				bpointer += 2
+				// Read the tuple's name according to the byte count
+				key := string(b[bpointer : bpointer+keyLen])
+				bpointer += keyLen
+
+				// Read the byte count for the tuple's value
+				valueLen := int(binary.BigEndian.Uint16(b[bpointer : bpointer+2]))
+				bpointer += 2
+				// Read the tuple's value according to the byte count
+				value := string(b[bpointer : bpointer+valueLen])
+				bpointer += valueLen
+
+				coll[key] = value
+			}
+
+			return coll
+		} else {
+			panic("unsupported map collection type")
+		}
 	default:
 		panic("unsupported type")
 	}
@@ -70,11 +109,11 @@ func decode(b []byte, t uint16) driver.Value {
 }
 
 type columnEncoder struct {
-	columnTypes []uint16
+	columnTypes [][]uint16
 }
 
 func (e *columnEncoder) ColumnConverter(idx int) ValueConverter {
-	switch e.columnTypes[idx] {
+	switch e.columnTypes[idx][0] {
 	case typeInt:
 		return ValueConverter(encInt)
 	case typeBigInt:
@@ -93,6 +132,8 @@ func (e *columnEncoder) ColumnConverter(idx int) ValueConverter {
 		return ValueConverter(encTimestamp)
 	case typeUUID, typeTimeUUID:
 		return ValueConverter(encUUID)
+	case typeMap:
+		return ValueConverter(encMap)
 	}
 	panic("not implemented")
 }
@@ -237,4 +278,39 @@ func encUUID(v interface{}) (driver.Value, error) {
 		return nil, fmt.Errorf("can not convert %T to a UUID", v)
 	}
 	return u.Bytes(), nil
+}
+
+func encMap(v interface{}) (driver.Value, error) {
+	var err error
+
+	// It only supports map[string][string] right now.
+	if values, passed := v.(map[string]string); passed {
+		buf := new(bytes.Buffer)
+
+		// number of pairs
+		err = binary.Write(buf, binary.BigEndian, uint16(len(values)))
+		if err != nil {
+			return nil, err
+		}
+
+		for mk, mv := range values {
+			// number of pair key in bytes + key
+			err = binary.Write(buf, binary.BigEndian, uint16(len(mk)))
+			if err != nil {
+				return nil, err
+			}
+			buf.Write([]byte(mk)) // err is always nil, skip the checking
+
+			// number of pair value in bytes + value
+			err = binary.Write(buf, binary.BigEndian, uint16(len(mv)))
+			if err != nil {
+				return nil, err
+			}
+			buf.Write([]byte(mv)) // err is always nil, skip the checking
+		}
+
+		return buf.Bytes(), nil
+	}
+
+	return nil, fmt.Errorf("doesn't support the given type %T", v)
 }
