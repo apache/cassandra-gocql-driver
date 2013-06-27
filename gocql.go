@@ -39,6 +39,7 @@ import (
 	"math/rand"
 	"net"
 	"strings"
+	"time"
 )
 
 const (
@@ -93,40 +94,51 @@ func getConn(addrs []string) (conn net.Conn, err error) {
 func Open(name string) (*connection, error) {
 	parts := strings.Split(name, " ")
 
-	c, err := getConn(strings.Split(parts[0], ","))
-	if err != nil {
-		return nil, err
-	}
-
 	version := "3.0.0"
 	var (
 		keyspace    string
 		compression string
 		consistency byte = 0x01
 		ok          bool
+		recycle     time.Duration
 	)
-	for i := 1; i < len(parts); i++ {
+	for _, opt := range parts[1:] {
+		const recyclePrefix = "recycle="
 		switch {
-		case parts[i] == "":
+		case opt == "":
 			continue
-		case strings.HasPrefix(parts[i], "keyspace="):
-			keyspace = strings.TrimSpace(parts[i][9:])
-		case strings.HasPrefix(parts[i], "compression="):
-			compression = strings.TrimSpace(parts[i][12:])
+		case strings.HasPrefix(opt, "keyspace="):
+			keyspace = strings.TrimSpace(opt[9:])
+		case strings.HasPrefix(opt, "compression="):
+			compression = strings.TrimSpace(opt[12:])
 			if compression != "snappy" {
 				return nil, fmt.Errorf("unknown compression algorithm %q",
 					compression)
 			}
-		case strings.HasPrefix(parts[i], "version="):
-			version = strings.TrimSpace(parts[i][8:])
-		case strings.HasPrefix(parts[i], "consistency="):
-			cs := strings.TrimSpace(parts[i][12:])
+		case strings.HasPrefix(opt, "version="):
+			version = strings.TrimSpace(opt[8:])
+		case strings.HasPrefix(opt, "consistency="):
+			cs := strings.TrimSpace(opt[12:])
 			if consistency, ok = consistencyLevels[cs]; !ok {
 				return nil, fmt.Errorf("unknown consistency level %q", cs)
 			}
+		case strings.HasPrefix(opt, recyclePrefix):
+			var err error
+			recycle, err = time.ParseDuration(strings.TrimPrefix(opt, recyclePrefix))
+			if err != nil {
+				return nil, fmt.Errorf("bad recycle option: %s", err)
+			}
 		default:
-			return nil, fmt.Errorf("unsupported option %q", parts[i])
+			return nil, fmt.Errorf("unsupported option %q", opt)
 		}
+	}
+
+	c, err := getConn(strings.Split(parts[0], ","))
+	if err != nil {
+		return nil, err
+	}
+	if recycle > 0 {
+		c.SetDeadline(time.Now().Add(recycle))
 	}
 
 	cn := &connection{c: c, compression: compression, consistency: consistency}
@@ -195,6 +207,7 @@ func (cn *connection) send(opcode byte, body []byte) error {
 	binary.BigEndian.PutUint32(frame[4:8], uint32(len(body)))
 	copy(frame[8:], body)
 	if _, err := cn.c.Write(frame); err != nil {
+		cn.close()
 		return err
 	}
 	return nil
