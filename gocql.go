@@ -148,7 +148,7 @@ func Open(name string) (*connection, error) {
 		b.WriteString(compression)
 	}
 
-	if err := cn.send(opStartup, b.Bytes()); err != nil {
+	if err := cn.sendUncompressed(opStartup, b.Bytes()); err != nil {
 		return nil, err
 	}
 
@@ -180,13 +180,32 @@ func (cn *connection) close() {
 	cn.c = nil // ensure we generate ErrBadConn when cn gets reused
 }
 
+// explicitly send a request as uncompressed
+// This is only really needed for the "startup" handshake
+func (cn *connection) sendUncompressed(opcode byte, body []byte) error {
+	return cn._send(opcode, body, false)
+}
+
 func (cn *connection) send(opcode byte, body []byte) error {
+	return cn._send(opcode, body, cn.compression == "snappy" && len(body) > 0)
+}
+
+func (cn *connection) _send(opcode byte, body []byte, compression bool) error {
 	if cn.c == nil {
 		return driver.ErrBadConn
 	}
+	var flags byte = 0x00
+	if compression {
+		var err error
+		body, err = snappy.Encode(nil, body)
+		if err != nil {
+			return err
+		}
+		flags = flagCompressed
+	}
 	frame := make([]byte, len(body)+8)
 	frame[0] = protoRequest
-	frame[1] = 0
+	frame[1] = flags
 	frame[2] = 0
 	frame[3] = opcode
 	binary.BigEndian.PutUint32(frame[4:8], uint32(len(body)))
