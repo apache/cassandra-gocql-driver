@@ -78,6 +78,7 @@ type connection struct {
 	c           net.Conn
 	compression string
 	consistency byte
+	recycle     time.Time
 }
 
 // dial addresses until we connect
@@ -137,11 +138,11 @@ func Open(name string) (*connection, error) {
 	if err != nil {
 		return nil, err
 	}
-	if recycle > 0 {
-		c.SetDeadline(time.Now().Add(recycle))
-	}
 
 	cn := &connection{c: c, compression: compression, consistency: consistency}
+	if recycle > 0 {
+		cn.recycle = time.Now().Add(recycle)
+	}
 
 	b := &bytes.Buffer{}
 
@@ -207,7 +208,6 @@ func (cn *connection) send(opcode byte, body []byte) error {
 	binary.BigEndian.PutUint32(frame[4:8], uint32(len(body)))
 	copy(frame[8:], body)
 	if _, err := cn.c.Write(frame); err != nil {
-		cn.close()
 		return err
 	}
 	return nil
@@ -299,7 +299,24 @@ func (cn *connection) Rollback() error {
 	return nil
 }
 
+func (cn *connection) recycleErr() error {
+	if cn.c == nil {
+		return driver.ErrBadConn
+	}
+	if cn.recycle.IsZero() {
+		return nil
+	}
+	if !time.Now().Before(cn.recycle) {
+		cn.close()
+		return driver.ErrBadConn
+	}
+	return nil
+}
+
 func (cn *connection) Prepare(query string) (driver.Stmt, error) {
+	if err := cn.recycleErr(); err != nil {
+		return nil, err
+	}
 	body := make([]byte, len(query)+4)
 	binary.BigEndian.PutUint32(body[0:4], uint32(len(query)))
 	copy(body[4:], []byte(query))
@@ -406,6 +423,9 @@ func (st *statement) Exec(v []driver.Value) (driver.Result, error) {
 }
 
 func (st *statement) Query(v []driver.Value) (driver.Rows, error) {
+	if err := st.cn.recycleErr(); err != nil {
+		return nil, err
+	}
 	if err := st.exec(v); err != nil {
 		return nil, err
 	}
