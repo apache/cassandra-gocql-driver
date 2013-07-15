@@ -67,8 +67,6 @@ const (
 var consistencyLevels = map[string]byte{"any": 0x00, "one": 0x01, "two": 0x02,
 	"three": 0x03, "quorum": 0x04, "all": 0x05, "local_quorum": 0x06, "each_quorum": 0x07}
 
-var rnd = rand.New(rand.NewSource(0))
-
 type drv struct{}
 
 func (d drv) Open(name string) (driver.Conn, error) {
@@ -87,7 +85,7 @@ func Open(name string) (*connection, error) {
 	if len(parts) >= 1 {
 		addresses := strings.Split(parts[0], ",")
 		if len(addresses) > 0 {
-			address = addresses[rnd.Intn(len(addresses))]
+			address = addresses[rand.Intn(len(addresses))]
 		}
 	}
 	c, err := net.Dial("tcp", address)
