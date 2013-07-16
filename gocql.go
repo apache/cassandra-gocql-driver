@@ -271,8 +271,8 @@ func (cn *connection) recv() (byte, []byte, error) {
 }
 
 func (cn *connection) Begin() (driver.Tx, error) {
-	if cn.c == nil {
-		return nil, driver.ErrBadConn
+	if err := cn.recycleErr(); err != nil {
+		return nil, err
 	}
 	return cn, nil
 }
@@ -411,6 +411,9 @@ func (st *statement) exec(v []driver.Value) error {
 }
 
 func (st *statement) Exec(v []driver.Value) (driver.Result, error) {
+	if err := st.cn.recycleErr(); err != nil {
+		return nil, err
+	}
 	if err := st.exec(v); err != nil {
 		return nil, err
 	}
