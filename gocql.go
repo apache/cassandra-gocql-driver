@@ -75,10 +75,10 @@ func (d drv) Open(name string) (driver.Conn, error) {
 }
 
 type connection struct {
-	c           net.Conn
-	compression string
-	consistency byte
-	recycle     time.Time
+	c                                 net.Conn
+	compression                       string
+	readConsistency, writeConsistency byte
+	recycle                           time.Time
 }
 
 // dial addresses until we connect
@@ -92,61 +92,83 @@ func getConn(addrs []string) (conn net.Conn, err error) {
 	return
 }
 
-func Open(name string) (*connection, error) {
+func parseConsistency(cs string) (byte, error) {
+	if b, ok := consistencyLevels[cs]; ok {
+		return b, nil
+	}
+	return 0xff, fmt.Errorf("unknown consistency level %q", cs)
+}
+
+func Open(name string) (cn *connection, err error) {
 	parts := strings.Split(name, " ")
 
 	version := "3.0.0"
-	var (
-		keyspace    string
-		compression string
-		consistency byte = 0x01
-		ok          bool
-		recycle     time.Duration
-	)
-	for _, opt := range parts[1:] {
-		const recyclePrefix = "recycle="
-		switch {
-		case opt == "":
+	cn = &connection{
+		readConsistency:  1,
+		writeConsistency: 1,
+	}
+	var keyspace string
+
+	for _, part := range parts[1:] {
+		if part == "" {
 			continue
-		case strings.HasPrefix(opt, "keyspace="):
-			keyspace = strings.TrimSpace(opt[9:])
-		case strings.HasPrefix(opt, "compression="):
-			compression = strings.TrimSpace(opt[12:])
-			if compression != "snappy" {
-				return nil, fmt.Errorf("unknown compression algorithm %q",
-					compression)
+		}
+		splitPart := strings.SplitN(part, "=", 2)
+		opt, val := splitPart[0], splitPart[1]
+		opt = strings.ToLower(opt)
+		val = strings.TrimSpace(val)
+		switch opt {
+		case "keyspace":
+			keyspace = val
+		case "compression":
+			val = strings.ToLower(val)
+			if val != "snappy" {
+				err = fmt.Errorf("unknown compression algorithm %q", val)
+				return
 			}
-		case strings.HasPrefix(opt, "version="):
-			version = strings.TrimSpace(opt[8:])
-		case strings.HasPrefix(opt, "consistency="):
-			cs := strings.TrimSpace(opt[12:])
-			if consistency, ok = consistencyLevels[cs]; !ok {
-				return nil, fmt.Errorf("unknown consistency level %q", cs)
+			cn.compression = val
+		case "version":
+			version = val
+		case "consistency":
+			consistency, err := parseConsistency(val)
+			if err != nil {
+				return nil, err
 			}
-		case strings.HasPrefix(opt, recyclePrefix):
-			var err error
-			recycle, err = time.ParseDuration(strings.TrimPrefix(opt, recyclePrefix))
+			cn.readConsistency = consistency
+			cn.writeConsistency = consistency
+		case "writeconsistency":
+			cn.writeConsistency, err = parseConsistency(val)
+			if err != nil {
+				return
+			}
+		case "readconsistency":
+			cn.readConsistency, err = parseConsistency(val)
+			if err != nil {
+				return
+			}
+		case "recycle":
+			ttl, err := time.ParseDuration(val)
 			if err != nil {
 				return nil, fmt.Errorf("bad recycle option: %s", err)
+			}
+			if ttl > 0 {
+				cn.recycle = time.Now().Add(ttl)
+			} else {
+				cn.recycle = time.Time{}
 			}
 		default:
 			return nil, fmt.Errorf("unsupported option %q", opt)
 		}
 	}
 
-	c, err := getConn(strings.Split(parts[0], ","))
+	cn.c, err = getConn(strings.Split(parts[0], ","))
 	if err != nil {
 		return nil, err
 	}
 
-	cn := &connection{c: c, compression: compression, consistency: consistency}
-	if recycle > 0 {
-		cn.recycle = time.Now().Add(recycle)
-	}
-
 	b := &bytes.Buffer{}
 
-	if compression != "" {
+	if cn.compression != "" {
 		binary.Write(b, binary.BigEndian, uint16(2))
 	} else {
 		binary.Write(b, binary.BigEndian, uint16(1))
@@ -157,11 +179,11 @@ func Open(name string) (*connection, error) {
 	binary.Write(b, binary.BigEndian, uint16(len(version)))
 	b.WriteString(version)
 
-	if compression != "" {
+	if cn.compression != "" {
 		binary.Write(b, binary.BigEndian, uint16(len(keyCompression)))
 		b.WriteString(keyCompression)
-		binary.Write(b, binary.BigEndian, uint16(len(compression)))
-		b.WriteString(compression)
+		binary.Write(b, binary.BigEndian, uint16(len(cn.compression)))
+		b.WriteString(cn.compression)
 	}
 
 	if err := cn.send(opStartup, b.Bytes()); err != nil {
@@ -383,7 +405,7 @@ func parseMeta(body []byte) ([]string, []uint16, int) {
 	return columns, meta, i
 }
 
-func (st *statement) exec(v []driver.Value) error {
+func (st *statement) exec(v []driver.Value, consistency byte) error {
 	sz := 6 + len(st.prepared)
 	for i := range v {
 		if b, ok := v[i].([]byte); ok {
@@ -403,7 +425,7 @@ func (st *statement) exec(v []driver.Value) error {
 		copy(body[p+4:], b)
 		p += 4 + len(b)
 	}
-	binary.BigEndian.PutUint16(body[p:], uint16(st.cn.consistency))
+	binary.BigEndian.PutUint16(body[p:], uint16(consistency))
 	if err := st.cn.send(opExecute, body); err != nil {
 		return err
 	}
@@ -414,7 +436,7 @@ func (st *statement) Exec(v []driver.Value) (driver.Result, error) {
 	if err := st.cn.recycleErr(); err != nil {
 		return nil, err
 	}
-	if err := st.exec(v); err != nil {
+	if err := st.exec(v, st.cn.writeConsistency); err != nil {
 		return nil, err
 	}
 	opcode, body, err := st.cn.recv()
@@ -429,7 +451,7 @@ func (st *statement) Query(v []driver.Value) (driver.Rows, error) {
 	if err := st.cn.recycleErr(); err != nil {
 		return nil, err
 	}
-	if err := st.exec(v); err != nil {
+	if err := st.exec(v, st.cn.readConsistency); err != nil {
 		return nil, err
 	}
 	opcode, body, err := st.cn.recv()
