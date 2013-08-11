@@ -1,23 +1,21 @@
 gocql
 =====
 
-The gocql package provides a database/sql driver for CQL, the Cassandra
-query language.
-
-This package requires a recent version of Cassandra (≥ 1.2) that supports
-CQL 3.0 and the new native protocol. The native protocol is still considered
-beta and must be enabled manually in Cassandra 1.2 by setting
-"start_native_transport" to true in conf/cassandra.yaml.
-
-**Note:** gocql requires the tip version of Go, as some changes in the 
-`database/sql` have not made it into 1.0.x yet. There is 
-[a fork](https://github.com/titanous/gocql) that backports these changes 
-to Go 1.0.3.
+Package gocql implements a fast and robust Cassandra driver for the
+Go programming language.
 
 Installation
 ------------
 
     go get github.com/tux21b/gocql
+
+
+Features
+--------
+
+* Modern Cassandra client for Cassandra 2.0
+* Built-In support for UUIDs (version 1 and 4)
+
 
 Example
 -------
@@ -26,47 +24,57 @@ Example
 package main
 
 import (
-	"database/sql"
 	"fmt"
-	_ "github.com/tux21b/gocql"
+	"github.com/tux21b/gocql"
+	"log"
 )
 
 func main() {
-	db, err := sql.Open("gocql", "localhost:9042 keyspace=system")
-	if err != nil {
-		fmt.Println("Open error:", err)
+	// connect to your cluster
+	db := gocql.NewSession(gocql.Config{
+		Nodes: []string{
+			"192.168.1.1",
+			"192.168.1.2",
+			"192.168.1.3",
+		},
+		Keyspace:    "example",       // (optional)
+		Consistency: gocql.ConQuorum, // (optional)
+	})
+	defer db.Close()
+
+	// simple query
+	var title, text string
+	if err := db.Query("SELECT title, text FROM posts WHERE title = ?",
+		"Lorem Ipsum").Scan(&title, &text); err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println(title, text)
+
+	// iterator example
+	var titles []string
+	iter := db.Query("SELECT title FROM posts").Iter()
+	for iter.Scan(&title) {
+		titles = append(titles, title)
+	}
+	if err := iter.Close(); err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println(titles)
+
+	// insertion example (with custom consistency level)
+	if err := db.Query("INSERT INTO posts (title, text) VALUES (?, ?)",
+		"New Title", "foobar").Consistency(gocql.ConAny).Exec(); err != nil {
+		log.Fatal(err)
 	}
 
-	rows, err := db.Query("SELECT keyspace_name FROM schema_keyspaces")
-	if err != nil {
-		fmt.Println("Query error:", err)
+	// prepared queries
+	query := gocql.NewQuery("SELECT text FROM posts WHERE title = ?")
+	if err := db.Do(query, "New Title").Scan(&text); err != nil {
+		log.Fatal(err)
 	}
-
-	for rows.Next() {
-		var keyspace string
-		err = rows.Scan(&keyspace)
-		if err != nil {
-			fmt.Println("Scan error:", err)
-		}
-		fmt.Println(keyspace)
-	}
-
-	if err = rows.Err(); err != nil {
-		fmt.Println("Iteration error:", err)
-		return
-	}
+	fmt.Println(text)
 }
 ```
-
-Please see `gocql_test.go` for some more advanced examples.
-
-Features
---------
-
-* Modern Cassandra client that is based on Cassandra's new native protocol
-* Compatible with Go's `database/sql` package
-* Built-In support for UUIDs (version 1 and 4)
-* Optional frame compression (using snappy)
 
 License
 -------
