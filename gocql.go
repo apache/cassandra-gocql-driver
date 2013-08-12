@@ -405,7 +405,7 @@ func (p *pool) Prepare(query string) (driver.Stmt, error) {
 			return nil, err
 		}
 		st, err := cn.Prepare(query)
-		if err != nil {
+		if err == io.EOF {
 			// the cn has gotten marked as dead already
 			if p.dead {
 				// The entire pool is dead, so we bubble up the ErrBadConn
@@ -414,7 +414,7 @@ func (p *pool) Prepare(query string) (driver.Stmt, error) {
 				continue // Retry request on another cn
 			}
 		}
-		return st, nil
+		return st, err
 	}
 }
 

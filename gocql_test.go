@@ -223,3 +223,15 @@ func TestNullColumnValues(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestBadQuery(t *testing.T) {
+	db, err := sql.Open("gocql", "localhost:9042 keyspace=system")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = db.Query("SELECT keyspace_name FROM not_existant")
+	if err == nil {
+		t.Fatal("Should have returned an error")
+	}
+}
