@@ -1,3 +1,7 @@
+// Copyright (c) 2012 The gocql Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
 package gocql
 
 import (
@@ -105,9 +109,6 @@ func (b *buffer) writeInet(ip net.IP, port int) {
 	b.writeInt(int32(port))
 }
 
-func (b *buffer) writeConsistency() {
-}
-
 func (b *buffer) writeStringMap(v map[string]string) {
 	b.writeShort(uint16(len(v)))
 	for key, value := range v {
@@ -177,6 +178,16 @@ func (b *buffer) readShort() uint16 {
 
 func (b *buffer) readString() string {
 	n := int(b.readShort())
+	if len(*b) < n {
+		panic(ErrInvalid)
+	}
+	v := string((*b)[:n])
+	*b = (*b)[n:]
+	return v
+}
+
+func (b *buffer) readLongString() string {
+	n := b.readInt()
 	if len(*b) < n {
 		panic(ErrInvalid)
 	}

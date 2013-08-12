@@ -1,27 +1,26 @@
+// Copyright (c) 2012 The gocql Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
 package gocql
 
 import (
-	"io"
 	"net"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
-type queryInfo struct {
-	id    []byte
-	args  []columnInfo
-	rval  []columnInfo
-	avail chan bool
-}
-
 type connection struct {
-	conn    net.Conn
-	uniq    chan uint8
-	reply   []chan buffer
-	waiting uint64
+	conn     net.Conn
+	uniq     chan uint8
+	requests []frameRequest
+	nwait    int32
 
 	prepMu sync.Mutex
 	prep   map[string]*queryInfo
+
+	timeout time.Duration
 }
 
 func connect(addr string, cfg *Config) (*connection, error) {
@@ -30,16 +29,17 @@ func connect(addr string, cfg *Config) (*connection, error) {
 		return nil, err
 	}
 	c := &connection{
-		conn:  conn,
-		uniq:  make(chan uint8, 64),
-		reply: make([]chan buffer, 64),
-		prep:  make(map[string]*queryInfo),
+		conn:     conn,
+		uniq:     make(chan uint8, 64),
+		requests: make([]frameRequest, 64),
+		prep:     make(map[string]*queryInfo),
+		timeout:  cfg.Timeout,
 	}
 	for i := 0; i < cap(c.uniq); i++ {
 		c.uniq <- uint8(i)
 	}
 
-	go c.recv()
+	go c.run()
 
 	frame := make(buffer, headerSize)
 	frame.setHeader(protoRequest, 0, 0, opStartup)
@@ -48,7 +48,10 @@ func connect(addr string, cfg *Config) (*connection, error) {
 	})
 	frame.setLength(len(frame) - headerSize)
 
-	frame = c.request(frame)
+	frame, err = c.request(frame)
+	if err != nil {
+		return nil, err
+	}
 
 	if cfg.Keyspace != "" {
 		qry := &Query{stmt: "USE " + cfg.Keyspace}
@@ -58,56 +61,103 @@ func connect(addr string, cfg *Config) (*connection, error) {
 	return c, nil
 }
 
-func (c *connection) recv() {
+func (c *connection) run() {
+	var err error
 	for {
-		frame := make(buffer, headerSize, headerSize+512)
-		if _, err := io.ReadFull(c.conn, frame); err != nil {
-			return
-		}
-		if frame[0] != protoResponse {
-			continue
-		}
-		if length := frame.Length(); length > 0 {
-			frame.grow(frame.Length())
-			io.ReadFull(c.conn, frame[headerSize:])
+		var frame buffer
+		frame, err = c.recv()
+		if err != nil {
+			break
 		}
 		c.dispatch(frame)
 	}
-	panic("not possible")
-}
 
-func (c *connection) request(frame buffer) buffer {
-	id := <-c.uniq
-	frame[2] = id
-	c.reply[id] = make(chan buffer, 1)
-
-	for {
-		w := atomic.LoadUint64(&c.waiting)
-		if atomic.CompareAndSwapUint64(&c.waiting, w, w|(1<<id)) {
-			break
+	c.conn.Close()
+	for id := 0; id < len(c.requests); id++ {
+		req := &c.requests[id]
+		if atomic.LoadInt32(&req.active) == 1 {
+			req.reply <- frameReply{nil, err}
 		}
 	}
-	c.conn.Write(frame)
-	resp := <-c.reply[id]
+}
+
+func (c *connection) recv() (buffer, error) {
+	frame := make(buffer, headerSize, headerSize+512)
+	c.conn.SetReadDeadline(time.Now().Add(c.timeout))
+	n, last, pinged := 0, 0, false
+	for n < len(frame) {
+		nn, err := c.conn.Read(frame[n:])
+		n += nn
+		if err != nil {
+			if err, ok := err.(net.Error); ok && err.Timeout() {
+				if n > last {
+					// we hit the deadline but we made progress.
+					// simply extend the deadline
+					c.conn.SetReadDeadline(time.Now().Add(c.timeout))
+					last = n
+				} else if n == 0 && !pinged {
+					c.conn.SetReadDeadline(time.Now().Add(c.timeout))
+					if atomic.LoadInt32(&c.nwait) > 0 {
+						go c.ping()
+						pinged = true
+					}
+				} else {
+					return nil, err
+				}
+			} else {
+				return nil, err
+			}
+		}
+		if n == headerSize && len(frame) == headerSize {
+			if frame[0] != protoResponse {
+				return nil, ErrInvalid
+			}
+			frame.grow(frame.Length())
+		}
+	}
+	return frame, nil
+}
+
+func (c *connection) ping() error {
+	frame := make(buffer, headerSize, headerSize)
+	frame.setHeader(protoRequest, 0, 0, opOptions)
+	frame.setLength(0)
+
+	_, err := c.request(frame)
+	return err
+}
+
+func (c *connection) request(frame buffer) (buffer, error) {
+	id := <-c.uniq
+	frame[2] = id
+
+	req := &c.requests[id]
+	req.reply = make(chan frameReply, 1)
+	atomic.AddInt32(&c.nwait, 1)
+	atomic.StoreInt32(&req.active, 1)
+
+	if _, err := c.conn.Write(frame); err != nil {
+		return nil, err
+	}
+
+	reply := <-req.reply
+	req.reply = nil
+
 	c.uniq <- id
-	return resp
+	return reply.buf, reply.err
 }
 
 func (c *connection) dispatch(frame buffer) {
-	id := frame[2]
-	if id >= 128 {
+	id := int(frame[2])
+	if id >= len(c.requests) {
 		return
 	}
-	for {
-		w := atomic.LoadUint64(&c.waiting)
-		if w&(1<<id) == 0 {
-			return
-		}
-		if atomic.CompareAndSwapUint64(&c.waiting, w, w&^(1<<id)) {
-			break
-		}
+	req := &c.requests[id]
+	if !atomic.CompareAndSwapInt32(&req.active, 1, 0) {
+		return
 	}
-	c.reply[id] <- frame
+	atomic.AddInt32(&c.nwait, -1)
+	req.reply <- frameReply{frame, nil}
 }
 
 func (c *connection) prepareQuery(stmt string) *queryInfo {
@@ -115,10 +165,11 @@ func (c *connection) prepareQuery(stmt string) *queryInfo {
 	info := c.prep[stmt]
 	if info != nil {
 		c.prepMu.Unlock()
-		<-info.avail
+		info.wg.Wait()
 		return info
 	}
-	info = &queryInfo{avail: make(chan bool)}
+	info = new(queryInfo)
+	info.wg.Add(1)
 	c.prep[stmt] = info
 	c.prepMu.Unlock()
 
@@ -127,13 +178,16 @@ func (c *connection) prepareQuery(stmt string) *queryInfo {
 	frame.writeLongString(stmt)
 	frame.setLength(len(frame) - headerSize)
 
-	frame = c.request(frame)
+	frame, err := c.request(frame)
+	if err != nil {
+		return nil
+	}
 	frame.skipHeader()
 	frame.readInt() // kind
 	info.id = frame.readShortBytes()
 	info.args = frame.readMetaData()
 	info.rval = frame.readMetaData()
-	close(info.avail)
+	info.wg.Done()
 	return info
 }
 
@@ -144,8 +198,13 @@ func (c *connection) executeQuery(query *Query) (buffer, error) {
 	}
 
 	frame := make(buffer, headerSize, headerSize+512)
-	frame.setHeader(protoRequest, 0, 0, opQuery)
-	frame.writeLongString(query.stmt)
+	if info == nil {
+		frame.setHeader(protoRequest, 0, 0, opQuery)
+		frame.writeLongString(query.stmt)
+	} else {
+		frame.setHeader(protoRequest, 0, 0, opExecute)
+		frame.writeShortBytes(info.id)
+	}
 	frame.writeShort(uint16(query.cons))
 	flags := uint8(0)
 	if len(query.args) > 0 {
@@ -164,7 +223,10 @@ func (c *connection) executeQuery(query *Query) (buffer, error) {
 	}
 	frame.setLength(len(frame) - headerSize)
 
-	frame = c.request(frame)
+	frame, err := c.request(frame)
+	if err != nil {
+		return nil, err
+	}
 
 	if frame[3] == opError {
 		frame.skipHeader()
@@ -173,4 +235,21 @@ func (c *connection) executeQuery(query *Query) (buffer, error) {
 		return nil, Error{code, desc}
 	}
 	return frame, nil
+}
+
+type queryInfo struct {
+	id   []byte
+	args []columnInfo
+	rval []columnInfo
+	wg   sync.WaitGroup
+}
+
+type frameRequest struct {
+	active int32
+	reply  chan frameReply
+}
+
+type frameReply struct {
+	buf buffer
+	err error
 }

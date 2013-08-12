@@ -1,124 +1,208 @@
+// Copyright (c) 2012 The gocql Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
 package gocql
 
 import (
-	"bytes"
 	"fmt"
+	"io"
+	"net"
+	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
 
-func TestConnect(t *testing.T) {
+type TestServer struct {
+	Address string
+	t       *testing.T
+	nreq    uint64
+	listen  net.Listener
+}
+
+func NewTestServer(t *testing.T, address string) *TestServer {
+	listen, err := net.Listen("tcp", address)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := &TestServer{Address: address, listen: listen, t: t}
+	go srv.serve()
+	return srv
+}
+
+func (srv *TestServer) serve() {
+	for {
+		conn, err := srv.listen.Accept()
+		if err != nil {
+			break
+		}
+		go func(conn net.Conn) {
+			defer conn.Close()
+			for {
+				frame := srv.readFrame(conn)
+				atomic.AddUint64(&srv.nreq, 1)
+				srv.process(frame, conn)
+			}
+		}(conn)
+	}
+}
+
+func (srv *TestServer) Stop() {
+	srv.listen.Close()
+}
+
+func (srv *TestServer) process(frame buffer, conn net.Conn) {
+	switch frame[3] {
+	case opStartup:
+		frame = frame[:headerSize]
+		frame.setHeader(protoResponse, 0, frame[2], opReady)
+	case opQuery:
+		input := frame
+		input.skipHeader()
+		query := strings.TrimSpace(input.readLongString())
+		frame = frame[:headerSize]
+		frame.setHeader(protoResponse, 0, frame[2], opResult)
+		first := query
+		if n := strings.IndexByte(query, ' '); n > 0 {
+			first = first[:n]
+		}
+		switch strings.ToLower(first) {
+		case "kill":
+			select {}
+		case "delay":
+			go func() {
+				<-time.After(1 * time.Second)
+				frame.writeInt(0)
+				frame.setLength(len(frame) - headerSize)
+				if _, err := conn.Write(frame); err != nil {
+					return
+				}
+			}()
+			return
+		case "use":
+			frame.writeInt(3)
+			frame.writeString(strings.TrimSpace(query[3:]))
+		case "void":
+			frame.writeInt(0)
+		default:
+			frame.writeInt(0)
+		}
+	default:
+		frame = frame[:headerSize]
+		frame.setHeader(protoResponse, 0, frame[2], opError)
+		frame.writeInt(0)
+		frame.writeString("not supported")
+	}
+	frame.setLength(len(frame) - headerSize)
+	if _, err := conn.Write(frame); err != nil {
+		return
+	}
+}
+
+func (srv *TestServer) readFrame(conn net.Conn) buffer {
+	frame := make(buffer, headerSize, headerSize+512)
+	if _, err := io.ReadFull(conn, frame); err != nil {
+		srv.t.Fatal(err)
+	}
+	if n := frame.Length(); n > 0 {
+		frame.grow(n)
+		if _, err := io.ReadFull(conn, frame[headerSize:]); err != nil {
+			srv.t.Fatal(err)
+		}
+	}
+	return frame
+}
+
+func TestSimple(t *testing.T) {
+	srv := NewTestServer(t, "127.0.0.1:9051")
+	defer srv.Stop()
+
 	db := NewSession(Config{
-		Nodes: []string{
-			"127.0.0.1",
-		},
-		Keyspace:    "system",
+		Nodes:       []string{srv.Address},
 		Consistency: ConQuorum,
 	})
-	defer db.Close()
+	if err := db.Query("void").Exec(); err != nil {
+		//t.Error("Query", err)
+		return
+	}
+}
 
+func TestTimeout(t *testing.T) {
+	srv := NewTestServer(t, "127.0.0.1:9051")
+	defer srv.Stop()
+
+	db := NewSession(Config{
+		Nodes:       []string{srv.Address},
+		Consistency: ConQuorum,
+	})
+
+	go func() {
+		<-time.After(1 * time.Second)
+		t.Fatal("no timeout")
+	}()
+
+	if err := db.Query("kill").Exec(); err == nil {
+		t.Fatal("expected error")
+	}
+}
+
+func TestLongQuery(t *testing.T) {
+	srv := NewTestServer(t, "127.0.0.1:9051")
+	defer srv.Stop()
+
+	db := NewSession(Config{
+		Nodes:       []string{srv.Address},
+		Consistency: ConQuorum,
+	})
+
+	if err := db.Query("delay").Exec(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRoundRobin(t *testing.T) {
+	servers := make([]*TestServer, 5)
+	addrs := make([]string, len(servers))
+	for i := 0; i < len(servers); i++ {
+		addrs[i] = fmt.Sprintf("127.0.0.1:%d", 9051+i)
+		servers[i] = NewTestServer(t, addrs[i])
+		defer servers[i].Stop()
+	}
+	db := NewSession(Config{
+		Nodes:       addrs,
+		Consistency: ConQuorum,
+	})
+
+	var wg sync.WaitGroup
+	wg.Add(5)
 	for i := 0; i < 5; i++ {
-		db.Query("SELECT keyspace_name FROM schema_keyspaces WHERE keyspace_name = ?",
-			"system_auth").Exec()
+		go func() {
+			for j := 0; j < 5; j++ {
+				if err := db.Query("void").Exec(); err != nil {
+					t.Fatal(err)
+				}
+			}
+			wg.Done()
+		}()
 	}
+	wg.Wait()
 
-	var keyspace string
-	var durable bool
-	iter := db.Query("SELECT keyspace_name, durable_writes FROM schema_keyspaces").Iter()
-	for iter.Scan(&keyspace, &durable) {
-		fmt.Println("Keyspace:", keyspace, durable)
-	}
-	if err := iter.Close(); err != nil {
-		fmt.Println(err)
-	}
-}
-
-type Page struct {
-	Title      string
-	RevID      int
-	Body       string
-	Hits       int
-	Protected  bool
-	Modified   time.Time
-	Attachment []byte
-}
-
-var pages = []*Page{
-	&Page{"Frontpage", 1, "Hello world!", 0, false,
-		time.Date(2012, 8, 20, 10, 0, 0, 0, time.UTC), []byte{}},
-	&Page{"Frontpage", 2, "Hello modified world!", 0, false,
-		time.Date(2012, 8, 22, 10, 0, 0, 0, time.UTC), []byte("img data\x00")},
-	&Page{"LoremIpsum", 3, "Lorem ipsum dolor sit amet", 12,
-		true, time.Date(2012, 8, 22, 10, 0, 8, 0, time.UTC), []byte{}},
-}
-
-func TestWiki(t *testing.T) {
-	db := NewSession(Config{
-		Nodes:       []string{"localhost"},
-		Consistency: ConQuorum,
-	})
-
-	if err := db.Query("DROP KEYSPACE gocql_wiki").Exec(); err != nil {
-		t.Log("DROP KEYSPACE:", err)
-	}
-
-	if err := db.Query(`CREATE KEYSPACE gocql_wiki
-		WITH replication = {
-			'class' : 'SimpleStrategy',
-			'replication_factor' : 1
-		}`).Exec(); err != nil {
-		t.Fatal("CREATE KEYSPACE:", err)
-	}
-
-	if err := db.Query("USE gocql_wiki").Exec(); err != nil {
-		t.Fatal("USE:", err)
-	}
-
-	if err := db.Query(`CREATE TABLE page (
-		title varchar,
-		revid int,
-		body varchar,
-		hits int,
-		protected boolean,
-		modified timestamp,
-		attachment blob,
-		PRIMARY KEY (title, revid)
-		)`).Exec(); err != nil {
-		t.Fatal("CREATE TABLE:", err)
-	}
-
-	for _, p := range pages {
-		if err := db.Query(`INSERT INTO page (title, revid, body, hits,
-			protected, modified, attachment) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-			p.Title, p.RevID, p.Body, p.Hits, p.Protected, p.Modified,
-			p.Attachment).Exec(); err != nil {
-			t.Fatal("INSERT:", err)
+	diff := 0
+	for i := 1; i < len(servers); i++ {
+		d := 0
+		if servers[i].nreq > servers[i-1].nreq {
+			d = int(servers[i].nreq - servers[i-1].nreq)
+		} else {
+			d = int(servers[i-1].nreq - servers[i].nreq)
+		}
+		if d > diff {
+			diff = d
 		}
 	}
 
-	var count int
-	if err := db.Query("SELECT count(*) FROM page").Scan(&count); err != nil {
-		t.Fatal("COUNT:", err)
-	}
-	if count != len(pages) {
-		t.Fatalf("COUNT: expected %d got %d", len(pages), count)
-	}
-
-	for _, page := range pages {
-		qry := db.Query(`SELECT title, revid, body, hits, protected,
-			modified, attachment
-		    FROM page WHERE title = ? AND revid = ?`, page.Title, page.RevID)
-		var p Page
-		if err := qry.Scan(&p.Title, &p.RevID, &p.Body, &p.Hits, &p.Protected,
-			&p.Modified, &p.Attachment); err != nil {
-			t.Fatal("SELECT PAGE:", err)
-		}
-		p.Modified = p.Modified.In(time.UTC)
-		if page.Title != p.Title || page.RevID != p.RevID ||
-			page.Body != p.Body || page.Modified != p.Modified ||
-			page.Hits != p.Hits || page.Protected != p.Protected ||
-			!bytes.Equal(page.Attachment, p.Attachment) {
-			t.Errorf("expected %#v got %#v", *page, p)
-		}
+	if diff > 0 {
+		t.Fatal("diff:", diff)
 	}
 }
