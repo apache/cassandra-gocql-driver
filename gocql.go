@@ -232,7 +232,7 @@ func (cn *connection) _send(opcode byte, body []byte, compression bool) error {
 		return driver.ErrBadConn
 	}
 	var flags byte = 0x00
-	if compression {
+	if compression && len(body) > 1 {
 		var err error
 		body, err = snappy.Encode(nil, body)
 		if err != nil {
