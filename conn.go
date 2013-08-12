@@ -132,7 +132,7 @@ func (c *Conn) recv() (frame, error) {
 		}
 		if n == headerSize && len(resp) == headerSize {
 			if resp[0] != protoResponse {
-				return nil, ErrInvalid
+				return nil, ErrProtocol
 			}
 			resp.grow(resp.Length())
 		}
@@ -284,17 +284,3 @@ type callResp struct {
 	buf frame
 	err error
 }
-
-/*
-  conn := NewConn(addr, cfg)
-
-  querier := conn.Querier()
-
-
-  conn.Init(addr, cfg)
-  go func() {
-  	err := conn.Serve()
-
-  }
-*/
-var foo = 0

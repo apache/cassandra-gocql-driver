@@ -77,6 +77,12 @@ func (s *Session) Query(stmt string, args ...interface{}) *Query {
 	}
 }
 
+func (s *Session) Do(query *Query) *Query {
+	q := *query
+	q.ctx = s
+	return &q
+}
+
 func (s *Session) Close() {
 	return
 }
@@ -109,34 +115,34 @@ func NewQuery(stmt string) *Query {
 }
 
 func (q *Query) Exec() error {
-	frame, err := q.request()
+	if q.ctx == nil {
+		return ErrQueryUnbound
+	}
+	frame, err := q.ctx.executeQuery(q)
 	if err != nil {
 		return err
-	}
-	if frame[3] == opResult {
-		frame.skipHeader()
-		kind := frame.readInt()
-		if kind == 3 {
-			keyspace := frame.readString()
-			fmt.Println("set keyspace:", keyspace)
-		} else {
-		}
+	} else if frame[3] == opError {
+		return frame.readErrorFrame()
+	} else if frame[3] != opResult {
+		return ErrProtocol
 	}
 	return nil
 }
 
 func (q *Query) Iter() *Iter {
-	iter := new(Iter)
-	frame, err := q.request()
+	if q.ctx == nil {
+		return &Iter{err: ErrQueryUnbound}
+	}
+	frame, err := q.ctx.executeQuery(q)
 	if err != nil {
-		iter.err = err
-		return iter
+		return &Iter{err: err}
+	} else if frame[3] == opError {
+		return &Iter{err: frame.readErrorFrame()}
+	} else if frame[3] != opResult {
+		return &Iter{err: ErrProtocol}
 	}
-	frame.skipHeader()
-	kind := frame.readInt()
-	if kind == resultKindRows {
-		iter.setFrame(frame)
-	}
+	iter := new(Iter)
+	iter.readFrame(frame)
 	return iter
 }
 
@@ -159,45 +165,54 @@ func (q *Query) Consistency(cons Consistency) *Query {
 	return q
 }
 
-func (q *Query) request() (frame, error) {
-	return q.ctx.executeQuery(q)
-}
-
 type Iter struct {
-	err     error
-	pos     int
-	numRows int
-	info    []columnInfo
-	flags   int
-	frame   frame
+	err    error
+	pos    int
+	values [][]byte
+	info   []columnInfo
 }
 
-func (iter *Iter) setFrame(frame frame) {
-	info := frame.readMetaData()
-	iter.flags = 0
-	iter.info = info
-	iter.numRows = frame.readInt()
+func (iter *Iter) readFrame(frame frame) {
+	defer func() {
+		if r := recover(); r != nil {
+			if e, ok := r.(error); ok && e == ErrProtocol {
+				iter.err = e
+				return
+			}
+			panic(r)
+		}
+	}()
+	frame.skipHeader()
 	iter.pos = 0
 	iter.err = nil
-	iter.frame = frame
+	iter.values = nil
+	if frame.readInt() != resultKindRows {
+		return
+	}
+	iter.info = frame.readMetaData()
+	numRows := frame.readInt()
+	iter.values = make([][]byte, numRows*len(iter.info))
+	for i := 0; i < len(iter.values); i++ {
+		iter.values[i] = frame.readBytes()
+	}
 }
 
 func (iter *Iter) Scan(values ...interface{}) bool {
-	if iter.err != nil || iter.pos >= iter.numRows {
+	if iter.err != nil || iter.pos >= len(iter.values) {
 		return false
 	}
-	iter.pos++
 	if len(values) != len(iter.info) {
 		iter.err = errors.New("count mismatch")
 		return false
 	}
 	for i := 0; i < len(values); i++ {
-		data := iter.frame.readBytes()
-		if err := Unmarshal(iter.info[i].TypeInfo, data, values[i]); err != nil {
+		err := Unmarshal(iter.info[i].TypeInfo, iter.values[i+iter.pos], values[i])
+		if err != nil {
 			iter.err = err
 			return false
 		}
 	}
+	iter.pos += len(values)
 	return true
 }
 

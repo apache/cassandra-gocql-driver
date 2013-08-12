@@ -5,7 +5,6 @@
 package gocql
 
 import (
-	"errors"
 	"net"
 )
 
@@ -40,8 +39,6 @@ const (
 
 	headerSize = 8
 )
-
-var ErrInvalid = errors.New("invalid response")
 
 type frame []byte
 
@@ -160,7 +157,7 @@ func (f *frame) skipHeader() {
 
 func (f *frame) readInt() int {
 	if len(*f) < 4 {
-		panic(ErrInvalid)
+		panic(ErrProtocol)
 	}
 	v := int((*f)[0])<<24 | int((*f)[1])<<16 | int((*f)[2])<<8 | int((*f)[3])
 	*f = (*f)[4:]
@@ -169,7 +166,7 @@ func (f *frame) readInt() int {
 
 func (f *frame) readShort() uint16 {
 	if len(*f) < 2 {
-		panic(ErrInvalid)
+		panic(ErrProtocol)
 	}
 	v := uint16((*f)[0])<<8 | uint16((*f)[1])
 	*f = (*f)[2:]
@@ -179,7 +176,7 @@ func (f *frame) readShort() uint16 {
 func (f *frame) readString() string {
 	n := int(f.readShort())
 	if len(*f) < n {
-		panic(ErrInvalid)
+		panic(ErrProtocol)
 	}
 	v := string((*f)[:n])
 	*f = (*f)[n:]
@@ -189,7 +186,7 @@ func (f *frame) readString() string {
 func (f *frame) readLongString() string {
 	n := f.readInt()
 	if len(*f) < n {
-		panic(ErrInvalid)
+		panic(ErrProtocol)
 	}
 	v := string((*f)[:n])
 	*f = (*f)[n:]
@@ -202,7 +199,7 @@ func (f *frame) readBytes() []byte {
 		return nil
 	}
 	if len(*f) < n {
-		panic(ErrInvalid)
+		panic(ErrProtocol)
 	}
 	v := (*f)[:n]
 	*f = (*f)[n:]
@@ -212,7 +209,7 @@ func (f *frame) readBytes() []byte {
 func (f *frame) readShortBytes() []byte {
 	n := int(f.readShort())
 	if len(*f) < n {
-		panic(ErrInvalid)
+		panic(ErrProtocol)
 	}
 	v := (*f)[:n]
 	*f = (*f)[n:]
@@ -257,7 +254,16 @@ func (f *frame) readMetaData() []columnInfo {
 	return info
 }
 
-func (f *frame) readErrorFrame() Error {
+func (f *frame) readErrorFrame() (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			if e, ok := r.(error); ok && e == ErrProtocol {
+				err = e
+				return
+			}
+			panic(r)
+		}
+	}()
 	f.skipHeader()
 	code := f.readInt()
 	desc := f.readString()

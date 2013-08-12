@@ -5,7 +5,6 @@
 package gocql
 
 import (
-	"fmt"
 	"io"
 	"net"
 	"strings"
@@ -22,12 +21,16 @@ type TestServer struct {
 	listen  net.Listener
 }
 
-func NewTestServer(t *testing.T, address string) *TestServer {
-	listen, err := net.Listen("tcp", address)
+func NewTestServer(t *testing.T) *TestServer {
+	laddr, err := net.ResolveTCPAddr("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
-	srv := &TestServer{Address: address, listen: listen, t: t}
+	listen, err := net.ListenTCP("tcp", laddr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := &TestServer{Address: listen.Addr().String(), listen: listen, t: t}
 	go srv.serve()
 	return srv
 }
@@ -117,7 +120,7 @@ func (srv *TestServer) readFrame(conn net.Conn) frame {
 }
 
 func TestSimple(t *testing.T) {
-	srv := NewTestServer(t, "127.0.0.1:9051")
+	srv := NewTestServer(t)
 	defer srv.Stop()
 
 	db := NewSession(Config{
@@ -130,7 +133,7 @@ func TestSimple(t *testing.T) {
 }
 
 func TestTimeout(t *testing.T) {
-	srv := NewTestServer(t, "127.0.0.1:9051")
+	srv := NewTestServer(t)
 	defer srv.Stop()
 
 	db := NewSession(Config{
@@ -149,7 +152,7 @@ func TestTimeout(t *testing.T) {
 }
 
 func TestSlowQuery(t *testing.T) {
-	srv := NewTestServer(t, "127.0.0.1:9051")
+	srv := NewTestServer(t)
 	defer srv.Stop()
 
 	db := NewSession(Config{
@@ -166,8 +169,8 @@ func TestRoundRobin(t *testing.T) {
 	servers := make([]*TestServer, 5)
 	addrs := make([]string, len(servers))
 	for i := 0; i < len(servers); i++ {
-		addrs[i] = fmt.Sprintf("127.0.0.1:%d", 9051+i)
-		servers[i] = NewTestServer(t, addrs[i])
+		servers[i] = NewTestServer(t)
+		addrs[i] = servers[i].Address
 		defer servers[i].Stop()
 	}
 	db := NewSession(Config{
