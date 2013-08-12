@@ -8,8 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"sync"
-	"sync/atomic"
 	"time"
 )
 
@@ -20,6 +18,8 @@ type Config struct {
 	Consistency Consistency
 	DefaultPort int
 	Timeout     time.Duration
+	NodePicker  NodePicker
+	Reconnector Reconnector
 }
 
 func (c *Config) normalize() {
@@ -32,6 +32,12 @@ func (c *Config) normalize() {
 	if c.Timeout <= 0 {
 		c.Timeout = 200 * time.Millisecond
 	}
+	if c.NodePicker == nil {
+		c.NodePicker = NewRoundRobinPicker()
+	}
+	if c.Reconnector == nil {
+		c.Reconnector = NewExponentialReconnector(1*time.Second, 10*time.Minute)
+	}
 	for i := 0; i < len(c.Nodes); i++ {
 		c.Nodes[i] = strings.TrimSpace(c.Nodes[i])
 		if strings.IndexByte(c.Nodes[i], ':') < 0 {
@@ -41,25 +47,25 @@ func (c *Config) normalize() {
 }
 
 type Session struct {
-	cfg      *Config
-	active   []*node
-	pos      uint32
-	mu       sync.RWMutex
-	keyspace string
+	cfg         *Config
+	pool        NodePicker
+	reconnector Reconnector
+	keyspace    string
+	nohosts     chan bool
 }
 
 func NewSession(cfg Config) *Session {
 	cfg.normalize()
-	active := make([]*node, 0, len(cfg.Nodes))
-	for _, address := range cfg.Nodes {
-		con, err := connect(address, &cfg)
-		if err == nil {
-			active = append(active, &node{con})
-		} else {
-			fmt.Println("connect", err)
-		}
+	s := &Session{
+		cfg:         &cfg,
+		nohosts:     make(chan bool),
+		reconnector: cfg.Reconnector,
+		pool:        cfg.NodePicker,
 	}
-	return &Session{cfg: &cfg, active: active}
+	for _, address := range cfg.Nodes {
+		go s.reconnector.Reconnect(s, address)
+	}
+	return s
 }
 
 func (s *Session) Query(stmt string, args ...interface{}) *Query {
@@ -75,19 +81,20 @@ func (s *Session) Close() {
 	return
 }
 
-func (s *Session) executeQuery(query *Query) (buffer, error) {
-	pos := atomic.AddUint32(&s.pos, 1)
-	var conn *connection
-	//var keyspace string
-	s.mu.RLock()
-	if len(s.active) == 0 {
-		s.mu.Unlock()
-		return nil, errors.New("no active nodes")
+func (s *Session) executeQuery(query *Query) (frame, error) {
+	node := s.pool.Pick(query)
+	if node == nil {
+		<-time.After(s.cfg.Timeout)
+		node = s.pool.Pick(query)
 	}
-	conn = s.active[pos%uint32(len(s.active))].conn
-	//keyspace = s.keyspace
-	s.mu.RUnlock()
-	return conn.executeQuery(query)
+	if node == nil {
+		return nil, ErrNoHostAvailable
+	}
+	return node.conn.executeQuery(query)
+}
+
+type Node struct {
+	conn *Conn
 }
 
 type Query struct {
@@ -152,7 +159,7 @@ func (q *Query) Consistency(cons Consistency) *Query {
 	return q
 }
 
-func (q *Query) request() (buffer, error) {
+func (q *Query) request() (frame, error) {
 	return q.ctx.executeQuery(q)
 }
 
@@ -162,10 +169,10 @@ type Iter struct {
 	numRows int
 	info    []columnInfo
 	flags   int
-	frame   buffer
+	frame   frame
 }
 
-func (iter *Iter) setFrame(frame buffer) {
+func (iter *Iter) setFrame(frame frame) {
 	info := frame.readMetaData()
 	iter.flags = 0
 	iter.info = info
@@ -199,7 +206,7 @@ func (iter *Iter) Close() error {
 }
 
 type queryContext interface {
-	executeQuery(query *Query) (buffer, error)
+	executeQuery(query *Query) (frame, error)
 }
 
 type columnInfo struct {
@@ -233,18 +240,13 @@ func (e Error) Error() string {
 	return e.Message
 }
 
-var ErrNotFound = errors.New("not found")
-
-var ErrQueryUnbound = errors.New("can not execute unbound query")
-
-// active (choose round robin)
-// connecting
-// down
-
-// getNode()
-// getNextNode() für failover
-// getNodeForShard(key) ...
+var (
+	ErrNotFound        = errors.New("not found")
+	ErrNoHostAvailable = errors.New("no host available")
+	ErrQueryUnbound    = errors.New("can not execute unbound query")
+	ErrProtocol        = errors.New("protocol error")
+)
 
 type node struct {
-	conn *connection
+	conn *Conn
 }

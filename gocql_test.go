@@ -33,6 +33,7 @@ func NewTestServer(t *testing.T, address string) *TestServer {
 }
 
 func (srv *TestServer) serve() {
+	defer srv.listen.Close()
 	for {
 		conn, err := srv.listen.Accept()
 		if err != nil {
@@ -53,7 +54,7 @@ func (srv *TestServer) Stop() {
 	srv.listen.Close()
 }
 
-func (srv *TestServer) process(frame buffer, conn net.Conn) {
+func (srv *TestServer) process(frame frame, conn net.Conn) {
 	switch frame[3] {
 	case opStartup:
 		frame = frame[:headerSize]
@@ -71,7 +72,7 @@ func (srv *TestServer) process(frame buffer, conn net.Conn) {
 		switch strings.ToLower(first) {
 		case "kill":
 			select {}
-		case "delay":
+		case "slow":
 			go func() {
 				<-time.After(1 * time.Second)
 				frame.writeInt(0)
@@ -101,8 +102,8 @@ func (srv *TestServer) process(frame buffer, conn net.Conn) {
 	}
 }
 
-func (srv *TestServer) readFrame(conn net.Conn) buffer {
-	frame := make(buffer, headerSize, headerSize+512)
+func (srv *TestServer) readFrame(conn net.Conn) frame {
+	frame := make(frame, headerSize, headerSize+512)
 	if _, err := io.ReadFull(conn, frame); err != nil {
 		srv.t.Fatal(err)
 	}
@@ -124,8 +125,7 @@ func TestSimple(t *testing.T) {
 		Consistency: ConQuorum,
 	})
 	if err := db.Query("void").Exec(); err != nil {
-		//t.Error("Query", err)
-		return
+		t.Error(err)
 	}
 }
 
@@ -148,7 +148,7 @@ func TestTimeout(t *testing.T) {
 	}
 }
 
-func TestLongQuery(t *testing.T) {
+func TestSlowQuery(t *testing.T) {
 	srv := NewTestServer(t, "127.0.0.1:9051")
 	defer srv.Stop()
 
@@ -157,7 +157,7 @@ func TestLongQuery(t *testing.T) {
 		Consistency: ConQuorum,
 	})
 
-	if err := db.Query("delay").Exec(); err != nil {
+	if err := db.Query("slow").Exec(); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -174,6 +174,7 @@ func TestRoundRobin(t *testing.T) {
 		Nodes:       addrs,
 		Consistency: ConQuorum,
 	})
+	time.Sleep(1 * time.Second)
 
 	var wg sync.WaitGroup
 	wg.Add(5)

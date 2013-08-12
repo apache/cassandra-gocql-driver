@@ -11,60 +11,81 @@ import (
 	"time"
 )
 
-type connection struct {
-	conn     net.Conn
-	uniq     chan uint8
-	requests []frameRequest
-	nwait    int32
+const defaultFrameSize = 4096
+
+// Conn is a single connection to a Cassandra node. It can be used to execute
+// queries, but users are usually advised to use a more reliable, higher
+// level API.
+type Conn struct {
+	conn    net.Conn
+	timeout time.Duration
+
+	uniq  chan uint8
+	calls []callReq
+	nwait int32
 
 	prepMu sync.Mutex
 	prep   map[string]*queryInfo
-
-	timeout time.Duration
 }
 
-func connect(addr string, cfg *Config) (*connection, error) {
-	conn, err := net.Dial("tcp", addr)
+// Connect establishes a connection to a Cassandra node.
+// You must also call the Serve method before you can execute any queries.
+func Connect(addr string, cfg *Config) (*Conn, error) {
+	conn, err := net.DialTimeout("tcp", addr, cfg.Timeout)
 	if err != nil {
 		return nil, err
 	}
-	c := &connection{
-		conn:     conn,
-		uniq:     make(chan uint8, 64),
-		requests: make([]frameRequest, 64),
-		prep:     make(map[string]*queryInfo),
-		timeout:  cfg.Timeout,
+	c := &Conn{
+		conn:    conn,
+		uniq:    make(chan uint8, 128),
+		calls:   make([]callReq, 128),
+		prep:    make(map[string]*queryInfo),
+		timeout: cfg.Timeout,
 	}
 	for i := 0; i < cap(c.uniq); i++ {
 		c.uniq <- uint8(i)
 	}
 
-	go c.run()
-
-	frame := make(buffer, headerSize)
-	frame.setHeader(protoRequest, 0, 0, opStartup)
-	frame.writeStringMap(map[string]string{
-		"CQL_VERSION": cfg.CQLVersion,
-	})
-	frame.setLength(len(frame) - headerSize)
-
-	frame, err = c.request(frame)
-	if err != nil {
+	if err := c.init(cfg); err != nil {
 		return nil, err
-	}
-
-	if cfg.Keyspace != "" {
-		qry := &Query{stmt: "USE " + cfg.Keyspace}
-		frame, err = c.executeQuery(qry)
 	}
 
 	return c, nil
 }
 
-func (c *connection) run() {
+func (c *Conn) init(cfg *Config) error {
+	req := make(frame, headerSize, defaultFrameSize)
+	req.setHeader(protoRequest, 0, 0, opStartup)
+	req.writeStringMap(map[string]string{
+		"CQL_VERSION": cfg.CQLVersion,
+	})
+	resp, err := c.callSimple(req)
+	if err != nil {
+		return err
+	} else if resp[3] == opError {
+		return resp.readErrorFrame()
+	} else if resp[3] != opReady {
+		return ErrProtocol
+	}
+
+	/*	if cfg.Keyspace != "" {
+		qry := &Query{stmt: "USE " + cfg.Keyspace}
+		frame, err = c.executeQuery(qry)
+		if err != nil {
+			return err
+		}
+	} */
+
+	return nil
+}
+
+// Serve starts the stream multiplexer for this connection, which is required
+// to execute any queries. This method runs as long as the connection is
+// open and is therefore usually called in a separate goroutine.
+func (c *Conn) Serve() error {
 	var err error
 	for {
-		var frame buffer
+		var frame frame
 		frame, err = c.recv()
 		if err != nil {
 			break
@@ -73,20 +94,21 @@ func (c *connection) run() {
 	}
 
 	c.conn.Close()
-	for id := 0; id < len(c.requests); id++ {
-		req := &c.requests[id]
+	for id := 0; id < len(c.calls); id++ {
+		req := &c.calls[id]
 		if atomic.LoadInt32(&req.active) == 1 {
-			req.reply <- frameReply{nil, err}
+			req.resp <- callResp{nil, err}
 		}
 	}
+	return err
 }
 
-func (c *connection) recv() (buffer, error) {
-	frame := make(buffer, headerSize, headerSize+512)
+func (c *Conn) recv() (frame, error) {
+	resp := make(frame, headerSize, headerSize+512)
 	c.conn.SetReadDeadline(time.Now().Add(c.timeout))
 	n, last, pinged := 0, 0, false
-	for n < len(frame) {
-		nn, err := c.conn.Read(frame[n:])
+	for n < len(resp) {
+		nn, err := c.conn.Read(resp[n:])
 		n += nn
 		if err != nil {
 			if err, ok := err.(net.Error); ok && err.Timeout() {
@@ -108,59 +130,68 @@ func (c *connection) recv() (buffer, error) {
 				return nil, err
 			}
 		}
-		if n == headerSize && len(frame) == headerSize {
-			if frame[0] != protoResponse {
+		if n == headerSize && len(resp) == headerSize {
+			if resp[0] != protoResponse {
 				return nil, ErrInvalid
 			}
-			frame.grow(frame.Length())
+			resp.grow(resp.Length())
 		}
 	}
-	return frame, nil
+	return resp, nil
 }
 
-func (c *connection) ping() error {
-	frame := make(buffer, headerSize, headerSize)
-	frame.setHeader(protoRequest, 0, 0, opOptions)
-	frame.setLength(0)
-
-	_, err := c.request(frame)
-	return err
+func (c *Conn) callSimple(req frame) (frame, error) {
+	req.setLength(len(req) - headerSize)
+	if _, err := c.conn.Write(req); err != nil {
+		c.conn.Close()
+		return nil, err
+	}
+	return c.recv()
 }
 
-func (c *connection) request(frame buffer) (buffer, error) {
+func (c *Conn) call(req frame) (frame, error) {
 	id := <-c.uniq
-	frame[2] = id
+	req[2] = id
 
-	req := &c.requests[id]
-	req.reply = make(chan frameReply, 1)
+	call := &c.calls[id]
+	call.resp = make(chan callResp, 1)
 	atomic.AddInt32(&c.nwait, 1)
-	atomic.StoreInt32(&req.active, 1)
+	atomic.StoreInt32(&call.active, 1)
 
-	if _, err := c.conn.Write(frame); err != nil {
+	req.setLength(len(req) - headerSize)
+	if _, err := c.conn.Write(req); err != nil {
+		c.conn.Close()
 		return nil, err
 	}
 
-	reply := <-req.reply
-	req.reply = nil
+	reply := <-call.resp
+	call.resp = nil
 
 	c.uniq <- id
 	return reply.buf, reply.err
 }
 
-func (c *connection) dispatch(frame buffer) {
-	id := int(frame[2])
-	if id >= len(c.requests) {
+func (c *Conn) dispatch(resp frame) {
+	id := int(resp[2])
+	if id >= len(c.calls) {
 		return
 	}
-	req := &c.requests[id]
-	if !atomic.CompareAndSwapInt32(&req.active, 1, 0) {
+	call := &c.calls[id]
+	if !atomic.CompareAndSwapInt32(&call.active, 1, 0) {
 		return
 	}
 	atomic.AddInt32(&c.nwait, -1)
-	req.reply <- frameReply{frame, nil}
+	call.resp <- callResp{resp, nil}
 }
 
-func (c *connection) prepareQuery(stmt string) *queryInfo {
+func (c *Conn) ping() error {
+	req := make(frame, headerSize)
+	req.setHeader(protoRequest, 0, 0, opOptions)
+	_, err := c.call(req)
+	return err
+}
+
+func (c *Conn) prepareQuery(stmt string) *queryInfo {
 	c.prepMu.Lock()
 	info := c.prep[stmt]
 	if info != nil {
@@ -173,12 +204,12 @@ func (c *connection) prepareQuery(stmt string) *queryInfo {
 	c.prep[stmt] = info
 	c.prepMu.Unlock()
 
-	frame := make(buffer, headerSize, headerSize+512)
+	frame := make(frame, headerSize, headerSize+512)
 	frame.setHeader(protoRequest, 0, 0, opPrepare)
 	frame.writeLongString(stmt)
 	frame.setLength(len(frame) - headerSize)
 
-	frame, err := c.request(frame)
+	frame, err := c.call(frame)
 	if err != nil {
 		return nil
 	}
@@ -191,13 +222,13 @@ func (c *connection) prepareQuery(stmt string) *queryInfo {
 	return info
 }
 
-func (c *connection) executeQuery(query *Query) (buffer, error) {
+func (c *Conn) executeQuery(query *Query) (frame, error) {
 	var info *queryInfo
 	if len(query.args) > 0 {
 		info = c.prepareQuery(query.stmt)
 	}
 
-	frame := make(buffer, headerSize, headerSize+512)
+	frame := make(frame, headerSize, headerSize+512)
 	if info == nil {
 		frame.setHeader(protoRequest, 0, 0, opQuery)
 		frame.writeLongString(query.stmt)
@@ -223,7 +254,7 @@ func (c *connection) executeQuery(query *Query) (buffer, error) {
 	}
 	frame.setLength(len(frame) - headerSize)
 
-	frame, err := c.request(frame)
+	frame, err := c.call(frame)
 	if err != nil {
 		return nil, err
 	}
@@ -244,12 +275,26 @@ type queryInfo struct {
 	wg   sync.WaitGroup
 }
 
-type frameRequest struct {
+type callReq struct {
 	active int32
-	reply  chan frameReply
+	resp   chan callResp
 }
 
-type frameReply struct {
-	buf buffer
+type callResp struct {
+	buf frame
 	err error
 }
+
+/*
+  conn := NewConn(addr, cfg)
+
+  querier := conn.Querier()
+
+
+  conn.Init(addr, cfg)
+  go func() {
+  	err := conn.Serve()
+
+  }
+*/
+var foo = 0
