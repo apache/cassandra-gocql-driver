@@ -226,7 +226,7 @@ func (f *frame) readTypeInfo() *TypeInfo {
 		typ.Key = f.readTypeInfo()
 		fallthrough
 	case TypeList, TypeSet:
-		typ.Value = f.readTypeInfo()
+		typ.Elem = f.readTypeInfo()
 	}
 	return typ
 }

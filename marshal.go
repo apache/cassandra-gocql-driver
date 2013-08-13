@@ -5,6 +5,7 @@
 package gocql
 
 import (
+	"bytes"
 	"fmt"
 	"math"
 	"reflect"
@@ -44,6 +45,10 @@ func Marshal(info *TypeInfo, value interface{}) ([]byte, error) {
 		return marshalDouble(info, value)
 	case TypeTimestamp:
 		return marshalTimestamp(info, value)
+	case TypeList, TypeSet:
+		return marshalList(info, value)
+	case TypeMap:
+		return marshalMap(info, value)
 	}
 	// TODO(tux21b): add the remaining types
 	return nil, fmt.Errorf("can not marshal %T into %s", value, info)
@@ -71,6 +76,10 @@ func Unmarshal(info *TypeInfo, data []byte, value interface{}) error {
 		return unmarshalDouble(info, data, value)
 	case TypeTimestamp:
 		return unmarshalTimestamp(info, data, value)
+	case TypeList, TypeSet:
+		return unmarshalList(info, data, value)
+	case TypeMap:
+		return unmarshalMap(info, data, value)
 	}
 	// TODO(tux21b): add the remaining types
 	return fmt.Errorf("can not unmarshal %s into %T", info, value)
@@ -705,11 +714,177 @@ func unmarshalTimestamp(info *TypeInfo, data []byte, value interface{}) error {
 	return unmarshalErrorf("can not unmarshal %s into %T", info, value)
 }
 
+func marshalList(info *TypeInfo, value interface{}) ([]byte, error) {
+	rv := reflect.ValueOf(value)
+	t := rv.Type()
+	k := t.Kind()
+	switch k {
+	case reflect.Slice, reflect.Array:
+		buf := &bytes.Buffer{}
+		n := rv.Len()
+		if n > math.MaxUint16 {
+			return nil, marshalErrorf("marshal: slice / array too large")
+		}
+		buf.WriteByte(byte(n >> 8))
+		buf.WriteByte(byte(n))
+		for i := 0; i < n; i++ {
+			item, err := Marshal(info.Elem, rv.Index(i).Interface())
+			if err != nil {
+				return nil, err
+			}
+			if len(item) > math.MaxUint16 {
+				return nil, marshalErrorf("marshal: slice / array item too large")
+			}
+			buf.WriteByte(byte(len(item) >> 8))
+			buf.WriteByte(byte(len(item)))
+			buf.Write(item)
+		}
+		return buf.Bytes(), nil
+	}
+	if k == reflect.Map {
+		elem := t.Elem()
+		if elem.Kind() == reflect.Struct && elem.NumField() == 0 {
+			rkeys := rv.MapKeys()
+			keys := make([]interface{}, len(rkeys))
+			for i := 0; i < len(keys); i++ {
+				keys[i] = rkeys[i].Interface()
+			}
+			return marshalList(info, keys)
+		}
+	}
+	return nil, marshalErrorf("can not marshal %T into %s", value, info)
+}
+
+func unmarshalList(info *TypeInfo, data []byte, value interface{}) error {
+	rv := reflect.ValueOf(value)
+	if rv.Kind() != reflect.Ptr {
+		return unmarshalErrorf("can not unmarshal into non-pointer %T", value)
+	}
+	rv = rv.Elem()
+	t := rv.Type()
+	k := t.Kind()
+
+	switch k {
+	case reflect.Slice, reflect.Array:
+		if len(data) < 2 {
+			return unmarshalErrorf("unmarshal list: unexpected eof")
+		}
+		n := int(data[0]<<8) | int(data[1])
+		data = data[2:]
+		if k == reflect.Array {
+			if rv.Len() != n {
+				return unmarshalErrorf("unmarshal list: array with wrong size")
+			}
+		} else if rv.Cap() < n {
+			rv.Set(reflect.MakeSlice(t, n, n))
+		} else {
+			rv.SetLen(n)
+		}
+		for i := 0; i < n; i++ {
+			if len(data) < 2 {
+				return unmarshalErrorf("unmarshal list: unexpected eof")
+			}
+			m := int(data[0]<<8) | int(data[1])
+			data = data[2:]
+			if err := Unmarshal(info.Elem, data[:m], rv.Index(i).Addr().Interface()); err != nil {
+				return err
+			}
+			data = data[m:]
+		}
+		return nil
+	}
+
+	return unmarshalErrorf("can not unmarshal %s into %T", info, value)
+}
+
+func marshalMap(info *TypeInfo, value interface{}) ([]byte, error) {
+	rv := reflect.ValueOf(value)
+	t := rv.Type()
+	if t.Kind() != reflect.Map {
+		return nil, marshalErrorf("can not marshal %T into %s", value, info)
+	}
+	buf := &bytes.Buffer{}
+	n := rv.Len()
+	if n > math.MaxUint16 {
+		return nil, marshalErrorf("marshal: map too large")
+	}
+	buf.WriteByte(byte(n >> 8))
+	buf.WriteByte(byte(n))
+	keys := rv.MapKeys()
+	for _, key := range keys {
+		item, err := Marshal(info.Key, key.Interface())
+		if err != nil {
+			return nil, err
+		}
+		if len(item) > math.MaxUint16 {
+			return nil, marshalErrorf("marshal: slice / array item too large")
+		}
+		buf.WriteByte(byte(len(item) >> 8))
+		buf.WriteByte(byte(len(item)))
+		buf.Write(item)
+
+		item, err = Marshal(info.Elem, rv.MapIndex(key).Interface())
+		if err != nil {
+			return nil, err
+		}
+		if len(item) > math.MaxUint16 {
+			return nil, marshalErrorf("marshal: slice / array item too large")
+		}
+		buf.WriteByte(byte(len(item) >> 8))
+		buf.WriteByte(byte(len(item)))
+		buf.Write(item)
+	}
+	return buf.Bytes(), nil
+}
+
+func unmarshalMap(info *TypeInfo, data []byte, value interface{}) error {
+	rv := reflect.ValueOf(value)
+	if rv.Kind() != reflect.Ptr {
+		return unmarshalErrorf("can not unmarshal into non-pointer %T", value)
+
+	}
+	rv = rv.Elem()
+	t := rv.Type()
+	if t.Kind() != reflect.Map {
+		return unmarshalErrorf("can not unmarshal %s into %T", info, value)
+	}
+
+	rv.Set(reflect.MakeMap(t))
+	if len(data) < 2 {
+		return unmarshalErrorf("unmarshal map: unexpected eof")
+	}
+	n := int(data[0]<<8) | int(data[1])
+	data = data[2:]
+	for i := 0; i < n; i++ {
+		if len(data) < 2 {
+			return unmarshalErrorf("unmarshal list: unexpected eof")
+		}
+		m := int(data[0]<<8) | int(data[1])
+		data = data[2:]
+		key := reflect.New(t.Key())
+		if err := Unmarshal(info.Key, data[:m], key.Interface()); err != nil {
+			return err
+		}
+		data = data[m:]
+
+		m = int(data[0]<<8) | int(data[1])
+		data = data[2:]
+		val := reflect.New(t.Elem())
+		if err := Unmarshal(info.Elem, data[:m], val.Interface()); err != nil {
+			return err
+		}
+		data = data[m:]
+
+		rv.SetMapIndex(key.Elem(), val.Elem())
+	}
+	return nil
+}
+
 // TypeInfo describes a Cassandra specific data type.
 type TypeInfo struct {
 	Type   Type
 	Key    *TypeInfo // only used for TypeMap
-	Value  *TypeInfo // only used for TypeMap, TypeList and TypeSet
+	Elem   *TypeInfo // only used for TypeMap, TypeList and TypeSet
 	Custom string    // only used for TypeCostum
 }
 
@@ -718,11 +893,11 @@ type TypeInfo struct {
 func (t TypeInfo) String() string {
 	switch t.Type {
 	case TypeMap:
-		return fmt.Sprintf("%s(%s, %s)", t.Type, t.Key, t.Value)
+		return fmt.Sprintf("%s(%s, %s)", t.Type, t.Key, t.Elem)
 	case TypeList, TypeSet:
-		return fmt.Sprintf("%s(%s)", t.Type, t.Value)
+		return fmt.Sprintf("%s(%s)", t.Type, t.Elem)
 	case TypeCustom:
-		return fmt.Sprintf("%s(%s)", t.Type, t.Custom)
+		return fmt.Sprintf("%s(%s)", t.Type, t.Elem)
 	}
 	return t.Type.String()
 }
