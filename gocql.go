@@ -50,16 +50,16 @@ func (b *Batch) Apply() error {
 type Consistency uint16
 
 const (
-	ConAny         Consistency = 0x0000
-	ConOne         Consistency = 0x0001
-	ConTwo         Consistency = 0x0002
-	ConThree       Consistency = 0x0003
-	ConQuorum      Consistency = 0x0004
-	ConAll         Consistency = 0x0005
-	ConLocalQuorum Consistency = 0x0006
-	ConEachQuorum  Consistency = 0x0007
-	ConSerial      Consistency = 0x0008
-	ConLocalSerial Consistency = 0x0009
+	Any Consistency = iota
+	One
+	Two
+	Three
+	Quorum
+	All
+	LocalQuorum
+	EachQuorum
+	Serial
+	LocalSerial
 )
 
 type Error struct {
@@ -74,6 +74,5 @@ func (e Error) Error() string {
 var (
 	ErrNotFound        = errors.New("not found")
 	ErrNoHostAvailable = errors.New("no host available")
-	ErrQueryUnbound    = errors.New("can not execute unbound query")
 	ErrProtocol        = errors.New("protocol error")
 )

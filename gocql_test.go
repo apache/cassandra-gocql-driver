@@ -125,7 +125,7 @@ func TestSimple(t *testing.T) {
 
 	db := NewSession(Config{
 		Nodes:       []string{srv.Address},
-		Consistency: ConQuorum,
+		Consistency: Quorum,
 	})
 	if err := db.Query("void").Exec(); err != nil {
 		t.Error(err)
@@ -138,7 +138,7 @@ func TestTimeout(t *testing.T) {
 
 	db := NewSession(Config{
 		Nodes:       []string{srv.Address},
-		Consistency: ConQuorum,
+		Consistency: Quorum,
 	})
 
 	go func() {
@@ -157,7 +157,7 @@ func TestSlowQuery(t *testing.T) {
 
 	db := NewSession(Config{
 		Nodes:       []string{srv.Address},
-		Consistency: ConQuorum,
+		Consistency: Quorum,
 	})
 
 	if err := db.Query("slow").Exec(); err != nil {
@@ -175,7 +175,7 @@ func TestRoundRobin(t *testing.T) {
 	}
 	db := NewSession(Config{
 		Nodes:       addrs,
-		Consistency: ConQuorum,
+		Consistency: Quorum,
 	})
 	time.Sleep(1 * time.Second)
 

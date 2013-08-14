@@ -191,13 +191,13 @@ func (c *Conn) ping() error {
 	return err
 }
 
-func (c *Conn) prepareQuery(stmt string) *queryInfo {
+func (c *Conn) prepareStatement(stmt string) (*queryInfo, error) {
 	c.prepMu.Lock()
 	info := c.prep[stmt]
 	if info != nil {
 		c.prepMu.Unlock()
 		info.wg.Wait()
-		return info
+		return info, nil
 	}
 	info = new(queryInfo)
 	info.wg.Add(1)
@@ -211,7 +211,10 @@ func (c *Conn) prepareQuery(stmt string) *queryInfo {
 
 	frame, err := c.call(frame)
 	if err != nil {
-		return nil
+		return nil, err
+	}
+	if frame[3] == opError {
+		return nil, frame.readErrorFrame()
 	}
 	frame.skipHeader()
 	frame.readInt() // kind
@@ -219,7 +222,7 @@ func (c *Conn) prepareQuery(stmt string) *queryInfo {
 	info.args = frame.readMetaData()
 	info.rval = frame.readMetaData()
 	info.wg.Done()
-	return info
+	return info, nil
 }
 
 func (c *Conn) ExecuteQuery(qry *Query) (*Iter, error) {
@@ -238,6 +241,44 @@ func (c *Conn) ExecuteQuery(qry *Query) (*Iter, error) {
 }
 
 func (c *Conn) ExecuteBatch(batch *Batch) error {
+	frame := make(frame, headerSize, defaultFrameSize)
+	frame.setHeader(protoRequest, 0, 0, opBatch)
+	frame.writeByte(byte(batch.Type))
+	frame.writeShort(uint16(len(batch.Entries)))
+	for i := 0; i < len(batch.Entries); i++ {
+		entry := &batch.Entries[i]
+		var info *queryInfo
+		if len(entry.Args) > 0 {
+			info, err := c.prepareStatement(entry.Stmt)
+			if err != nil {
+				return err
+			}
+			frame.writeByte(1)
+			frame.writeShortBytes(info.id)
+		} else {
+			frame.writeByte(0)
+			frame.writeLongString(entry.Stmt)
+		}
+		frame.writeShort(uint16(len(entry.Args)))
+		for j := 0; j < len(entry.Args); j++ {
+			val, err := Marshal(info.args[j].TypeInfo, entry.Args[i])
+			if err != nil {
+				return err
+			}
+			frame.writeBytes(val)
+		}
+	}
+	frame.writeShort(uint16(batch.Cons))
+
+	frame, err := c.call(frame)
+	if err != nil {
+		return err
+	}
+
+	if frame[3] == opError {
+		return frame.readErrorFrame()
+	}
+
 	return nil
 }
 
@@ -248,7 +289,11 @@ func (c *Conn) Close() {
 func (c *Conn) executeQuery(query *Query) (frame, error) {
 	var info *queryInfo
 	if len(query.Args) > 0 {
-		info = c.prepareQuery(query.Stmt)
+		var err error
+		info, err = c.prepareStatement(query.Stmt)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	frame := make(frame, headerSize, headerSize+512)

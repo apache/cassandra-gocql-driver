@@ -217,10 +217,11 @@ func (iter *Iter) Close() error {
 type Batch struct {
 	Type    BatchType
 	Entries []BatchEntry
+	Cons    Consistency
 }
 
-func NewBatch(typ BatchType) *Batch {
-	return &Batch{Type: typ}
+func NewBatch(typ BatchType, cons Consistency) *Batch {
+	return &Batch{Type: typ, Cons: cons}
 }
 
 func (b *Batch) Query(stmt string, args ...interface{}) {
