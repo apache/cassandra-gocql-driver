@@ -19,14 +19,6 @@ type ColumnInfo struct {
 	TypeInfo *TypeInfo
 }
 
-type BatchType int
-
-const (
-	LoggedBatch   BatchType = 0
-	UnloggedBatch BatchType = 1
-	CounterBatch  BatchType = 2
-)
-
 /*
 type Batch struct {
 	queries []*Query
@@ -46,21 +38,6 @@ func (b *Batch) Query(stmt string, args ...interface{}) *Query {
 func (b *Batch) Apply() error {
 	return nil
 } */
-
-type Consistency uint16
-
-const (
-	Any Consistency = iota
-	One
-	Two
-	Three
-	Quorum
-	All
-	LocalQuorum
-	EachQuorum
-	Serial
-	LocalSerial
-)
 
 type Error struct {
 	Code    int

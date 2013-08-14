@@ -3,7 +3,6 @@ package gocql
 import (
 	"sync"
 	"sync/atomic"
-	"time"
 )
 
 type Node interface {
@@ -12,29 +11,23 @@ type Node interface {
 	Close()
 }
 
-type NodePicker interface {
-	AddNode(node Node)
-	RemoveNode(node Node)
-	Pick(qry *Query) Node
-}
-
-type RoundRobinPicker struct {
+type RoundRobin struct {
 	pool []Node
 	pos  uint32
 	mu   sync.RWMutex
 }
 
-func NewRoundRobinPicker() *RoundRobinPicker {
-	return &RoundRobinPicker{}
+func NewRoundRobin() *RoundRobin {
+	return &RoundRobin{}
 }
 
-func (r *RoundRobinPicker) AddNode(node Node) {
+func (r *RoundRobin) AddNode(node Node) {
 	r.mu.Lock()
 	r.pool = append(r.pool, node)
 	r.mu.Unlock()
 }
 
-func (r *RoundRobinPicker) RemoveNode(node Node) {
+func (r *RoundRobin) RemoveNode(node Node) {
 	r.mu.Lock()
 	n := len(r.pool)
 	for i := 0; i < n; i++ {
@@ -47,7 +40,23 @@ func (r *RoundRobinPicker) RemoveNode(node Node) {
 	r.mu.Unlock()
 }
 
-func (r *RoundRobinPicker) Pick(query *Query) Node {
+func (r *RoundRobin) ExecuteQuery(qry *Query) (*Iter, error) {
+	node := r.pick()
+	if node == nil {
+		return nil, ErrNoHostAvailable
+	}
+	return node.ExecuteQuery(qry)
+}
+
+func (r *RoundRobin) ExecuteBatch(batch *Batch) error {
+	node := r.pick()
+	if node == nil {
+		return ErrNoHostAvailable
+	}
+	return node.ExecuteBatch(batch)
+}
+
+func (r *RoundRobin) pick() Node {
 	pos := atomic.AddUint32(&r.pos, 1)
 	var node Node
 	r.mu.RLock()
@@ -58,53 +67,11 @@ func (r *RoundRobinPicker) Pick(query *Query) Node {
 	return node
 }
 
-type Reconnector interface {
-	Reconnect(session *Session, address string)
-}
-
-type ExponentialReconnector struct {
-	baseDelay time.Duration
-	maxDelay  time.Duration
-}
-
-func NewExponentialReconnector(baseDelay, maxDelay time.Duration) *ExponentialReconnector {
-	return &ExponentialReconnector{baseDelay, maxDelay}
-}
-
-func (e *ExponentialReconnector) Reconnect(session *Session, address string) {
-	delay := e.baseDelay
-	for {
-		conn, err := Connect(address, session.cfg)
-		if err != nil {
-			<-time.After(delay)
-			if delay *= 2; delay > e.maxDelay {
-				delay = e.maxDelay
-			}
-			continue
-		}
-		node := &Host{conn}
-		go func() {
-			conn.Serve()
-			session.pool.RemoveNode(node)
-			e.Reconnect(session, address)
-		}()
-		session.pool.AddNode(node)
-		return
+func (r *RoundRobin) Close() {
+	r.mu.Lock()
+	for i := 0; i < len(r.pool); i++ {
+		r.pool[i].Close()
 	}
-}
-
-type Host struct {
-	conn *Conn
-}
-
-func (h *Host) ExecuteQuery(qry *Query) (*Iter, error) {
-	return h.conn.ExecuteQuery(qry)
-}
-
-func (h *Host) ExecuteBatch(batch *Batch) error {
-	return nil
-}
-
-func (h *Host) Close() {
-	h.conn.conn.Close()
+	r.pool = nil
+	r.mu.Unlock()
 }

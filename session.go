@@ -6,110 +6,72 @@ package gocql
 
 import (
 	"errors"
-	"fmt"
-	"strings"
-	"time"
 )
 
-type Config struct {
-	Nodes       []string
-	CQLVersion  string
-	Keyspace    string
-	Consistency Consistency
-	DefaultPort int
-	Timeout     time.Duration
-	NodePicker  NodePicker
-	Reconnector Reconnector
-}
-
-func (c *Config) normalize() {
-	if c.CQLVersion == "" {
-		c.CQLVersion = "3.0.0"
-	}
-	if c.DefaultPort == 0 {
-		c.DefaultPort = 9042
-	}
-	if c.Timeout <= 0 {
-		c.Timeout = 200 * time.Millisecond
-	}
-	if c.NodePicker == nil {
-		c.NodePicker = NewRoundRobinPicker()
-	}
-	if c.Reconnector == nil {
-		c.Reconnector = NewExponentialReconnector(1*time.Second, 10*time.Minute)
-	}
-	for i := 0; i < len(c.Nodes); i++ {
-		c.Nodes[i] = strings.TrimSpace(c.Nodes[i])
-		if strings.IndexByte(c.Nodes[i], ':') < 0 {
-			c.Nodes[i] = fmt.Sprintf("%s:%d", c.Nodes[i], c.DefaultPort)
-		}
-	}
-}
-
+// Session is the interface used by users to interact with the database.
+//
+// It extends the Node interface by adding a convinient query builder and
+// automatically sets a default consinstency level on all operations
+// that do not have a consistency level set.
 type Session struct {
-	cfg         *Config
-	pool        NodePicker
-	reconnector Reconnector
-	keyspace    string
-	nohosts     chan bool
+	Node Node
+	Cons Consistency
 }
 
-func NewSession(cfg Config) *Session {
-	cfg.normalize()
-	s := &Session{
-		cfg:         &cfg,
-		nohosts:     make(chan bool),
-		reconnector: cfg.Reconnector,
-		pool:        cfg.NodePicker,
+// NewSession wraps an existing Node.
+func NewSession(node Node) *Session {
+	if s, ok := node.(*Session); ok {
+		return &Session{Node: s.Node}
 	}
-	for _, address := range cfg.Nodes {
-		go s.reconnector.Reconnect(s, address)
-	}
-	return s
+	return &Session{Node: node, Cons: Quorum}
 }
 
+// Query can be used to build new queries that should be executed on this
+// session.
 func (s *Session) Query(stmt string, args ...interface{}) QueryBuilder {
-	return QueryBuilder{
-		&Query{
-			Stmt: stmt,
-			Args: args,
-			Cons: s.cfg.Consistency,
-		},
-		s,
-	}
+	return QueryBuilder{NewQuery(stmt, args...), s}
 }
 
+// Do can be used to modify a copy of an existing query before it is
+// executed on this session.
 func (s *Session) Do(qry *Query) QueryBuilder {
 	q := *qry
 	return QueryBuilder{&q, s}
 }
 
+// Close closes all connections. The session is unuseable after this
+// operation.
 func (s *Session) Close() {
-	return
+	s.Node.Close()
 }
 
+// ExecuteBatch executes a Batch on the underlying Node.
 func (s *Session) ExecuteBatch(batch *Batch) error {
-	return nil
+	if batch.Cons == 0 {
+		batch.Cons = s.Cons
+	}
+	return s.Node.ExecuteBatch(batch)
 }
 
+// ExecuteQuery executes a Query on the underlying Node.
 func (s *Session) ExecuteQuery(qry *Query) (*Iter, error) {
-	node := s.pool.Pick(qry)
-	if node == nil {
-		<-time.After(s.cfg.Timeout)
-		node = s.pool.Pick(qry)
+	if qry.Cons == 0 {
+		qry.Cons = s.Cons
 	}
-	if node == nil {
-		return nil, ErrNoHostAvailable
-	}
-	return node.ExecuteQuery(qry)
+	return s.Node.ExecuteQuery(qry)
 }
 
 type Query struct {
 	Stmt     string
 	Args     []interface{}
 	Cons     Consistency
+	Token    string
 	PageSize int
 	Trace    bool
+}
+
+func NewQuery(stmt string, args ...interface{}) *Query {
+	return &Query{Stmt: stmt, Args: args}
 }
 
 type QueryBuilder struct {
@@ -123,6 +85,11 @@ func (b QueryBuilder) Args(args ...interface{}) {
 
 func (b QueryBuilder) Consistency(cons Consistency) QueryBuilder {
 	b.qry.Cons = cons
+	return b
+}
+
+func (b QueryBuilder) Token(token string) QueryBuilder {
+	b.qry.Token = token
 	return b
 }
 
@@ -220,15 +187,56 @@ type Batch struct {
 	Cons    Consistency
 }
 
-func NewBatch(typ BatchType, cons Consistency) *Batch {
-	return &Batch{Type: typ, Cons: cons}
+func NewBatch(typ BatchType) *Batch {
+	return &Batch{Type: typ}
 }
 
 func (b *Batch) Query(stmt string, args ...interface{}) {
 	b.Entries = append(b.Entries, BatchEntry{Stmt: stmt, Args: args})
 }
 
+type BatchType int
+
+const (
+	LoggedBatch   BatchType = 0
+	UnloggedBatch BatchType = 1
+	CounterBatch  BatchType = 2
+)
+
 type BatchEntry struct {
 	Stmt string
 	Args []interface{}
+}
+
+type Consistency int
+
+const (
+	Any Consistency = 1 + iota
+	One
+	Two
+	Three
+	Quorum
+	All
+	LocalQuorum
+	EachQuorum
+	Serial
+	LocalSerial
+)
+
+var consinstencyNames = []string{
+	0:           "default",
+	Any:         "any",
+	One:         "one",
+	Two:         "two",
+	Three:       "three",
+	Quorum:      "quorum",
+	All:         "all",
+	LocalQuorum: "localquorum",
+	EachQuorum:  "eachquorum",
+	Serial:      "serial",
+	LocalSerial: "localserial",
+}
+
+func (c Consistency) String() string {
+	return consinstencyNames[c]
 }

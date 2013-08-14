@@ -5,6 +5,7 @@
 package gocql
 
 import (
+	"fmt"
 	"io"
 	"net"
 	"strings"
@@ -94,6 +95,7 @@ func (srv *TestServer) process(frame frame, conn net.Conn) {
 			frame.writeInt(0)
 		}
 	default:
+		fmt.Println("unsupproted:", frame)
 		frame = frame[:headerSize]
 		frame.setHeader(protoResponse, 0, frame[2], opError)
 		frame.writeInt(0)
@@ -123,10 +125,8 @@ func TestSimple(t *testing.T) {
 	srv := NewTestServer(t)
 	defer srv.Stop()
 
-	db := NewSession(Config{
-		Nodes:       []string{srv.Address},
-		Consistency: Quorum,
-	})
+	db := NewCluster(srv.Address).CreateSession()
+
 	if err := db.Query("void").Exec(); err != nil {
 		t.Error(err)
 	}
@@ -136,10 +136,7 @@ func TestTimeout(t *testing.T) {
 	srv := NewTestServer(t)
 	defer srv.Stop()
 
-	db := NewSession(Config{
-		Nodes:       []string{srv.Address},
-		Consistency: Quorum,
-	})
+	db := NewCluster(srv.Address).CreateSession()
 
 	go func() {
 		<-time.After(1 * time.Second)
@@ -155,10 +152,7 @@ func TestSlowQuery(t *testing.T) {
 	srv := NewTestServer(t)
 	defer srv.Stop()
 
-	db := NewSession(Config{
-		Nodes:       []string{srv.Address},
-		Consistency: Quorum,
-	})
+	db := NewCluster(srv.Address).CreateSession()
 
 	if err := db.Query("slow").Exec(); err != nil {
 		t.Fatal(err)
@@ -173,10 +167,8 @@ func TestRoundRobin(t *testing.T) {
 		addrs[i] = servers[i].Address
 		defer servers[i].Stop()
 	}
-	db := NewSession(Config{
-		Nodes:       addrs,
-		Consistency: Quorum,
-	})
+	db := NewCluster(addrs...).CreateSession()
+
 	time.Sleep(1 * time.Second)
 
 	var wg sync.WaitGroup

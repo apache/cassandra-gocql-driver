@@ -269,3 +269,20 @@ func (f *frame) readErrorFrame() (err error) {
 	desc := f.readString()
 	return Error{code, desc}
 }
+
+func (f *frame) writeConsistency(c Consistency) {
+	f.writeShort(consistencyCodes[c])
+}
+
+var consistencyCodes = []uint16{
+	Any:         0x0000,
+	One:         0x0001,
+	Two:         0x0002,
+	Three:       0x0003,
+	Quorum:      0x0004,
+	All:         0x0005,
+	LocalQuorum: 0x0006,
+	EachQuorum:  0x0007,
+	Serial:      0x0008,
+	LocalSerial: 0x0009,
+}

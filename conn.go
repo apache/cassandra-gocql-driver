@@ -5,6 +5,7 @@
 package gocql
 
 import (
+	"fmt"
 	"net"
 	"sync"
 	"sync/atomic"
@@ -30,8 +31,8 @@ type Conn struct {
 
 // Connect establishes a connection to a Cassandra node.
 // You must also call the Serve method before you can execute any queries.
-func Connect(addr string, cfg *Config) (*Conn, error) {
-	conn, err := net.DialTimeout("tcp", addr, cfg.Timeout)
+func Connect(addr, version string, timeout time.Duration) (*Conn, error) {
+	conn, err := net.DialTimeout("tcp", addr, timeout)
 	if err != nil {
 		return nil, err
 	}
@@ -40,24 +41,24 @@ func Connect(addr string, cfg *Config) (*Conn, error) {
 		uniq:    make(chan uint8, 128),
 		calls:   make([]callReq, 128),
 		prep:    make(map[string]*queryInfo),
-		timeout: cfg.Timeout,
+		timeout: timeout,
 	}
 	for i := 0; i < cap(c.uniq); i++ {
 		c.uniq <- uint8(i)
 	}
 
-	if err := c.init(cfg); err != nil {
+	if err := c.init(version); err != nil {
 		return nil, err
 	}
 
 	return c, nil
 }
 
-func (c *Conn) init(cfg *Config) error {
+func (c *Conn) init(version string) error {
 	req := make(frame, headerSize, defaultFrameSize)
 	req.setHeader(protoRequest, 0, 0, opStartup)
 	req.writeStringMap(map[string]string{
-		"CQL_VERSION": cfg.CQLVersion,
+		"CQL_VERSION": version,
 	})
 	resp, err := c.callSimple(req)
 	if err != nil {
@@ -204,7 +205,7 @@ func (c *Conn) prepareStatement(stmt string) (*queryInfo, error) {
 	c.prep[stmt] = info
 	c.prepMu.Unlock()
 
-	frame := make(frame, headerSize, headerSize+512)
+	frame := make(frame, headerSize, defaultFrameSize)
 	frame.setHeader(protoRequest, 0, 0, opPrepare)
 	frame.writeLongString(stmt)
 	frame.setLength(len(frame) - headerSize)
@@ -268,7 +269,7 @@ func (c *Conn) ExecuteBatch(batch *Batch) error {
 			frame.writeBytes(val)
 		}
 	}
-	frame.writeShort(uint16(batch.Cons))
+	frame.writeConsistency(batch.Cons)
 
 	frame, err := c.call(frame)
 	if err != nil {
@@ -289,6 +290,7 @@ func (c *Conn) Close() {
 func (c *Conn) executeQuery(query *Query) (frame, error) {
 	var info *queryInfo
 	if len(query.Args) > 0 {
+		fmt.Println("ARGS:", query.Args)
 		var err error
 		info, err = c.prepareStatement(query.Stmt)
 		if err != nil {
@@ -296,7 +298,7 @@ func (c *Conn) executeQuery(query *Query) (frame, error) {
 		}
 	}
 
-	frame := make(frame, headerSize, headerSize+512)
+	frame := make(frame, headerSize, defaultFrameSize)
 	if info == nil {
 		frame.setHeader(protoRequest, 0, 0, opQuery)
 		frame.writeLongString(query.Stmt)
@@ -304,7 +306,7 @@ func (c *Conn) executeQuery(query *Query) (frame, error) {
 		frame.setHeader(protoRequest, 0, 0, opExecute)
 		frame.writeShortBytes(info.id)
 	}
-	frame.writeShort(uint16(query.Cons))
+	frame.writeConsistency(query.Cons)
 	flags := uint8(0)
 	if len(query.Args) > 0 {
 		flags |= flagQueryValues
@@ -320,7 +322,6 @@ func (c *Conn) executeQuery(query *Query) (frame, error) {
 			frame.writeBytes(val)
 		}
 	}
-	frame.setLength(len(frame) - headerSize)
 
 	frame, err := c.call(frame)
 	if err != nil {
