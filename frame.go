@@ -231,7 +231,7 @@ func (f *frame) readTypeInfo() *TypeInfo {
 	return typ
 }
 
-func (f *frame) readMetaData() []columnInfo {
+func (f *frame) readMetaData() []ColumnInfo {
 	flags := f.readInt()
 	numColumns := f.readInt()
 	globalKeyspace := ""
@@ -240,7 +240,7 @@ func (f *frame) readMetaData() []columnInfo {
 		globalKeyspace = f.readString()
 		globalTable = f.readString()
 	}
-	info := make([]columnInfo, numColumns)
+	info := make([]ColumnInfo, numColumns)
 	for i := 0; i < numColumns; i++ {
 		info[i].Keyspace = globalKeyspace
 		info[i].Table = globalTable

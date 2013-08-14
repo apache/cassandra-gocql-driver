@@ -1,88 +1,233 @@
+// Copyright (c) 2012 The gocql Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
 package gocql
 
 import (
-	"sync"
-	"sync/atomic"
+	"errors"
+	"fmt"
+	"strings"
 	"time"
 )
 
-type NodePicker interface {
-	AddNode(node *Node)
-	RemoveNode(node *Node)
-	Pick(query *Query) *Node
+type Config struct {
+	Nodes       []string
+	CQLVersion  string
+	Keyspace    string
+	Consistency Consistency
+	DefaultPort int
+	Timeout     time.Duration
+	NodePicker  NodePicker
+	Reconnector Reconnector
 }
 
-type RoundRobinPicker struct {
-	pool []*Node
-	pos  uint32
-	mu   sync.RWMutex
-}
-
-func NewRoundRobinPicker() *RoundRobinPicker {
-	return &RoundRobinPicker{}
-}
-
-func (r *RoundRobinPicker) AddNode(node *Node) {
-	r.mu.Lock()
-	r.pool = append(r.pool, node)
-	r.mu.Unlock()
-}
-
-func (r *RoundRobinPicker) RemoveNode(node *Node) {
-	r.mu.Lock()
-	n := len(r.pool)
-	for i := 0; i < n; i++ {
-		if r.pool[i] == node {
-			r.pool[i], r.pool[n-1] = r.pool[n-1], r.pool[i]
-			r.pool = r.pool[:n-1]
-			break
+func (c *Config) normalize() {
+	if c.CQLVersion == "" {
+		c.CQLVersion = "3.0.0"
+	}
+	if c.DefaultPort == 0 {
+		c.DefaultPort = 9042
+	}
+	if c.Timeout <= 0 {
+		c.Timeout = 200 * time.Millisecond
+	}
+	if c.NodePicker == nil {
+		c.NodePicker = NewRoundRobinPicker()
+	}
+	if c.Reconnector == nil {
+		c.Reconnector = NewExponentialReconnector(1*time.Second, 10*time.Minute)
+	}
+	for i := 0; i < len(c.Nodes); i++ {
+		c.Nodes[i] = strings.TrimSpace(c.Nodes[i])
+		if strings.IndexByte(c.Nodes[i], ':') < 0 {
+			c.Nodes[i] = fmt.Sprintf("%s:%d", c.Nodes[i], c.DefaultPort)
 		}
 	}
-	r.mu.Unlock()
 }
 
-func (r *RoundRobinPicker) Pick(query *Query) *Node {
-	pos := atomic.AddUint32(&r.pos, 1)
-	var node *Node
-	r.mu.RLock()
-	if len(r.pool) > 0 {
-		node = r.pool[pos%uint32(len(r.pool))]
+type Session struct {
+	cfg         *Config
+	pool        NodePicker
+	reconnector Reconnector
+	keyspace    string
+	nohosts     chan bool
+}
+
+func NewSession(cfg Config) *Session {
+	cfg.normalize()
+	s := &Session{
+		cfg:         &cfg,
+		nohosts:     make(chan bool),
+		reconnector: cfg.Reconnector,
+		pool:        cfg.NodePicker,
 	}
-	r.mu.RUnlock()
-	return node
+	for _, address := range cfg.Nodes {
+		go s.reconnector.Reconnect(s, address)
+	}
+	return s
 }
 
-type Reconnector interface {
-	Reconnect(session *Session, address string)
+func (s *Session) Query(stmt string, args ...interface{}) QueryBuilder {
+	return QueryBuilder{
+		&Query{
+			Stmt: stmt,
+			Args: args,
+			Cons: s.cfg.Consistency,
+		},
+		s,
+	}
 }
 
-type ExponentialReconnector struct {
-	baseDelay time.Duration
-	maxDelay  time.Duration
+func (s *Session) Do(qry *Query) QueryBuilder {
+	q := *qry
+	return QueryBuilder{&q, s}
 }
 
-func NewExponentialReconnector(baseDelay, maxDelay time.Duration) *ExponentialReconnector {
-	return &ExponentialReconnector{baseDelay, maxDelay}
+func (s *Session) Close() {
+	return
 }
 
-func (e *ExponentialReconnector) Reconnect(session *Session, address string) {
-	delay := e.baseDelay
-	for {
-		conn, err := Connect(address, session.cfg)
-		if err != nil {
-			<-time.After(delay)
-			if delay *= 2; delay > e.maxDelay {
-				delay = e.maxDelay
+func (s *Session) ExecuteBatch(batch *Batch) error {
+	return nil
+}
+
+func (s *Session) ExecuteQuery(qry *Query) (*Iter, error) {
+	node := s.pool.Pick(qry)
+	if node == nil {
+		<-time.After(s.cfg.Timeout)
+		node = s.pool.Pick(qry)
+	}
+	if node == nil {
+		return nil, ErrNoHostAvailable
+	}
+	return node.ExecuteQuery(qry)
+}
+
+type Query struct {
+	Stmt     string
+	Args     []interface{}
+	Cons     Consistency
+	PageSize int
+	Trace    bool
+}
+
+type QueryBuilder struct {
+	qry *Query
+	ctx Node
+}
+
+func (b QueryBuilder) Args(args ...interface{}) {
+	b.qry.Args = args
+}
+
+func (b QueryBuilder) Consistency(cons Consistency) QueryBuilder {
+	b.qry.Cons = cons
+	return b
+}
+
+func (b QueryBuilder) Trace(trace bool) QueryBuilder {
+	b.qry.Trace = trace
+	return b
+}
+
+func (b QueryBuilder) PageSize(size int) QueryBuilder {
+	b.qry.PageSize = size
+	return b
+}
+
+func (b QueryBuilder) Exec() error {
+	_, err := b.ctx.ExecuteQuery(b.qry)
+	return err
+}
+
+func (b QueryBuilder) Iter() *Iter {
+	iter, err := b.ctx.ExecuteQuery(b.qry)
+	if err != nil {
+		return &Iter{err: err}
+	}
+	return iter
+}
+
+func (b QueryBuilder) Scan(values ...interface{}) error {
+	iter := b.Iter()
+	iter.Scan(values...)
+	return iter.Close()
+}
+
+type Iter struct {
+	err    error
+	pos    int
+	values [][]byte
+	info   []ColumnInfo
+}
+
+func (iter *Iter) readFrame(frame frame) {
+	defer func() {
+		if r := recover(); r != nil {
+			if e, ok := r.(error); ok && e == ErrProtocol {
+				iter.err = e
+				return
 			}
-			continue
+			panic(r)
 		}
-		node := &Node{conn}
-		go func() {
-			conn.Serve()
-			session.pool.RemoveNode(node)
-			e.Reconnect(session, address)
-		}()
-		session.pool.AddNode(node)
+	}()
+	frame.skipHeader()
+	iter.pos = 0
+	iter.err = nil
+	iter.values = nil
+	if frame.readInt() != resultKindRows {
 		return
 	}
+	iter.info = frame.readMetaData()
+	numRows := frame.readInt()
+	iter.values = make([][]byte, numRows*len(iter.info))
+	for i := 0; i < len(iter.values); i++ {
+		iter.values[i] = frame.readBytes()
+	}
+}
+
+func (iter *Iter) Columns() []ColumnInfo {
+	return iter.info
+}
+
+func (iter *Iter) Scan(values ...interface{}) bool {
+	if iter.err != nil || iter.pos >= len(iter.values) {
+		return false
+	}
+	if len(values) != len(iter.info) {
+		iter.err = errors.New("count mismatch")
+		return false
+	}
+	for i := 0; i < len(values); i++ {
+		err := Unmarshal(iter.info[i].TypeInfo, iter.values[i+iter.pos], values[i])
+		if err != nil {
+			iter.err = err
+			return false
+		}
+	}
+	iter.pos += len(values)
+	return true
+}
+
+func (iter *Iter) Close() error {
+	return iter.err
+}
+
+type Batch struct {
+	Type    BatchType
+	Entries []BatchEntry
+}
+
+func NewBatch(typ BatchType) *Batch {
+	return &Batch{Type: typ}
+}
+
+func (b *Batch) Query(stmt string, args ...interface{}) {
+	b.Entries = append(b.Entries, BatchEntry{Stmt: stmt, Args: args})
+}
+
+type BatchEntry struct {
+	Stmt string
+	Args []interface{}
 }

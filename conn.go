@@ -222,30 +222,53 @@ func (c *Conn) prepareQuery(stmt string) *queryInfo {
 	return info
 }
 
+func (c *Conn) ExecuteQuery(qry *Query) (*Iter, error) {
+	frame, err := c.executeQuery(qry)
+	if err != nil {
+		return nil, err
+	}
+	if frame[3] == opError {
+		return nil, frame.readErrorFrame()
+	} else if frame[3] == opResult {
+		iter := new(Iter)
+		iter.readFrame(frame)
+		return iter, nil
+	}
+	return nil, nil
+}
+
+func (c *Conn) ExecuteBatch(batch *Batch) error {
+	return nil
+}
+
+func (c *Conn) Close() {
+	c.conn.Close()
+}
+
 func (c *Conn) executeQuery(query *Query) (frame, error) {
 	var info *queryInfo
-	if len(query.args) > 0 {
-		info = c.prepareQuery(query.stmt)
+	if len(query.Args) > 0 {
+		info = c.prepareQuery(query.Stmt)
 	}
 
 	frame := make(frame, headerSize, headerSize+512)
 	if info == nil {
 		frame.setHeader(protoRequest, 0, 0, opQuery)
-		frame.writeLongString(query.stmt)
+		frame.writeLongString(query.Stmt)
 	} else {
 		frame.setHeader(protoRequest, 0, 0, opExecute)
 		frame.writeShortBytes(info.id)
 	}
-	frame.writeShort(uint16(query.cons))
+	frame.writeShort(uint16(query.Cons))
 	flags := uint8(0)
-	if len(query.args) > 0 {
+	if len(query.Args) > 0 {
 		flags |= flagQueryValues
 	}
 	frame.writeByte(flags)
-	if len(query.args) > 0 {
-		frame.writeShort(uint16(len(query.args)))
-		for i := 0; i < len(query.args); i++ {
-			val, err := Marshal(info.args[i].TypeInfo, query.args[i])
+	if len(query.Args) > 0 {
+		frame.writeShort(uint16(len(query.Args)))
+		for i := 0; i < len(query.Args); i++ {
+			val, err := Marshal(info.args[i].TypeInfo, query.Args[i])
 			if err != nil {
 				return nil, err
 			}
@@ -270,8 +293,8 @@ func (c *Conn) executeQuery(query *Query) (frame, error) {
 
 type queryInfo struct {
 	id   []byte
-	args []columnInfo
-	rval []columnInfo
+	args []ColumnInfo
+	rval []ColumnInfo
 	wg   sync.WaitGroup
 }
 
