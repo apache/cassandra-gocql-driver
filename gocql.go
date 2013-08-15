@@ -204,6 +204,9 @@ func (cn *connection) open() {
 // close a connection actively, typically used when there's an error and we want to ensure
 // we don't repeatedly try to use the broken connection
 func (cn *connection) close() {
+	if cn.c == nil {
+		return
+	}
 	cn.c.Close()
 	cn.c = nil // ensure we generate ErrBadConn when cn gets reused
 	cn.alive = false
