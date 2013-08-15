@@ -13,6 +13,24 @@ import (
 
 const defaultFrameSize = 4096
 
+type Cluster interface {
+	//HandleAuth(addr, method string) ([]byte, Challenger, error)
+	HandleError(conn *Conn, err error, closed bool)
+	HandleKeyspace(conn *Conn, keyspace string)
+}
+
+/* type Challenger interface {
+	Challenge(data []byte) ([]byte, error)
+} */
+
+type ConnConfig struct {
+	ProtoVersion int
+	CQLVersion   string
+	Keyspace     string
+	Timeout      time.Duration
+	NumStreams   int
+}
+
 // Conn is a single connection to a Cassandra node. It can be used to execute
 // queries, but users are usually advised to use a more reliable, higher
 // level API.
@@ -24,41 +42,51 @@ type Conn struct {
 	calls []callReq
 	nwait int32
 
-	prepMu   sync.Mutex
-	prep     map[string]*queryInfo
+	prepMu sync.Mutex
+	prep   map[string]*queryInfo
+
+	cluster  Cluster
+	addr     string
 	keyspace string
 }
 
 // Connect establishes a connection to a Cassandra node.
 // You must also call the Serve method before you can execute any queries.
-func Connect(addr, version string, timeout time.Duration) (*Conn, error) {
-	conn, err := net.DialTimeout("tcp", addr, timeout)
+func Connect(addr string, cfg ConnConfig, cluster Cluster) (*Conn, error) {
+	conn, err := net.DialTimeout("tcp", addr, cfg.Timeout)
 	if err != nil {
 		return nil, err
 	}
+	if cfg.NumStreams <= 0 || cfg.NumStreams > 128 {
+		cfg.NumStreams = 128
+	}
 	c := &Conn{
 		conn:    conn,
-		uniq:    make(chan uint8, 128),
-		calls:   make([]callReq, 128),
+		uniq:    make(chan uint8, cfg.NumStreams),
+		calls:   make([]callReq, cfg.NumStreams),
 		prep:    make(map[string]*queryInfo),
-		timeout: timeout,
+		timeout: cfg.Timeout,
+		addr:    conn.RemoteAddr().String(),
+		cluster: cluster,
 	}
 	for i := 0; i < cap(c.uniq); i++ {
 		c.uniq <- uint8(i)
 	}
 
-	if err := c.init(version); err != nil {
+	if err := c.startup(&cfg); err != nil {
 		return nil, err
 	}
+
+	go c.serve()
 
 	return c, nil
 }
 
-func (c *Conn) init(version string) error {
+func (c *Conn) startup(cfg *ConnConfig) error {
 	req := make(frame, headerSize, defaultFrameSize)
 	req.setHeader(protoRequest, 0, 0, opStartup)
 	req.writeStringMap(map[string]string{
-		"CQL_VERSION": version,
+		"CQL_VERSION": cfg.CQLVersion,
 	})
 	resp, err := c.callSimple(req)
 	if err != nil {
@@ -69,21 +97,13 @@ func (c *Conn) init(version string) error {
 		return ErrProtocol
 	}
 
-	/*	if cfg.Keyspace != "" {
-		qry := &Query{stmt: "USE " + cfg.Keyspace}
-		frame, err = c.executeQuery(qry)
-		if err != nil {
-			return err
-		}
-	} */
-
 	return nil
 }
 
 // Serve starts the stream multiplexer for this connection, which is required
 // to execute any queries. This method runs as long as the connection is
 // open and is therefore usually called in a separate goroutine.
-func (c *Conn) Serve() error {
+func (c *Conn) serve() {
 	var err error
 	for {
 		var frame frame
@@ -101,7 +121,7 @@ func (c *Conn) Serve() error {
 			req.resp <- callResp{nil, err}
 		}
 	}
-	return err
+	c.cluster.HandleError(c, err, true)
 }
 
 func (c *Conn) recv() (frame, error) {
@@ -237,9 +257,6 @@ func (c *Conn) switchKeyspace(keyspace string) error {
 }
 
 func (c *Conn) ExecuteQuery(qry *Query) (*Iter, error) {
-	if err := c.switchKeyspace(qry.Keyspace); err != nil {
-		return nil, err
-	}
 	frame, err := c.executeQuery(qry)
 	if err != nil {
 		return nil, err
@@ -300,6 +317,10 @@ func (c *Conn) Close() {
 	c.conn.Close()
 }
 
+func (c *Conn) Address() string {
+	return c.addr
+}
+
 func (c *Conn) executeQuery(query *Query) (frame, error) {
 	var info *queryInfo
 	if len(query.Args) > 0 {
@@ -340,6 +361,15 @@ func (c *Conn) executeQuery(query *Query) (frame, error) {
 		return nil, err
 	}
 
+	if frame[3] == opResult {
+		f := frame
+		f.skipHeader()
+		if f.readInt() == resultKindKeyspace {
+			keyspace := f.readString()
+			c.cluster.HandleKeyspace(c, keyspace)
+		}
+	}
+
 	if frame[3] == opError {
 		frame.skipHeader()
 		code := frame.readInt()
@@ -347,6 +377,27 @@ func (c *Conn) executeQuery(query *Query) (frame, error) {
 		return nil, Error{code, desc}
 	}
 	return frame, nil
+}
+
+func (c *Conn) UseKeyspace(keyspace string) error {
+	frame := make(frame, headerSize, defaultFrameSize)
+	frame.setHeader(protoRequest, 0, 0, opQuery)
+	frame.writeLongString("USE " + keyspace)
+	frame.writeConsistency(1)
+	frame.writeByte(0)
+
+	frame, err := c.call(frame)
+	if err != nil {
+		return err
+	}
+
+	if frame[3] == opError {
+		frame.skipHeader()
+		code := frame.readInt()
+		desc := frame.readString()
+		return Error{code, desc}
+	}
+	return nil
 }
 
 type queryInfo struct {

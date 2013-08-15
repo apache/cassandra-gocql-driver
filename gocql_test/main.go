@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"log"
 	"reflect"
 	"sort"
@@ -15,7 +14,6 @@ var session *gocql.Session
 
 func init() {
 	cluster := gocql.NewCluster("127.0.0.1")
-	cluster.ConnPerHost = 1
 	session = cluster.CreateSession()
 }
 
@@ -58,7 +56,6 @@ func initSchema() error {
 			attachments map<varchar, text>,
 			PRIMARY KEY (title, revid)
 		)`).Exec(); err != nil {
-		fmt.Println("create err")
 		return err
 	}
 

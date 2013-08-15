@@ -68,7 +68,6 @@ type Query struct {
 	Token    string
 	PageSize int
 	Trace    bool
-	Keyspace string
 }
 
 func NewQuery(stmt string, args ...interface{}) *Query {

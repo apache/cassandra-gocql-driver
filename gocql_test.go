@@ -165,9 +165,9 @@ func TestRoundRobin(t *testing.T) {
 		addrs[i] = servers[i].Address
 		defer servers[i].Stop()
 	}
-	db := NewCluster(addrs...).CreateSession()
-
-	time.Sleep(1 * time.Second)
+	cluster := NewCluster(addrs...)
+	cluster.StartupMin = len(addrs)
+	db := cluster.CreateSession()
 
 	var wg sync.WaitGroup
 	wg.Add(5)
