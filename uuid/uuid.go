@@ -14,6 +14,8 @@ import (
 	"io"
 	"net"
 	"time"
+
+	"github.com/tux21b/gocql"
 )
 
 type UUID [16]byte
@@ -190,4 +192,26 @@ func (u UUID) Time() time.Time {
 	sec := t / 10000000
 	nsec := t - sec
 	return time.Unix(int64(sec)+timeBase, int64(nsec))
+}
+
+func (u UUID) MarshalCQL(info *gocql.TypeInfo) ([]byte, error) {
+	switch info.Type {
+	case gocql.TypeUUID, gocql.TypeTimeUUID:
+		return u[:], nil
+	}
+	return gocql.Marshal(info, u[:])
+}
+
+func (u *UUID) UnmarshalCQL(info *gocql.TypeInfo, data []byte) error {
+	switch info.Type {
+	case gocql.TypeUUID, gocql.TypeTimeUUID:
+		*u = FromBytes(data)
+		return nil
+	}
+	var val []byte
+	if err := gocql.Unmarshal(info, data, &val); err != nil {
+		return err
+	}
+	*u = FromBytes(val)
+	return nil
 }

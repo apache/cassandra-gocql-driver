@@ -8,37 +8,6 @@ import (
 	"errors"
 )
 
-type queryContext interface {
-	executeQuery(query *Query) (frame, error)
-}
-
-type ColumnInfo struct {
-	Keyspace string
-	Table    string
-	Name     string
-	TypeInfo *TypeInfo
-}
-
-/*
-type Batch struct {
-	queries []*Query
-	ctx     queryContext
-	cons    Consistency
-}
-
-func (b *Batch) Query(stmt string, args ...interface{}) *Query {
-	return &Query{
-		stmt: stmt,
-		args: args,
-		cons: b.cons,
-		//ctx:  b,
-	}
-}
-
-func (b *Batch) Apply() error {
-	return nil
-} */
-
 type Error struct {
 	Code    int
 	Message string

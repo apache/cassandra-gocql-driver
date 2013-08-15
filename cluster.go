@@ -26,11 +26,6 @@ type Cluster struct {
 	ConnPerHost int
 	DelayMin    time.Duration
 	DelayMax    time.Duration
-
-	pool     *RoundRobin
-	initOnce sync.Once
-	boot     sync.WaitGroup
-	bootOnce sync.Once
 }
 
 func NewCluster(hosts ...string) *Cluster {
@@ -39,44 +34,93 @@ func NewCluster(hosts ...string) *Cluster {
 		CQLVersion:  "3.0.0",
 		Timeout:     200 * time.Millisecond,
 		DefaultPort: 9042,
+		ConnPerHost: 2,
 	}
 	return c
 }
 
-func (c *Cluster) init() {
-	for i := 0; i < len(c.Hosts); i++ {
-		addr := strings.TrimSpace(c.Hosts[i])
-		if strings.IndexByte(addr, ':') < 0 {
-			addr = fmt.Sprintf("%s:%d", addr, c.DefaultPort)
-		}
-		go c.connect(addr)
-	}
-	c.pool = NewRoundRobin()
-	<-time.After(c.Timeout)
+func (c *Cluster) CreateSession() *Session {
+	return NewSession(newClusterNode(c))
 }
 
-func (c *Cluster) connect(addr string) {
-	delay := c.DelayMin
+type clusterNode struct {
+	cfg      Cluster
+	hostPool *RoundRobin
+	connPool map[string]*RoundRobin
+	closed   bool
+	mu       sync.Mutex
+}
+
+func newClusterNode(cfg *Cluster) *clusterNode {
+	c := &clusterNode{
+		cfg:      *cfg,
+		hostPool: NewRoundRobin(),
+		connPool: make(map[string]*RoundRobin),
+	}
+	for i := 0; i < len(c.cfg.Hosts); i++ {
+		addr := strings.TrimSpace(c.cfg.Hosts[i])
+		if strings.IndexByte(addr, ':') < 0 {
+			addr = fmt.Sprintf("%s:%d", addr, c.cfg.DefaultPort)
+		}
+		for j := 0; j < c.cfg.ConnPerHost; j++ {
+			go c.connect(addr)
+		}
+	}
+	<-time.After(c.cfg.Timeout)
+	return c
+}
+
+func (c *clusterNode) connect(addr string) {
+	delay := c.cfg.DelayMin
 	for {
-		conn, err := Connect(addr, c.CQLVersion, c.Timeout)
+		conn, err := Connect(addr, c.cfg.CQLVersion, c.cfg.Timeout)
 		if err != nil {
+			fmt.Println(err)
 			<-time.After(delay)
-			if delay *= 2; delay > c.DelayMax {
-				delay = c.DelayMax
+			if delay *= 2; delay > c.cfg.DelayMax {
+				delay = c.cfg.DelayMax
 			}
 			continue
 		}
-		c.pool.AddNode(conn)
-		go func() {
-			conn.Serve()
-			c.pool.RemoveNode(conn)
-			c.connect(addr)
-		}()
+		c.addConn(addr, conn)
 		return
 	}
 }
 
-func (c *Cluster) CreateSession() *Session {
-	c.initOnce.Do(c.init)
-	return NewSession(c.pool)
+func (c *clusterNode) addConn(addr string, conn *Conn) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	connPool := c.connPool[addr]
+	if connPool == nil {
+		connPool = NewRoundRobin()
+		c.connPool[addr] = connPool
+		c.hostPool.AddNode(connPool)
+	}
+	connPool.AddNode(conn)
+	go func() {
+		conn.Serve()
+		c.removeConn(addr, conn)
+	}()
+}
+
+func (c *clusterNode) removeConn(addr string, conn *Conn) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	pool := c.connPool[addr]
+	if pool == nil {
+		return
+	}
+	pool.RemoveNode(conn)
+}
+
+func (c *clusterNode) ExecuteQuery(qry *Query) (*Iter, error) {
+	return c.hostPool.ExecuteQuery(qry)
+}
+
+func (c *clusterNode) ExecuteBatch(batch *Batch) error {
+	return c.hostPool.ExecuteBatch(batch)
+}
+
+func (c *clusterNode) Close() {
+	c.hostPool.Close()
 }

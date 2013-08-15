@@ -5,7 +5,6 @@
 package gocql
 
 import (
-	"fmt"
 	"io"
 	"net"
 	"strings"
@@ -95,7 +94,6 @@ func (srv *TestServer) process(frame frame, conn net.Conn) {
 			frame.writeInt(0)
 		}
 	default:
-		fmt.Println("unsupproted:", frame)
 		frame = frame[:headerSize]
 		frame.setHeader(protoResponse, 0, frame[2], opError)
 		frame.writeInt(0)

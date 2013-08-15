@@ -68,6 +68,7 @@ type Query struct {
 	Token    string
 	PageSize int
 	Trace    bool
+	Keyspace string
 }
 
 func NewQuery(stmt string, args ...interface{}) *Query {
@@ -239,4 +240,11 @@ var consinstencyNames = []string{
 
 func (c Consistency) String() string {
 	return consinstencyNames[c]
+}
+
+type ColumnInfo struct {
+	Keyspace string
+	Table    string
+	Name     string
+	TypeInfo *TypeInfo
 }

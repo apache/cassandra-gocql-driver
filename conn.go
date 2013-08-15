@@ -5,7 +5,6 @@
 package gocql
 
 import (
-	"fmt"
 	"net"
 	"sync"
 	"sync/atomic"
@@ -25,8 +24,9 @@ type Conn struct {
 	calls []callReq
 	nwait int32
 
-	prepMu sync.Mutex
-	prep   map[string]*queryInfo
+	prepMu   sync.Mutex
+	prep     map[string]*queryInfo
+	keyspace string
 }
 
 // Connect establishes a connection to a Cassandra node.
@@ -226,7 +226,20 @@ func (c *Conn) prepareStatement(stmt string) (*queryInfo, error) {
 	return info, nil
 }
 
+func (c *Conn) switchKeyspace(keyspace string) error {
+	if keyspace == "" || c.keyspace == keyspace {
+		return nil
+	}
+	if _, err := c.ExecuteQuery(&Query{Stmt: "USE " + keyspace}); err != nil {
+		return err
+	}
+	return nil
+}
+
 func (c *Conn) ExecuteQuery(qry *Query) (*Iter, error) {
+	if err := c.switchKeyspace(qry.Keyspace); err != nil {
+		return nil, err
+	}
 	frame, err := c.executeQuery(qry)
 	if err != nil {
 		return nil, err
@@ -290,7 +303,6 @@ func (c *Conn) Close() {
 func (c *Conn) executeQuery(query *Query) (frame, error) {
 	var info *queryInfo
 	if len(query.Args) > 0 {
-		fmt.Println("ARGS:", query.Args)
 		var err error
 		info, err = c.prepareStatement(query.Stmt)
 		if err != nil {
