@@ -45,9 +45,8 @@ type Conn struct {
 	prepMu sync.Mutex
 	prep   map[string]*queryInfo
 
-	cluster  Cluster
-	addr     string
-	keyspace string
+	cluster Cluster
+	addr    string
 }
 
 // Connect establishes a connection to a Cassandra node.
@@ -246,16 +245,6 @@ func (c *Conn) prepareStatement(stmt string) (*queryInfo, error) {
 	return info, nil
 }
 
-func (c *Conn) switchKeyspace(keyspace string) error {
-	if keyspace == "" || c.keyspace == keyspace {
-		return nil
-	}
-	if _, err := c.ExecuteQuery(&Query{Stmt: "USE " + keyspace}); err != nil {
-		return err
-	}
-	return nil
-}
-
 func (c *Conn) ExecuteQuery(qry *Query) (*Iter, error) {
 	frame, err := c.executeQuery(qry)
 	if err != nil {
@@ -280,7 +269,8 @@ func (c *Conn) ExecuteBatch(batch *Batch) error {
 		entry := &batch.Entries[i]
 		var info *queryInfo
 		if len(entry.Args) > 0 {
-			info, err := c.prepareStatement(entry.Stmt)
+			var err error
+			info, err = c.prepareStatement(entry.Stmt)
 			if err != nil {
 				return err
 			}
@@ -292,7 +282,7 @@ func (c *Conn) ExecuteBatch(batch *Batch) error {
 		}
 		frame.writeShort(uint16(len(entry.Args)))
 		for j := 0; j < len(entry.Args); j++ {
-			val, err := Marshal(info.args[j].TypeInfo, entry.Args[i])
+			val, err := Marshal(info.args[j].TypeInfo, entry.Args[j])
 			if err != nil {
 				return err
 			}

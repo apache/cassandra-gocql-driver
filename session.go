@@ -247,3 +247,18 @@ type ColumnInfo struct {
 	Name     string
 	TypeInfo *TypeInfo
 }
+
+type Error struct {
+	Code    int
+	Message string
+}
+
+func (e Error) Error() string {
+	return e.Message
+}
+
+var (
+	ErrNotFound        = errors.New("not found")
+	ErrNoHostAvailable = errors.New("no host available")
+	ErrProtocol        = errors.New("protocol error")
+)

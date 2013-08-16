@@ -720,6 +720,9 @@ func marshalList(info *TypeInfo, value interface{}) ([]byte, error) {
 	k := t.Kind()
 	switch k {
 	case reflect.Slice, reflect.Array:
+		if k == reflect.Slice && rv.IsNil() {
+			return nil, nil
+		}
 		buf := &bytes.Buffer{}
 		n := rv.Len()
 		if n > math.MaxUint16 {
@@ -766,6 +769,13 @@ func unmarshalList(info *TypeInfo, data []byte, value interface{}) error {
 
 	switch k {
 	case reflect.Slice, reflect.Array:
+		if data == nil {
+			if k == reflect.Array {
+				return unmarshalErrorf("unmarshal list: can not store nil in array value")
+			}
+			rv.Set(reflect.Zero(t))
+			return nil
+		}
 		if len(data) < 2 {
 			return unmarshalErrorf("unmarshal list: unexpected eof")
 		}
@@ -802,6 +812,9 @@ func marshalMap(info *TypeInfo, value interface{}) ([]byte, error) {
 	t := rv.Type()
 	if t.Kind() != reflect.Map {
 		return nil, marshalErrorf("can not marshal %T into %s", value, info)
+	}
+	if rv.IsNil() {
+		return nil, nil
 	}
 	buf := &bytes.Buffer{}
 	n := rv.Len()
@@ -841,14 +854,16 @@ func unmarshalMap(info *TypeInfo, data []byte, value interface{}) error {
 	rv := reflect.ValueOf(value)
 	if rv.Kind() != reflect.Ptr {
 		return unmarshalErrorf("can not unmarshal into non-pointer %T", value)
-
 	}
 	rv = rv.Elem()
 	t := rv.Type()
 	if t.Kind() != reflect.Map {
 		return unmarshalErrorf("can not unmarshal %s into %T", info, value)
 	}
-
+	if data == nil {
+		rv.Set(reflect.Zero(t))
+		return nil
+	}
 	rv.Set(reflect.MakeMap(t))
 	if len(data) < 2 {
 		return unmarshalErrorf("unmarshal map: unexpected eof")

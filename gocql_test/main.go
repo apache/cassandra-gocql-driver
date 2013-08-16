@@ -1,3 +1,7 @@
+// Copyright (c) 2012 The gocql Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
 package main
 
 import (
@@ -82,6 +86,12 @@ var pageTestData = []*Page{
 			"favicon": Attachment("favicon.ico"),
 		},
 	},
+	&Page{
+		Title:    "Foobar",
+		RevId:    uuid.TimeUUID(),
+		Body:     "foo::Foo f = new foo::Foo(foo::Foo::INIT);",
+		Modified: time.Date(2013, time.August, 13, 9, 52, 3, 0, time.UTC),
+	},
 }
 
 func insertTestData() error {
@@ -97,11 +107,26 @@ func insertTestData() error {
 	return nil
 }
 
+func insertBatch() error {
+	batch := gocql.NewBatch(gocql.LoggedBatch)
+	for _, page := range pageTestData {
+		batch.Query(`INSERT INTO page
+			(title, revid, body, views, protected, modified, tags, attachments)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+			page.Title, page.RevId, page.Body, page.Views, page.Protected,
+			page.Modified, page.Tags, page.Attachments)
+	}
+	if err := session.ExecuteBatch(batch); err != nil {
+		return err
+	}
+	return nil
+}
+
 func getPage(title string, revid uuid.UUID) (*Page, error) {
 	p := new(Page)
 	err := session.Query(`SELECT title, revid, body, views, protected, modified,
-		tags, attachments
-		FROM page WHERE title = ? AND revid = ?`, title, revid).Scan(
+			tags, attachments
+			FROM page WHERE title = ? AND revid = ?`, title, revid).Scan(
 		&p.Title, &p.RevId, &p.Body, &p.Views, &p.Protected, &p.Modified,
 		&p.Tags, &p.Attachments)
 	return p, err
@@ -121,7 +146,7 @@ func main() {
 		log.Fatal("getCount: ", err)
 	}
 	if count != len(pageTestData) {
-		log.Println("count: expected %d, got %d", len(pageTestData), count)
+		log.Printf("count: expected %d, got %d", len(pageTestData), count)
 	}
 
 	for _, original := range pageTestData {
@@ -136,4 +161,22 @@ func main() {
 			log.Printf("page: expected %#v, got %#v\n", original, page)
 		}
 	}
+
+	for _, original := range pageTestData {
+		if err := session.Query("DELETE FROM page WHERE title = ? AND revid = ?",
+			original.Title, original.RevId).Exec(); err != nil {
+			log.Println("delete:", err)
+		}
+	}
+	if err := session.Query("SELECT COUNT(*) FROM page").Scan(&count); err != nil {
+		log.Fatal("getCount: ", err)
+	}
+	if count != 0 {
+		log.Printf("count: expected %d, got %d", len(pageTestData), count)
+	}
+
+	if err := insertBatch(); err != nil {
+		log.Fatal("insertBatch: ", err)
+	}
+
 }

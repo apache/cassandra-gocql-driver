@@ -159,9 +159,9 @@ func (f *frame) readInt() int {
 	if len(*f) < 4 {
 		panic(ErrProtocol)
 	}
-	v := int((*f)[0])<<24 | int((*f)[1])<<16 | int((*f)[2])<<8 | int((*f)[3])
+	v := uint32((*f)[0])<<24 | uint32((*f)[1])<<16 | uint32((*f)[2])<<8 | uint32((*f)[3])
 	*f = (*f)[4:]
-	return v
+	return int(int32(v))
 }
 
 func (f *frame) readShort() uint16 {

@@ -24,7 +24,7 @@ type ClusterConfig struct {
 	Timeout      time.Duration
 	DefaultPort  int
 	Keyspace     string
-	NumConn      int
+	NumConns     int
 	NumStreams   int
 	DelayMin     time.Duration
 	DelayMax     time.Duration
@@ -38,7 +38,8 @@ func NewCluster(hosts ...string) *ClusterConfig {
 		ProtoVersion: 2,
 		Timeout:      200 * time.Millisecond,
 		DefaultPort:  9042,
-		NumConn:      2,
+		NumConns:     2,
+		NumStreams:   128,
 		DelayMin:     1 * time.Second,
 		DelayMax:     10 * time.Minute,
 		StartupMin:   len(hosts)/2 + 1,
@@ -82,7 +83,7 @@ func (c *clusterImpl) startup() {
 		if strings.IndexByte(addr, ':') < 0 {
 			addr = fmt.Sprintf("%s:%d", addr, c.cfg.DefaultPort)
 		}
-		for j := 0; j < c.cfg.NumConn; j++ {
+		for j := 0; j < c.cfg.NumConns; j++ {
 			go c.connect(addr)
 		}
 	}

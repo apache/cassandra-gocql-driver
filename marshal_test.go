@@ -135,12 +135,25 @@ var marshalTests = []struct {
 		[]int{1, 2},
 	},
 	{
+		&TypeInfo{Type: TypeSet, Elem: &TypeInfo{Type: TypeInt}},
+		[]byte(nil),
+		[]int(nil),
+	},
+	{
 		&TypeInfo{Type: TypeMap,
 			Key:  &TypeInfo{Type: TypeVarchar},
 			Elem: &TypeInfo{Type: TypeInt},
 		},
 		[]byte("\x00\x01\x00\x03foo\x00\x04\x00\x00\x00\x01"),
 		map[string]int{"foo": 1},
+	},
+	{
+		&TypeInfo{Type: TypeMap,
+			Key:  &TypeInfo{Type: TypeVarchar},
+			Elem: &TypeInfo{Type: TypeInt},
+		},
+		[]byte(nil),
+		map[string]int(nil),
 	},
 }
 
