@@ -126,7 +126,7 @@ func getPage(title string, revid uuid.UUID) (*Page, error) {
 	p := new(Page)
 	err := session.Query(`SELECT title, revid, body, views, protected, modified,
 			tags, attachments
-			FROM page WHERE title = ? AND revid = ?`, title, revid).Scan(
+			FROM page WHERE title = ? AND revid = ? LIMIT 1`, title, revid).Scan(
 		&p.Title, &p.RevId, &p.Body, &p.Views, &p.Protected, &p.Modified,
 		&p.Tags, &p.Attachments)
 	return p, err
@@ -179,4 +179,43 @@ func main() {
 		log.Fatal("insertBatch: ", err)
 	}
 
+}
+
+func main2() {
+	// connect to the cluster
+	cluster := gocql.NewCluster("192.168.1.1", "192.168.1.2", "192.168.1.3")
+	cluster.Keyspace = "example"
+	cluster.Consistency = gocql.Quorum
+	session := cluster.CreateSession()
+	defer session.Close()
+
+	// insert a tweet
+	if err := session.Query(`INSERT INTO tweet
+		(timeline, id, text) VALUES (?, ?, ?)`,
+		"me", uuid.TimeUUID(), "hello world").Exec(); err != nil {
+		log.Fatal("insert tweet: ", err)
+	}
+
+	var id uuid.UUID
+	var text string
+
+	// select a single tweet
+	if err := session.Query(`SELECT id, text
+		FROM tweet
+		WHERE timeline = ?
+		LIMIT 1`,
+		"me").Consistency(gocql.One).Scan(&id, &text); err != nil {
+		log.Fatal("get tweet: ", err)
+	}
+	fmt.Println("Tweet:", id, text)
+
+	// list all tweets
+	iter := session.Query(`SELECT id, text FROM tweet
+		WHERE timeline = ?`, "me").Iter()
+	for iter.Scan(&id, &text) {
+		fmt.Println("Tweet:", id, text)
+	}
+	if err := iter.Close(); err != nil {
+		log.Fatal("list tweets:", err)
+	}
 }

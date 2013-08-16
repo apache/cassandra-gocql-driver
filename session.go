@@ -79,10 +79,14 @@ type QueryBuilder struct {
 	ctx Node
 }
 
+// Args specifies the query parameters.
 func (b QueryBuilder) Args(args ...interface{}) {
 	b.qry.Args = args
 }
 
+// Consistency sets the consistency level for this query. If no consistency
+// level have been set, the default consistency level of the cluster
+// is used.
 func (b QueryBuilder) Consistency(cons Consistency) QueryBuilder {
 	b.qry.Cons = cons
 	return b

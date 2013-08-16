@@ -51,14 +51,6 @@ func (r *RoundRobin) Size() int {
 	return n
 }
 
-func (r *RoundRobin) GetPool() []Node {
-	r.mu.RLock()
-	pool := make([]Node, len(r.pool))
-	copy(pool, r.pool)
-	r.mu.RUnlock()
-	return pool
-}
-
 func (r *RoundRobin) ExecuteQuery(qry *Query) (*Iter, error) {
 	node := r.pick()
 	if node == nil {

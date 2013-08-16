@@ -26,7 +26,6 @@ type Cluster interface {
 type ConnConfig struct {
 	ProtoVersion int
 	CQLVersion   string
-	Keyspace     string
 	Timeout      time.Duration
 	NumStreams   int
 }
