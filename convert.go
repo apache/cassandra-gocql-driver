@@ -8,7 +8,7 @@ import (
 	"database/sql/driver"
 	"encoding/binary"
 	"fmt"
-	"github.com/tux21b/gocql/uuid"
+	uuid "github.com/streadway/simpleuuid"
 	"math"
 	"reflect"
 	"strconv"
@@ -62,7 +62,11 @@ func decode(b []byte, t uint16) driver.Value {
 		nsec := (t - sec*1000) * 1000000
 		return time.Unix(sec, nsec)
 	case typeUUID, typeTimeUUID:
-		return uuid.FromBytes(b)
+		u, err := uuid.NewBytes(b)
+		if err != nil {
+			panic(err)
+		}
+		return u
 	default:
 		panic("unsupported type")
 	}
@@ -221,16 +225,20 @@ func encBlob(v interface{}) (driver.Value, error) {
 }
 
 func encUUID(v interface{}) (driver.Value, error) {
+	var err error
 	var u uuid.UUID
+
 	switch v := v.(type) {
 	case string:
-		var err error
-		u, err = uuid.ParseUUID(v)
+		u, err = uuid.NewString(v)
 		if err != nil {
 			return nil, err
 		}
 	case []byte:
-		u = uuid.FromBytes(v)
+		u, err = uuid.NewBytes(v)
+		if err != nil {
+			return nil, err
+		}
 	case uuid.UUID:
 		u = v
 	default:
