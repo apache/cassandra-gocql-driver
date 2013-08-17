@@ -203,18 +203,8 @@ func (c *clusterImpl) HandleKeyspace(conn *Conn, keyspace string) {
 	}
 }
 
-func (c *clusterImpl) ExecuteQuery(qry *Query) (*Iter, error) {
-	if qry.Cons == 0 {
-		qry.Cons = c.cfg.Consistency
-	}
-	return c.hostPool.ExecuteQuery(qry)
-}
-
-func (c *clusterImpl) ExecuteBatch(batch *Batch) error {
-	if batch.Cons == 0 {
-		batch.Cons = c.cfg.Consistency
-	}
-	return c.hostPool.ExecuteBatch(batch)
+func (c *clusterImpl) Pick(qry *Query) *Conn {
+	return c.hostPool.Pick(qry)
 }
 
 func (c *clusterImpl) Close() {

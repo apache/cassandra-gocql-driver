@@ -37,6 +37,9 @@ const (
 
 	flagQueryValues uint8 = 1
 	flagCompress    uint8 = 1
+	flagPageSize    uint8 = 4
+	flagPageState   uint8 = 8
+	flagHasMore     uint8 = 2
 
 	headerSize = 8
 )
@@ -232,27 +235,31 @@ func (f *frame) readTypeInfo() *TypeInfo {
 	return typ
 }
 
-func (f *frame) readMetaData() []ColumnInfo {
+func (f *frame) readMetaData() ([]ColumnInfo, []byte) {
 	flags := f.readInt()
 	numColumns := f.readInt()
+	var pageState []byte
+	if flags&2 != 0 {
+		pageState = f.readBytes()
+	}
 	globalKeyspace := ""
 	globalTable := ""
 	if flags&1 != 0 {
 		globalKeyspace = f.readString()
 		globalTable = f.readString()
 	}
-	info := make([]ColumnInfo, numColumns)
+	columns := make([]ColumnInfo, numColumns)
 	for i := 0; i < numColumns; i++ {
-		info[i].Keyspace = globalKeyspace
-		info[i].Table = globalTable
+		columns[i].Keyspace = globalKeyspace
+		columns[i].Table = globalTable
 		if flags&1 == 0 {
-			info[i].Keyspace = f.readString()
-			info[i].Table = f.readString()
+			columns[i].Keyspace = f.readString()
+			columns[i].Table = f.readString()
 		}
-		info[i].Name = f.readString()
-		info[i].TypeInfo = f.readTypeInfo()
+		columns[i].Name = f.readString()
+		columns[i].TypeInfo = f.readTypeInfo()
 	}
-	return info
+	return columns, pageState
 }
 
 func (f *frame) writeConsistency(c Consistency) {
@@ -298,4 +305,107 @@ type errorFrame struct {
 
 func (e errorFrame) Error() string {
 	return e.Message
+}
+
+type operation interface {
+	encodeFrame(version uint8, dst frame) (frame, error)
+}
+
+type startupFrame struct {
+	CQLVersion  string
+	Compression string
+}
+
+func (op *startupFrame) encodeFrame(version uint8, f frame) (frame, error) {
+	if f == nil {
+		f = make(frame, headerSize, defaultFrameSize)
+	}
+	f.setHeader(version, 0, 0, opStartup)
+	f.writeShort(1)
+	f.writeString("CQL_VERSION")
+	f.writeString(op.CQLVersion)
+	if op.Compression != "" {
+		f[headerSize+1] += 1
+		f.writeString("COMPRESSION")
+		f.writeString(op.Compression)
+	}
+	return f, nil
+}
+
+type queryFrame struct {
+	Stmt      string
+	Prepared  []byte
+	Cons      Consistency
+	Values    [][]byte
+	PageSize  int
+	PageState []byte
+}
+
+func (op *queryFrame) encodeFrame(version uint8, f frame) (frame, error) {
+	if version == 1 && (op.PageSize != 0 || len(op.PageState) > 0 ||
+		(len(op.Values) > 0 && len(op.Prepared) == 0)) {
+		return nil, ErrUnsupported
+	}
+	if f == nil {
+		f = make(frame, headerSize, defaultFrameSize)
+	}
+	if len(op.Prepared) > 0 {
+		f.setHeader(version, 0, 0, opExecute)
+		f.writeShortBytes(op.Prepared)
+	} else {
+		f.setHeader(version, 0, 0, opQuery)
+		f.writeLongString(op.Stmt)
+	}
+	if version >= 2 {
+		f.writeConsistency(op.Cons)
+		flagPos := len(f)
+		f.writeByte(0)
+		if len(op.Values) > 0 {
+			f[flagPos] |= flagQueryValues
+			f.writeShort(uint16(len(op.Values)))
+			for _, value := range op.Values {
+				f.writeBytes(value)
+			}
+		}
+		if op.PageSize > 0 {
+			f[flagPos] |= flagPageSize
+			f.writeInt(int32(op.PageSize))
+		}
+		if len(op.PageState) > 0 {
+			f[flagPos] |= flagPageState
+			f.writeBytes(op.PageState)
+		}
+	} else if version == 1 {
+		if len(op.Prepared) > 0 {
+			f.writeShort(uint16(len(op.Values)))
+			for _, value := range op.Values {
+				f.writeBytes(value)
+			}
+		}
+		f.writeConsistency(op.Cons)
+	}
+	return f, nil
+}
+
+type prepareFrame struct {
+	Stmt string
+}
+
+func (op *prepareFrame) encodeFrame(version uint8, f frame) (frame, error) {
+	if f == nil {
+		f = make(frame, headerSize, defaultFrameSize)
+	}
+	f.setHeader(version, 0, 0, opPrepare)
+	f.writeLongString(op.Stmt)
+	return f, nil
+}
+
+type optionsFrame struct{}
+
+func (op *optionsFrame) encodeFrame(version uint8, f frame) (frame, error) {
+	if f == nil {
+		f = make(frame, headerSize, defaultFrameSize)
+	}
+	f.setHeader(version, 0, 0, opOptions)
+	return f, nil
 }

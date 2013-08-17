@@ -4,6 +4,8 @@ gocql
 Package gocql implements a fast and robust Cassandra client for the
 Go programming language.
 
+**Attention:** This package is currently actively developed and the API may change in the future.
+
 Installation
 ------------
 
@@ -25,6 +27,8 @@ Features
   * round robin distribution of queries to different hosts
   * round robin distribution of queries to different connections on a host
   * each connection can execute up to 128 concurrent queries
+* iteration over paged results with configurable page size
+* optional frame compression (using snappy)
 * automatic query preparation
 
 Example

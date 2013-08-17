@@ -20,9 +20,6 @@ type Session struct {
 
 // NewSession wraps an existing Node.
 func NewSession(node Node) *Session {
-	if s, ok := node.(*Session); ok {
-		return &Session{Node: s.Node}
-	}
 	return &Session{Node: node, Cons: Quorum}
 }
 
@@ -47,18 +44,73 @@ func (s *Session) Close() {
 
 // ExecuteBatch executes a Batch on the underlying Node.
 func (s *Session) ExecuteBatch(batch *Batch) error {
-	if batch.Cons == 0 {
-		batch.Cons = s.Cons
-	}
-	return s.Node.ExecuteBatch(batch)
+	/*
+		if batch.Cons == 0 {
+			batch.Cons = s.Cons
+		}
+		return s.Node.ExecuteBatch(batch)
+	*/
+	return nil
 }
 
 // ExecuteQuery executes a Query on the underlying Node.
-func (s *Session) ExecuteQuery(qry *Query) (*Iter, error) {
+func (s *Session) ExecuteQuery(qry *Query) *Iter {
+	return s.executeQuery(qry, nil)
+}
+
+func (s *Session) executeQuery(qry *Query, pageState []byte) *Iter {
 	if qry.Cons == 0 {
 		qry.Cons = s.Cons
 	}
-	return s.Node.ExecuteQuery(qry)
+
+	conn := s.Node.Pick(qry)
+	if conn == nil {
+		return &Iter{err: ErrUnavailable}
+	}
+	op := &queryFrame{
+		Stmt:      qry.Stmt,
+		Cons:      qry.Cons,
+		PageSize:  qry.PageSize,
+		PageState: pageState,
+	}
+	if len(qry.Args) > 0 {
+		info, err := conn.prepareStatement(qry.Stmt)
+		if err != nil {
+			return &Iter{err: err}
+		}
+		op.Prepared = info.id
+		op.Values = make([][]byte, len(qry.Args))
+		for i := 0; i < len(qry.Args); i++ {
+			val, err := Marshal(info.args[i].TypeInfo, qry.Args[i])
+			if err != nil {
+				return &Iter{err: err}
+			}
+			op.Values[i] = val
+		}
+	}
+	resp, err := conn.exec(op)
+	if err != nil {
+		return &Iter{err: err}
+	}
+	switch x := resp.(type) {
+	case resultVoidFrame:
+		return &Iter{}
+	case resultRowsFrame:
+		iter := &Iter{columns: x.Columns, rows: x.Rows}
+		if len(x.PagingState) > 0 {
+			iter.session = s
+			iter.qry = qry
+			iter.pageState = x.PagingState
+		}
+		return iter
+	case resultKeyspaceFrame:
+		conn.cluster.HandleKeyspace(conn, x.Keyspace)
+		return &Iter{}
+	case error:
+		return &Iter{err: x}
+	default:
+		return &Iter{err: ErrProtocol}
+	}
 }
 
 type Query struct {
@@ -75,8 +127,8 @@ func NewQuery(stmt string, args ...interface{}) *Query {
 }
 
 type QueryBuilder struct {
-	qry *Query
-	ctx Node
+	qry     *Query
+	session *Session
 }
 
 // Args specifies the query parameters.
@@ -108,16 +160,12 @@ func (b QueryBuilder) PageSize(size int) QueryBuilder {
 }
 
 func (b QueryBuilder) Exec() error {
-	_, err := b.ctx.ExecuteQuery(b.qry)
-	return err
+	iter := b.session.ExecuteQuery(b.qry)
+	return iter.err
 }
 
 func (b QueryBuilder) Iter() *Iter {
-	iter, err := b.ctx.ExecuteQuery(b.qry)
-	if err != nil {
-		return &Iter{err: err}
-	}
-	return iter
+	return b.session.ExecuteQuery(b.qry)
 }
 
 func (b QueryBuilder) Scan(values ...interface{}) error {
@@ -127,10 +175,13 @@ func (b QueryBuilder) Scan(values ...interface{}) error {
 }
 
 type Iter struct {
-	err     error
-	pos     int
-	rows    [][][]byte
-	columns []ColumnInfo
+	err       error
+	pos       int
+	rows      [][][]byte
+	columns   []ColumnInfo
+	qry       *Query
+	session   *Session
+	pageState []byte
 }
 
 func (iter *Iter) Columns() []ColumnInfo {
@@ -138,7 +189,14 @@ func (iter *Iter) Columns() []ColumnInfo {
 }
 
 func (iter *Iter) Scan(values ...interface{}) bool {
-	if iter.err != nil || iter.pos >= len(iter.rows) {
+	if iter.err != nil {
+		return false
+	}
+	if iter.pos >= len(iter.rows) {
+		if len(iter.pageState) > 0 {
+			*iter = *iter.session.executeQuery(iter.qry, iter.pageState)
+			return iter.Scan(values...)
+		}
 		return false
 	}
 	if len(values) != len(iter.columns) {
@@ -240,4 +298,5 @@ var (
 	ErrNotFound    = errors.New("not found")
 	ErrUnavailable = errors.New("unavailable")
 	ErrProtocol    = errors.New("protocol error")
+	ErrUnsupported = errors.New("feature not supported")
 )

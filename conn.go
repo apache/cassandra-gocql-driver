@@ -94,16 +94,13 @@ func Connect(addr string, cfg ConnConfig, cluster Cluster) (*Conn, error) {
 }
 
 func (c *Conn) startup(cfg *ConnConfig) error {
-	req := make(frame, headerSize, defaultFrameSize)
-	req.setHeader(c.version, 0, 0, opStartup)
-	m := map[string]string{
-		"CQL_VERSION": cfg.CQLVersion,
+	req := &startupFrame{
+		CQLVersion: cfg.CQLVersion,
 	}
 	if c.compressor != nil {
-		m["COMPRESSION"] = c.compressor.Name()
+		req.Compression = c.compressor.Name()
 	}
-	req.writeStringMap(m)
-	resp, err := c.callSimple(req)
+	resp, err := c.execSimple(req)
 	if err != nil {
 		return err
 	}
@@ -176,29 +173,25 @@ func (c *Conn) recv() (frame, error) {
 	return resp, nil
 }
 
-func (c *Conn) callSimple(req frame) (interface{}, error) {
-	req.setLength(len(req) - headerSize)
-	if _, err := c.conn.Write(req); err != nil {
+func (c *Conn) execSimple(op operation) (interface{}, error) {
+	f, err := op.encodeFrame(c.version, nil)
+	f.setLength(len(f) - headerSize)
+	if _, err := c.conn.Write([]byte(f)); err != nil {
 		c.conn.Close()
 		return nil, err
 	}
-	buf, err := c.recv()
+	if f, err = c.recv(); err != nil {
+		return nil, err
+	}
+	return c.decodeFrame(f)
+}
+
+func (c *Conn) exec(op operation) (interface{}, error) {
+	//fmt.Printf("exec: %#v\n", op)
+	req, err := op.encodeFrame(c.version, nil)
 	if err != nil {
 		return nil, err
 	}
-	return c.decodeFrame(buf)
-}
-
-func (c *Conn) call(req frame) (interface{}, error) {
-	id := <-c.uniq
-	req[2] = id
-
-	call := &c.calls[id]
-	call.resp = make(chan callResp, 1)
-	atomic.AddInt32(&c.nwait, 1)
-	atomic.StoreInt32(&call.active, 1)
-
-	req.setLength(len(req) - headerSize)
 	if len(req) > headerSize && c.compressor != nil {
 		body, err := c.compressor.Encode([]byte(req[headerSize:]))
 		if err != nil {
@@ -206,8 +199,16 @@ func (c *Conn) call(req frame) (interface{}, error) {
 		}
 		req = append(req[:headerSize], frame(body)...)
 		req[1] |= flagCompress
-		req.setLength(len(req) - headerSize)
 	}
+	req.setLength(len(req) - headerSize)
+
+	id := <-c.uniq
+	req[2] = id
+	call := &c.calls[id]
+	call.resp = make(chan callResp, 1)
+	atomic.AddInt32(&c.nwait, 1)
+	atomic.StoreInt32(&call.active, 1)
+
 	if n, err := c.conn.Write(req); err != nil {
 		c.conn.Close()
 		if n > 0 {
@@ -240,9 +241,7 @@ func (c *Conn) dispatch(resp frame) {
 }
 
 func (c *Conn) ping() error {
-	req := make(frame, headerSize)
-	req.setHeader(c.version, 0, 0, opOptions)
-	_, err := c.call(req)
+	_, err := c.exec(&optionsFrame{})
 	return err
 }
 
@@ -259,12 +258,7 @@ func (c *Conn) prepareStatement(stmt string) (*queryInfo, error) {
 	c.prep[stmt] = info
 	c.prepMu.Unlock()
 
-	frame := make(frame, headerSize, defaultFrameSize)
-	frame.setHeader(c.version, 0, 0, opPrepare)
-	frame.writeLongString(stmt)
-	frame.setLength(len(frame) - headerSize)
-
-	resp, err := c.call(frame)
+	resp, err := c.exec(&prepareFrame{Stmt: stmt})
 	if err != nil {
 		return nil, err
 	}
@@ -282,50 +276,23 @@ func (c *Conn) prepareStatement(stmt string) (*queryInfo, error) {
 }
 
 func (c *Conn) ExecuteQuery(qry *Query) (*Iter, error) {
-	var info *queryInfo
+	op := &queryFrame{Stmt: qry.Stmt, Cons: qry.Cons, PageSize: qry.PageSize}
 	if len(qry.Args) > 0 {
-		var err error
-		info, err = c.prepareStatement(qry.Stmt)
+		info, err := c.prepareStatement(qry.Stmt)
 		if err != nil {
 			return nil, err
 		}
-	}
-	req := make(frame, headerSize, defaultFrameSize)
-	if info == nil {
-		req.setHeader(c.version, 0, 0, opQuery)
-		req.writeLongString(qry.Stmt)
-		req.writeConsistency(qry.Cons)
-		if c.version > 1 {
-			req.writeByte(0)
-		}
-	} else {
-		req.setHeader(c.version, 0, 0, opExecute)
-		req.writeShortBytes(info.id)
-		if c.version == 1 {
-			req.writeShort(uint16(len(qry.Args)))
-		} else {
-			req.writeConsistency(qry.Cons)
-			flags := uint8(0)
-			if len(qry.Args) > 0 {
-				flags |= flagQueryValues
-			}
-			req.writeByte(flags)
-			if flags&flagQueryValues != 0 {
-				req.writeShort(uint16(len(qry.Args)))
-			}
-		}
+		op.Prepared = info.id
+		op.Values = make([][]byte, len(qry.Args))
 		for i := 0; i < len(qry.Args); i++ {
 			val, err := Marshal(info.args[i].TypeInfo, qry.Args[i])
 			if err != nil {
 				return nil, err
 			}
-			req.writeBytes(val)
-		}
-		if c.version == 1 {
-			req.writeConsistency(qry.Cons)
+			op.Values[i] = val
 		}
 	}
-	resp, err := c.call(req)
+	resp, err := c.exec(op)
 	if err != nil {
 		return nil, err
 	}
@@ -344,51 +311,56 @@ func (c *Conn) ExecuteQuery(qry *Query) (*Iter, error) {
 }
 
 func (c *Conn) ExecuteBatch(batch *Batch) error {
-	if c.version == 1 {
-		return ErrProtocol
-	}
-	frame := make(frame, headerSize, defaultFrameSize)
-	frame.setHeader(c.version, 0, 0, opBatch)
-	frame.writeByte(byte(batch.Type))
-	frame.writeShort(uint16(len(batch.Entries)))
-	for i := 0; i < len(batch.Entries); i++ {
-		entry := &batch.Entries[i]
-		var info *queryInfo
-		if len(entry.Args) > 0 {
-			var err error
-			info, err = c.prepareStatement(entry.Stmt)
-			if err != nil {
-				return err
-			}
-			frame.writeByte(1)
-			frame.writeShortBytes(info.id)
-		} else {
-			frame.writeByte(0)
-			frame.writeLongString(entry.Stmt)
+	/*
+		if c.version == 1 {
+			return ErrUnsupported
 		}
-		frame.writeShort(uint16(len(entry.Args)))
-		for j := 0; j < len(entry.Args); j++ {
-			val, err := Marshal(info.args[j].TypeInfo, entry.Args[j])
-			if err != nil {
-				return err
+		frame := make(frame, headerSize, defaultFrameSize)
+		frame.setHeader(c.version, 0, 0, opBatch)
+		frame.writeByte(byte(batch.Type))
+		frame.writeShort(uint16(len(batch.Entries)))
+		for i := 0; i < len(batch.Entries); i++ {
+			entry := &batch.Entries[i]
+			var info *queryInfo
+			if len(entry.Args) > 0 {
+				var err error
+				info, err = c.prepareStatement(entry.Stmt)
+				if err != nil {
+					return err
+				}
+				frame.writeByte(1)
+				frame.writeShortBytes(info.id)
+			} else {
+				frame.writeByte(0)
+				frame.writeLongString(entry.Stmt)
 			}
-			frame.writeBytes(val)
+			frame.writeShort(uint16(len(entry.Args)))
+			for j := 0; j < len(entry.Args); j++ {
+				val, err := Marshal(info.args[j].TypeInfo, entry.Args[j])
+				if err != nil {
+					return err
+				}
+				frame.writeBytes(val)
+			}
 		}
-	}
-	frame.writeConsistency(batch.Cons)
+		frame.writeConsistency(batch.Cons)
 
-	resp, err := c.call(frame)
-	if err != nil {
-		return err
-	}
-	switch x := resp.(type) {
-	case resultVoidFrame:
-	case error:
-		return x
-	default:
-		return ErrProtocol
-	}
+		resp, err := c.call(frame)
+		if err != nil {
+			return err
+		}
+		switch x := resp.(type) {
+		case resultVoidFrame:
+		case error:
+			return x
+		default:
+			return ErrProtocol
+		}*/
 	return nil
+}
+
+func (c *Conn) Pick(qry *Query) *Conn {
+	return c
 }
 
 func (c *Conn) Close() {
@@ -400,13 +372,7 @@ func (c *Conn) Address() string {
 }
 
 func (c *Conn) UseKeyspace(keyspace string) error {
-	frame := make(frame, headerSize, defaultFrameSize)
-	frame.setHeader(c.version, 0, 0, opQuery)
-	frame.writeLongString("USE " + keyspace)
-	frame.writeConsistency(1)
-	frame.writeByte(0)
-
-	resp, err := c.call(frame)
+	resp, err := c.exec(&queryFrame{Stmt: "USE " + keyspace, Cons: Any})
 	if err != nil {
 		return err
 	}
@@ -450,7 +416,7 @@ func (c *Conn) decodeFrame(f frame) (rval interface{}, err error) {
 		case resultKindVoid:
 			return resultVoidFrame{}, nil
 		case resultKindRows:
-			columns := f.readMetaData()
+			columns, pageState := f.readMetaData()
 			numRows := f.readInt()
 			values := make([][]byte, numRows*len(columns))
 			for i := 0; i < len(values); i++ {
@@ -460,13 +426,13 @@ func (c *Conn) decodeFrame(f frame) (rval interface{}, err error) {
 			for i := 0; i < len(values); i += len(columns) {
 				rows[i] = values[i : i+len(columns)]
 			}
-			return resultRowsFrame{columns, rows, nil}, nil
+			return resultRowsFrame{columns, rows, pageState}, nil
 		case resultKindKeyspace:
 			keyspace := f.readString()
 			return resultKeyspaceFrame{keyspace}, nil
 		case resultKindPrepared:
 			id := f.readShortBytes()
-			values := f.readMetaData()
+			values, _ := f.readMetaData()
 			return resultPreparedFrame{id, values}, nil
 		case resultKindSchemaChanged:
 			return resultVoidFrame{}, nil

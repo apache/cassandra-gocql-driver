@@ -165,6 +165,27 @@ func main() {
 		}
 	}
 
+	if err := session.Query("CREATE TABLE large (id int primary key)").Exec(); err != nil {
+		log.Fatal("create table", err)
+	}
+	for i := 0; i < 100; i++ {
+		if err := session.Query("INSERT INTO large (id) VALUES (?)", i).Exec(); err != nil {
+			log.Fatal("insert", err)
+		}
+	}
+	iter := session.Query("SELECT id FROM large").PageSize(10).Iter()
+	var id int
+	count = 0
+	for iter.Scan(&id) {
+		count++
+	}
+	if err := iter.Close(); err != nil {
+		log.Fatal("large iter:", err)
+	}
+	if count != 100 {
+		log.Fatalf("expected %d, got %d", 100, count)
+	}
+
 	for _, original := range pageTestData {
 		if err := session.Query("DELETE FROM page WHERE title = ? AND revid = ?",
 			original.Title, original.RevId).Exec(); err != nil {

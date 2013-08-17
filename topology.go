@@ -10,8 +10,7 @@ import (
 )
 
 type Node interface {
-	ExecuteQuery(qry *Query) (*Iter, error)
-	ExecuteBatch(batch *Batch) error
+	Pick(qry *Query) *Conn
 	Close()
 }
 
@@ -51,23 +50,7 @@ func (r *RoundRobin) Size() int {
 	return n
 }
 
-func (r *RoundRobin) ExecuteQuery(qry *Query) (*Iter, error) {
-	node := r.pick()
-	if node == nil {
-		return nil, ErrUnavailable
-	}
-	return node.ExecuteQuery(qry)
-}
-
-func (r *RoundRobin) ExecuteBatch(batch *Batch) error {
-	node := r.pick()
-	if node == nil {
-		return ErrUnavailable
-	}
-	return node.ExecuteBatch(batch)
-}
-
-func (r *RoundRobin) pick() Node {
+func (r *RoundRobin) Pick(qry *Query) *Conn {
 	pos := atomic.AddUint32(&r.pos, 1)
 	var node Node
 	r.mu.RLock()
@@ -75,7 +58,7 @@ func (r *RoundRobin) pick() Node {
 		node = r.pool[pos%uint32(len(r.pool))]
 	}
 	r.mu.RUnlock()
-	return node
+	return node.Pick(qry)
 }
 
 func (r *RoundRobin) Close() {
