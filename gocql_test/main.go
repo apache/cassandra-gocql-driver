@@ -35,7 +35,9 @@ type Page struct {
 type Attachment []byte
 
 func initSchema() error {
-	session.Query("DROP KEYSPACE gocql_test").Exec()
+	if err := session.Query("DROP KEYSPACE gocql_test").Exec(); err != nil {
+		log.Println("drop keyspace", err)
+	}
 
 	if err := session.Query(`CREATE KEYSPACE gocql_test
 		WITH replication = {

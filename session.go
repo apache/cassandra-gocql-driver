@@ -127,57 +127,32 @@ func (b QueryBuilder) Scan(values ...interface{}) error {
 }
 
 type Iter struct {
-	err    error
-	pos    int
-	values [][]byte
-	info   []ColumnInfo
-}
-
-func (iter *Iter) readFrame(frame frame) {
-	defer func() {
-		if r := recover(); r != nil {
-			if e, ok := r.(error); ok && e == ErrProtocol {
-				iter.err = e
-				return
-			}
-			panic(r)
-		}
-	}()
-	frame.skipHeader()
-	iter.pos = 0
-	iter.err = nil
-	iter.values = nil
-	if frame.readInt() != resultKindRows {
-		return
-	}
-	iter.info = frame.readMetaData()
-	numRows := frame.readInt()
-	iter.values = make([][]byte, numRows*len(iter.info))
-	for i := 0; i < len(iter.values); i++ {
-		iter.values[i] = frame.readBytes()
-	}
+	err     error
+	pos     int
+	rows    [][][]byte
+	columns []ColumnInfo
 }
 
 func (iter *Iter) Columns() []ColumnInfo {
-	return iter.info
+	return iter.columns
 }
 
 func (iter *Iter) Scan(values ...interface{}) bool {
-	if iter.err != nil || iter.pos >= len(iter.values) {
+	if iter.err != nil || iter.pos >= len(iter.rows) {
 		return false
 	}
-	if len(values) != len(iter.info) {
+	if len(values) != len(iter.columns) {
 		iter.err = errors.New("count mismatch")
 		return false
 	}
-	for i := 0; i < len(values); i++ {
-		err := Unmarshal(iter.info[i].TypeInfo, iter.values[i+iter.pos], values[i])
+	for i := 0; i < len(iter.columns); i++ {
+		err := Unmarshal(iter.columns[i].TypeInfo, iter.rows[iter.pos][i], values[i])
 		if err != nil {
 			iter.err = err
 			return false
 		}
 	}
-	iter.pos += len(values)
+	iter.pos++
 	return true
 }
 
@@ -262,7 +237,7 @@ func (e Error) Error() string {
 }
 
 var (
-	ErrNotFound        = errors.New("not found")
-	ErrNoHostAvailable = errors.New("no host available")
-	ErrProtocol        = errors.New("protocol error")
+	ErrNotFound    = errors.New("not found")
+	ErrUnavailable = errors.New("unavailable")
+	ErrProtocol    = errors.New("protocol error")
 )

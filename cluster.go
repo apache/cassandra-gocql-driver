@@ -56,6 +56,7 @@ func (cfg *ClusterConfig) CreateSession() *Session {
 		hostPool: NewRoundRobin(),
 		connPool: make(map[string]*RoundRobin),
 		conns:    make(map[*Conn]struct{}),
+		quitWait: make(chan bool),
 	}
 	impl.wgStart.Add(1)
 	for i := 0; i < len(impl.cfg.Hosts); i++ {
@@ -89,7 +90,7 @@ type clusterImpl struct {
 
 func (c *clusterImpl) connect(addr string) {
 	cfg := ConnConfig{
-		ProtoVersion: 2,
+		ProtoVersion: c.cfg.ProtoVersion,
 		CQLVersion:   c.cfg.CQLVersion,
 		Timeout:      c.cfg.Timeout,
 		NumStreams:   c.cfg.NumStreams,

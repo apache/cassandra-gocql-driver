@@ -54,7 +54,7 @@ func (r *RoundRobin) Size() int {
 func (r *RoundRobin) ExecuteQuery(qry *Query) (*Iter, error) {
 	node := r.pick()
 	if node == nil {
-		return nil, ErrNoHostAvailable
+		return nil, ErrUnavailable
 	}
 	return node.ExecuteQuery(qry)
 }
@@ -62,7 +62,7 @@ func (r *RoundRobin) ExecuteQuery(qry *Query) (*Iter, error) {
 func (r *RoundRobin) ExecuteBatch(batch *Batch) error {
 	node := r.pick()
 	if node == nil {
-		return ErrNoHostAvailable
+		return ErrUnavailable
 	}
 	return node.ExecuteBatch(batch)
 }

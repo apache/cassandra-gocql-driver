@@ -254,22 +254,6 @@ func (f *frame) readMetaData() []ColumnInfo {
 	return info
 }
 
-func (f *frame) readErrorFrame() (err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			if e, ok := r.(error); ok && e == ErrProtocol {
-				err = e
-				return
-			}
-			panic(r)
-		}
-	}()
-	f.skipHeader()
-	code := f.readInt()
-	desc := f.readString()
-	return Error{code, desc}
-}
-
 func (f *frame) writeConsistency(c Consistency) {
 	f.writeShort(consistencyCodes[c])
 }
@@ -285,4 +269,87 @@ var consistencyCodes = []uint16{
 	EachQuorum:  0x0007,
 	Serial:      0x0008,
 	LocalSerial: 0x0009,
+}
+
+func decodeFrame(f frame) (rval interface{}, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			if e, ok := r.(error); ok && e == ErrProtocol {
+				err = e
+				return
+			}
+			panic(r)
+		}
+	}()
+	if len(f) < headerSize || (f[0] != 1|flagResponse && f[0] != 2|flagResponse) {
+		return nil, ErrProtocol
+	}
+	switch f[3] {
+	case opReady:
+		return readyFrame{}, nil
+	case opResult:
+		f.skipHeader()
+		switch kind := f.readInt(); kind {
+		case resultKindVoid:
+			return resultVoidFrame{}, nil
+		case resultKindRows:
+			columns := f.readMetaData()
+			numRows := f.readInt()
+			values := make([][]byte, numRows*len(columns))
+			for i := 0; i < len(values); i++ {
+				values[i] = f.readBytes()
+			}
+			rows := make([][][]byte, numRows)
+			for i := 0; i < len(values); i += len(columns) {
+				rows[i] = values[i : i+len(columns)]
+			}
+			return resultRowsFrame{columns, rows, nil}, nil
+		case resultKindKeyspace:
+			keyspace := f.readString()
+			return resultKeyspaceFrame{keyspace}, nil
+		case resultKindPrepared:
+			id := f.readShortBytes()
+			values := f.readMetaData()
+			return resultPreparedFrame{id, values}, nil
+		case resultKindSchemaChanged:
+			return resultVoidFrame{}, nil
+		default:
+			return nil, ErrProtocol
+		}
+	case opError:
+		f.skipHeader()
+		code := f.readInt()
+		msg := f.readString()
+		return errorFrame{code, msg}, nil
+	default:
+		return nil, ErrProtocol
+	}
+}
+
+type readyFrame struct{}
+
+type resultVoidFrame struct{}
+
+type resultRowsFrame struct {
+	Columns     []ColumnInfo
+	Rows        [][][]byte
+	PagingState []byte
+}
+
+type resultKeyspaceFrame struct {
+	Keyspace string
+}
+
+type resultPreparedFrame struct {
+	PreparedId []byte
+	Values     []ColumnInfo
+}
+
+type errorFrame struct {
+	Code    int
+	Message string
+}
+
+func (e errorFrame) Error() string {
+	return e.Message
 }
