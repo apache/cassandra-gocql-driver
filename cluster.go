@@ -6,6 +6,7 @@ package gocql
 
 import (
 	"fmt"
+	"log"
 	"strings"
 	"sync"
 	"time"
@@ -28,6 +29,7 @@ type ClusterConfig struct {
 	DelayMax     time.Duration // maximum reconnection delay (default: 10min)
 	StartupMin   int           // wait for StartupMin hosts (default: len(Hosts)/2+1)
 	Consistency  Consistency   // default consistency level (default: Quorum)
+	Compressor   Compressor    // compression algorithm (default: nil)
 }
 
 // NewCluster generates a new config for the default cluster implementation.
@@ -94,11 +96,13 @@ func (c *clusterImpl) connect(addr string) {
 		CQLVersion:   c.cfg.CQLVersion,
 		Timeout:      c.cfg.Timeout,
 		NumStreams:   c.cfg.NumStreams,
+		Compressor:   c.cfg.Compressor,
 	}
 	delay := c.cfg.DelayMin
 	for {
 		conn, err := Connect(addr, cfg, c)
 		if err != nil {
+			log.Printf("failed to connect to %q: %v", addr, err)
 			select {
 			case <-time.After(delay):
 				if delay *= 2; delay > c.cfg.DelayMax {
