@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package gocql
+package gocqldriver
 
 import (
 	"bytes"
@@ -176,7 +176,6 @@ func TestTypes(t *testing.T) {
 	}
 }
 
-
 func TestNullColumnValues(t *testing.T) {
 	db, err := sql.Open("gocql", "localhost:9042 compression=snappy")
 	if err != nil {
@@ -214,8 +213,8 @@ func TestNullColumnValues(t *testing.T) {
 	var data1 []byte
 	var data2 []byte
 	if rows, err := db.Query(`SELECT id, subid, foo, bar FROM stuff`); err == nil {
-			for rows.Next() {
-					if err := rows.Scan(&rid, &sid, &data1, &data2); err != nil {
+		for rows.Next() {
+			if err := rows.Scan(&rid, &sid, &data1, &data2); err != nil {
 				t.Error(err)
 			}
 		}

@@ -1,7 +1,11 @@
-gocql
-=====
+gocqldriver (DEPRECATED)
+========================
 
-The gocql package provides a database/sql driver for CQL, the Cassandra
+**DEPRECATED:** This package is no longer maintained because the
+`database/sql` API wasn't a good fit for Cassandra. An actively devloped,
+full featured Cassandra client can be found here: https://github.com/tux21b/gocql
+
+The gocqldriver package provides a database/sql driver for CQL, the Cassandra
 query language.
 
 This package requires a recent version of Cassandra (≥ 1.2) that supports
@@ -9,15 +13,16 @@ CQL 3.0 and the new native protocol. The native protocol is still considered
 beta and must be enabled manually in Cassandra 1.2 by setting
 "start_native_transport" to true in conf/cassandra.yaml.
 
-**Note:** gocql requires the tip version of Go, as some changes in the 
-`database/sql` have not made it into 1.0.x yet. There is 
-[a fork](https://github.com/titanous/gocql) that backports these changes 
+**Note:** gocqldriver requires the tip version of Go, as some changes in the
+`database/sql` have not made it into 1.0.x yet. There is
+[a fork](https://github.com/titanous/gocql) that backports these changes
 to Go 1.0.3.
+
 
 Installation
 ------------
 
-    go get github.com/tux21b/gocql
+    go get github.com/tux21b/gocqldriver
 
 Example
 -------
@@ -28,7 +33,7 @@ package main
 import (
 	"database/sql"
 	"fmt"
-	_ "github.com/tux21b/gocql"
+	_ "github.com/tux21b/gocqldriver"
 )
 
 func main() {

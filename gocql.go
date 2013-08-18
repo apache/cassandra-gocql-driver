@@ -26,7 +26,7 @@
 //         // ...
 //     }
 //
-package gocql
+package gocqldriver
 
 import (
 	"bytes"
