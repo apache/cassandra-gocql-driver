@@ -4,7 +4,10 @@ gocql
 Package gocql implements a fast and robust Cassandra client for the
 Go programming language.
 
-**Attention:** This package is currently actively developed and the API may change in the future.
+**Attention:** This package is currently actively developed and the API may
+change in the future. The old "datbase/sql" based package is now called
+[gocqldriver](https://github.com/tux21b/gocqldriver) and is no longer
+maintained.
 
 Installation
 ------------
