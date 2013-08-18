@@ -63,7 +63,7 @@ func (cfg *ClusterConfig) CreateSession() *Session {
 	impl.wgStart.Add(1)
 	for i := 0; i < len(impl.cfg.Hosts); i++ {
 		addr := strings.TrimSpace(impl.cfg.Hosts[i])
-		if strings.IndexByte(addr, ':') < 0 {
+		if strings.Index(addr, ":") < 0 {
 			addr = fmt.Sprintf("%s:%d", addr, impl.cfg.DefaultPort)
 		}
 		for j := 0; j < impl.cfg.NumConns; j++ {

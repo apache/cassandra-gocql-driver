@@ -164,7 +164,7 @@ func (srv *TestServer) process(frame frame, conn net.Conn) {
 		frame = frame[:headerSize]
 		frame.setHeader(protoResponse, 0, frame[2], opResult)
 		first := query
-		if n := strings.IndexByte(query, ' '); n > 0 {
+		if n := strings.Index(query, " "); n > 0 {
 			first = first[:n]
 		}
 		switch strings.ToLower(first) {
