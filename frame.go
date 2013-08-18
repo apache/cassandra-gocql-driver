@@ -266,6 +266,10 @@ func (f *frame) writeConsistency(c Consistency) {
 	f.writeShort(consistencyCodes[c])
 }
 
+func (f frame) encodeFrame(version uint8, dst frame) (frame, error) {
+	return f, nil
+}
+
 var consistencyCodes = []uint16{
 	Any:         0x0000,
 	One:         0x0001,

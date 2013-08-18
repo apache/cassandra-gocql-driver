@@ -42,17 +42,6 @@ func (s *Session) Close() {
 	s.Node.Close()
 }
 
-// ExecuteBatch executes a Batch on the underlying Node.
-func (s *Session) ExecuteBatch(batch *Batch) error {
-	/*
-		if batch.Cons == 0 {
-			batch.Cons = s.Cons
-		}
-		return s.Node.ExecuteBatch(batch)
-	*/
-	return nil
-}
-
 // ExecuteQuery executes a Query on the underlying Node.
 func (s *Session) ExecuteQuery(qry *Query) *Iter {
 	return s.executeQuery(qry, nil)
@@ -111,6 +100,14 @@ func (s *Session) executeQuery(qry *Query, pageState []byte) *Iter {
 	default:
 		return &Iter{err: ErrProtocol}
 	}
+}
+
+func (s *Session) ExecuteBatch(batch *Batch) error {
+	conn := s.Node.Pick(nil)
+	if conn == nil {
+		return ErrUnavailable
+	}
+	return conn.executeBatch(batch)
 }
 
 type Query struct {
