@@ -336,12 +336,11 @@ func marshalBigInt(info *TypeInfo, value interface{}) ([]byte, error) {
 	case int:
 		return encBigInt(int64(v)), nil
 	case uint:
-	if(v > math.MaxUint32)
-	{
-		if(v > math.MaxInt64) {
-			return nil, marshalErrorf("marshal bigint: value %d out of range", v)
+		if v > math.MaxUint32 {
+			if v > math.MaxInt64 {
+				return nil, marshalErrorf("marshal bigint: value %d out of range", v)
+			}
 		}
-	}
 		return encBigInt(int64(v)), nil
 	case int64:
 		return encBigInt(v), nil
