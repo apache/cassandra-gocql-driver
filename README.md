@@ -33,6 +33,7 @@ Features
 * iteration over paged results with configurable page size
 * optional frame compression (using snappy)
 * automatic query preparation
+* support for query tracing
 
 Example
 -------
