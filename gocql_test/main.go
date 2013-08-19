@@ -166,7 +166,7 @@ func main() {
 		}
 	}
 
-	trace := gocql.NewTraceWriter(os.Stdout)
+	trace := gocql.NewTraceWriter(session, os.Stdout)
 	if err := session.Query("SELECT COUNT(*) FROM page").Trace(trace).Scan(&count); err != nil {
 		log.Fatal("trace: ", err)
 	}

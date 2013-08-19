@@ -277,45 +277,44 @@ func (c *Conn) prepareStatement(stmt string, trace Tracer) (*queryInfo, error) {
 	return info, nil
 }
 
-func (c *Conn) executeQuery(qry *Query, pageState []byte) *Iter {
+func (c *Conn) executeQuery(qry *Query) *Iter {
 	op := &queryFrame{
-		Stmt:      qry.Stmt,
-		Cons:      qry.Cons,
-		PageSize:  qry.PageSize,
-		PageState: pageState,
+		Stmt:      qry.stmt,
+		Cons:      qry.cons,
+		PageSize:  qry.pageSize,
+		PageState: qry.pageState,
 	}
-	if len(qry.Args) > 0 {
-		info, err := c.prepareStatement(qry.Stmt, qry.Trace)
+	if len(qry.values) > 0 {
+		info, err := c.prepareStatement(qry.stmt, qry.trace)
 		if err != nil {
 			return &Iter{err: err}
 		}
 		op.Prepared = info.id
-		op.Values = make([][]byte, len(qry.Args))
-		for i := 0; i < len(qry.Args); i++ {
-			val, err := Marshal(info.args[i].TypeInfo, qry.Args[i])
+		op.Values = make([][]byte, len(qry.values))
+		for i := 0; i < len(qry.values); i++ {
+			val, err := Marshal(info.args[i].TypeInfo, qry.values[i])
 			if err != nil {
 				return &Iter{err: err}
 			}
 			op.Values[i] = val
 		}
 	}
-	resp, err := c.exec(op, qry.Trace)
+	resp, err := c.exec(op, qry.trace)
 	if err != nil {
-		return &Iter{err: err}
+		return &Iter{qry: qry, err: err}
 	}
 	switch x := resp.(type) {
 	case resultVoidFrame:
-		return &Iter{}
+		return &Iter{qry: qry}
 	case resultRowsFrame:
-		iter := &Iter{columns: x.Columns, rows: x.Rows, pageState: x.PagingState}
-		return iter
+		return &Iter{qry: qry, columns: x.Columns, rows: x.Rows, pageState: x.PagingState}
 	case resultKeyspaceFrame:
 		c.cluster.HandleKeyspace(c, x.Keyspace)
-		return &Iter{}
+		return &Iter{qry: qry}
 	case error:
-		return &Iter{err: x}
+		return &Iter{qry: qry, err: x}
 	default:
-		return &Iter{err: ErrProtocol}
+		return &Iter{qry: qry, err: ErrProtocol}
 	}
 }
 
@@ -421,7 +420,7 @@ func (c *Conn) decodeFrame(f frame, trace Tracer) (rval interface{}, err error) 
 		}
 		traceId := []byte(f[:16])
 		f = f[16:]
-		trace.Trace(c, traceId)
+		trace.Trace(traceId)
 	}
 
 	switch op {
