@@ -111,6 +111,8 @@ func (b QueryBuilder) Token(token string) QueryBuilder {
 	return b
 }
 
+// Trace enables tracing of this query. Look at the documentation of the
+// Tracer interface to learn more about tracing.
 func (b QueryBuilder) Trace(trace Tracer) QueryBuilder {
 	b.qry.Trace = trace
 	return b
@@ -247,6 +249,11 @@ type ColumnInfo struct {
 	TypeInfo *TypeInfo
 }
 
+// Tracer is the interface implemented by query tracers. Tracers have the
+// ability to obtain a detailed event log of all events that happend during
+// the execution of a query from Cassandra. Gathering this information might
+// be essential for debugging and optimizing queries, but this feature should
+// not be used on production systems with very high load.
 type Tracer interface {
 	Trace(conn *Conn, traceId []byte)
 }
@@ -256,6 +263,8 @@ type traceWriter struct {
 	mu sync.Mutex
 }
 
+// NewTraceWriter returns a simple Tracer implementation that outputs
+// the event log in a textual format.
 func NewTraceWriter(w io.Writer) Tracer {
 	return traceWriter{w: w}
 }
