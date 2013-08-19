@@ -12,7 +12,7 @@ maintained.
 Installation
 ------------
 
-    go get github.com/tux21b/gocql
+    go get tux21b.org/v1/gocql
 
 
 Features
@@ -44,8 +44,8 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/tux21b/gocql"
-	"github.com/tux21b/gocql/uuid"
+	"tux21b.org/v1/gocql"
+	"tux21b.org/v1/gocql/uuid"
 )
 
 func main() {

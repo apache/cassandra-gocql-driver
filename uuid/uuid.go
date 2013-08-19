@@ -15,7 +15,7 @@ import (
 	"net"
 	"time"
 
-	"github.com/tux21b/gocql"
+	"tux21b.org/v1/gocql"
 )
 
 type UUID [16]byte

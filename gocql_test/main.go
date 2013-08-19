@@ -10,8 +10,8 @@ import (
 	"sort"
 	"time"
 
-	"github.com/tux21b/gocql"
-	"github.com/tux21b/gocql/uuid"
+	"tux21b.org/v1/gocql"
+	"tux21b.org/v1/gocql/uuid"
 )
 
 var session *gocql.Session
