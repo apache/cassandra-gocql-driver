@@ -419,11 +419,9 @@ func (c *Conn) decodeFrame(f frame, trace Tracer) (rval interface{}, err error) 
 		if len(f) < 16 {
 			return nil, ErrProtocol
 		}
-		var traceId []byte
-		traceId, f = f[:16], f[16:]
-		if err := c.gatherTrace(traceId, trace); err != nil {
-			return nil, err
-		}
+		traceId := []byte(f[:16])
+		f = f[16:]
+		trace.Trace(c, traceId)
 	}
 
 	switch op {
@@ -464,32 +462,6 @@ func (c *Conn) decodeFrame(f frame, trace Tracer) (rval interface{}, err error) 
 	default:
 		return nil, ErrProtocol
 	}
-}
-
-func (c *Conn) gatherTrace(traceId []byte, trace Tracer) error {
-	if trace == nil {
-		return nil
-	}
-	iter := c.executeQuery(&Query{
-		Stmt: `SELECT event_id, activity, source, source_elapsed
-			FROM system_traces.events
-			WHERE session_id = ?`,
-		Args: []interface{}{traceId},
-		Cons: One,
-	}, nil)
-	var (
-		time     time.Time
-		activity string
-		source   string
-		elapsed  int
-	)
-	for iter.Scan(&time, &activity, &source, &elapsed) {
-		trace.Trace(time, activity, source, elapsed)
-	}
-	if err := iter.Close(); err != nil {
-		return err
-	}
-	return nil
 }
 
 type queryInfo struct {

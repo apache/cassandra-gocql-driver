@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"sync"
 	"time"
 )
 
@@ -247,19 +248,55 @@ type ColumnInfo struct {
 }
 
 type Tracer interface {
-	Trace(time time.Time, activity string, source string, elapsed int)
+	Trace(conn *Conn, traceId []byte)
 }
 
 type traceWriter struct {
-	w io.Writer
+	w  io.Writer
+	mu sync.Mutex
 }
 
 func NewTraceWriter(w io.Writer) Tracer {
-	return traceWriter{w}
+	return traceWriter{w: w}
 }
 
-func (t traceWriter) Trace(time time.Time, activity string, source string, elapsed int) {
-	fmt.Fprintf(t.w, "%s: %s (source: %s, elapsed: %d)\n", time, activity, source, elapsed)
+func (t traceWriter) Trace(conn *Conn, traceId []byte) {
+	var (
+		coordinator string
+		duration    int
+	)
+	conn.executeQuery(&Query{
+		Stmt: `SELECT coordinator, duration
+			FROM system_traces.sessions
+			WHERE session_id = ?`,
+		Args: []interface{}{traceId},
+		Cons: One,
+	}, nil).Scan(&coordinator, &duration)
+
+	iter := conn.executeQuery(&Query{
+		Stmt: `SELECT event_id, activity, source, source_elapsed
+			FROM system_traces.events
+			WHERE session_id = ?`,
+		Args: []interface{}{traceId},
+		Cons: One,
+	}, nil)
+	var (
+		timestamp time.Time
+		activity  string
+		source    string
+		elapsed   int
+	)
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	fmt.Fprintf(t.w, "Tracing session %016x (coordinator: %s, duration: %v):\n",
+		traceId, coordinator, time.Duration(duration)*time.Microsecond)
+	for iter.Scan(&timestamp, &activity, &source, &elapsed) {
+		fmt.Fprintf(t.w, "%s: %s (source: %s, elapsed: %d)\n",
+			timestamp.Format("2006/01/02 15:04:05.999999"), activity, source, elapsed)
+	}
+	if err := iter.Close(); err != nil {
+		fmt.Fprintln(t.w, "Error:", err)
+	}
 }
 
 type Error struct {
