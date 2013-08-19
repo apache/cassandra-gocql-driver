@@ -183,14 +183,16 @@ func (c *Conn) execSimple(op operation) (interface{}, error) {
 	if f, err = c.recv(); err != nil {
 		return nil, err
 	}
-	return c.decodeFrame(f)
+	return c.decodeFrame(f, nil)
 }
 
-func (c *Conn) exec(op operation) (interface{}, error) {
-	//fmt.Printf("exec: %#v\n", op)
+func (c *Conn) exec(op operation, trace Tracer) (interface{}, error) {
 	req, err := op.encodeFrame(c.version, nil)
 	if err != nil {
 		return nil, err
+	}
+	if trace != nil {
+		req[1] |= flagTrace
 	}
 	if len(req) > headerSize && c.compressor != nil {
 		body, err := c.compressor.Encode([]byte(req[headerSize:]))
@@ -224,7 +226,7 @@ func (c *Conn) exec(op operation) (interface{}, error) {
 	if reply.err != nil {
 		return nil, reply.err
 	}
-	return c.decodeFrame(reply.buf)
+	return c.decodeFrame(reply.buf, trace)
 }
 
 func (c *Conn) dispatch(resp frame) {
@@ -241,11 +243,11 @@ func (c *Conn) dispatch(resp frame) {
 }
 
 func (c *Conn) ping() error {
-	_, err := c.exec(&optionsFrame{})
+	_, err := c.exec(&optionsFrame{}, nil)
 	return err
 }
 
-func (c *Conn) prepareStatement(stmt string) (*queryInfo, error) {
+func (c *Conn) prepareStatement(stmt string, trace Tracer) (*queryInfo, error) {
 	c.prepMu.Lock()
 	info := c.prep[stmt]
 	if info != nil {
@@ -258,7 +260,7 @@ func (c *Conn) prepareStatement(stmt string) (*queryInfo, error) {
 	c.prep[stmt] = info
 	c.prepMu.Unlock()
 
-	resp, err := c.exec(&prepareFrame{Stmt: stmt})
+	resp, err := c.exec(&prepareFrame{Stmt: stmt}, trace)
 	if err != nil {
 		return nil, err
 	}
@@ -275,6 +277,48 @@ func (c *Conn) prepareStatement(stmt string) (*queryInfo, error) {
 	return info, nil
 }
 
+func (c *Conn) executeQuery(qry *Query, pageState []byte) *Iter {
+	op := &queryFrame{
+		Stmt:      qry.Stmt,
+		Cons:      qry.Cons,
+		PageSize:  qry.PageSize,
+		PageState: pageState,
+	}
+	if len(qry.Args) > 0 {
+		info, err := c.prepareStatement(qry.Stmt, qry.Trace)
+		if err != nil {
+			return &Iter{err: err}
+		}
+		op.Prepared = info.id
+		op.Values = make([][]byte, len(qry.Args))
+		for i := 0; i < len(qry.Args); i++ {
+			val, err := Marshal(info.args[i].TypeInfo, qry.Args[i])
+			if err != nil {
+				return &Iter{err: err}
+			}
+			op.Values[i] = val
+		}
+	}
+	resp, err := c.exec(op, qry.Trace)
+	if err != nil {
+		return &Iter{err: err}
+	}
+	switch x := resp.(type) {
+	case resultVoidFrame:
+		return &Iter{}
+	case resultRowsFrame:
+		iter := &Iter{columns: x.Columns, rows: x.Rows, pageState: x.PagingState}
+		return iter
+	case resultKeyspaceFrame:
+		c.cluster.HandleKeyspace(c, x.Keyspace)
+		return &Iter{}
+	case error:
+		return &Iter{err: x}
+	default:
+		return &Iter{err: ErrProtocol}
+	}
+}
+
 func (c *Conn) Pick(qry *Query) *Conn {
 	return c
 }
@@ -288,7 +332,7 @@ func (c *Conn) Address() string {
 }
 
 func (c *Conn) UseKeyspace(keyspace string) error {
-	resp, err := c.exec(&queryFrame{Stmt: "USE " + keyspace, Cons: Any})
+	resp, err := c.exec(&queryFrame{Stmt: "USE " + keyspace, Cons: Any}, nil)
 	if err != nil {
 		return err
 	}
@@ -315,7 +359,7 @@ func (c *Conn) executeBatch(batch *Batch) error {
 		var info *queryInfo
 		if len(entry.Args) > 0 {
 			var err error
-			info, err = c.prepareStatement(entry.Stmt)
+			info, err = c.prepareStatement(entry.Stmt, nil)
 			if err != nil {
 				return err
 			}
@@ -336,7 +380,7 @@ func (c *Conn) executeBatch(batch *Batch) error {
 	}
 	f.writeConsistency(batch.Cons)
 
-	resp, err := c.exec(f)
+	resp, err := c.exec(f, nil)
 	if err != nil {
 		return err
 	}
@@ -350,7 +394,7 @@ func (c *Conn) executeBatch(batch *Batch) error {
 	}
 }
 
-func (c *Conn) decodeFrame(f frame) (rval interface{}, err error) {
+func (c *Conn) decodeFrame(f frame, trace Tracer) (rval interface{}, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			if e, ok := r.(error); ok && e == ErrProtocol {
@@ -371,6 +415,16 @@ func (c *Conn) decodeFrame(f frame) (rval interface{}, err error) {
 			f = frame(buf)
 		}
 	}
+	if flags&flagTrace != 0 {
+		if len(f) < 16 {
+			return nil, ErrProtocol
+		}
+		var traceId []byte
+		traceId, f = f[:16], f[16:]
+		if err := c.gatherTrace(traceId, trace); err != nil {
+			return nil, err
+		}
+	}
 
 	switch op {
 	case opReady:
@@ -387,8 +441,8 @@ func (c *Conn) decodeFrame(f frame) (rval interface{}, err error) {
 				values[i] = f.readBytes()
 			}
 			rows := make([][][]byte, numRows)
-			for i := 0; i < len(values); i += len(columns) {
-				rows[i] = values[i : i+len(columns)]
+			for i := 0; i < numRows; i++ {
+				rows[i], values = values[:len(columns)], values[len(columns):]
 			}
 			return resultRowsFrame{columns, rows, pageState}, nil
 		case resultKindKeyspace:
@@ -410,6 +464,32 @@ func (c *Conn) decodeFrame(f frame) (rval interface{}, err error) {
 	default:
 		return nil, ErrProtocol
 	}
+}
+
+func (c *Conn) gatherTrace(traceId []byte, trace Tracer) error {
+	if trace == nil {
+		return nil
+	}
+	iter := c.executeQuery(&Query{
+		Stmt: `SELECT event_id, activity, source, source_elapsed
+			FROM system_traces.events
+			WHERE session_id = ?`,
+		Args: []interface{}{traceId},
+		Cons: One,
+	}, nil)
+	var (
+		time     time.Time
+		activity string
+		source   string
+		elapsed  int
+	)
+	for iter.Scan(&time, &activity, &source, &elapsed) {
+		trace.Trace(time, activity, source, elapsed)
+	}
+	if err := iter.Close(); err != nil {
+		return err
+	}
+	return nil
 }
 
 type queryInfo struct {

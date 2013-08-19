@@ -37,6 +37,7 @@ const (
 
 	flagQueryValues uint8 = 1
 	flagCompress    uint8 = 1
+	flagTrace       uint8 = 2
 	flagPageSize    uint8 = 4
 	flagPageState   uint8 = 8
 	flagHasMore     uint8 = 2

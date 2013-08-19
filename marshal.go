@@ -49,6 +49,8 @@ func Marshal(info *TypeInfo, value interface{}) ([]byte, error) {
 		return marshalList(info, value)
 	case TypeMap:
 		return marshalMap(info, value)
+	case TypeUUID:
+		return marshalUUID(info, value)
 	}
 	// TODO(tux21b): add the remaining types
 	return nil, fmt.Errorf("can not marshal %T into %s", value, info)
@@ -80,6 +82,10 @@ func Unmarshal(info *TypeInfo, data []byte, value interface{}) error {
 		return unmarshalList(info, data, value)
 	case TypeMap:
 		return unmarshalMap(info, data, value)
+	case TypeTimeUUID:
+		return unmarshalTimeUUID(info, data, value)
+	case TypeInet:
+		return unmarshalInet(info, data, value)
 	}
 	// TODO(tux21b): add the remaining types
 	return fmt.Errorf("can not unmarshal %s into %T", info, value)
@@ -803,7 +809,6 @@ func unmarshalList(info *TypeInfo, data []byte, value interface{}) error {
 		}
 		return nil
 	}
-
 	return unmarshalErrorf("can not unmarshal %s into %T", info, value)
 }
 
@@ -893,6 +898,57 @@ func unmarshalMap(info *TypeInfo, data []byte, value interface{}) error {
 		rv.SetMapIndex(key.Elem(), val.Elem())
 	}
 	return nil
+}
+
+func marshalUUID(info *TypeInfo, value interface{}) ([]byte, error) {
+	if val, ok := value.([]byte); ok && len(val) == 16 {
+		return val, nil
+	}
+	return nil, marshalErrorf("can not marshal %T into %s", value, info)
+}
+
+func unmarshalTimeUUID(info *TypeInfo, data []byte, value interface{}) error {
+	switch v := value.(type) {
+	case Unmarshaler:
+		return v.UnmarshalCQL(info, data)
+	case *time.Time:
+		if len(data) != 16 {
+			return unmarshalErrorf("invalid timeuuid")
+		}
+		if version := int(data[6] & 0xF0 >> 4); version != 1 {
+			return unmarshalErrorf("invalid timeuuid")
+		}
+		timestamp := uint64(data[0])<<24 + uint64(data[1])<<16 +
+			uint64(data[2])<<8 + uint64(data[3]) + uint64(data[4])<<40 +
+			uint64(data[5])<<32 + uint64(data[7])<<48 + uint64(data[6]&0x0F)<<56
+		if timestamp == 0 {
+			*v = time.Time{}
+			return nil
+		}
+		sec := timestamp / 10000000
+		nsec := timestamp - sec
+		*v = time.Unix(int64(sec)+timeBase, int64(nsec))
+		return nil
+	}
+	return unmarshalErrorf("can not unmarshal %s into %T", info, value)
+}
+
+func unmarshalInet(info *TypeInfo, data []byte, value interface{}) error {
+	switch v := value.(type) {
+	case Unmarshaler:
+		return v.UnmarshalCQL(info, data)
+	case *string:
+		if len(data) == 0 {
+			*v = ""
+			return nil
+		}
+		if len(data) == 4 {
+			*v = fmt.Sprintf("%d.%d.%d.%d", data[0], data[1], data[2], data[3])
+			return nil
+		}
+		// TODO: support IPv6
+	}
+	return unmarshalErrorf("can not unmarshal %s into %T", info, value)
 }
 
 // TypeInfo describes a Cassandra specific data type.
@@ -1005,3 +1061,5 @@ func (m UnmarshalError) Error() string {
 func unmarshalErrorf(format string, args ...interface{}) UnmarshalError {
 	return UnmarshalError(fmt.Sprintf(format, args...))
 }
+
+var timeBase = time.Date(1582, time.October, 15, 0, 0, 0, 0, time.UTC).Unix()

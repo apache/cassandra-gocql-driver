@@ -6,6 +6,7 @@ package main
 
 import (
 	"log"
+	"os"
 	"reflect"
 	"sort"
 	"time"
@@ -165,12 +166,17 @@ func main() {
 		}
 	}
 
+	trace := gocql.NewTraceWriter(os.Stdout)
+	if err := session.Query("SELECT COUNT(*) FROM page").Trace(trace).Scan(&count); err != nil {
+		log.Fatal("trace: ", err)
+	}
+
 	if err := session.Query("CREATE TABLE large (id int primary key)").Exec(); err != nil {
-		log.Fatal("create table", err)
+		log.Fatal("create table: ", err)
 	}
 	for i := 0; i < 100; i++ {
 		if err := session.Query("INSERT INTO large (id) VALUES (?)", i).Exec(); err != nil {
-			log.Fatal("insert", err)
+			log.Fatal("insert: ", err)
 		}
 	}
 	iter := session.Query("SELECT id FROM large").PageSize(10).Iter()

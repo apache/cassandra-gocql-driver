@@ -6,6 +6,9 @@ package gocql
 
 import (
 	"errors"
+	"fmt"
+	"io"
+	"time"
 )
 
 // Session is the interface used by users to interact with the database.
@@ -51,55 +54,16 @@ func (s *Session) executeQuery(qry *Query, pageState []byte) *Iter {
 	if qry.Cons == 0 {
 		qry.Cons = s.Cons
 	}
-
 	conn := s.Node.Pick(qry)
 	if conn == nil {
 		return &Iter{err: ErrUnavailable}
 	}
-	op := &queryFrame{
-		Stmt:      qry.Stmt,
-		Cons:      qry.Cons,
-		PageSize:  qry.PageSize,
-		PageState: pageState,
+	iter := conn.executeQuery(qry, pageState)
+	if len(iter.pageState) > 0 {
+		iter.qry = qry
+		iter.session = s
 	}
-	if len(qry.Args) > 0 {
-		info, err := conn.prepareStatement(qry.Stmt)
-		if err != nil {
-			return &Iter{err: err}
-		}
-		op.Prepared = info.id
-		op.Values = make([][]byte, len(qry.Args))
-		for i := 0; i < len(qry.Args); i++ {
-			val, err := Marshal(info.args[i].TypeInfo, qry.Args[i])
-			if err != nil {
-				return &Iter{err: err}
-			}
-			op.Values[i] = val
-		}
-	}
-	resp, err := conn.exec(op)
-	if err != nil {
-		return &Iter{err: err}
-	}
-	switch x := resp.(type) {
-	case resultVoidFrame:
-		return &Iter{}
-	case resultRowsFrame:
-		iter := &Iter{columns: x.Columns, rows: x.Rows}
-		if len(x.PagingState) > 0 {
-			iter.session = s
-			iter.qry = qry
-			iter.pageState = x.PagingState
-		}
-		return iter
-	case resultKeyspaceFrame:
-		conn.cluster.HandleKeyspace(conn, x.Keyspace)
-		return &Iter{}
-	case error:
-		return &Iter{err: x}
-	default:
-		return &Iter{err: ErrProtocol}
-	}
+	return iter
 }
 
 func (s *Session) ExecuteBatch(batch *Batch) error {
@@ -116,7 +80,7 @@ type Query struct {
 	Cons     Consistency
 	Token    string
 	PageSize int
-	Trace    bool
+	Trace    Tracer
 }
 
 func NewQuery(stmt string, args ...interface{}) *Query {
@@ -146,7 +110,7 @@ func (b QueryBuilder) Token(token string) QueryBuilder {
 	return b
 }
 
-func (b QueryBuilder) Trace(trace bool) QueryBuilder {
+func (b QueryBuilder) Trace(trace Tracer) QueryBuilder {
 	b.qry.Trace = trace
 	return b
 }
@@ -280,6 +244,22 @@ type ColumnInfo struct {
 	Table    string
 	Name     string
 	TypeInfo *TypeInfo
+}
+
+type Tracer interface {
+	Trace(time time.Time, activity string, source string, elapsed int)
+}
+
+type traceWriter struct {
+	w io.Writer
+}
+
+func NewTraceWriter(w io.Writer) Tracer {
+	return traceWriter{w}
+}
+
+func (t traceWriter) Trace(time time.Time, activity string, source string, elapsed int) {
+	fmt.Fprintf(t.w, "%s: %s (source: %s, elapsed: %d)\n", time, activity, source, elapsed)
 }
 
 type Error struct {
