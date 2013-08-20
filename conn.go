@@ -486,6 +486,9 @@ type Compressor interface {
 	Decode(data []byte) ([]byte, error)
 }
 
+// SnappyCompressor implements the Compressor interface and can be used to
+// compress incoming and outgoing frames. The snappy compression algorithm
+// aims for very high speeds and reasonable compression.
 type SnappyCompressor struct{}
 
 func (s SnappyCompressor) Name() string {
