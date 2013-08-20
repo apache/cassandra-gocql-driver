@@ -15,11 +15,14 @@ import (
 	"tux21b.org/v1/gocql/uuid"
 )
 
+var cluster *gocql.ClusterConfig
 var session *gocql.Session
 
 func init() {
-	cluster := gocql.NewCluster("127.0.0.1")
-	cluster.Compressor = gocql.SnappyCompressor{}
+	cluster = gocql.NewCluster("127.0.0.1")
+	// uncomment the following two lines if you want to use Cassandra 1.2
+	// cluster.ProtoVersion = 1
+	// cluster.CQLVersion = "3.0.0"
 	session = cluster.CreateSession()
 }
 
@@ -166,6 +169,7 @@ func main() {
 		}
 	}
 
+	// Query Tracing
 	trace := gocql.NewTraceWriter(session, os.Stdout)
 	if err := session.Query("SELECT COUNT(*) FROM page").Trace(trace).Scan(&count); err != nil {
 		log.Fatal("trace: ", err)
@@ -179,34 +183,38 @@ func main() {
 			log.Fatal("insert: ", err)
 		}
 	}
-	iter := session.Query("SELECT id FROM large").PageSize(10).Iter()
-	var id int
-	count = 0
-	for iter.Scan(&id) {
-		count++
-	}
-	if err := iter.Close(); err != nil {
-		log.Fatal("large iter:", err)
-	}
-	if count != 100 {
-		log.Fatalf("expected %d, got %d", 100, count)
-	}
 
-	for _, original := range pageTestData {
-		if err := session.Query("DELETE FROM page WHERE title = ? AND revid = ?",
-			original.Title, original.RevId).Exec(); err != nil {
-			log.Println("delete:", err)
+	if cluster.ProtoVersion >= 2 {
+		// Result Paging
+		iter := session.Query("SELECT id FROM large").PageSize(10).Iter()
+		var id int
+		count = 0
+		for iter.Scan(&id) {
+			count++
+		}
+		if err := iter.Close(); err != nil {
+			log.Fatal("large iter:", err)
+		}
+		if count != 100 {
+			log.Fatalf("expected %d, got %d", 100, count)
+		}
+
+		// Atomic Batches
+		for _, original := range pageTestData {
+			if err := session.Query("DELETE FROM page WHERE title = ? AND revid = ?",
+				original.Title, original.RevId).Exec(); err != nil {
+				log.Println("delete:", err)
+			}
+		}
+		if err := session.Query("SELECT COUNT(*) FROM page").Scan(&count); err != nil {
+			log.Fatal("getCount: ", err)
+		}
+		if count != 0 {
+			log.Printf("count: expected %d, got %d", len(pageTestData), count)
+		}
+
+		if err := insertBatch(); err != nil {
+			log.Fatal("insertBatch: ", err)
 		}
 	}
-	if err := session.Query("SELECT COUNT(*) FROM page").Scan(&count); err != nil {
-		log.Fatal("getCount: ", err)
-	}
-	if count != 0 {
-		log.Printf("count: expected %d, got %d", len(pageTestData), count)
-	}
-
-	if err := insertBatch(); err != nil {
-		log.Fatal("insertBatch: ", err)
-	}
-
 }
