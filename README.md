@@ -9,6 +9,7 @@ change in the future. The old "datbase/sql" based package is now called
 [gocqldriver](https://github.com/tux21b/gocqldriver) and is no longer
 maintained.
 
+Project Website: http://tux21b.org/gocql/<br>
 API documentation: http://godoc.org/tux21b.org/v1/gocql
 
 Installation
