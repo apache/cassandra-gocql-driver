@@ -286,6 +286,8 @@ var consistencyCodes = []uint16{
 
 type readyFrame struct{}
 
+type supportedFrame struct{}
+
 type resultVoidFrame struct{}
 
 type resultRowsFrame struct {

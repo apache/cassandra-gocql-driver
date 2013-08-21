@@ -454,6 +454,8 @@ func (c *Conn) decodeFrame(f frame, trace Tracer) (rval interface{}, err error) 
 		default:
 			return nil, ErrProtocol
 		}
+	case opSupported:
+		return supportedFrame{}, nil
 	case opError:
 		code := f.readInt()
 		msg := f.readString()
