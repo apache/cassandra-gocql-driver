@@ -58,6 +58,9 @@ func (r *RoundRobin) Pick(qry *Query) *Conn {
 		node = r.pool[pos%uint32(len(r.pool))]
 	}
 	r.mu.RUnlock()
+	if node == nil {
+		return nil
+	}
 	return node.Pick(qry)
 }
 
