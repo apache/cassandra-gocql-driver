@@ -301,20 +301,31 @@ func (c *Conn) executeQuery(qry *Query) *Iter {
 	}
 	resp, err := c.exec(op, qry.trace)
 	if err != nil {
-		return &Iter{qry: qry, err: err}
+		return &Iter{err: err}
 	}
 	switch x := resp.(type) {
 	case resultVoidFrame:
-		return &Iter{qry: qry}
+		return &Iter{}
 	case resultRowsFrame:
-		return &Iter{qry: qry, columns: x.Columns, rows: x.Rows, pageState: x.PagingState}
+		iter := &Iter{columns: x.Columns, rows: x.Rows}
+		if len(x.PagingState) > 0 {
+			iter.next = &nextIter{
+				qry: *qry,
+				pos: int((1 - qry.prefetch) * float64(len(iter.rows))),
+			}
+			iter.next.qry.pageState = x.PagingState
+			if iter.next.pos < 1 {
+				iter.next.pos = 1
+			}
+		}
+		return iter
 	case resultKeyspaceFrame:
 		c.cluster.HandleKeyspace(c, x.Keyspace)
-		return &Iter{qry: qry}
+		return &Iter{}
 	case error:
-		return &Iter{qry: qry, err: x}
+		return &Iter{err: x}
 	default:
-		return &Iter{qry: qry, err: ErrProtocol}
+		return &Iter{err: ErrProtocol}
 	}
 }
 
