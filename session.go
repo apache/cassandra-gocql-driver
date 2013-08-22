@@ -18,20 +18,51 @@ import (
 // automatically sets a default consinstency level on all operations
 // that do not have a consistency level set.
 type Session struct {
-	Node Node
-	Cons Consistency
+	Node     Node
+	cons     Consistency
+	pageSize int
+	trace    Tracer
+	mu       sync.RWMutex
 }
 
 // NewSession wraps an existing Node.
 func NewSession(node Node) *Session {
-	return &Session{Node: node, Cons: Quorum}
+	return &Session{Node: node, cons: Quorum}
+}
+
+// Consistency sets the default consistency level for this session. This
+// setting can also be changed on a per-query basis.
+func (s *Session) Consistency(cons Consistency) {
+	s.mu.Lock()
+	s.cons = cons
+	s.mu.Unlock()
+}
+
+// PageSize sets the default page size for this session. A value <= 0 will
+// disable paging. This setting can also be changed on a per-query basis.
+func (s *Session) PageSize(n int) {
+	s.mu.Lock()
+	s.pageSize = n
+	s.mu.Unlock()
+}
+
+// Trace sets the default tracer for this session. This setting can also
+// be changed on a per-query basis.
+func (s *Session) Trace(trace Tracer) {
+	s.mu.Lock()
+	s.trace = trace
+	s.mu.Unlock()
 }
 
 // Query generates a new query object for interacting with the database.
 // Further details of the query may be tweaked using the resulting query
 // value before the query is executed.
 func (s *Session) Query(stmt string, values ...interface{}) *Query {
-	return &Query{stmt: stmt, values: values, cons: s.Cons, session: s}
+	s.mu.RLock()
+	qry := &Query{stmt: stmt, values: values, cons: s.cons,
+		session: s, pageSize: s.pageSize, trace: s.trace}
+	s.mu.RUnlock()
+	return qry
 }
 
 // Close closes all connections. The session is unusable after this
