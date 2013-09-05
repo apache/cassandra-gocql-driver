@@ -59,6 +59,7 @@ func (cfg *ClusterConfig) CreateSession() *Session {
 		connPool: make(map[string]*RoundRobin),
 		conns:    make(map[*Conn]struct{}),
 		quitWait: make(chan bool),
+		keyspace: cfg.Keyspace,
 	}
 	impl.wgStart.Add(1)
 	for i := 0; i < len(impl.cfg.Hosts); i++ {
@@ -120,6 +121,7 @@ func (c *clusterImpl) connect(addr string) {
 
 func (c *clusterImpl) changeKeyspace(conn *Conn, keyspace string, connected bool) {
 	if err := conn.UseKeyspace(keyspace); err != nil {
+		log.Println(err)
 		conn.Close()
 		if connected {
 			c.removeConn(conn)
@@ -133,16 +135,18 @@ func (c *clusterImpl) changeKeyspace(conn *Conn, keyspace string, connected bool
 
 func (c *clusterImpl) addConn(conn *Conn, keyspace string) {
 	c.mu.Lock()
-	defer c.mu.Unlock()
+	
 	if c.quit {
 		conn.Close()
 		return
 	}
 	if keyspace != c.keyspace && c.keyspace != "" {
+		c.mu.Unlock()
 		// change the keyspace before adding the node to the pool
-		go c.changeKeyspace(conn, c.keyspace, false)
+		c.changeKeyspace(conn, c.keyspace, false)
 		return
 	}
+	defer c.mu.Unlock()
 	connPool := c.connPool[conn.Address()]
 	if connPool == nil {
 		connPool = NewRoundRobin()
