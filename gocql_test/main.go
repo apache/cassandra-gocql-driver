@@ -51,10 +51,9 @@ func initSchema() error {
 		}`).Exec(); err != nil {
 		return err
 	}
-
-	if err := session.Query("USE gocql_test").Exec(); err != nil {
-		return err
-	}
+	session.Close()
+	cluster.Keyspace = "gocql_test"
+	session = cluster.CreateSession()
 
 	if err := session.Query(`CREATE TABLE page (
 			title       varchar,
