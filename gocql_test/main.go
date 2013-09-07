@@ -51,7 +51,10 @@ func initSchema() error {
 		}`).Exec(); err != nil {
 		return err
 	}
+	log.Println("Testing that the connections do not reconnect in an infinite loop.")
 	session.Close()
+	time.Sleep(15 * time.Second)
+	log.Println("If there were error messages that an address cannot be assigned then the test failed.")
 	cluster.Keyspace = "gocql_test"
 	session = cluster.CreateSession()
 

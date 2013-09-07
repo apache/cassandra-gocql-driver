@@ -59,7 +59,7 @@ func (cfg *ClusterConfig) CreateSession() *Session {
 		connPool: make(map[string]*RoundRobin),
 		conns:    make(map[*Conn]struct{}),
 		quitWait: make(chan bool),
-		keyspace: cfg.Keyspace,		
+		keyspace: cfg.Keyspace,
 	}
 	impl.wgStart.Add(1)
 	for i := 0; i < len(impl.cfg.Hosts); i++ {
@@ -179,7 +179,9 @@ func (c *clusterImpl) HandleError(conn *Conn, err error, closed bool) {
 		return
 	}
 	c.removeConn(conn)
-	go c.connect(conn.Address()) // reconnect
+	if !c.quit {
+		go c.connect(conn.Address()) // reconnect
+	}
 }
 
 func (c *clusterImpl) HandleKeyspace(conn *Conn, keyspace string) {
