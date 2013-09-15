@@ -161,6 +161,12 @@ func (q *Query) Iter() *Iter {
 // were selected, ErrNotFound is returned.
 func (q *Query) Scan(dest ...interface{}) error {
 	iter := q.Iter()
+	if iter.err != nil {
+		return iter.err
+	}
+	if len(iter.rows) == 0 {
+		return ErrNotFound
+	}
 	iter.Scan(dest...)
 	return iter.Close()
 }
