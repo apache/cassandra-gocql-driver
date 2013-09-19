@@ -155,6 +155,27 @@ var marshalTests = []struct {
 		[]byte(nil),
 		map[string]int(nil),
 	},
+	{
+		&TypeInfo{Type: TypeList, Elem: &TypeInfo{Type: TypeVarchar}},
+		bytes.Join([][]byte{
+			[]byte("\x00\x01\xFF\xFF"),
+			bytes.Repeat([]byte("X"), 65535)}, []byte("")),
+		[]string{strings.Repeat("X", 65535)},
+	},
+	{
+		&TypeInfo{Type: TypeMap,
+			Key:  &TypeInfo{Type: TypeVarchar},
+			Elem: &TypeInfo{Type: TypeVarchar},
+		},
+		bytes.Join([][]byte{
+			[]byte("\x00\x01\xFF\xFF"),
+			bytes.Repeat([]byte("X"), 65535),
+			[]byte("\xFF\xFF"),
+			bytes.Repeat([]byte("Y"), 65535)}, []byte("")),
+		map[string]string{
+			strings.Repeat("X", 65535): strings.Repeat("Y", 65535),
+		},
+	},
 }
 
 func TestMarshal(t *testing.T) {

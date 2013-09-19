@@ -785,7 +785,7 @@ func unmarshalList(info *TypeInfo, data []byte, value interface{}) error {
 		if len(data) < 2 {
 			return unmarshalErrorf("unmarshal list: unexpected eof")
 		}
-		n := int(data[0]<<8) | int(data[1])
+		n := int(data[0])<<8 | int(data[1])
 		data = data[2:]
 		if k == reflect.Array {
 			if rv.Len() != n {
@@ -800,7 +800,7 @@ func unmarshalList(info *TypeInfo, data []byte, value interface{}) error {
 			if len(data) < 2 {
 				return unmarshalErrorf("unmarshal list: unexpected eof")
 			}
-			m := int(data[0]<<8) | int(data[1])
+			m := int(data[0])<<8 | int(data[1])
 			data = data[2:]
 			if err := Unmarshal(info.Elem, data[:m], rv.Index(i).Addr().Interface()); err != nil {
 				return err
