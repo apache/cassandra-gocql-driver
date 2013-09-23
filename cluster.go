@@ -72,7 +72,9 @@ func (cfg *ClusterConfig) CreateSession() *Session {
 		}
 	}
 	impl.wgStart.Wait()
-	return NewSession(impl)
+	s := NewSession(impl)
+	s.SetConsistency(cfg.Consistency)
+	return s
 }
 
 type clusterImpl struct {
