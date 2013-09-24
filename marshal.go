@@ -37,7 +37,7 @@ func Marshal(info *TypeInfo, value interface{}) ([]byte, error) {
 		return marshalBool(info, value)
 	case TypeInt:
 		return marshalInt(info, value)
-	case TypeBigInt:
+	case TypeBigInt, TypeCounter:
 		return marshalBigInt(info, value)
 	case TypeFloat:
 		return marshalFloat(info, value)
