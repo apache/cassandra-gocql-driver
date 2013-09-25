@@ -342,7 +342,7 @@ func (c *Conn) Address() string {
 }
 
 func (c *Conn) UseKeyspace(keyspace string) error {
-	resp, err := c.exec(&queryFrame{Stmt: "USE " + keyspace, Cons: Any}, nil)
+	resp, err := c.exec(&queryFrame{Stmt: `USE "` + keyspace + `"`, Cons: Any}, nil)
 	if err != nil {
 		return err
 	}
