@@ -37,7 +37,7 @@ func Marshal(info *TypeInfo, value interface{}) ([]byte, error) {
 		return marshalBool(info, value)
 	case TypeInt:
 		return marshalInt(info, value)
-	case TypeBigInt:
+	case TypeBigInt, TypeCounter:
 		return marshalBigInt(info, value)
 	case TypeFloat:
 		return marshalFloat(info, value)
@@ -785,7 +785,7 @@ func unmarshalList(info *TypeInfo, data []byte, value interface{}) error {
 		if len(data) < 2 {
 			return unmarshalErrorf("unmarshal list: unexpected eof")
 		}
-		n := int(data[0]<<8) | int(data[1])
+		n := int(data[0])<<8 | int(data[1])
 		data = data[2:]
 		if k == reflect.Array {
 			if rv.Len() != n {
@@ -800,7 +800,7 @@ func unmarshalList(info *TypeInfo, data []byte, value interface{}) error {
 			if len(data) < 2 {
 				return unmarshalErrorf("unmarshal list: unexpected eof")
 			}
-			m := int(data[0]<<8) | int(data[1])
+			m := int(data[0])<<8 | int(data[1])
 			data = data[2:]
 			if err := Unmarshal(info.Elem, data[:m], rv.Index(i).Addr().Interface()); err != nil {
 				return err
@@ -873,13 +873,13 @@ func unmarshalMap(info *TypeInfo, data []byte, value interface{}) error {
 	if len(data) < 2 {
 		return unmarshalErrorf("unmarshal map: unexpected eof")
 	}
-	n := int(data[0]<<8) | int(data[1])
+	n := int(data[1]) | int(data[0])<<8
 	data = data[2:]
 	for i := 0; i < n; i++ {
 		if len(data) < 2 {
 			return unmarshalErrorf("unmarshal list: unexpected eof")
 		}
-		m := int(data[0]<<8) | int(data[1])
+		m := int(data[1]) | int(data[0])<<8
 		data = data[2:]
 		key := reflect.New(t.Key())
 		if err := Unmarshal(info.Key, data[:m], key.Interface()); err != nil {
@@ -887,7 +887,7 @@ func unmarshalMap(info *TypeInfo, data []byte, value interface{}) error {
 		}
 		data = data[m:]
 
-		m = int(data[0]<<8) | int(data[1])
+		m = int(data[1]) | int(data[0])<<8
 		data = data[2:]
 		val := reflect.New(t.Elem())
 		if err := Unmarshal(info.Elem, data[:m], val.Interface()); err != nil {
