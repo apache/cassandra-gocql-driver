@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"errors"
 )
 
 // ClusterConfig is a struct to configure the default cluster implementation
@@ -52,7 +53,15 @@ func NewCluster(hosts ...string) *ClusterConfig {
 
 // CreateSession initializes the cluster based on this config and returns a
 // session object that can be used to interact with the database.
-func (cfg *ClusterConfig) CreateSession() *Session {
+func (cfg *ClusterConfig) CreateSession() (*Session,error) {
+
+	//Check that hosts in the ClusterConfig is not empty
+	if cfg.Hosts == nil {
+		return nil,ErrNoHosts 
+	} else if len(cfg.Hosts) < 1 {
+		return nil,ErrNoHosts
+	}
+	
 	impl := &clusterImpl{
 		cfg:      *cfg,
 		hostPool: NewRoundRobin(),
@@ -74,7 +83,7 @@ func (cfg *ClusterConfig) CreateSession() *Session {
 	impl.wgStart.Wait()
 	s := NewSession(impl)
 	s.SetConsistency(cfg.Consistency)
-	return s
+	return s,nil
 }
 
 type clusterImpl struct {
@@ -223,3 +232,7 @@ func (c *clusterImpl) Close() {
 		}
 	})
 }
+
+var (
+	ErrNoHosts = errors.New("no hosts provided")
+)
