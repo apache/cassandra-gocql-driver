@@ -5,12 +5,12 @@
 package gocql
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"strings"
 	"sync"
 	"time"
-	"errors"
 )
 
 // ClusterConfig is a struct to configure the default cluster implementation
@@ -53,15 +53,13 @@ func NewCluster(hosts ...string) *ClusterConfig {
 
 // CreateSession initializes the cluster based on this config and returns a
 // session object that can be used to interact with the database.
-func (cfg *ClusterConfig) CreateSession() (*Session,error) {
+func (cfg *ClusterConfig) CreateSession() (*Session, error) {
 
 	//Check that hosts in the ClusterConfig is not empty
-	if cfg.Hosts == nil {
-		return nil,ErrNoHosts 
-	} else if len(cfg.Hosts) < 1 {
-		return nil,ErrNoHosts
+	if len(cfg.Hosts) < 1 {
+		return nil, ErrNoHosts
 	}
-	
+
 	impl := &clusterImpl{
 		cfg:      *cfg,
 		hostPool: NewRoundRobin(),
@@ -83,7 +81,7 @@ func (cfg *ClusterConfig) CreateSession() (*Session,error) {
 	impl.wgStart.Wait()
 	s := NewSession(impl)
 	s.SetConsistency(cfg.Consistency)
-	return s,nil
+	return s, nil
 }
 
 type clusterImpl struct {

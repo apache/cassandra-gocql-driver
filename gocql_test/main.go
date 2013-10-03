@@ -18,12 +18,12 @@ import (
 var cluster *gocql.ClusterConfig
 var session *gocql.Session
 
-func init(){
+func init() {
 	cluster = gocql.NewCluster("127.0.0.1")
 	// uncomment the following two lines if you want to use Cassandra 1.2
 	// cluster.ProtoVersion = 1
 	// cluster.CQLVersion = "3.0.0"
-	session,_ = cluster.CreateSession()
+	session, _ = cluster.CreateSession()
 }
 
 type Page struct {
@@ -56,7 +56,7 @@ func initSchema() error {
 	time.Sleep(15 * time.Second)
 	log.Println("If there were error messages that an address cannot be assigned then the test failed.")
 	cluster.Keyspace = "gocql_test"
-	session,_ = cluster.CreateSession()
+	session, _ = cluster.CreateSession()
 
 	if err := session.Query(`CREATE TABLE page (
 			title       varchar,
@@ -144,10 +144,10 @@ func getPage(title string, revid uuid.UUID) (*Page, error) {
 //This test checks to make sure a valid error and a nil reference to
 //a session are returned when an empty array of hosts are provided
 //to the cluster configuration
-func TestEmptyHosts () error{
-	empty := make([]string,0)
+func TestEmptyHosts() error {
+	empty := make([]string, 0)
 	cfg := gocql.NewCluster(empty...)
-	_,err := cfg.CreateSession()
+	_, err := cfg.CreateSession()
 	return err
 }
 
