@@ -145,9 +145,9 @@ func (q *Query) Prefetch(p float64) *Query {
 }
 
 // Exec executes the query without returning any rows.
-func (q *Query) Exec() error {
+func (q *Query) Exec() ([][][]byte, error) {
 	iter := q.session.executeQuery(q)
-	return iter.err
+	return iter.rows, iter.err
 }
 
 // Iter executes the query and returns an iterator capable of iterating
