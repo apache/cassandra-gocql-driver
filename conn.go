@@ -322,6 +322,18 @@ func (c *Conn) executeQuery(qry *Query) *Iter {
 	case resultKeyspaceFrame:
 		c.cluster.HandleKeyspace(c, x.Keyspace)
 		return &Iter{}
+	case errorFrame:
+		if x.Code == errUnprepared {
+			c.prepMu.Lock()
+			defer c.prepMu.Unlock()
+			if val, ok := c.prep[qry.stmt]; ok && val != nil {
+				delete(c.prep, qry.stmt)
+				return c.executeQuery(qry)
+			}
+			return &Iter{err: x}
+		} else {
+			return &Iter{err: x}
+		}
 	case error:
 		return &Iter{err: x}
 	default:
