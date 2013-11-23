@@ -10,7 +10,8 @@ change in the future. The old "datbase/sql" based package is now called
 maintained.
 
 Project Website: http://tux21b.org/gocql/<br>
-API documentation: http://godoc.org/tux21b.org/v1/gocql
+API documentation: http://godoc.org/tux21b.org/v1/gocql<br>
+Discussions: https://groups.google.com/forum/#!forum/gocql
 
 Installation
 ------------
