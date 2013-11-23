@@ -51,6 +51,8 @@ func Marshal(info *TypeInfo, value interface{}) ([]byte, error) {
 		return marshalMap(info, value)
 	case TypeUUID:
 		return marshalUUID(info, value)
+	case TypeTimeUUID:
+		return marshalTimeUUID(info, value)
 	}
 	// TODO(tux21b): add the remaining types
 	return nil, fmt.Errorf("can not marshal %T into %s", value, info)
@@ -904,6 +906,19 @@ func marshalUUID(info *TypeInfo, value interface{}) ([]byte, error) {
 	if val, ok := value.([]byte); ok && len(val) == 16 {
 		return val, nil
 	}
+	return nil, marshalErrorf("can not marshal %T into %s", value, info)
+}
+
+type HasBytes interface {
+	Bytes() []byte
+}
+
+func marshalTimeUUID(info *TypeInfo, value interface{}) ([]byte, error) {
+
+	switch v := value.(type) {
+	case HasBytes: return v.Bytes(), nil
+	}
+
 	return nil, marshalErrorf("can not marshal %T into %s", value, info)
 }
 
