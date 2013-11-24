@@ -5,6 +5,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"os"
 	"reflect"
@@ -80,6 +81,14 @@ func initSchema() error {
 		return err
 	}
 
+	if err := session.Query(`CREATE TABLE cas_table (
+            title   varchar,
+            revid   timeuuid,
+            PRIMARY KEY (title, revid)
+        )`).Exec(); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -131,6 +140,46 @@ func insertBatch() error {
 	return nil
 }
 
+func insertCAS() error {
+	title := "baz"
+	revid := uuid.TimeUUID()
+
+	var titleCAS string
+	var revidCAS uuid.UUID
+
+	applied, err := session.Query(
+		`INSERT INTO cas_table (title, revid)
+        VALUES (?,?) IF NOT EXISTS`,
+		title, revid).ScanCas(&titleCAS, &revidCAS)
+
+	if err != nil {
+		return err
+	}
+
+	if !applied {
+		return fmt.Errorf("Should have applied update for new random title %s", title)
+	}
+
+	applied, err = session.Query(
+		`INSERT INTO cas_table (title, revid)
+        VALUES (?,?) IF NOT EXISTS`,
+		title, revid).ScanCas(&titleCAS, &revidCAS)
+
+	if err != nil {
+		return err
+	}
+
+	if applied {
+		return fmt.Errorf("Should NOT have applied update for existing random title %s", title)
+	}
+
+	if title != titleCAS || revid != revidCAS {
+		return fmt.Errorf("Expected %s/%v but got %s/%v", title, revid, titleCAS, revidCAS)
+	}
+
+	return nil
+}
+
 func getPage(title string, revid uuid.UUID) (*Page, error) {
 	p := new(Page)
 	err := session.Query(`SELECT title, revid, body, views, protected, modified,
@@ -161,6 +210,10 @@ func main() {
 
 	if err := insertTestData(); err != nil {
 		log.Fatal("insertTestData: ", err)
+	}
+
+	if err := insertCAS(); err != nil {
+		log.Fatal("insertCAS: ", err)
 	}
 
 	var count int
