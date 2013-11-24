@@ -146,12 +146,11 @@ func insertCAS() error {
 
 	var titleCAS string
 	var revidCAS uuid.UUID
-	var casApplied bool
 
 	applied, err := session.Query(
 		`INSERT INTO cas_table (title, revid)
         VALUES (?,?) IF NOT EXISTS`,
-		title, revid).ScanCas(&casApplied, &titleCAS, &revidCAS)
+		title, revid).ScanCas(&titleCAS, &revidCAS)
 
 	if err != nil {
 		return err
@@ -164,7 +163,11 @@ func insertCAS() error {
 	applied, err = session.Query(
 		`INSERT INTO cas_table (title, revid)
         VALUES (?,?) IF NOT EXISTS`,
-		title, revid).ScanCas(&casApplied, &titleCAS, &revidCAS)
+		title, revid).ScanCas(&titleCAS, &revidCAS)
+
+	if err != nil {
+		return err
+	}
 
 	if applied {
 		return fmt.Errorf("Should NOT have applied update for existing random title %s", title)
