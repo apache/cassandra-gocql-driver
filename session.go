@@ -171,6 +171,54 @@ func (q *Query) Scan(dest ...interface{}) error {
 	return iter.Close()
 }
 
+// If the CAS operation was applied, this function
+// will bind the result to the dest interface and return false.
+// Otherwise the dest interface will not be bound and the function
+// will return true.
+func (q *Query) ScanCas(dest ...interface{}) (bool, error) {
+
+	// Copy and paste start
+	iter := q.Iter()
+	if iter.err != nil {
+		return false, iter.err
+	}
+	if len(iter.rows) == 0 {
+		return false, ErrNotFound
+	}
+	// Copy and paste end
+
+	if iter.next != nil {
+		go iter.next.fetch()
+	}
+
+	switch len(iter.columns) {
+	case 1:
+		{
+			// The CAS operation was applied
+			return true, nil
+		}
+	case len(dest):
+		{
+			// Copy and paste start - should this get merged into the upstream, this should
+			// be factored out
+			for i := 0; i < len(iter.columns); i++ {
+				err := Unmarshal(iter.columns[i].TypeInfo, iter.rows[iter.pos][i], dest[i])
+				if err != nil {
+					return false, err
+				}
+			}
+			// Copy and paste end
+			return false, nil
+		}
+	default:
+		{
+			return false, errors.New("count mismatch")
+		}
+	}
+
+	return false, iter.Close()
+}
+
 // Iter represents an iterator that can be used to iterate over all rows that
 // were returned by a query. The iterator might send additional queries to the
 // database during the iteration if paging was enabled.
