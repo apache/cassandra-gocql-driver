@@ -150,7 +150,7 @@ func insertCAS() error {
 	applied, err := session.Query(
 		`INSERT INTO cas_table (title, revid)
         VALUES (?,?) IF NOT EXISTS`,
-		title, revid).ScanCas(&titleCAS, &revidCAS)
+		title, revid).ScanCAS(&titleCAS, &revidCAS)
 
 	if err != nil {
 		return err
@@ -163,7 +163,7 @@ func insertCAS() error {
 	applied, err = session.Query(
 		`INSERT INTO cas_table (title, revid)
         VALUES (?,?) IF NOT EXISTS`,
-		title, revid).ScanCas(&titleCAS, &revidCAS)
+		title, revid).ScanCAS(&titleCAS, &revidCAS)
 
 	if err != nil {
 		return err
@@ -210,10 +210,6 @@ func main() {
 
 	if err := insertTestData(); err != nil {
 		log.Fatal("insertTestData: ", err)
-	}
-
-	if err := insertCAS(); err != nil {
-		log.Fatal("insertCAS: ", err)
 	}
 
 	var count int
@@ -283,6 +279,11 @@ func main() {
 
 		if err := insertBatch(); err != nil {
 			log.Fatal("insertBatch: ", err)
+		}
+
+		// CAS
+		if err := insertCAS(); err != nil {
+			log.Fatal("insertCAS: ", err)
 		}
 	}
 }

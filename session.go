@@ -171,50 +171,25 @@ func (q *Query) Scan(dest ...interface{}) error {
 	return iter.Close()
 }
 
-// If the CAS operation was applied, this function
-// will bind the result to the dest interface and return false.
-// Otherwise the dest interface will not be bound and the function
-// will return true.
-func (q *Query) ScanCas(dest ...interface{}) (bool, error) {
-	result := q.session.executeQuery(q)
-	if result.err != nil {
-		return false, result.err
+// ScanCAS executes a lightweight transaction (i.e. an UPDATE or INSERT
+// statement containing an IF clause). If the transaction fails because
+// the existing values did not match, the previos values will be stored
+// in dest.
+func (q *Query) ScanCAS(dest ...interface{}) (applied bool, err error) {
+	iter := q.Iter()
+	if iter.err != nil {
+		return false, iter.err
 	}
-	if len(result.rows) == 0 {
+	if len(iter.rows) == 0 {
 		return false, ErrNotFound
 	}
-
-	switch len(result.columns) {
-	case 1:
-		{
-			// The CAS operation was applied
-			return true, nil
-		}
-	case len(dest) + 1:
-		{
-			// The CAS operation was NOT applied
-			// In this case, the result will return the entire row from the database
-			// in addition a flag in indicating the
-			var applied bool
-			Unmarshal(result.columns[0].TypeInfo, result.rows[result.pos][0], &applied)
-
-			if applied {
-				return applied, errors.New("Expected unapplied CAS statement, but received applied CAS statement")
-			}
-
-			for i := 1; i < len(result.columns); i++ {
-				err := Unmarshal(result.columns[i].TypeInfo, result.rows[result.pos][i], dest[i-1])
-				if err != nil {
-					return false, err
-				}
-			}
-			return false, result.err
-		}
-	default:
-		{
-			return false, fmt.Errorf("Expected %d + 1 columns, but received %d columns", len(dest), len(result.columns))
-		}
+	if len(iter.Columns()) > 1 {
+		dest = append([]interface{}{&applied}, dest...)
+		iter.Scan(dest...)
+	} else {
+		iter.Scan(&applied)
 	}
+	return applied, iter.Close()
 }
 
 // Iter represents an iterator that can be used to iterate over all rows that
