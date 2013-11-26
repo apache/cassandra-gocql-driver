@@ -1,8 +1,11 @@
 gocql
 =====
 
+**Package Status:** Alpha 
+
 Package gocql implements a fast and robust Cassandra client for the
 Go programming language.
+
 
 **Attention:** This package is currently actively developed and the API may
 change in the future. The old "datbase/sql" based package is now called
@@ -22,22 +25,24 @@ Installation
 Features
 --------
 
-* modern Cassandra client for Cassandra 1.2 and 2.0
-* automatic type conversations between Cassandra and Go
-  * support for all common types including sets, lists and maps
-  * custom types can implement a `Marshaler` and `Unmarshaler` interface
-  * strict type conversations without any loss of precision
-  * built-In support for UUIDs (version 1 and 4)
-* support for logged, unlogged and counter batches
-* cluster management
-  * automatic reconnect on connection failures with exponential falloff
-  * round robin distribution of queries to different hosts
-  * round robin distribution of queries to different connections on a host
-  * each connection can execute up to 128 concurrent queries
-* iteration over paged results with configurable page size
-* optional frame compression (using snappy)
-* automatic query preparation
-* support for query tracing
+* Modern Cassandra client for Cassandra 1.2 and 2.0
+* Automatic type conversations between Cassandra and Go
+  * Support for all common types including sets, lists and maps
+  * Custom types can implement a `Marshaler` and `Unmarshaler` interface
+  * Strict type conversations without any loss of precision
+  * Built-In support for UUIDs (version 1 and 4)
+* Support for logged, unlogged and counter batches
+* Cluster management
+  * Automatic reconnect on connection failures with exponential falloff
+  * Round robin distribution of queries to different hosts
+  * Round robin distribution of queries to different connections on a host
+  * Each connection can execute up to 128 concurrent queries
+* Iteration over paged results with configurable page size
+* Optional frame compression (using snappy)
+* Automatic query preparation
+* Support for query tracing
+
+Please visit the [Roadmap](https://github.com/tux21b/gocql/wiki/Roadmap) page to see what is on the horizion.
 
 Example
 -------
