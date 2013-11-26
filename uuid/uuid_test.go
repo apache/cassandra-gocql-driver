@@ -76,7 +76,7 @@ func TestRandomUUID(t *testing.T) {
 
 func TestTimeUUID(t *testing.T) {
 	var node []byte
-	timestamp := uint64(0)
+	timestamp := int64(0)
 	for i := 0; i < 20; i++ {
 		uuid := TimeUUID()
 

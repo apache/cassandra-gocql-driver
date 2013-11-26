@@ -10,6 +10,8 @@ import (
 	"math"
 	"reflect"
 	"time"
+
+	"tux21b.org/v1/gocql/uuid"
 )
 
 // Marshaler is the interface implemented by objects that can marshal
@@ -49,7 +51,7 @@ func Marshal(info *TypeInfo, value interface{}) ([]byte, error) {
 		return marshalList(info, value)
 	case TypeMap:
 		return marshalMap(info, value)
-	case TypeUUID:
+	case TypeUUID, TypeTimeUUID:
 		return marshalUUID(info, value)
 	}
 	// TODO(tux21b): add the remaining types
@@ -904,6 +906,9 @@ func marshalUUID(info *TypeInfo, value interface{}) ([]byte, error) {
 	if val, ok := value.([]byte); ok && len(val) == 16 {
 		return val, nil
 	}
+	if val, ok := value.(uuid.UUID); ok {
+		return val.Bytes(), nil
+	}
 	return nil, marshalErrorf("can not marshal %T into %s", value, info)
 }
 
@@ -911,6 +916,9 @@ func unmarshalTimeUUID(info *TypeInfo, data []byte, value interface{}) error {
 	switch v := value.(type) {
 	case Unmarshaler:
 		return v.UnmarshalCQL(info, data)
+	case *uuid.UUID:
+		*v = uuid.FromBytes(data)
+		return nil
 	case *time.Time:
 		if len(data) != 16 {
 			return unmarshalErrorf("invalid timeuuid")

@@ -14,8 +14,6 @@ import (
 	"io"
 	"net"
 	"time"
-
-	"tux21b.org/v1/gocql"
 )
 
 type UUID [16]byte
@@ -174,44 +172,25 @@ func (u UUID) Node() []byte {
 
 // Timestamp extracts the timestamp information from a time based UUID
 // (version 1).
-func (u UUID) Timestamp() uint64 {
+func (u UUID) Timestamp() int64 {
 	if u.Version() != 1 {
 		return 0
 	}
-	return uint64(u[0])<<24 + uint64(u[1])<<16 + uint64(u[2])<<8 +
-		uint64(u[3]) + uint64(u[4])<<40 + uint64(u[5])<<32 +
-		uint64(u[7])<<48 + uint64(u[6]&0x0F)<<56
+	return int64(uint64(u[0])<<24|uint64(u[1])<<16|
+		uint64(u[2])<<8|uint64(u[3])) +
+		int64(uint64(u[4])<<40|uint64(u[5])<<32) +
+		int64(uint64(u[6]&0x0F)<<56|uint64(u[7])<<48)
 }
 
 // Time is like Timestamp, except that it returns a time.Time.
 func (u UUID) Time() time.Time {
-	t := u.Timestamp()
-	if t == 0 {
+	if u.Version() != 1 {
 		return time.Time{}
 	}
-	sec := t / 10000000
+	t := u.Timestamp() - timeEpoch
+	sec := t / 1e7
 	nsec := t - sec
-	return time.Unix(int64(sec)+timeBase, int64(nsec))
+	return time.Unix(int64(sec), int64(nsec)).UTC()
 }
 
-func (u UUID) MarshalCQL(info *gocql.TypeInfo) ([]byte, error) {
-	switch info.Type {
-	case gocql.TypeUUID, gocql.TypeTimeUUID:
-		return u[:], nil
-	}
-	return gocql.Marshal(info, u[:])
-}
-
-func (u *UUID) UnmarshalCQL(info *gocql.TypeInfo, data []byte) error {
-	switch info.Type {
-	case gocql.TypeUUID, gocql.TypeTimeUUID:
-		*u = FromBytes(data)
-		return nil
-	}
-	var val []byte
-	if err := gocql.Unmarshal(info, data, &val); err != nil {
-		return err
-	}
-	*u = FromBytes(val)
-	return nil
-}
+var timeEpoch int64 = 0x01B21DD213814000

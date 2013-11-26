@@ -25,7 +25,10 @@ func TestSimple(t *testing.T) {
 	srv := NewTestServer(t)
 	defer srv.Stop()
 
-	db := NewCluster(srv.Address).CreateSession()
+	db, err := NewCluster(srv.Address).CreateSession()
+	if err != nil {
+		t.Errorf("NewCluster: %v", err)
+	}
 
 	if err := db.Query("void").Exec(); err != nil {
 		t.Error(err)
@@ -36,8 +39,10 @@ func TestClosed(t *testing.T) {
 	srv := NewTestServer(t)
 	defer srv.Stop()
 
-	session := NewCluster(srv.Address).CreateSession()
-
+	session, err := NewCluster(srv.Address).CreateSession()
+	if err != nil {
+		t.Errorf("NewCluster: %v", err)
+	}
 	session.Close()
 
 	if err := session.Query("void").Exec(); err != ErrUnavailable {
@@ -49,7 +54,10 @@ func TestTimeout(t *testing.T) {
 	srv := NewTestServer(t)
 	defer srv.Stop()
 
-	db := NewCluster(srv.Address).CreateSession()
+	db, err := NewCluster(srv.Address).CreateSession()
+	if err != nil {
+		t.Errorf("NewCluster: %v", err)
+	}
 
 	go func() {
 		<-time.After(1 * time.Second)
@@ -65,7 +73,10 @@ func TestSlowQuery(t *testing.T) {
 	srv := NewTestServer(t)
 	defer srv.Stop()
 
-	db := NewCluster(srv.Address).CreateSession()
+	db, err := NewCluster(srv.Address).CreateSession()
+	if err != nil {
+		t.Errorf("NewCluster: %v", err)
+	}
 
 	if err := db.Query("slow").Exec(); err != nil {
 		t.Fatal(err)
@@ -82,7 +93,10 @@ func TestRoundRobin(t *testing.T) {
 	}
 	cluster := NewCluster(addrs...)
 	cluster.StartupMin = len(addrs)
-	db := cluster.CreateSession()
+	db, err := cluster.CreateSession()
+	if err != nil {
+		t.Errorf("NewCluster: %v", err)
+	}
 
 	var wg sync.WaitGroup
 	wg.Add(5)
