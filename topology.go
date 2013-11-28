@@ -7,7 +7,35 @@ package gocql
 import (
 	"sync"
 	"sync/atomic"
+	"tux21b.org/v1/gocql/uuid"
 )
+
+/*********** New Topology Code *******/
+//Host represents the structure for storing key host information
+//that is used by load balancing and fail over policies.
+type Host struct {
+	HostID     uuid.UUID
+	DataCenter string
+	Rack       string
+	conn       *Conn
+}
+
+type HostPool struct {
+	pool []Host
+	mu   sync.Mutex
+}
+
+func NewHostPool() *HostPool {
+	return &HostPool{}
+}
+
+func (p *HostPool) AddHost(host Host) {
+	p.mu.Lock()
+	p.pool = append(p.pool, host)
+	p.mu.Unlock()
+}
+
+/*********** End New Topology Code *******/
 
 type Node interface {
 	Pick(qry *Query) *Conn

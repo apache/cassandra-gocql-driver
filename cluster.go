@@ -31,6 +31,7 @@ type ClusterConfig struct {
 	StartupMin   int           // wait for StartupMin hosts (default: len(Hosts)/2+1)
 	Consistency  Consistency   // default consistency level (default: Quorum)
 	Compressor   Compressor    // compression algorithm (default: nil)
+	AutoDiscover bool          // To add nodes not supplied by the hosts array
 }
 
 // NewCluster generates a new config for the default cluster implementation.
@@ -47,6 +48,7 @@ func NewCluster(hosts ...string) *ClusterConfig {
 		DelayMax:     10 * time.Minute,
 		StartupMin:   len(hosts)/2 + 1,
 		Consistency:  Quorum,
+		AutoDiscover: true,
 	}
 	return cfg
 }
