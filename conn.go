@@ -9,6 +9,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"tux21b.org/v1/uuid"
 
 	"code.google.com/p/snappy-go/snappy"
 )
@@ -54,6 +55,7 @@ type Conn struct {
 	compressor Compressor
 	addr       string
 	version    uint8
+	hostID     uuid.UUID
 }
 
 // Connect establishes a connection to a Cassandra node.

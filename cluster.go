@@ -32,6 +32,7 @@ type ClusterConfig struct {
 	Consistency  Consistency   // default consistency level (default: Quorum)
 	Compressor   Compressor    // compression algorithm (default: nil)
 	AutoDiscover bool          // To add nodes not supplied by the hosts array
+	MaxConnRetry int
 }
 
 // NewCluster generates a new config for the default cluster implementation.
@@ -49,6 +50,7 @@ func NewCluster(hosts ...string) *ClusterConfig {
 		StartupMin:   len(hosts)/2 + 1,
 		Consistency:  Quorum,
 		AutoDiscover: true,
+		MaxConnRetry: 2,
 	}
 	return cfg
 }
@@ -64,33 +66,39 @@ func (cfg *ClusterConfig) CreateSession() (*Session, error) {
 
 	impl := &clusterImpl{
 		cfg:      *cfg,
-		hostPool: NewRoundRobin(),
-		connPool: make(map[string]*RoundRobin),
-		conns:    make(map[*Conn]struct{}),
+		hostPool: NewHostPool(),
 		quitWait: make(chan bool),
 		keyspace: cfg.Keyspace,
 	}
 	impl.wgStart.Add(1)
+	var hostConns int = 0
 	for i := 0; i < len(impl.cfg.Hosts); i++ {
 		addr := strings.TrimSpace(impl.cfg.Hosts[i])
 		if strings.Index(addr, ":") < 0 {
 			addr = fmt.Sprintf("%s:%d", addr, impl.cfg.DefaultPort)
 		}
-		for j := 0; j < impl.cfg.NumConns; j++ {
-			go impl.connect(addr)
+		err := impl.connect(addr)
+		if err == nil {
+			hostConns++
+			for j := 1; j < impl.cfg.NumConns; j++ {
+				go impl.connect(addr)
+			}
 		}
+	}
+	//check if no host connections were made.
+	if hostConns == 0 {
+		return nil, ErrNoConns
 	}
 	impl.wgStart.Wait()
 	s := NewSession(impl)
 	s.SetConsistency(cfg.Consistency)
+	//TODO: Add code to begin autodiscovery queries.
 	return s, nil
 }
 
 type clusterImpl struct {
 	cfg      ClusterConfig
-	hostPool *RoundRobin
-	connPool map[string]*RoundRobin
-	conns    map[*Conn]struct{}
+	hostPool *HostPool
 	keyspace string
 	mu       sync.Mutex
 
@@ -102,7 +110,7 @@ type clusterImpl struct {
 	quitOnce sync.Once
 }
 
-func (c *clusterImpl) connect(addr string) {
+func (c *clusterImpl) connect(addr string) Error {
 	cfg := ConnConfig{
 		ProtoVersion: c.cfg.ProtoVersion,
 		CQLVersion:   c.cfg.CQLVersion,
@@ -111,22 +119,27 @@ func (c *clusterImpl) connect(addr string) {
 		Compressor:   c.cfg.Compressor,
 	}
 	delay := c.cfg.DelayMin
+	retryCount := 0
 	for {
 		conn, err := Connect(addr, cfg, c)
 		if err != nil {
 			log.Printf("failed to connect to %q: %v", addr, err)
 			select {
 			case <-time.After(delay):
+				if retryCount == c.cfg.MaxConnRetry {
+					return err
+				}
 				if delay *= 2; delay > c.cfg.DelayMax {
 					delay = c.cfg.DelayMax
 				}
+				retryCount++
 				continue
 			case <-c.quitWait:
-				return
+				return nil
 			}
 		}
 		c.addConn(conn, "")
-		return
+		return nil
 	}
 }
 
@@ -144,44 +157,35 @@ func (c *clusterImpl) changeKeyspace(conn *Conn, keyspace string, connected bool
 }
 
 func (c *clusterImpl) addConn(conn *Conn, keyspace string) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
 	if c.quit {
 		conn.Close()
 		return
 	}
 	if keyspace != c.keyspace && c.keyspace != "" {
 		// change the keyspace before adding the node to the pool
-		go c.changeKeyspace(conn, c.keyspace, false)
+		c.changeKeyspace(conn, c.keyspace, false)
 		return
 	}
-	connPool := c.connPool[conn.Address()]
-	if connPool == nil {
-		connPool = NewRoundRobin()
-		c.connPool[conn.Address()] = connPool
-		c.hostPool.AddNode(connPool)
-		if !c.started && c.hostPool.Size() >= c.cfg.StartupMin {
-			c.started = true
-			c.wgStart.Done()
-		}
-	}
-	connPool.AddNode(conn)
-	c.conns[conn] = struct{}{}
-}
-
-func (c *clusterImpl) removeConn(conn *Conn) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	conn.Close()
-	connPool := c.connPool[conn.addr]
-	if connPool == nil {
+	qryStr := "SELECT host_id,data_center,rack,bootstrapped FROM system.local"
+	qry := &Query{stmt: qryStr, values: nil, cons: Any, pageSize: s.pageSize, prefetch: 0.25}
+	iter := conn.executeQuery(qry)
+	if iter.err != nil {
+		log.Printf("failed to get host information for %q, error %v", conn.Address, iter.err)
+		conn.Close()
 		return
 	}
-	connPool.RemoveNode(conn)
-	if connPool.Size() == 0 {
-		c.hostPool.RemoveNode(connPool)
+	host := new(Host)
+	ready := false
+	iter.Scan(host.HostID, host.DataCenter, host.Rack, ready)
+	if ready {
+		conn.hostID = host.HostID
+		c.hostPool.AddHost(host)
+	} else {
+		log.Printf("ignored host %q still bootstrapping.", conn.Address)
 	}
-	delete(c.conns, conn)
+	if err := iter.Close(); err != nil {
+		log.Println(err)
+	}
 }
 
 func (c *clusterImpl) HandleError(conn *Conn, err error, closed bool) {
@@ -189,13 +193,15 @@ func (c *clusterImpl) HandleError(conn *Conn, err error, closed bool) {
 		// ignore all non-fatal errors
 		return
 	}
-	c.removeConn(conn)
-	if !c.quit {
+	c.hostPool.RemoveConn(conn)
+	/*if !c.quit {
 		go c.connect(conn.Address()) // reconnect
-	}
+	}*/
+	//reconnects will happen due to autodiscovery. This way the nodes can be validated against the cluster.
 }
 
 func (c *clusterImpl) HandleKeyspace(conn *Conn, keyspace string) {
+	//Change code to loop through the pool and change keyspace.
 	c.mu.Lock()
 	if c.keyspace == keyspace {
 		c.mu.Unlock()
@@ -235,4 +241,5 @@ func (c *clusterImpl) Close() {
 
 var (
 	ErrNoHosts = errors.New("no hosts provided")
+	ErrNoConns = errors.New("no host connections made")
 )
