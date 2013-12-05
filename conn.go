@@ -9,7 +9,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-	"tux21b.org/v1/uuid"
+	"tux21b.org/v1/gocql/uuid"
 
 	"code.google.com/p/snappy-go/snappy"
 )

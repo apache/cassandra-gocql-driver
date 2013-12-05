@@ -5,7 +5,6 @@
 package gocql
 
 import (
-	"math/rand"
 	"sync"
 	"sync/atomic"
 	"tux21b.org/v1/gocql/uuid"
@@ -93,7 +92,6 @@ func (p *HostPool) RemoveHost(host Host) {
 //it will be removed from the pool.
 func (p *HostPool) RemoveConn(conn *Conn) {
 	p.mu.Lock()
-	defer p.mu.Unlock()
 	host := p.pool[conn.hostID]
 	conns := len(host.conn)
 	if conns > 1 {
@@ -106,8 +104,10 @@ func (p *HostPool) RemoveConn(conn *Conn) {
 			}
 		}
 	} else {
-		go p.RemoveHost(host)
+		//Remove the host as it may be unhealthy. Let auto discover reconnect.
+		defer p.RemoveHost(host)
 	}
+	p.mu.Unlock()
 }
 
 //Size returns the total size of the pool
@@ -124,9 +124,8 @@ func (r *HostPool) Pick(qry *Query) *Conn {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	var host Host = nil
 	//Use range on map to select a random host.
-	for key, val := range r.pool {
+	for _, val := range r.pool {
 		conns := len(val.conn)
 		//Check the host has open connections
 		if conns > 0 {
@@ -134,12 +133,8 @@ func (r *HostPool) Pick(qry *Query) *Conn {
 			//with an available stream
 			for i := 0; i < conns; i++ {
 				if len(val.conn[i].uniq) > 0 {
-					host = val
-					break
+					return val.conn[i]
 				}
-			}
-			if host != nil {
-				break
 			}
 		} else {
 			//Remove the host as it no longer has any valid connections
@@ -147,7 +142,7 @@ func (r *HostPool) Pick(qry *Query) *Conn {
 			go r.RemoveHost(val)
 		}
 	}
-	return host
+	return nil
 }
 
 //Close tears down the pool and closes all the open connections,

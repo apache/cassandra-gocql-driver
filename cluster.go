@@ -11,6 +11,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"tux21b.org/v1/gocql/uuid"
 )
 
 // ClusterConfig is a struct to configure the default cluster implementation
@@ -70,8 +72,8 @@ func (cfg *ClusterConfig) CreateSession() (*Session, error) {
 		quitWait: make(chan bool),
 		keyspace: cfg.Keyspace,
 	}
-	impl.wgStart.Add(1)
-	var hostConns int = 0
+	impl.mu.Lock()
+	hostConns := 0
 	for i := 0; i < len(impl.cfg.Hosts); i++ {
 		addr := strings.TrimSpace(impl.cfg.Hosts[i])
 		if strings.Index(addr, ":") < 0 {
@@ -89,7 +91,7 @@ func (cfg *ClusterConfig) CreateSession() (*Session, error) {
 	if hostConns == 0 {
 		return nil, ErrNoConns
 	}
-	impl.wgStart.Wait()
+	impl.mu.Unlock()
 	s := NewSession(impl)
 	s.SetConsistency(cfg.Consistency)
 	//TODO: Add code to begin autodiscovery queries.
@@ -110,7 +112,7 @@ type clusterImpl struct {
 	quitOnce sync.Once
 }
 
-func (c *clusterImpl) connect(addr string) Error {
+func (c *clusterImpl) connect(addr string) error {
 	cfg := ConnConfig{
 		ProtoVersion: c.cfg.ProtoVersion,
 		CQLVersion:   c.cfg.CQLVersion,
@@ -120,15 +122,14 @@ func (c *clusterImpl) connect(addr string) Error {
 	}
 	delay := c.cfg.DelayMin
 	retryCount := 0
-	for {
-		conn, err := Connect(addr, cfg, c)
+	var conn *Conn
+	var err error
+	for retryCount < c.cfg.MaxConnRetry {
+		conn, err = Connect(addr, cfg, c)
 		if err != nil {
 			log.Printf("failed to connect to %q: %v", addr, err)
 			select {
 			case <-time.After(delay):
-				if retryCount == c.cfg.MaxConnRetry {
-					return err
-				}
 				if delay *= 2; delay > c.cfg.DelayMax {
 					delay = c.cfg.DelayMax
 				}
@@ -137,17 +138,19 @@ func (c *clusterImpl) connect(addr string) Error {
 			case <-c.quitWait:
 				return nil
 			}
+		} else {
+			c.addConn(conn, "")
+			return nil
 		}
-		c.addConn(conn, "")
-		return nil
 	}
+	return err
 }
 
 func (c *clusterImpl) changeKeyspace(conn *Conn, keyspace string, connected bool) {
 	if err := conn.UseKeyspace(keyspace); err != nil {
 		conn.Close()
 		if connected {
-			c.removeConn(conn)
+			c.hostPool.RemoveConn(conn)
 		}
 		go c.connect(conn.Address())
 	}
@@ -166,22 +169,39 @@ func (c *clusterImpl) addConn(conn *Conn, keyspace string) {
 		c.changeKeyspace(conn, c.keyspace, false)
 		return
 	}
+	//Fetch node information from the node itself.
 	qryStr := "SELECT host_id,data_center,rack,bootstrapped FROM system.local"
-	qry := &Query{stmt: qryStr, values: nil, cons: Any, pageSize: s.pageSize, prefetch: 0.25}
+	qry := &Query{stmt: qryStr, values: nil, cons: One, pageSize: 1, prefetch: 0.25}
 	iter := conn.executeQuery(qry)
 	if iter.err != nil {
 		log.Printf("failed to get host information for %q, error %v", conn.Address, iter.err)
 		conn.Close()
 		return
 	}
-	host := new(Host)
-	ready := false
-	iter.Scan(host.HostID, host.DataCenter, host.Rack, ready)
-	if ready {
+	var hostID uuid.UUID
+	var dc, rack, ready string
+	iter.Scan(&hostID, &dc, &rack, &ready)
+	//check to make sure the host isn't bootstrapping
+	if ready == "COMPLETED" {
+		host := Host{
+			HostID:     hostID,
+			DataCenter: dc,
+			Rack:       rack,
+		}
 		conn.hostID = host.HostID
-		c.hostPool.AddHost(host)
+		if pHost, ok := c.hostPool.pool[host.HostID]; ok {
+			pHost.conn = append(pHost.conn, conn)
+			host = pHost
+		} else {
+			host.conn = append(host.conn, conn)
+			c.hostPool.AddHost(host)
+		}
+		//Check if there is room for connections
+		if len(host.conn) < c.cfg.NumConns {
+			defer c.connect(conn.Address())
+		}
 	} else {
-		log.Printf("ignored host %q still bootstrapping.", conn.Address)
+		log.Printf("ignored host %q still bootstrapping.", conn.Address())
 	}
 	if err := iter.Close(); err != nil {
 		log.Println(err)
@@ -200,26 +220,19 @@ func (c *clusterImpl) HandleError(conn *Conn, err error, closed bool) {
 	//reconnects will happen due to autodiscovery. This way the nodes can be validated against the cluster.
 }
 
+//HandleKeyspace is this still valid?
 func (c *clusterImpl) HandleKeyspace(conn *Conn, keyspace string) {
 	//Change code to loop through the pool and change keyspace.
-	c.mu.Lock()
+	c.hostPool.mu.Lock()
+	defer c.hostPool.mu.Unlock()
 	if c.keyspace == keyspace {
-		c.mu.Unlock()
 		return
 	}
-	c.keyspace = keyspace
-	conns := make([]*Conn, 0, len(c.conns))
-	for conn := range c.conns {
-		conns = append(conns, conn)
-	}
-	c.mu.Unlock()
-
-	// change the keyspace of all other connections too
-	for i := 0; i < len(conns); i++ {
-		if conns[i] == conn {
-			continue
+	//Update all connections
+	for _, host := range c.hostPool.pool {
+		for conID := range host.conn {
+			c.changeKeyspace(host.conn[conID], keyspace, true)
 		}
-		c.changeKeyspace(conns[i], keyspace, true)
 	}
 }
 
@@ -233,9 +246,7 @@ func (c *clusterImpl) Close() {
 		defer c.mu.Unlock()
 		c.quit = true
 		close(c.quitWait)
-		for conn := range c.conns {
-			conn.Close()
-		}
+		c.hostPool.Close()
 	})
 }
 

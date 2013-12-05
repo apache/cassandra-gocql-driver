@@ -84,7 +84,7 @@ func Unmarshal(info *TypeInfo, data []byte, value interface{}) error {
 		return unmarshalList(info, data, value)
 	case TypeMap:
 		return unmarshalMap(info, data, value)
-	case TypeTimeUUID:
+	case TypeTimeUUID, TypeUUID:
 		return unmarshalTimeUUID(info, data, value)
 	case TypeInet:
 		return unmarshalInet(info, data, value)
