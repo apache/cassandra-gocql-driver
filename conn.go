@@ -277,7 +277,7 @@ func (c *Conn) prepareStatement(stmt string, trace Tracer) (*queryInfo, error) {
 	return info, nil
 }
 
-func (c *Conn) executeQuery(qry *Query) *Iter {
+func (c *Conn) executeQuery(qry *Query) (iter *Iter) {
 	op := &queryFrame{
 		Stmt:      qry.stmt,
 		Cons:      qry.cons,
@@ -287,27 +287,30 @@ func (c *Conn) executeQuery(qry *Query) *Iter {
 	if len(qry.values) > 0 {
 		info, err := c.prepareStatement(qry.stmt, qry.trace)
 		if err != nil {
-			return &Iter{err: err}
+			iter = &Iter{err: err}
+			return
 		}
 		op.Prepared = info.id
 		op.Values = make([][]byte, len(qry.values))
 		for i := 0; i < len(qry.values); i++ {
 			val, err := Marshal(info.args[i].TypeInfo, qry.values[i])
 			if err != nil {
-				return &Iter{err: err}
+				iter = &Iter{err: err}
+				return
 			}
 			op.Values[i] = val
 		}
 	}
 	resp, err := c.exec(op, qry.trace)
 	if err != nil {
-		return &Iter{err: err}
+		iter = &Iter{err: err}
+		return
 	}
 	switch x := resp.(type) {
 	case resultVoidFrame:
-		return &Iter{}
+		iter = &Iter{}
 	case resultRowsFrame:
-		iter := &Iter{columns: x.Columns, rows: x.Rows}
+		iter = &Iter{columns: x.Columns, rows: x.Rows}
 		if len(x.PagingState) > 0 {
 			iter.next = &nextIter{
 				qry: *qry,
@@ -318,28 +321,29 @@ func (c *Conn) executeQuery(qry *Query) *Iter {
 				iter.next.pos = 1
 			}
 		}
-		return iter
 	case resultKeyspaceFrame:
 		c.cluster.HandleKeyspace(c, x.Keyspace)
-		return &Iter{}
+		iter = &Iter{}
 	case errorFrame:
 		if x.Code == errUnprepared && len(qry.values) > 0 {
 			c.prepMu.Lock()
 			if val, ok := c.prep[qry.stmt]; ok && val != nil {
 				delete(c.prep, qry.stmt)
 				c.prepMu.Unlock()
-				return c.executeQuery(qry)
+				iter = c.executeQuery(qry)
+				return
 			}
 			c.prepMu.Unlock()
-			return &Iter{err: x}
+			iter = &Iter{err: x}
 		} else {
-			return &Iter{err: x}
+			iter = &Iter{err: x}
 		}
 	case error:
-		return &Iter{err: x}
+		iter = &Iter{err: x}
 	default:
-		return &Iter{err: ErrProtocol}
+		iter = &Iter{err: ErrProtocol}
 	}
+	return
 }
 
 func (c *Conn) Pick(qry *Query) *Conn {
