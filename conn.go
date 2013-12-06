@@ -388,7 +388,7 @@ func (c *Conn) executeBatch(batch *Batch) (err error) {
 		if len(entry.Args) > 0 {
 			info, err = c.prepareStatement(entry.Stmt, nil)
 			if err != nil {
-				 return
+				return
 			}
 			f.writeByte(1)
 			f.writeShortBytes(info.id)
@@ -458,7 +458,7 @@ func (c *Conn) decodeFrame(f frame, trace Tracer) (rval interface{}, err error) 
 
 	switch op {
 	case opReady:
-		rval =readyFrame{}
+		rval = readyFrame{}
 	case opResult:
 		switch kind := f.readInt(); kind {
 		case resultKindVoid:

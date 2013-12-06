@@ -1014,25 +1014,25 @@ const (
 	TypeSet       Type = 0x0022
 )
 
-var TypeNames = map[Type]string {
-	TypeCustom: "custom",
-	TypeAscii: "ascii",
-	TypeBigInt: "bigint",
-	TypeBlob: "blob",
-	TypeBoolean: "boolean",
-	TypeCounter: "counter",
-	TypeDecimal: "decimal",
-	TypeDouble: "double",
-	TypeFloat: "float",
-	TypeInt: "int",
+var TypeNames = map[Type]string{
+	TypeCustom:    "custom",
+	TypeAscii:     "ascii",
+	TypeBigInt:    "bigint",
+	TypeBlob:      "blob",
+	TypeBoolean:   "boolean",
+	TypeCounter:   "counter",
+	TypeDecimal:   "decimal",
+	TypeDouble:    "double",
+	TypeFloat:     "float",
+	TypeInt:       "int",
 	TypeTimestamp: "timestamp",
-	TypeUUID: "uuid",
-	TypeVarchar: "varchar",
-	TypeTimeUUID: "timeuuid",
-	TypeInet: "inet",
-	TypeList: "list",
-	TypeMap: "map",
-	TypeSet: "set",
+	TypeUUID:      "uuid",
+	TypeVarchar:   "varchar",
+	TypeTimeUUID:  "timeuuid",
+	TypeInet:      "inet",
+	TypeList:      "list",
+	TypeMap:       "map",
+	TypeSet:       "set",
 }
 
 // String returns the name of the identifier.
