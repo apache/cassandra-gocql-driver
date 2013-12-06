@@ -12,7 +12,7 @@ import (
 	"reflect"
 	"time"
 
-	"tux21b.org/v1/gocql/uuid"
+	"github.com/satori/go.uuid"
 )
 
 // Marshaler is the interface implemented by objects that can marshal
@@ -903,29 +903,37 @@ func unmarshalMap(info *TypeInfo, data []byte, value interface{}) error {
 	return nil
 }
 
-func marshalUUID(info *TypeInfo, value interface{}) ([]byte, error) {
-	if val, ok := value.([]byte); ok && len(val) == 16 {
-		return val, nil
+func marshalUUID(info *TypeInfo, value interface{}) (data []byte, err error) {
+	switch value.(type) {
+	case []byte:
+		var u uuid.UUID
+		u, err = uuid.FromBytes(value.([]byte))
+		if err == nil {
+			data = u.Bytes()
+		}
+	case uuid.UUID:
+		data = value.(uuid.UUID).Bytes()
+	default:
+		err = marshalErrorf("can not marshal %T into %s", value, info)
 	}
-	if val, ok := value.(uuid.UUID); ok {
-		return val.Bytes(), nil
-	}
-	return nil, marshalErrorf("can not marshal %T into %s", value, info)
+	return
 }
 
-func unmarshalTimeUUID(info *TypeInfo, data []byte, value interface{}) error {
+func unmarshalTimeUUID(info *TypeInfo, data []byte, value interface{}) (err error) {
 	switch v := value.(type) {
 	case Unmarshaler:
-		return v.UnmarshalCQL(info, data)
+		err = v.UnmarshalCQL(info, data)
 	case *uuid.UUID:
-		*v = uuid.FromBytes(data)
-		return nil
+		*v, err = uuid.FromBytes(data)
 	case *time.Time:
-		if len(data) != 16 {
-			return unmarshalErrorf("invalid timeuuid")
+		var u uuid.UUID
+		u, err = uuid.FromBytes(data)
+		if err != nil {
+			return
 		}
-		if version := int(data[6] & 0xF0 >> 4); version != 1 {
-			return unmarshalErrorf("invalid timeuuid")
+		if u.Version() != 1 {
+			err = unmarshalErrorf("invalid timeuuid")
+			return
 		}
 		data[6] = data[6] & 0x0f
 		timestamp := int64(binary.BigEndian.Uint32(data[:4])) +
@@ -935,9 +943,10 @@ func unmarshalTimeUUID(info *TypeInfo, data []byte, value interface{}) error {
 		sec := timestamp / 1e7
 		nsec := timestamp - sec
 		*v = time.Unix(int64(sec), int64(nsec)).UTC()
-		return nil
+	default:
+		err = unmarshalErrorf("can not unmarshal %s into %T", info, value)
 	}
-	return unmarshalErrorf("can not unmarshal %s into %T", info, value)
+	return
 }
 
 func unmarshalInet(info *TypeInfo, data []byte, value interface{}) error {
