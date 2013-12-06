@@ -1053,9 +1053,8 @@ func (t Type) String() string {
 		return "map"
 	case TypeSet:
 		return "set"
-	default:
-		return "unknown"
 	}
+	return "unknown"
 }
 
 type MarshalError string

@@ -373,9 +373,10 @@ func (c *Conn) UseKeyspace(keyspace string) error {
 	return nil
 }
 
-func (c *Conn) executeBatch(batch *Batch) error {
+func (c *Conn) executeBatch(batch *Batch) (err error) {
 	if c.version == 1 {
-		return ErrUnsupported
+		err = ErrUnsupported
+		return
 	}
 	f := make(frame, headerSize, defaultFrameSize)
 	f.setHeader(c.version, 0, 0, opBatch)
@@ -385,10 +386,9 @@ func (c *Conn) executeBatch(batch *Batch) error {
 		entry := &batch.Entries[i]
 		var info *queryInfo
 		if len(entry.Args) > 0 {
-			var err error
 			info, err = c.prepareStatement(entry.Stmt, nil)
 			if err != nil {
-				return err
+				 return
 			}
 			f.writeByte(1)
 			f.writeShortBytes(info.id)
@@ -398,9 +398,10 @@ func (c *Conn) executeBatch(batch *Batch) error {
 		}
 		f.writeShort(uint16(len(entry.Args)))
 		for j := 0; j < len(entry.Args); j++ {
-			val, err := Marshal(info.args[j].TypeInfo, entry.Args[j])
+			var val []byte
+			val, err = Marshal(info.args[j].TypeInfo, entry.Args[j])
 			if err != nil {
-				return err
+				return
 			}
 			f.writeBytes(val)
 		}
@@ -409,16 +410,17 @@ func (c *Conn) executeBatch(batch *Batch) error {
 
 	resp, err := c.exec(f, nil)
 	if err != nil {
-		return err
+		return
 	}
 	switch x := resp.(type) {
 	case resultVoidFrame:
-		return nil
+		break
 	case error:
-		return x
+		err = x
 	default:
-		return ErrProtocol
+		err = ErrProtocol
 	}
+	return
 }
 
 func (c *Conn) decodeFrame(f frame, trace Tracer) (rval interface{}, err error) {
@@ -432,19 +434,22 @@ func (c *Conn) decodeFrame(f frame, trace Tracer) (rval interface{}, err error) 
 		}
 	}()
 	if len(f) < headerSize || (f[0] != c.version|flagResponse) {
-		return nil, ErrProtocol
+		err = ErrProtocol
+		return
 	}
 	flags, op, f := f[1], f[3], f[headerSize:]
 	if flags&flagCompress != 0 && len(f) > 0 && c.compressor != nil {
-		if buf, err := c.compressor.Decode([]byte(f)); err != nil {
-			return nil, err
-		} else {
-			f = frame(buf)
+		var buf frame
+		buf, err = c.compressor.Decode([]byte(f))
+		if err != nil {
+			return
 		}
+		f = frame(buf)
 	}
 	if flags&flagTrace != 0 {
 		if len(f) < 16 {
-			return nil, ErrProtocol
+			err = ErrProtocol
+			return
 		}
 		traceId := []byte(f[:16])
 		f = f[16:]
@@ -453,11 +458,11 @@ func (c *Conn) decodeFrame(f frame, trace Tracer) (rval interface{}, err error) 
 
 	switch op {
 	case opReady:
-		return readyFrame{}, nil
+		rval =readyFrame{}
 	case opResult:
 		switch kind := f.readInt(); kind {
 		case resultKindVoid:
-			return resultVoidFrame{}, nil
+			rval = resultVoidFrame{}
 		case resultKindRows:
 			columns, pageState := f.readMetaData()
 			numRows := f.readInt()
@@ -469,28 +474,29 @@ func (c *Conn) decodeFrame(f frame, trace Tracer) (rval interface{}, err error) 
 			for i := 0; i < numRows; i++ {
 				rows[i], values = values[:len(columns)], values[len(columns):]
 			}
-			return resultRowsFrame{columns, rows, pageState}, nil
+			rval = resultRowsFrame{columns, rows, pageState}
 		case resultKindKeyspace:
 			keyspace := f.readString()
-			return resultKeyspaceFrame{keyspace}, nil
+			rval = resultKeyspaceFrame{keyspace}
 		case resultKindPrepared:
 			id := f.readShortBytes()
 			values, _ := f.readMetaData()
-			return resultPreparedFrame{id, values}, nil
+			rval = resultPreparedFrame{id, values}
 		case resultKindSchemaChanged:
-			return resultVoidFrame{}, nil
+			rval = resultVoidFrame{}
 		default:
-			return nil, ErrProtocol
+			err = ErrProtocol
 		}
 	case opSupported:
-		return supportedFrame{}, nil
+		rval = supportedFrame{}
 	case opError:
 		code := f.readInt()
 		msg := f.readString()
-		return errorFrame{code, msg}, nil
+		rval = errorFrame{code, msg}
 	default:
-		return nil, ErrProtocol
+		err = ErrProtocol
 	}
+	return
 }
 
 type queryInfo struct {
