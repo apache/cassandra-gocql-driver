@@ -34,6 +34,8 @@ type ConnConfig struct {
 	Timeout      time.Duration
 	NumStreams   int
 	Compressor   Compressor
+	Username     string
+	Password     string
 }
 
 // Conn is a single connection to a Cassandra node. It can be used to execute
@@ -93,6 +95,25 @@ func Connect(addr string, cfg ConnConfig, cluster Cluster) (*Conn, error) {
 	return c, nil
 }
 
+func (c *Conn) authenticate(cfg *ConnConfig) error {
+	req := &authenticationFrame{
+		Username: cfg.Username,
+		Password: cfg.Password,
+	}
+	resp, err := c.execSimple(req)
+	if err != nil {
+		return err
+	}
+	switch x := resp.(type) {
+	case readyFrame:
+	case error:
+		return x
+	default:
+		return ErrProtocol
+	}
+	return nil
+}
+
 func (c *Conn) startup(cfg *ConnConfig) error {
 	req := &startupFrame{
 		CQLVersion: cfg.CQLVersion,
@@ -105,6 +126,8 @@ func (c *Conn) startup(cfg *ConnConfig) error {
 		return err
 	}
 	switch x := resp.(type) {
+	case authenticateFrame:
+		return c.authenticate(cfg)
 	case readyFrame:
 	case error:
 		return x
@@ -450,6 +473,8 @@ func (c *Conn) decodeFrame(f frame, trace Tracer) (rval interface{}, err error) 
 	switch op {
 	case opReady:
 		return readyFrame{}, nil
+	case opAuthenticate:
+		return authenticateFrame{}, nil
 	case opResult:
 		switch kind := f.readInt(); kind {
 		case resultKindVoid:
