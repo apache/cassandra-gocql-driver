@@ -1014,45 +1014,32 @@ const (
 	TypeSet       Type = 0x0022
 )
 
+var TypeNames = map[Type]string {
+	TypeCustom: "custom",
+	TypeAscii: "ascii",
+	TypeBigInt: "bigint",
+	TypeBlob: "blob",
+	TypeBoolean: "boolean",
+	TypeCounter: "counter",
+	TypeDecimal: "decimal",
+	TypeDouble: "double",
+	TypeFloat: "float",
+	TypeInt: "int",
+	TypeTimestamp: "timestamp",
+	TypeUUID: "uuid",
+	TypeVarchar: "varchar",
+	TypeTimeUUID: "timeuuid",
+	TypeInet: "inet",
+	TypeList: "list",
+	TypeMap: "map",
+	TypeSet: "set",
+}
+
 // String returns the name of the identifier.
 func (t Type) String() string {
-	switch t {
-	case TypeCustom:
-		return "custom"
-	case TypeAscii:
-		return "ascii"
-	case TypeBigInt:
-		return "bigint"
-	case TypeBlob:
-		return "blob"
-	case TypeBoolean:
-		return "boolean"
-	case TypeCounter:
-		return "counter"
-	case TypeDecimal:
-		return "decimal"
-	case TypeDouble:
-		return "double"
-	case TypeFloat:
-		return "float"
-	case TypeInt:
-		return "int"
-	case TypeTimestamp:
-		return "timestamp"
-	case TypeUUID:
-		return "uuid"
-	case TypeVarchar:
-		return "varchar"
-	case TypeTimeUUID:
-		return "timeuuid"
-	case TypeInet:
-		return "inet"
-	case TypeList:
-		return "list"
-	case TypeMap:
-		return "map"
-	case TypeSet:
-		return "set"
+	s, ok := TypeNames[t]
+	if ok {
+		return s
 	}
 	return "unknown"
 }
