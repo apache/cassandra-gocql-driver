@@ -1,6 +1,8 @@
 gocql
 =====
 
+[![GoDoc](http://godoc.org/tux21b.org/v1/gocql?status.png)](http://godoc.org/tux21b.org/v1/gocql)
+
 **Package Status:** Alpha 
 
 Package gocql implements a fast and robust Cassandra client for the
