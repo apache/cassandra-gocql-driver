@@ -6,6 +6,7 @@ package gocql
 
 import (
 	"bytes"
+	"encoding/binary"
 	"fmt"
 	"math"
 	"reflect"
@@ -926,11 +927,11 @@ func unmarshalTimeUUID(info *TypeInfo, data []byte, value interface{}) error {
 		if version := int(data[6] & 0xF0 >> 4); version != 1 {
 			return unmarshalErrorf("invalid timeuuid")
 		}
-		timestamp := int64(uint64(data[0])<<24|uint64(data[1])<<16|
-			uint64(data[2])<<8|uint64(data[3])) +
-			int64(uint64(data[4])<<40|uint64(data[5])<<32) +
-			int64(uint64(data[6]&0x0F)<<56|uint64(data[7])<<48)
-		timestamp = timestamp - timeEpoch
+		data[6] = data[6] & 0x0f
+		timestamp := int64(binary.BigEndian.Uint32(data[:4])) +
+			int64(binary.BigEndian.Uint16(data[4:]))<<32 +
+			int64(binary.BigEndian.Uint16(data[6:]))<<48 -
+			timeEpoch
 		sec := timestamp / 1e7
 		nsec := timestamp - sec
 		*v = time.Unix(int64(sec), int64(nsec)).UTC()
