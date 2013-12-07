@@ -6,12 +6,13 @@ package gocql
 
 import (
 	"bytes"
+	"encoding/binary"
 	"fmt"
 	"math"
 	"reflect"
 	"time"
 
-	"tux21b.org/v1/gocql/uuid"
+	"github.com/satori/go.uuid"
 )
 
 // Marshaler is the interface implemented by objects that can marshal
@@ -902,41 +903,50 @@ func unmarshalMap(info *TypeInfo, data []byte, value interface{}) error {
 	return nil
 }
 
-func marshalUUID(info *TypeInfo, value interface{}) ([]byte, error) {
-	if val, ok := value.([]byte); ok && len(val) == 16 {
-		return val, nil
+func marshalUUID(info *TypeInfo, value interface{}) (data []byte, err error) {
+	switch value.(type) {
+	case []byte:
+		var u uuid.UUID
+		u, err = uuid.FromBytes(value.([]byte))
+		if err == nil {
+			data = u.Bytes()
+		}
+	case uuid.UUID:
+		data = value.(uuid.UUID).Bytes()
+	default:
+		err = marshalErrorf("can not marshal %T into %s", value, info)
 	}
-	if val, ok := value.(uuid.UUID); ok {
-		return val.Bytes(), nil
-	}
-	return nil, marshalErrorf("can not marshal %T into %s", value, info)
+	return
 }
 
-func unmarshalTimeUUID(info *TypeInfo, data []byte, value interface{}) error {
+func unmarshalTimeUUID(info *TypeInfo, data []byte, value interface{}) (err error) {
 	switch v := value.(type) {
 	case Unmarshaler:
-		return v.UnmarshalCQL(info, data)
+		err = v.UnmarshalCQL(info, data)
 	case *uuid.UUID:
-		*v = uuid.FromBytes(data)
-		return nil
+		*v, err = uuid.FromBytes(data)
 	case *time.Time:
-		if len(data) != 16 {
-			return unmarshalErrorf("invalid timeuuid")
+		var u uuid.UUID
+		u, err = uuid.FromBytes(data)
+		if err != nil {
+			return
 		}
-		if version := int(data[6] & 0xF0 >> 4); version != 1 {
-			return unmarshalErrorf("invalid timeuuid")
+		if u.Version() != 1 {
+			err = unmarshalErrorf("invalid timeuuid")
+			return
 		}
-		timestamp := int64(uint64(data[0])<<24|uint64(data[1])<<16|
-			uint64(data[2])<<8|uint64(data[3])) +
-			int64(uint64(data[4])<<40|uint64(data[5])<<32) +
-			int64(uint64(data[6]&0x0F)<<56|uint64(data[7])<<48)
-		timestamp = timestamp - timeEpoch
+		data[6] = data[6] & 0x0f
+		timestamp := int64(binary.BigEndian.Uint32(data[:4])) +
+			int64(binary.BigEndian.Uint16(data[4:]))<<32 +
+			int64(binary.BigEndian.Uint16(data[6:]))<<48 -
+			timeEpoch
 		sec := timestamp / 1e7
 		nsec := timestamp - sec
 		*v = time.Unix(int64(sec), int64(nsec)).UTC()
-		return nil
+	default:
+		err = unmarshalErrorf("can not unmarshal %s into %T", info, value)
 	}
-	return unmarshalErrorf("can not unmarshal %s into %T", info, value)
+	return
 }
 
 func unmarshalInet(info *TypeInfo, data []byte, value interface{}) error {
@@ -1004,48 +1014,33 @@ const (
 	TypeSet       Type = 0x0022
 )
 
+var TypeNames = [...]string {
+	"custom",
+	"ascii",
+	"bigint",
+	"blob",
+	"boolean",
+	"counter",
+	"decimal",
+	"double",
+	"float",
+	"int",
+	"timestamp",
+	"uuid",
+	"varchar",
+	"timeuuid",
+	"inet",
+	"list",
+	"map",
+	"set",
+}
+
 // String returns the name of the identifier.
 func (t Type) String() string {
-	switch t {
-	case TypeCustom:
-		return "custom"
-	case TypeAscii:
-		return "ascii"
-	case TypeBigInt:
-		return "bigint"
-	case TypeBlob:
-		return "blob"
-	case TypeBoolean:
-		return "boolean"
-	case TypeCounter:
-		return "counter"
-	case TypeDecimal:
-		return "decimal"
-	case TypeDouble:
-		return "double"
-	case TypeFloat:
-		return "float"
-	case TypeInt:
-		return "int"
-	case TypeTimestamp:
-		return "timestamp"
-	case TypeUUID:
-		return "uuid"
-	case TypeVarchar:
-		return "varchar"
-	case TypeTimeUUID:
-		return "timeuuid"
-	case TypeInet:
-		return "inet"
-	case TypeList:
-		return "list"
-	case TypeMap:
-		return "map"
-	case TypeSet:
-		return "set"
-	default:
+	if int(t) >= len(TypeNames) {
 		return "unknown"
 	}
+	return TypeNames[t]
 }
 
 type MarshalError string

@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"tux21b.org/v1/gocql/uuid"
+	"github.com/satori/go.uuid"
 )
 
 var (
@@ -196,7 +196,7 @@ func TestCAS(t *testing.T) {
 		t.Fatal("create:", err)
 	}
 
-	title, revid := "baz", uuid.TimeUUID()
+	title, revid := "baz", uuid.NewV1()
 	var titleCAS string
 	var revidCAS uuid.UUID
 
@@ -263,7 +263,7 @@ type Attachment []byte
 var pageTestData = []*Page{
 	&Page{
 		Title:    "Frontpage",
-		RevId:    uuid.TimeUUID(),
+		RevId:    uuid.NewV1(),
 		Body:     "Welcome to this wiki page!",
 		Modified: time.Date(2013, time.August, 13, 9, 52, 3, 0, time.UTC),
 		Tags:     []string{"start", "important", "test"},
@@ -274,7 +274,7 @@ var pageTestData = []*Page{
 	},
 	&Page{
 		Title:    "Foobar",
-		RevId:    uuid.TimeUUID(),
+		RevId:    uuid.NewV1(),
 		Body:     "foo::Foo f = new foo::Foo(foo::Foo::INIT);",
 		Modified: time.Date(2013, time.August, 13, 9, 52, 3, 0, time.UTC),
 	},

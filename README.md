@@ -1,6 +1,9 @@
 gocql
 =====
 
+[![Build Status](https://travis-ci.org/tux21b/gocql.png?branch=master)](https://travis-ci.org/tux21b/gocql)
+[![GoDoc](http://godoc.org/tux21b.org/v1/gocql?status.png)](http://godoc.org/tux21b.org/v1/gocql)
+
 **Package Status:** Alpha 
 
 Package gocql implements a fast and robust Cassandra client for the
@@ -30,7 +33,7 @@ Features
   * Support for all common types including sets, lists and maps
   * Custom types can implement a `Marshaler` and `Unmarshaler` interface
   * Strict type conversations without any loss of precision
-  * Built-In support for UUIDs (version 1 and 4)
+  * Support for UUIDs (version 1 through 5)
 * Support for logged, unlogged and counter batches
 * Cluster management
   * Automatic reconnect on connection failures with exponential falloff
@@ -54,8 +57,8 @@ import (
 	"fmt"
 	"log"
 
+  "github.com/satori/go.uuid"
 	"tux21b.org/v1/gocql"
-	"tux21b.org/v1/gocql/uuid"
 )
 
 func main() {
