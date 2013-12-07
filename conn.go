@@ -5,6 +5,8 @@
 package gocql
 
 import (
+	"errors"
+	"fmt"
 	"net"
 	"sync"
 	"sync/atomic"
@@ -24,9 +26,25 @@ type Cluster interface {
 	// Authenticate(addr string)
 }
 
-/* type Challenger interface {
+type Challenger interface {
 	Challenge(data []byte) ([]byte, error)
-} */
+}
+
+type BasicAuth struct {
+	Username string
+	Password string
+}
+
+func (auth *BasicAuth) Challenge(data []byte) ([]byte, error) {
+	switch string(data) {
+	case "Username":
+		return []byte(auth.Username), nil
+	case "Password":
+		return []byte(auth.Password), nil
+	default:
+		return nil, errors.New(fmt.Sprintf("unsupported challenge %v", data))
+	}
+}
 
 type ConnConfig struct {
 	ProtoVersion int
@@ -34,6 +52,7 @@ type ConnConfig struct {
 	Timeout      time.Duration
 	NumStreams   int
 	Compressor   Compressor
+	Challenger   Challenger
 }
 
 // Conn is a single connection to a Cassandra node. It can be used to execute
@@ -93,6 +112,27 @@ func Connect(addr string, cfg ConnConfig, cluster Cluster) (*Conn, error) {
 	return c, nil
 }
 
+func (c *Conn) authenticate(cfg *ConnConfig) error {
+	username, _ := cfg.Challenger.Challenge([]byte("Username"))
+	password, _ :=  cfg.Challenger.Challenge([]byte("Password"))
+	req := &authenticationFrame{
+		Username: string(username),
+		Password: string(password),
+	}
+	resp, err := c.execSimple(req)
+	if err != nil {
+		return err
+	}
+	switch x := resp.(type) {
+	case readyFrame:
+	case error:
+		return x
+	default:
+		return ErrProtocol
+	}
+	return nil
+}
+
 func (c *Conn) startup(cfg *ConnConfig) error {
 	req := &startupFrame{
 		CQLVersion: cfg.CQLVersion,
@@ -105,6 +145,8 @@ func (c *Conn) startup(cfg *ConnConfig) error {
 		return err
 	}
 	switch x := resp.(type) {
+	case authenticateFrame:
+		return c.authenticate(cfg)
 	case readyFrame:
 	case error:
 		return x
@@ -450,6 +492,8 @@ func (c *Conn) decodeFrame(f frame, trace Tracer) (rval interface{}, err error) 
 	switch op {
 	case opReady:
 		return readyFrame{}, nil
+	case opAuthenticate:
+		return authenticateFrame{}, nil
 	case opResult:
 		switch kind := f.readInt(); kind {
 		case resultKindVoid:

@@ -16,6 +16,7 @@ const (
 	opStartup       byte = 0x01
 	opReady         byte = 0x02
 	opAuthenticate  byte = 0x03
+	opCredentials   byte = 0x04
 	opOptions       byte = 0x05
 	opSupported     byte = 0x06
 	opQuery         byte = 0x07
@@ -302,6 +303,8 @@ var consistencyCodes = []uint16{
 
 type readyFrame struct{}
 
+type authenticateFrame struct{}
+
 type supportedFrame struct{}
 
 type resultVoidFrame struct{}
@@ -332,6 +335,24 @@ func (e errorFrame) Error() string {
 
 type operation interface {
 	encodeFrame(version uint8, dst frame) (frame, error)
+}
+
+type authenticationFrame struct {
+	Username string
+	Password string
+}
+
+func (op *authenticationFrame) encodeFrame(version uint8, f frame) (frame, error) {
+	if f == nil {
+		f = make(frame, headerSize, defaultFrameSize)
+	}
+	f.setHeader(version, 0, 0, opCredentials)
+	auth := make(map[string]string)
+	auth["username"] = op.Username
+	auth["password"] = op.Password
+	f.writeStringMap(auth)
+
+	return f, nil
 }
 
 type startupFrame struct {
