@@ -5,6 +5,8 @@
 package gocql
 
 import (
+	"errors"
+	"fmt"
 	"net"
 	"sync"
 	"sync/atomic"
@@ -24,9 +26,25 @@ type Cluster interface {
 	// Authenticate(addr string)
 }
 
-/* type Challenger interface {
+type Challenger interface {
 	Challenge(data []byte) ([]byte, error)
-} */
+}
+
+type BasicAuth struct {
+	Username string
+	Password string
+}
+
+func (auth *BasicAuth) Challenge(data []byte) ([]byte, error) {
+	switch string(data) {
+	case "Username":
+		return []byte(auth.Username), nil
+	case "Password":
+		return []byte(auth.Password), nil
+	default:
+		return nil, errors.New(fmt.Sprintf("unsupported challenge %v", data))
+	}
+}
 
 type ConnConfig struct {
 	ProtoVersion int
@@ -34,8 +52,7 @@ type ConnConfig struct {
 	Timeout      time.Duration
 	NumStreams   int
 	Compressor   Compressor
-	Username     string
-	Password     string
+	Challenger   Challenger
 }
 
 // Conn is a single connection to a Cassandra node. It can be used to execute
@@ -96,9 +113,11 @@ func Connect(addr string, cfg ConnConfig, cluster Cluster) (*Conn, error) {
 }
 
 func (c *Conn) authenticate(cfg *ConnConfig) error {
+	username, _ := cfg.Challenger.Challenge([]byte("Username"))
+	password, _ :=  cfg.Challenger.Challenge([]byte("Password"))
 	req := &authenticationFrame{
-		Username: cfg.Username,
-		Password: cfg.Password,
+		Username: string(username),
+		Password: string(password),
 	}
 	resp, err := c.execSimple(req)
 	if err != nil {

@@ -31,8 +31,7 @@ type ClusterConfig struct {
 	StartupMin   int           // wait for StartupMin hosts (default: len(Hosts)/2+1)
 	Consistency  Consistency   // default consistency level (default: Quorum)
 	Compressor   Compressor    // compression algorithm (default: nil)
-	Username     string
-	Password     string
+	Challenger   Challenger
 }
 
 // NewCluster generates a new config for the default cluster implementation.
@@ -109,8 +108,7 @@ func (c *clusterImpl) connect(addr string) {
 		Timeout:      c.cfg.Timeout,
 		NumStreams:   c.cfg.NumStreams,
 		Compressor:   c.cfg.Compressor,
-		Username:     c.cfg.Username,
-		Password:     c.cfg.Password,
+		Challenger:   c.cfg.Challenger,
 	}
 	delay := c.cfg.DelayMin
 	for {
