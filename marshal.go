@@ -1014,34 +1014,33 @@ const (
 	TypeSet       Type = 0x0022
 )
 
-var TypeNames = map[Type]string{
-	TypeCustom:    "custom",
-	TypeAscii:     "ascii",
-	TypeBigInt:    "bigint",
-	TypeBlob:      "blob",
-	TypeBoolean:   "boolean",
-	TypeCounter:   "counter",
-	TypeDecimal:   "decimal",
-	TypeDouble:    "double",
-	TypeFloat:     "float",
-	TypeInt:       "int",
-	TypeTimestamp: "timestamp",
-	TypeUUID:      "uuid",
-	TypeVarchar:   "varchar",
-	TypeTimeUUID:  "timeuuid",
-	TypeInet:      "inet",
-	TypeList:      "list",
-	TypeMap:       "map",
-	TypeSet:       "set",
+var TypeNames = [...]string {
+	"custom",
+	"ascii",
+	"bigint",
+	"blob",
+	"boolean",
+	"counter",
+	"decimal",
+	"double",
+	"float",
+	"int",
+	"timestamp",
+	"uuid",
+	"varchar",
+	"timeuuid",
+	"inet",
+	"list",
+	"map",
+	"set",
 }
 
 // String returns the name of the identifier.
 func (t Type) String() string {
-	s, ok := TypeNames[t]
-	if ok {
-		return s
+	if int(t) >= len(TypeNames) {
+		return "unknown"
 	}
-	return "unknown"
+	return TypeNames[t]
 }
 
 type MarshalError string
