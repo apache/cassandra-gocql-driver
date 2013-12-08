@@ -457,6 +457,7 @@ func (c *Conn) decodeFrame(f frame, trace Tracer) (rval interface{}, err error) 
 		case resultKindVoid:
 			return resultVoidFrame{}, nil
 		case resultKindRows:
+
 			columns, pageState := f.readMetaData()
 			numRows := f.readInt()
 			values := make([][]byte, numRows*len(columns))
@@ -466,6 +467,7 @@ func (c *Conn) decodeFrame(f frame, trace Tracer) (rval interface{}, err error) 
 			rows := make([][][]byte, numRows)
 			for i := 0; i < numRows; i++ {
 				rows[i], values = values[:len(columns)], values[len(columns):]
+
 			}
 			return resultRowsFrame{columns, rows, pageState}, nil
 		case resultKindKeyspace:

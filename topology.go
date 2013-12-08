@@ -50,7 +50,6 @@ func (p *HostPool) AddHost(host Host) {
 	}
 	//Update the array of host ids for the rack.
 	dc[host.Rack] = append(dc[host.Rack], host.HostID)
-
 	p.mu.Unlock()
 }
 
@@ -124,7 +123,7 @@ func (r *HostPool) Pick(qry *Query) *Conn {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	//Use range on map to select a random host.
+	//Use range on map to select a host.
 	for _, val := range r.pool {
 		conns := len(val.conn)
 		//Check the host has open connections
@@ -141,6 +140,7 @@ func (r *HostPool) Pick(qry *Query) *Conn {
 			//Auto discover will reconnect if the host is valid.
 			go r.RemoveHost(val)
 		}
+
 	}
 	return nil
 }

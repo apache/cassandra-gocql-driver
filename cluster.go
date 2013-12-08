@@ -20,39 +20,42 @@ import (
 // behavior to fit the most common use cases. Applications that requre a
 // different setup must implement their own cluster.
 type ClusterConfig struct {
-	Hosts        []string      // addresses for the initial connections
-	CQLVersion   string        // CQL version (default: 3.0.0)
-	ProtoVersion int           // version of the native protocol (default: 2)
-	Timeout      time.Duration // connection timeout (default: 200ms)
-	DefaultPort  int           // default port (default: 9042)
-	Keyspace     string        // initial keyspace (optional)
-	NumConns     int           // number of connections per host (default: 2)
-	NumStreams   int           // number of streams per connection (default: 128)
-	DelayMin     time.Duration // minimum reconnection delay (default: 1s)
-	DelayMax     time.Duration // maximum reconnection delay (default: 10min)
-	StartupMin   int           // wait for StartupMin hosts (default: len(Hosts)/2+1)
-	Consistency  Consistency   // default consistency level (default: Quorum)
-	Compressor   Compressor    // compression algorithm (default: nil)
-	AutoDiscover bool          // To add nodes not supplied by the hosts array
-	MaxConnRetry int
+	Hosts                []string      // addresses for the initial connections
+	CQLVersion           string        // CQL version (default: 3.0.0)
+	ProtoVersion         int           // version of the native protocol (default: 2)
+	Timeout              time.Duration // connection timeout (default: 200ms)
+	DefaultPort          int           // default port (default: 9042)
+	Keyspace             string        // initial keyspace (optional)
+	NumConns             int           // number of connections per host (default: 2)
+	NumStreams           int           // number of streams per connection (default: 128)
+	DelayMin             time.Duration // minimum reconnection delay (default: 1s)
+	DelayMax             time.Duration // maximum reconnection delay (default: 10min)
+	StartupMin           int           // wait for StartupMin hosts (default: len(Hosts)/2+1)
+	Consistency          Consistency   // default consistency level (default: Quorum)
+	Compressor           Compressor    // compression algorithm (default: nil)
+	AutoDiscoverInterval int           // The interval in seconds to execute auto discovery queries, 0 means to never auto discover.
+	MaxConnRetry         int           // Maxium of attempts to retry a connection to a host before quiting
+	PreferredDataCenter  string        //The datacenter name to execute queries against
+	PreferredRack        string        //The rack name within the preferred dc to execute queries against
+	DefaultRetryPolicy   RetryPolicy   //Sets the default retry policy for queries.
 }
 
 // NewCluster generates a new config for the default cluster implementation.
 func NewCluster(hosts ...string) *ClusterConfig {
 	cfg := &ClusterConfig{
-		Hosts:        hosts,
-		CQLVersion:   "3.0.0",
-		ProtoVersion: 2,
-		Timeout:      200 * time.Millisecond,
-		DefaultPort:  9042,
-		NumConns:     2,
-		NumStreams:   128,
-		DelayMin:     1 * time.Second,
-		DelayMax:     10 * time.Minute,
-		StartupMin:   len(hosts)/2 + 1,
-		Consistency:  Quorum,
-		AutoDiscover: true,
-		MaxConnRetry: 2,
+		Hosts:                hosts,
+		CQLVersion:           "3.0.0",
+		ProtoVersion:         2,
+		Timeout:              200 * time.Millisecond,
+		DefaultPort:          9042,
+		NumConns:             2,
+		NumStreams:           128,
+		DelayMin:             1 * time.Second,
+		DelayMax:             10 * time.Minute,
+		StartupMin:           len(hosts)/2 + 1,
+		Consistency:          Quorum,
+		AutoDiscoverInterval: 60,
+		MaxConnRetry:         2,
 	}
 	return cfg
 }
@@ -94,15 +97,17 @@ func (cfg *ClusterConfig) CreateSession() (*Session, error) {
 	impl.mu.Unlock()
 	s := NewSession(impl)
 	s.SetConsistency(cfg.Consistency)
-	//TODO: Add code to begin autodiscovery queries.
+	//Kick off auto discovery
+	go impl.autoDiscover()
 	return s, nil
 }
 
 type clusterImpl struct {
-	cfg      ClusterConfig
-	hostPool *HostPool
-	keyspace string
-	mu       sync.Mutex
+	cfg              ClusterConfig
+	hostPool         *HostPool
+	keyspace         string
+	mu               sync.Mutex
+	lastAutoDiscover time.Time
 
 	started bool
 	wgStart sync.WaitGroup
@@ -139,48 +144,48 @@ func (c *clusterImpl) connect(addr string) error {
 				return nil
 			}
 		} else {
-			c.addConn(conn, "")
-			return nil
+			return c.addConn(conn, "")
 		}
 	}
 	return err
 }
 
-func (c *clusterImpl) changeKeyspace(conn *Conn, keyspace string, connected bool) {
+func (c *clusterImpl) changeKeyspace(conn *Conn, keyspace string, connected bool) error {
 	if err := conn.UseKeyspace(keyspace); err != nil {
 		conn.Close()
 		if connected {
 			c.hostPool.RemoveConn(conn)
 		}
-		go c.connect(conn.Address())
+		return c.connect(conn.Address())
 	}
 	if !connected {
-		c.addConn(conn, keyspace)
+		return c.addConn(conn, keyspace)
 	}
+	return nil
 }
 
-func (c *clusterImpl) addConn(conn *Conn, keyspace string) {
+func (c *clusterImpl) addConn(conn *Conn, keyspace string) error {
 	if c.quit {
 		conn.Close()
-		return
+		return nil
 	}
 	if keyspace != c.keyspace && c.keyspace != "" {
 		// change the keyspace before adding the node to the pool
-		c.changeKeyspace(conn, c.keyspace, false)
-		return
+		return c.changeKeyspace(conn, c.keyspace, false)
 	}
 	//Fetch node information from the node itself.
 	qryStr := "SELECT host_id,data_center,rack,bootstrapped FROM system.local"
 	qry := &Query{stmt: qryStr, values: nil, cons: One, pageSize: 1, prefetch: 0.25}
 	iter := conn.executeQuery(qry)
 	if iter.err != nil {
-		log.Printf("failed to get host information for %q, error %v", conn.Address, iter.err)
 		conn.Close()
-		return
+		log.Printf("Iterator error: %v", iter.err)
+		return iter.err
 	}
 	var hostID uuid.UUID
 	var dc, rack, ready string
 	iter.Scan(&hostID, &dc, &rack, &ready)
+
 	//check to make sure the host isn't bootstrapping
 	if ready == "COMPLETED" {
 		host := Host{
@@ -201,11 +206,13 @@ func (c *clusterImpl) addConn(conn *Conn, keyspace string) {
 			defer c.connect(conn.Address())
 		}
 	} else {
-		log.Printf("ignored host %q still bootstrapping.", conn.Address())
+		defer conn.Close()
+		return ErrHostBs
 	}
 	if err := iter.Close(); err != nil {
 		log.Println(err)
 	}
+	return nil
 }
 
 func (c *clusterImpl) HandleError(conn *Conn, err error, closed bool) {
@@ -236,6 +243,61 @@ func (c *clusterImpl) HandleKeyspace(conn *Conn, keyspace string) {
 	}
 }
 
+//autoDiscover queries a host to pull cluster information and forms connections with available hosts
+func (c *clusterImpl) autoDiscover() {
+	if c.cfg.AutoDiscoverInterval < 1 || c.quit {
+		return
+	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if time.Now().Add(-time.Second * time.Duration(c.cfg.AutoDiscoverInterval)).After(c.lastAutoDiscover) {
+		//Adjust last autodiscover time for after the execution
+		c.lastAutoDiscover = time.Now()
+
+		//Fetch node information from the node itself.
+		qryStr := "SELECT peer,rpc_address,host_id FROM system.peers"
+		qry := &Query{stmt: qryStr, values: nil, cons: One, pageSize: 10, prefetch: 0.25}
+		conn := c.hostPool.Pick(qry)
+		//Means no available connections in the pool. Reload pool by using seed list again
+		if conn == nil {
+			//TODO: Use seed list to restart cluster
+		}
+		itr := conn.executeQuery(qry)
+		if itr.err != nil {
+			log.Printf("failed to collect peer information %v", itr.err)
+			return
+		}
+		var hid uuid.UUID
+		var peerAddr, rpcAddr string
+		//Get a read lock on the host pool and create connections with hosts.
+		c.hostPool.mu.RLock()
+		for itr.Scan(&peerAddr, &rpcAddr, &hid) {
+			address := peerAddr
+			numConns := 0
+			if rpcAddr != "" || rpcAddr != "0.0.0.0" {
+				address = rpcAddr
+			}
+			if host, exists := c.hostPool.pool[hid]; exists {
+				numConns = len(host.conn)
+			}
+			go func(addr string, port int, nConns int, maxConn int) {
+				for i := nConns; i < maxConn; i++ {
+					c.connect(fmt.Sprintf("%s:%d", addr, port))
+				}
+			}(address, c.cfg.DefaultPort, numConns, c.cfg.NumConns)
+
+		}
+		c.hostPool.mu.RUnlock()
+		//Schedule next autodiscover
+		go func(i int) {
+			time.Sleep(time.Second * time.Duration(i))
+			c.autoDiscover()
+		}(c.cfg.AutoDiscoverInterval)
+	}
+}
+
 func (c *clusterImpl) Pick(qry *Query) *Conn {
 	return c.hostPool.Pick(qry)
 }
@@ -253,4 +315,5 @@ func (c *clusterImpl) Close() {
 var (
 	ErrNoHosts = errors.New("no hosts provided")
 	ErrNoConns = errors.New("no host connections made")
+	ErrHostBs  = errors.New("host is bootstrapping.")
 )

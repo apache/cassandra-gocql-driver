@@ -8,55 +8,60 @@ import (
 	"io"
 	"net"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"tux21b.org/v1/gocql/uuid"
 )
 
 type TestServer struct {
-	Address string
-	t       *testing.T
-	nreq    uint64
-	listen  net.Listener
+	Address   string
+	t         *testing.T
+	nreq      uint64
+	listen    net.Listener
+	hid       uuid.UUID
+	dc        string
+	rack      string
+	bootstrap string
 }
 
 func TestSimple(t *testing.T) {
-	srv := NewTestServer(t)
+	srv := NewTestServer(t, "dc1", "rack1", true)
 	defer srv.Stop()
 
 	db, err := NewCluster(srv.Address).CreateSession()
 	if err != nil {
-		t.Errorf("NewCluster: %v", err)
+		t.Fatalf("NewCluster: %v", err)
 	}
 
 	if err := db.Query("void").Exec(); err != nil {
-		t.Error(err)
+		t.Fatal(err)
 	}
 }
 
 func TestClosed(t *testing.T) {
-	srv := NewTestServer(t)
+	srv := NewTestServer(t, "dc1", "rack1", true)
 	defer srv.Stop()
 
 	session, err := NewCluster(srv.Address).CreateSession()
 	if err != nil {
-		t.Errorf("NewCluster: %v", err)
+		t.Fatalf("NewCluster: %v", err)
 	}
 	session.Close()
 
 	if err := session.Query("void").Exec(); err != ErrUnavailable {
-		t.Errorf("expected %#v, got %#v", ErrUnavailable, err)
+		t.Fatalf("expected %#v, got %#v", ErrUnavailable, err)
 	}
 }
 
 func TestTimeout(t *testing.T) {
-	srv := NewTestServer(t)
+	srv := NewTestServer(t, "dc1", "rack1", true)
 	defer srv.Stop()
 
 	db, err := NewCluster(srv.Address).CreateSession()
 	if err != nil {
-		t.Errorf("NewCluster: %v", err)
+		t.Fatalf("NewCluster: %v", err)
 	}
 
 	go func() {
@@ -70,20 +75,29 @@ func TestTimeout(t *testing.T) {
 }
 
 func TestSlowQuery(t *testing.T) {
-	srv := NewTestServer(t)
+	srv := NewTestServer(t, "dc1", "rack1", true)
 	defer srv.Stop()
 
 	db, err := NewCluster(srv.Address).CreateSession()
 	if err != nil {
-		t.Errorf("NewCluster: %v", err)
+		t.Fatalf("NewCluster: %v", err)
 	}
 
 	if err := db.Query("slow").Exec(); err != nil {
 		t.Fatal(err)
 	}
+	db.Close() //Close the server connections
 }
 
-func TestRoundRobin(t *testing.T) {
+func TestBootStrapping(t *testing.T) {
+	srv := NewTestServer(t, "dc1", "rack1", false)
+	if _, err := NewCluster(srv.Address).CreateSession(); err == nil {
+		t.Fatal("Expected error as host is bootstrapping.")
+	}
+
+}
+
+/*func TestRoundRobin(t *testing.T) {
 	servers := make([]*TestServer, 5)
 	addrs := make([]string, len(servers))
 	for i := 0; i < len(servers); i++ {
@@ -95,7 +109,7 @@ func TestRoundRobin(t *testing.T) {
 	cluster.StartupMin = len(addrs)
 	db, err := cluster.CreateSession()
 	if err != nil {
-		t.Errorf("NewCluster: %v", err)
+		t.Fatalf("NewCluster: %v", err)
 	}
 
 	var wg sync.WaitGroup
@@ -121,16 +135,20 @@ func TestRoundRobin(t *testing.T) {
 			d = int(servers[i-1].nreq - servers[i].nreq)
 		}
 		if d > diff {
-			diff = d
+ 			diff = d
 		}
 	}
 
 	if diff > 0 {
 		t.Fatal("diff:", diff)
 	}
-}
+}*/
 
-func NewTestServer(t *testing.T) *TestServer {
+func NewTestServer(t *testing.T, dc string, rack string, bootstrapped bool) *TestServer {
+	strapped := "COMPLETED"
+	if !bootstrapped {
+		strapped = "BOOTSTRAPPING"
+	}
 	laddr, err := net.ResolveTCPAddr("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -139,7 +157,15 @@ func NewTestServer(t *testing.T) *TestServer {
 	if err != nil {
 		t.Fatal(err)
 	}
-	srv := &TestServer{Address: listen.Addr().String(), listen: listen, t: t}
+	srv := &TestServer{
+		Address:   listen.Addr().String(),
+		listen:    listen,
+		t:         t,
+		hid:       uuid.RandomUUID(),
+		dc:        dc,
+		rack:      rack,
+		bootstrap: strapped,
+	}
 	go srv.serve()
 	return srv
 }
@@ -195,10 +221,34 @@ func (srv *TestServer) process(frame frame, conn net.Conn) {
 			}()
 			return
 		case "use":
-			frame.writeInt(3)
+			frame.writeInt(resultKindKeyspace)
 			frame.writeString(strings.TrimSpace(query[3:]))
 		case "void":
 			frame.writeInt(resultKindVoid)
+		case "select":
+			//Check to see if query is the local host lookup
+			if query == "SELECT host_id,data_center,rack,bootstrapped FROM system.local" {
+				frame.writeInt(resultKindRows)
+				frame.writeInt(0x0001)      //flags set global table spec
+				frame.writeInt(4)           //Number of columns
+				frame.writeString("system") //Global Keyspace
+				frame.writeString("local")  //Global Table name
+				frame.writeString("host_id")
+				frame.writeShort(0x000C) //UUID
+				frame.writeString("data_center")
+				frame.writeShort(0x000D) //String
+				frame.writeString("rack")
+				frame.writeShort(0x000D) //String
+				frame.writeString("bootstrapped")
+				frame.writeShort(0x000D) //String
+
+				//Write row
+				frame.writeInt(1)
+				frame.writeBytes(srv.hid.Bytes())
+				frame.writeBytes([]byte(srv.dc))
+				frame.writeBytes([]byte(srv.rack))
+				frame.writeBytes([]byte(srv.bootstrap))
+			}
 		default:
 			frame.writeInt(resultKindVoid)
 		}
