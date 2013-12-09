@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"tux21b.org/v1/gocql/uuid"
+	"github.com/tux21b/gocql/uuid"
 )
 
 var (
