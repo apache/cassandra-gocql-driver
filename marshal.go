@@ -45,6 +45,8 @@ func Marshal(info *TypeInfo, value interface{}) ([]byte, error) {
 		return marshalFloat(info, value)
 	case TypeDouble:
 		return marshalDouble(info, value)
+	case TypeDecimal:
+		return marshalDouble(info, value)
 	case TypeTimestamp:
 		return marshalTimestamp(info, value)
 	case TypeList, TypeSet:
@@ -77,6 +79,8 @@ func Unmarshal(info *TypeInfo, data []byte, value interface{}) error {
 	case TypeFloat:
 		return unmarshalFloat(info, data, value)
 	case TypeDouble:
+		return unmarshalDouble(info, data, value)
+	case TypeDecimal:
 		return unmarshalDouble(info, data, value)
 	case TypeTimestamp:
 		return unmarshalTimestamp(info, data, value)

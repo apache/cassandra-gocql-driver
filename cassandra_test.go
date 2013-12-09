@@ -74,6 +74,7 @@ func TestCRUD(t *testing.T) {
 			revid       timeuuid,
 			body        varchar,
 			views       bigint,
+			average     decimal,
 			protected   boolean,
 			modified    timestamp,
 			tags        set<varchar>,
@@ -85,9 +86,9 @@ func TestCRUD(t *testing.T) {
 
 	for _, page := range pageTestData {
 		if err := session.Query(`INSERT INTO page
-			(title, revid, body, views, protected, modified, tags, attachments)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-			page.Title, page.RevId, page.Body, page.Views, page.Protected,
+			(title, revid, body, views, average, protected, modified, tags, attachments)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			page.Title, page.RevId, page.Body, page.Views, page.Average, page.Protected,
 			page.Modified, page.Tags, page.Attachments).Exec(); err != nil {
 			t.Fatal("insert:", err)
 		}
@@ -103,11 +104,11 @@ func TestCRUD(t *testing.T) {
 
 	for _, original := range pageTestData {
 		page := new(Page)
-		err := session.Query(`SELECT title, revid, body, views, protected, modified,
+		err := session.Query(`SELECT title, revid, body, views, average, protected, modified,
 			tags, attachments
 			FROM page WHERE title = ? AND revid = ? LIMIT 1`,
 			original.Title, original.RevId).Scan(&page.Title, &page.RevId,
-			&page.Body, &page.Views, &page.Protected, &page.Modified, &page.Tags,
+			&page.Body, &page.Views, &page.Average, &page.Protected, &page.Modified, &page.Tags,
 			&page.Attachments)
 		if err != nil {
 			t.Error("select page:", err)
@@ -252,6 +253,7 @@ type Page struct {
 	RevId       uuid.UUID
 	Body        string
 	Views       int64
+	Average     float64
 	Protected   bool
 	Modified    time.Time
 	Tags        []string
@@ -267,6 +269,7 @@ var pageTestData = []*Page{
 		Body:     "Welcome to this wiki page!",
 		Modified: time.Date(2013, time.August, 13, 9, 52, 3, 0, time.UTC),
 		Tags:     []string{"start", "important", "test"},
+		Average:  3.1415,
 		Attachments: map[string]Attachment{
 			"logo":    Attachment("\x00company logo\x00"),
 			"favicon": Attachment("favicon.ico"),
