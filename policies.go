@@ -4,6 +4,12 @@
 
 package gocql
 
+import (
+	"log"
+	"sync/atomic"
+	"tux21b.org/v1/gocql/uuid"
+)
+
 //RetyPolicy policy defines the rety stradegy for a query. It can be assigned to the
 //cluster configuration or per query. Set a property to 0 for no retries to happen at
 //that level. Setting all properties to 0 will prevent a query from being retried up
@@ -12,5 +18,24 @@ type RetryPolicy struct {
 	Host       int
 	Rack       int
 	DataCenter int
-	counter    []int
+}
+
+type LoadBalancePolicy interface {
+	Pick(hostIDs []uuid.UUID, hosts map[uuid.UUID]Host) *Conn
+}
+
+type RoundRobin struct {
+	pos uint64
+}
+
+func (r *RoundRobin) Pick(hostIDs []uuid.UUID, hosts map[uuid.UUID]Host) *Conn {
+	pos := atomic.AddUint64(&r.pos, 1)
+	host := hosts[hostIDs[pos%uint64(len(hostIDs))]]
+	conns := len(host.conn)
+	for i := 0; i < conns; i++ {
+		if len(host.conn[i].uniq) > 0 {
+			return host.conn[i]
+		}
+	}
+	return nil
 }

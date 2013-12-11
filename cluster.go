@@ -20,24 +20,25 @@ import (
 // behavior to fit the most common use cases. Applications that requre a
 // different setup must implement their own cluster.
 type ClusterConfig struct {
-	Hosts                []string      // addresses for the initial connections
-	CQLVersion           string        // CQL version (default: 3.0.0)
-	ProtoVersion         int           // version of the native protocol (default: 2)
-	Timeout              time.Duration // connection timeout (default: 200ms)
-	DefaultPort          int           // default port (default: 9042)
-	Keyspace             string        // initial keyspace (optional)
-	NumConns             int           // number of connections per host (default: 2)
-	NumStreams           int           // number of streams per connection (default: 128)
-	DelayMin             time.Duration // minimum reconnection delay (default: 1s)
-	DelayMax             time.Duration // maximum reconnection delay (default: 10min)
-	StartupMin           int           // wait for StartupMin hosts (default: len(Hosts)/2+1)
-	Consistency          Consistency   // default consistency level (default: Quorum)
-	Compressor           Compressor    // compression algorithm (default: nil)
-	AutoDiscoverInterval int           // The interval in seconds to execute auto discovery queries, 0 means to never auto discover.
-	MaxConnRetry         int           // Maxium of attempts to retry a connection to a host before quiting
-	PreferredDataCenter  string        //The datacenter name to execute queries against
-	PreferredRack        string        //The rack name within the preferred dc to execute queries against
-	DefaultRetryPolicy   RetryPolicy   //Sets the default retry policy for queries.
+	Hosts                []string          // addresses for the initial connections
+	CQLVersion           string            // CQL version (default: 3.0.0)
+	ProtoVersion         int               // version of the native protocol (default: 2)
+	Timeout              time.Duration     // connection timeout (default: 200ms)
+	DefaultPort          int               // default port (default: 9042)
+	Keyspace             string            // initial keyspace (optional)
+	NumConns             int               // number of connections per host (default: 2)
+	NumStreams           int               // number of streams per connection (default: 128)
+	DelayMin             time.Duration     // minimum reconnection delay (default: 1s)
+	DelayMax             time.Duration     // maximum reconnection delay (default: 10min)
+	StartupMin           int               // wait for StartupMin hosts (default: len(Hosts)/2+1)
+	Consistency          Consistency       // default consistency level (default: Quorum)
+	Compressor           Compressor        // compression algorithm (default: nil)
+	AutoDiscoverInterval int               // The interval in seconds to execute auto discovery queries, 0 means to never auto discover.
+	MaxConnRetry         int               // Maxium of attempts to retry a connection to a host before quiting
+	PreferredDataCenter  string            // The datacenter name to execute queries against
+	PreferredRack        string            // The rack name within the preferred dc to execute queries against
+	DefaultRetryPolicy   RetryPolicy       // sets the default retry policy for queries.
+	DefaultLBPolicy      LoadBalancePolicy // Sets the default load balancing policy to use for queries
 }
 
 // NewCluster generates a new config for the default cluster implementation.
@@ -56,6 +57,8 @@ func NewCluster(hosts ...string) *ClusterConfig {
 		Consistency:          Quorum,
 		AutoDiscoverInterval: 60,
 		MaxConnRetry:         2,
+		DefaultLBPolicy:      &RoundRobin{},
+		DefaultRetryPolicy:   RetryPolicy{Host: 3, Rack: 1, DataCenter: 1},
 	}
 	return cfg
 }
@@ -71,7 +74,7 @@ func (cfg *ClusterConfig) CreateSession() (*Session, error) {
 
 	impl := &clusterImpl{
 		cfg:      *cfg,
-		hostPool: NewHostPool(),
+		hostPool: NewHostPool(cfg.DefaultLBPolicy),
 		quitWait: make(chan bool),
 		keyspace: cfg.Keyspace,
 	}
@@ -83,11 +86,14 @@ func (cfg *ClusterConfig) CreateSession() (*Session, error) {
 			addr = fmt.Sprintf("%s:%d", addr, impl.cfg.DefaultPort)
 		}
 		err := impl.connect(addr)
+		//Make sure there was no error connecting to the host before making further connections
 		if err == nil {
 			hostConns++
-			for j := 1; j < impl.cfg.NumConns; j++ {
-				go impl.connect(addr)
-			}
+			go func(address string, numConns int) {
+				for j := 1; j < numConns; j++ {
+					impl.connect(address)
+				}
+			}(addr, impl.cfg.NumConns)
 		}
 	}
 	//check if no host connections were made.
@@ -175,7 +181,7 @@ func (c *clusterImpl) addConn(conn *Conn, keyspace string) error {
 	}
 	//Fetch node information from the node itself.
 	qryStr := "SELECT host_id,data_center,rack,bootstrapped FROM system.local"
-	qry := &Query{stmt: qryStr, values: nil, cons: One, pageSize: 1, prefetch: 0.25}
+	qry := &Query{stmt: qryStr, values: nil, cons: One}
 	iter := conn.executeQuery(qry)
 	if iter.err != nil {
 		conn.Close()
@@ -200,10 +206,6 @@ func (c *clusterImpl) addConn(conn *Conn, keyspace string) error {
 		} else {
 			host.conn = append(host.conn, conn)
 			c.hostPool.AddHost(host)
-		}
-		//Check if there is room for connections
-		if len(host.conn) < c.cfg.NumConns {
-			defer c.connect(conn.Address())
 		}
 	} else {
 		defer conn.Close()
@@ -258,8 +260,8 @@ func (c *clusterImpl) autoDiscover() {
 
 		//Fetch node information from the node itself.
 		qryStr := "SELECT peer,rpc_address,host_id FROM system.peers"
-		qry := &Query{stmt: qryStr, values: nil, cons: One, pageSize: 10, prefetch: 0.25}
-		conn := c.hostPool.Pick(qry)
+		qry := &Query{stmt: qryStr, values: nil, cons: One}
+		conn := c.hostPool.Pick(nil)
 		//Means no available connections in the pool. Reload pool by using seed list again
 		if conn == nil {
 			//TODO: Use seed list to restart cluster

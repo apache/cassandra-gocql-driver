@@ -24,11 +24,15 @@ type Session struct {
 	prefetch float64
 	trace    Tracer
 	mu       sync.RWMutex
+	cfg      ClusterConfig
 }
 
 // NewSession wraps an existing Node.
-func NewSession(node Node) *Session {
-	return &Session{Node: node, cons: Quorum, prefetch: 0.25}
+func NewSession(c *clusterImpl) *Session {
+	return &Session{Node: c,
+		cons:     Quorum,
+		prefetch: 0.25,
+		cfg:      c.cfg}
 }
 
 // SetConsistency sets the default consistency level for this session. This
@@ -71,9 +75,16 @@ func (s *Session) SetTrace(trace Tracer) {
 // value before the query is executed.
 func (s *Session) Query(stmt string, values ...interface{}) *Query {
 	s.mu.RLock()
-	qry := &Query{stmt: stmt, values: values, cons: s.cons,
-		session: s, pageSize: s.pageSize, trace: s.trace,
-		prefetch: s.prefetch}
+	qry := &Query{stmt: stmt,
+		values:   values,
+		cons:     s.cons,
+		session:  s,
+		pageSize: s.pageSize,
+		trace:    s.trace,
+		prefetch: s.prefetch,
+		lbPolicy: s.cfg.DefaultLBPolicy,
+		rtPolicy: s.cfg.DefaultRetryPolicy,
+	}
 	s.mu.RUnlock()
 	return qry
 }
@@ -85,7 +96,7 @@ func (s *Session) Close() {
 }
 
 func (s *Session) executeQuery(qry *Query) *Iter {
-	conn := s.Node.Pick(nil)
+	conn := s.Node.Pick(qry)
 	if conn == nil {
 		return &Iter{err: ErrUnavailable}
 	}
@@ -110,6 +121,8 @@ type Query struct {
 	prefetch  float64
 	trace     Tracer
 	session   *Session
+	lbPolicy  LoadBalancePolicy
+	rtPolicy  RetryPolicy
 }
 
 // Consistency sets the consistency level for this query. If no consistency

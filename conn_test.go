@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -97,11 +98,11 @@ func TestBootStrapping(t *testing.T) {
 
 }
 
-/*func TestRoundRobin(t *testing.T) {
+func TestRoundRobin(t *testing.T) {
 	servers := make([]*TestServer, 5)
 	addrs := make([]string, len(servers))
 	for i := 0; i < len(servers); i++ {
-		servers[i] = NewTestServer(t)
+		servers[i] = NewTestServer(t, "dc1", "rack1", true)
 		addrs[i] = servers[i].Address
 		defer servers[i].Stop()
 	}
@@ -135,14 +136,14 @@ func TestBootStrapping(t *testing.T) {
 			d = int(servers[i-1].nreq - servers[i].nreq)
 		}
 		if d > diff {
- 			diff = d
+			diff = d
 		}
 	}
 
 	if diff > 0 {
 		t.Fatal("diff:", diff)
 	}
-}*/
+}
 
 func NewTestServer(t *testing.T, dc string, rack string, bootstrapped bool) *TestServer {
 	strapped := "COMPLETED"
@@ -248,6 +249,8 @@ func (srv *TestServer) process(frame frame, conn net.Conn) {
 				frame.writeBytes([]byte(srv.dc))
 				frame.writeBytes([]byte(srv.rack))
 				frame.writeBytes([]byte(srv.bootstrap))
+			} else {
+				frame.writeInt(resultKindVoid)
 			}
 		default:
 			frame.writeInt(resultKindVoid)

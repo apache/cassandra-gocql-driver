@@ -6,11 +6,9 @@ package gocql
 
 import (
 	"sync"
-	"sync/atomic"
 	"tux21b.org/v1/gocql/uuid"
 )
 
-/*********** New Topology Code *******/
 //Host represents the structure for storing key host information
 //that is used by load balancing and fail over policies.
 type Host struct {
@@ -23,14 +21,17 @@ type Host struct {
 type HostPool struct {
 	pool        map[uuid.UUID]Host //A map of hosts
 	topologyMap map[string]map[string][]uuid.UUID
+	hostIDs     []uuid.UUID
 	mu          sync.RWMutex
+	defaultLBP  LoadBalancePolicy
 }
 
 //NewHostPool creates a new host pool
-func NewHostPool() *HostPool {
+func NewHostPool(lbp LoadBalancePolicy) *HostPool {
 	return &HostPool{
 		pool:        make(map[uuid.UUID]Host),
 		topologyMap: make(map[string]map[string][]uuid.UUID),
+		defaultLBP:  lbp,
 	}
 }
 
@@ -38,18 +39,21 @@ func NewHostPool() *HostPool {
 //map so that it is available for queries.
 func (p *HostPool) AddHost(host Host) {
 	p.mu.Lock()
-	p.pool[host.HostID] = host
+	if _, exists := p.pool[host.HostID]; !exists {
+		p.pool[host.HostID] = host
+		p.hostIDs = append(p.hostIDs, host.HostID)
 
-	var dc map[string][]uuid.UUID
-	var ok bool
-	//Check if the map for the datacenter exists
-	//If not create one.
-	if dc, ok = p.topologyMap[host.DataCenter]; !ok {
-		dc = make(map[string][]uuid.UUID)
-		p.topologyMap[host.DataCenter] = dc
+		var dc map[string][]uuid.UUID
+		var ok bool
+		//Check if the map for the datacenter exists
+		//If not create one.
+		if dc, ok = p.topologyMap[host.DataCenter]; !ok {
+			dc = make(map[string][]uuid.UUID)
+			p.topologyMap[host.DataCenter] = dc
+		}
+		//Update the array of host ids for the rack.
+		dc[host.Rack] = append(dc[host.Rack], host.HostID)
 	}
-	//Update the array of host ids for the rack.
-	dc[host.Rack] = append(dc[host.Rack], host.HostID)
 	p.mu.Unlock()
 }
 
@@ -76,6 +80,12 @@ func (p *HostPool) RemoveHost(host Host) {
 				break
 			}
 		}
+	}
+	//Remove host from hostIDs list
+	n = len(p.hostIDs)
+	for i := 0; i < n; i++ {
+		p.hostIDs[i], p.hostIDs[n-1] = p.hostIDs[n-1], p.hostIDs[i]
+		p.hostIDs = p.hostIDs[:n-1]
 	}
 	//Remove Host from pool
 	delete(p.pool, host.HostID)
@@ -119,30 +129,13 @@ func (r *HostPool) Size() int {
 //Pick selects a host randomly that has atleast one stream available
 //for processing the provided query.
 //TODO: Add code to use the cluster defined preferred Datacenter and or rack.
-func (r *HostPool) Pick(qry *Query) *Conn {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
-	//Use range on map to select a host.
-	for _, val := range r.pool {
-		conns := len(val.conn)
-		//Check the host has open connections
-		if conns > 0 {
-			//Walk through the list of connections to get one
-			//with an available stream
-			for i := 0; i < conns; i++ {
-				if len(val.conn[i].uniq) > 0 {
-					return val.conn[i]
-				}
-			}
-		} else {
-			//Remove the host as it no longer has any valid connections
-			//Auto discover will reconnect if the host is valid.
-			go r.RemoveHost(val)
-		}
-
+func (p *HostPool) Pick(qry *Query) *Conn {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	if qry == nil {
+		return p.defaultLBP.Pick(p.hostIDs, p.pool)
 	}
-	return nil
+	return qry.lbPolicy.Pick(p.hostIDs, p.pool)
 }
 
 //Close tears down the pool and closes all the open connections,
@@ -163,68 +156,7 @@ func (r *HostPool) Close() {
 	r.pool = nil
 }
 
-/*********** End New Topology Code *******/
-
 type Node interface {
 	Pick(qry *Query) *Conn
 	Close()
-}
-
-type RoundRobin struct {
-	pool []Node
-	pos  uint32
-	mu   sync.RWMutex
-}
-
-func NewRoundRobin() *RoundRobin {
-	return &RoundRobin{}
-}
-
-func (r *RoundRobin) AddNode(node Node) {
-	r.mu.Lock()
-	r.pool = append(r.pool, node)
-	r.mu.Unlock()
-}
-
-func (r *RoundRobin) RemoveNode(node Node) {
-	r.mu.Lock()
-	n := len(r.pool)
-	for i := 0; i < n; i++ {
-		if r.pool[i] == node {
-			r.pool[i], r.pool[n-1] = r.pool[n-1], r.pool[i]
-			r.pool = r.pool[:n-1]
-			break
-		}
-	}
-	r.mu.Unlock()
-}
-
-func (r *RoundRobin) Size() int {
-	r.mu.RLock()
-	n := len(r.pool)
-	r.mu.RUnlock()
-	return n
-}
-
-func (r *RoundRobin) Pick(qry *Query) *Conn {
-	pos := atomic.AddUint32(&r.pos, 1)
-	var node Node
-	r.mu.RLock()
-	if len(r.pool) > 0 {
-		node = r.pool[pos%uint32(len(r.pool))]
-	}
-	r.mu.RUnlock()
-	if node == nil {
-		return nil
-	}
-	return node.Pick(qry)
-}
-
-func (r *RoundRobin) Close() {
-	r.mu.Lock()
-	for i := 0; i < len(r.pool); i++ {
-		r.pool[i].Close()
-	}
-	r.pool = nil
-	r.mu.Unlock()
 }
