@@ -10,8 +10,6 @@ import (
 	"math"
 	"reflect"
 	"time"
-
-	"github.com/tux21b/gocql/uuid"
 )
 
 // Marshaler is the interface implemented by objects that can marshal
@@ -906,14 +904,14 @@ func unmarshalMap(info *TypeInfo, data []byte, value interface{}) error {
 
 func marshalUUID(info *TypeInfo, value interface{}) ([]byte, error) {
 	switch val := value.(type) {
-	case uuid.UUID:
+	case UUID:
 		return val.Bytes(), nil
 	case []byte:
 		if len(val) == 16 {
 			return val, nil
 		}
 	case string:
-		b, err := uuid.ParseUUID(val)
+		b, err := ParseUUID(val)
 		if err != nil {
 			return nil, err
 		}
@@ -929,7 +927,7 @@ func unmarshalUUID(info *TypeInfo, data []byte, value interface{}) error {
 
 	switch v := value.(type) {
 	case *string:
-		u, err := uuid.FromBytes(data)
+		u, err := UUIDFromBytes(data)
 		if err != nil {
 			return unmarshalErrorf("Unable to parse UUID: %s", err)
 		}
@@ -937,7 +935,7 @@ func unmarshalUUID(info *TypeInfo, data []byte, value interface{}) error {
 		*v = u.String()
 		return nil
 	case *[]byte:
-		u, err := uuid.FromBytes(data)
+		u, err := UUIDFromBytes(data)
 		if err != nil {
 			return unmarshalErrorf("Unable to parse UUID: %s", err)
 		}
@@ -955,8 +953,8 @@ func unmarshalTimeUUID(info *TypeInfo, data []byte, value interface{}) error {
 	switch v := value.(type) {
 	case Unmarshaler:
 		return v.UnmarshalCQL(info, data)
-	case *uuid.UUID:
-		b, err := uuid.FromBytes(data)
+	case *UUID:
+		b, err := UUIDFromBytes(data)
 		if err != nil {
 			return err
 		}
