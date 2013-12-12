@@ -6,10 +6,11 @@
 // identifiers, a standardized format in the form of a 128 bit number.
 //
 // http://tools.ietf.org/html/rfc4122
-package uuid
+package gocql
 
 import (
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -77,13 +78,13 @@ func ParseUUID(input string) (UUID, error) {
 
 // FromBytes converts a raw byte slice to an UUID. It will panic if the slice
 // isn't exactly 16 bytes long.
-func FromBytes(input []byte) UUID {
+func UUIDFromBytes(input []byte) (UUID, error) {
 	var u UUID
 	if len(input) != 16 {
-		panic("UUIDs must be exactly 16 bytes long")
+		return u, errors.New("UUIDs must be exactly 16 bytes long")
 	}
 	copy(u[:], input)
-	return u
+	return u, nil
 }
 
 // RandomUUID generates a totally random UUID (version 4) as described in
@@ -192,5 +193,3 @@ func (u UUID) Time() time.Time {
 	nsec := t - sec
 	return time.Unix(int64(sec), int64(nsec)).UTC()
 }
-
-var timeEpoch int64 = 0x01B21DD213814000
