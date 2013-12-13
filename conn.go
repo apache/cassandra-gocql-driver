@@ -118,8 +118,13 @@ func (c *Conn) startup(cfg *ConnConfig) error {
 // to execute any queries. This method runs as long as the connection is
 // open and is therefore usually called in a separate goroutine.
 func (c *Conn) serve() {
+	var (
+		err  error
+		resp frame
+	)
+
 	for {
-		resp, err := c.recv()
+		resp, err = c.recv()
 		if err != nil {
 			break
 		}
@@ -130,10 +135,10 @@ func (c *Conn) serve() {
 	for id := 0; id < len(c.calls); id++ {
 		req := &c.calls[id]
 		if atomic.LoadInt32(&req.active) == 1 {
-			req.resp <- callResp{nil, ErrProtocol}
+			req.resp <- callResp{nil, err}
 		}
 	}
-	c.cluster.HandleError(c, ErrProtocol, true)
+	c.cluster.HandleError(c, err, true)
 }
 
 func (c *Conn) recv() (frame, error) {
