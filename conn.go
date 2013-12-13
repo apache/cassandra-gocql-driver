@@ -333,9 +333,9 @@ func (c *Conn) executeQuery(qry *Query) *Iter {
 				return c.executeQuery(qry)
 			}
 			c.prepMu.Unlock()
-			return &Iter{err: x}
+			return &Iter{err: x, errFrame: &x}
 		} else {
-			return &Iter{err: x}
+			return &Iter{err: x, errFrame: &x}
 		}
 	case error:
 		return &Iter{err: x}

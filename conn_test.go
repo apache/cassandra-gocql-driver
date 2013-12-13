@@ -19,7 +19,7 @@ import (
 type TestServer struct {
 	Address   string
 	t         *testing.T
-	nreq      uint64
+	nreq      int64
 	listen    net.Listener
 	hid       uuid.UUID
 	dc        string
@@ -182,7 +182,7 @@ func (srv *TestServer) serve() {
 			defer conn.Close()
 			for {
 				frame := srv.readFrame(conn)
-				atomic.AddUint64(&srv.nreq, 1)
+				atomic.AddInt64(&srv.nreq, 1)
 				srv.process(frame, conn)
 			}
 		}(conn)
@@ -252,6 +252,8 @@ func (srv *TestServer) process(frame frame, conn net.Conn) {
 			} else {
 				frame.writeInt(resultKindVoid)
 			}
+			//To prevent failure in the round robin test
+			atomic.AddInt64(&srv.nreq, -1)
 		default:
 			frame.writeInt(resultKindVoid)
 		}

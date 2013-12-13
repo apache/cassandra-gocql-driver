@@ -134,8 +134,49 @@ func (p *HostPool) Pick(qry *Query) *Conn {
 	defer p.mu.RUnlock()
 	if qry == nil {
 		return p.defaultLBP.Pick(p.hostIDs, p.pool)
+	} else {
+		rtp := qry.rtPolicy
+		//Check if a query is being retried
+		if rtp.Count > 0 {
+			h := p.pool[qry.lastHostID]
+			if rtp.Count < rtp.Rack {
+				//Retrying the query in the same rack
+				hList := p.topologyMap[h.DataCenter][h.Rack]
+				if len(hList) > 1 {
+					return qry.lbPolicy.Pick(hList, p.pool)
+				}
+			} else if rtp.Count >= rtp.Rack && rtp.DataCenter > 0 {
+				//Retrying the query in a different datacenter
+				if len(p.topologyMap) > 1 {
+					//Select the next datacenter
+					for n, dc := range p.topologyMap {
+						//Only if the datacenter does not match the last host
+						if n != h.DataCenter {
+							//Select a rack inside the datacenter
+							for _, r := range dc {
+								return qry.lbPolicy.Pick(r, p.pool)
+							}
+						}
+					}
+				}
+			}
+		} else if (qry.prefDC != "" && qry.prefRack != "") || qry.prefDC != "" {
+			//topology preferences have been defined
+			dc := p.topologyMap[qry.prefDC]
+			if dc != nil {
+				rack := dc[qry.prefRack]
+				if rack == nil {
+					//Get a rack that is defined in the DC
+					for _, rack = range dc {
+						break
+					}
+				}
+				return qry.lbPolicy.Pick(rack, p.pool)
+			}
+		}
+		return qry.lbPolicy.Pick(p.hostIDs, p.pool)
+
 	}
-	return qry.lbPolicy.Pick(p.hostIDs, p.pool)
 }
 
 //Close tears down the pool and closes all the open connections,

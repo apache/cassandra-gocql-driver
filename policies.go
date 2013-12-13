@@ -5,7 +5,6 @@
 package gocql
 
 import (
-	"log"
 	"sync/atomic"
 	"tux21b.org/v1/gocql/uuid"
 )
@@ -15,9 +14,9 @@ import (
 //that level. Setting all properties to 0 will prevent a query from being retried up
 // error.
 type RetryPolicy struct {
-	Host       int
 	Rack       int
 	DataCenter int
+	Count      int
 }
 
 type LoadBalancePolicy interface {
@@ -29,12 +28,15 @@ type RoundRobin struct {
 }
 
 func (r *RoundRobin) Pick(hostIDs []uuid.UUID, hosts map[uuid.UUID]Host) *Conn {
-	pos := atomic.AddUint64(&r.pos, 1)
-	host := hosts[hostIDs[pos%uint64(len(hostIDs))]]
-	conns := len(host.conn)
-	for i := 0; i < conns; i++ {
-		if len(host.conn[i].uniq) > 0 {
-			return host.conn[i]
+	h := uint64(len(hostIDs))
+	if h > 0 {
+		pos := atomic.AddUint64(&r.pos, 1)
+		host := hosts[hostIDs[pos%h]]
+		conns := len(host.conn)
+		for i := 0; i < conns; i++ {
+			if len(host.conn[i].uniq) > 0 {
+				return host.conn[i]
+			}
 		}
 	}
 	return nil

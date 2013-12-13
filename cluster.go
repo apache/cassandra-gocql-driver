@@ -37,7 +37,7 @@ type ClusterConfig struct {
 	MaxConnRetry         int               // Maxium of attempts to retry a connection to a host before quiting
 	PreferredDataCenter  string            // The datacenter name to execute queries against
 	PreferredRack        string            // The rack name within the preferred dc to execute queries against
-	DefaultRetryPolicy   RetryPolicy       // sets the default retry policy for queries.
+	DefaultRetryPolicy   *RetryPolicy      // sets the default retry policy for queries.
 	DefaultLBPolicy      LoadBalancePolicy // Sets the default load balancing policy to use for queries
 }
 
@@ -58,7 +58,7 @@ func NewCluster(hosts ...string) *ClusterConfig {
 		AutoDiscoverInterval: 60,
 		MaxConnRetry:         2,
 		DefaultLBPolicy:      &RoundRobin{},
-		DefaultRetryPolicy:   RetryPolicy{Host: 3, Rack: 1, DataCenter: 1},
+		DefaultRetryPolicy:   &RetryPolicy{Rack: 3, DataCenter: 1},
 	}
 	return cfg
 }
