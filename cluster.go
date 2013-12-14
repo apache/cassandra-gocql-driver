@@ -116,7 +116,7 @@ func (c *clusterImpl) connect(addr string) {
 			select {
 			case <-time.After(delay):
 				if delay *= 2; delay > c.cfg.DelayMax {
-					delay = c.cfg.DelayMax
+					delay = c.cfg.DelayMin
 				}
 				continue
 			case <-c.quitWait:
