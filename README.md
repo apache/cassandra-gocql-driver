@@ -63,7 +63,7 @@ func main() {
 	cluster := gocql.NewCluster("192.168.1.1", "192.168.1.2", "192.168.1.3")
 	cluster.Keyspace = "example"
 	cluster.Consistency = gocql.Quorum
-	session := cluster.CreateSession()
+	session, _ := cluster.CreateSession()
 	defer session.Close()
 
 	// insert a tweet
