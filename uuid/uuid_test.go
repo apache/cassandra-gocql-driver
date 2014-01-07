@@ -7,6 +7,7 @@ package uuid
 import (
 	"bytes"
 	"testing"
+	"time"
 )
 
 func TestNil(t *testing.T) {
@@ -71,6 +72,22 @@ func TestRandomUUID(t *testing.T) {
 		if version := uuid.Version(); version != 4 {
 			t.Errorf("wrong version. expected %d got %d", 4, version)
 		}
+	}
+}
+
+func TestFromTime(t *testing.T) {
+	date := time.Date(1982, 5, 5, 12, 34, 56, 0, time.UTC)
+	uuid := FromTime(date)
+
+	if uuid.Time() != date {
+		t.Errorf("embedded time incorrect. Expected %v got %v", date, uuid.Time())
+	}
+}
+
+func TestParse(t *testing.T) {
+	uuid, _ := ParseUUID("486f3a88-775b-11e3-ae07-d231feb1dc81")
+	if uuid.Time().Truncate(time.Second) != time.Date(2014, 1, 7, 5, 19, 29, 0, time.UTC) {
+		t.Errorf("Expected date of 1/7/2014 at 5:19:29, got %v", uuid.Time())
 	}
 }
 

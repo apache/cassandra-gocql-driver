@@ -100,14 +100,19 @@ func RandomUUID() UUID {
 
 var timeBase = time.Date(1582, time.October, 15, 0, 0, 0, 0, time.UTC).Unix()
 
-// TimeUUID generates a new time based UUID (version 1) as described in RFC
+// Convenience to generate a version 1 UUID from the current time.
+func TimeUUID() UUID {
+	return FromTime(time.Now())
+}
+
+// FromTime generates a new time based UUID (version 1) as described in RFC
 // 4122. This UUID contains the MAC address of the node that generated the
 // UUID, a timestamp and a sequence number.
-func TimeUUID() UUID {
+func FromTime(aTime time.Time) UUID {
 	var u UUID
 
-	now := time.Now().In(time.UTC)
-	t := uint64(now.Unix()-timeBase)*10000000 + uint64(now.Nanosecond()/100)
+	utcTime := aTime.In(time.UTC)
+	t := uint64(utcTime.Unix()-timeBase)*10000000 + uint64(utcTime.Nanosecond()/100)
 	u[0], u[1], u[2], u[3] = byte(t>>24), byte(t>>16), byte(t>>8), byte(t)
 	u[4], u[5] = byte(t>>40), byte(t>>32)
 	u[6], u[7] = byte(t>>56)&0x0F, byte(t>>48)
@@ -187,10 +192,8 @@ func (u UUID) Time() time.Time {
 	if u.Version() != 1 {
 		return time.Time{}
 	}
-	t := u.Timestamp() - timeEpoch
+	t := u.Timestamp()
 	sec := t / 1e7
-	nsec := t - sec
-	return time.Unix(int64(sec), int64(nsec)).UTC()
+	nsec := t % 1e7
+	return time.Unix(sec+timeBase, nsec).UTC()
 }
-
-var timeEpoch int64 = 0x01B21DD213814000
