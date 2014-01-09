@@ -903,10 +903,14 @@ func unmarshalMap(info *TypeInfo, data []byte, value interface{}) error {
 }
 
 func marshalUUID(info *TypeInfo, value interface{}) ([]byte, error) {
-	if val, ok := value.([]byte); ok && len(val) == 16 {
-		return val, nil
-	}
-	if val, ok := value.(uuid.UUID); ok {
+	switch val := value.(type) {
+	case []byte:
+		if len(val) == 16 {
+			return val, nil
+		}
+	case [16]byte:
+		return val[:], nil
+	case uuid.UUID:
 		return val.Bytes(), nil
 	}
 	return nil, marshalErrorf("can not marshal %T into %s", value, info)
@@ -916,6 +920,12 @@ func unmarshalTimeUUID(info *TypeInfo, data []byte, value interface{}) error {
 	switch v := value.(type) {
 	case Unmarshaler:
 		return v.UnmarshalCQL(info, data)
+	case *[]byte:
+		*v = data
+		return nil
+	case *[16]byte:
+		copy(v[:], data)
+		return nil
 	case *uuid.UUID:
 		*v = uuid.FromBytes(data)
 		return nil
