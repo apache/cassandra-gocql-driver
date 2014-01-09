@@ -139,6 +139,19 @@ func (u UUID) Bytes() []byte {
 	return u[:]
 }
 
+func (u UUID) MarshalCQL() ([]byte, error) {
+	return u[:], nil
+}
+
+func (u *UUID) UnmarshalCQL(data []byte) error {
+	if len(data) != 16 {
+		return fmt.Errorf("UUID must be exactly 16 bytes, was %d bytes", len(data))
+	}
+
+	copy(u[:], data)
+	return nil
+}
+
 // Variant returns the variant of this UUID. This package will only generate
 // UUIDs in the IETF variant.
 func (u UUID) Variant() int {
