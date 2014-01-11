@@ -5,6 +5,7 @@
 package gocql
 
 import (
+	"bufio"
 	"net"
 	"sync"
 	"sync/atomic"
@@ -41,6 +42,7 @@ type ConnConfig struct {
 // level API.
 type Conn struct {
 	conn    net.Conn
+	r       *bufio.Reader
 	timeout time.Duration
 
 	uniq  chan uint8
@@ -71,6 +73,7 @@ func Connect(addr string, cfg ConnConfig, cluster Cluster) (*Conn, error) {
 	}
 	c := &Conn{
 		conn:       conn,
+		r:          bufio.NewReader(conn),
 		uniq:       make(chan uint8, cfg.NumStreams),
 		calls:      make([]callReq, cfg.NumStreams),
 		prep:       make(map[string]*queryInfo),
@@ -141,7 +144,7 @@ func (c *Conn) recv() (frame, error) {
 	c.conn.SetReadDeadline(time.Now().Add(c.timeout))
 	n, last, pinged := 0, 0, false
 	for n < len(resp) {
-		nn, err := c.conn.Read(resp[n:])
+		nn, err := c.r.Read(resp[n:])
 		n += nn
 		if err != nil {
 			if nerr, ok := err.(net.Error); ok && nerr.Timeout() {
