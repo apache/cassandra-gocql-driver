@@ -279,6 +279,13 @@ func (c *Conn) prepareStatement(stmt string, trace Tracer) (*queryInfo, error) {
 	}
 
 	flight.wg.Done()
+
+	if err != nil {
+		c.prepMu.Lock()
+		delete(c.prep, stmt)
+		c.prepMu.Unlock()
+	}
+
 	return flight.info, flight.err
 }
 
