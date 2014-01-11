@@ -920,20 +920,11 @@ func unmarshalTimeUUID(info *TypeInfo, data []byte, value interface{}) error {
 		*v = uuid.FromBytes(data)
 		return nil
 	case *time.Time:
-		if len(data) != 16 {
+		id := uuid.FromBytes(data)
+		if id.Version() != 1 {
 			return unmarshalErrorf("invalid timeuuid")
 		}
-		if version := int(data[6] & 0xF0 >> 4); version != 1 {
-			return unmarshalErrorf("invalid timeuuid")
-		}
-		timestamp := int64(uint64(data[0])<<24|uint64(data[1])<<16|
-			uint64(data[2])<<8|uint64(data[3])) +
-			int64(uint64(data[4])<<40|uint64(data[5])<<32) +
-			int64(uint64(data[6]&0x0F)<<56|uint64(data[7])<<48)
-		timestamp = timestamp - timeEpoch
-		sec := timestamp / 1e7
-		nsec := timestamp - sec
-		*v = time.Unix(int64(sec), int64(nsec)).UTC()
+		*v = id.Time()
 		return nil
 	}
 	return unmarshalErrorf("can not unmarshal %s into %T", info, value)
@@ -1067,5 +1058,3 @@ func (m UnmarshalError) Error() string {
 func unmarshalErrorf(format string, args ...interface{}) UnmarshalError {
 	return UnmarshalError(fmt.Sprintf(format, args...))
 }
-
-var timeEpoch int64 = 0x01B21DD213814000
