@@ -100,14 +100,15 @@ func RandomUUID() UUID {
 
 var timeBase = time.Date(1582, time.October, 15, 0, 0, 0, 0, time.UTC).Unix()
 
-// Convenience to generate a version 1 UUID from the current time.
+// TimeUUID generates a new time based UUID (version 1) using the current
+// time as the timestamp.
 func TimeUUID() UUID {
 	return FromTime(time.Now())
 }
 
 // FromTime generates a new time based UUID (version 1) as described in RFC
 // 4122. This UUID contains the MAC address of the node that generated the
-// UUID, a timestamp and a sequence number.
+// UUID, the given timestamp and a sequence number.
 func FromTime(aTime time.Time) UUID {
 	var u UUID
 
