@@ -13,12 +13,14 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"sync/atomic"
 	"time"
 )
 
 type UUID [16]byte
 
 var hardwareAddr []byte
+var clockSeq uint32
 
 const (
 	VariantNCSCompat = 0
@@ -47,6 +49,11 @@ func init() {
 		}
 		hardwareAddr[0] = hardwareAddr[0] | 0x01
 	}
+
+	// initialize the clock sequence with a random number
+	var clockSeqRand [2]byte
+	io.ReadFull(rand.Reader, clockSeqRand[:])
+	clockSeq = uint32(clockSeqRand[1])<<8 | uint32(clockSeqRand[0])
 }
 
 // ParseUUID parses a 32 digit hexadecimal number (that might contain hypens)
@@ -118,10 +125,9 @@ func UUIDFromTime(aTime time.Time) UUID {
 	u[4], u[5] = byte(t>>40), byte(t>>32)
 	u[6], u[7] = byte(t>>56)&0x0F, byte(t>>48)
 
-	var clockSeq [2]byte
-	io.ReadFull(rand.Reader, clockSeq[:])
-	u[8] = clockSeq[1]
-	u[9] = clockSeq[0]
+	clock := atomic.AddUint32(&clockSeq, 1)
+	u[8] = byte(clock >> 8)
+	u[9] = byte(clock)
 
 	copy(u[10:], hardwareAddr)
 
