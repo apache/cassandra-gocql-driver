@@ -1,8 +1,8 @@
 language: go
 go:
-	- 1.1
-	- 1.2
+  - 1.1
+  - 1.2
 services:
-	- cassandra
+  - cassandra
 notifications:
-	email: false    
+  email: false
