@@ -26,11 +26,26 @@ type Unmarshaler interface {
 	UnmarshalCQL(info *TypeInfo, data []byte) error
 }
 
+// Alternate interface that allows packages to implement without importing
+// this package for "TypeInfo"
+type BlindMarshaler interface {
+	MarshalCQL() ([]byte, error)
+}
+
+// Alternate interface that allows packages to implement without importing
+// this package for "TypeInfo"
+type BlindUnmarshaler interface {
+	UnmarshalCQL(data []byte) error
+}
+
 // Marshal returns the CQL encoding of the value for the Cassandra
 // internal type described by the info parameter.
 func Marshal(info *TypeInfo, value interface{}) ([]byte, error) {
 	if v, ok := value.(Marshaler); ok {
 		return v.MarshalCQL(info)
+	}
+	if v, ok := value.(BlindMarshaler); ok {
+		return v.MarshalCQL()
 	}
 	switch info.Type {
 	case TypeVarchar, TypeAscii, TypeBlob:
@@ -65,6 +80,9 @@ func Unmarshal(info *TypeInfo, data []byte, value interface{}) error {
 	if v, ok := value.(Unmarshaler); ok {
 		return v.UnmarshalCQL(info, data)
 	}
+	if v, ok := value.(BlindUnmarshaler); ok {
+		return v.UnmarshalCQL(data)
+	}
 	switch info.Type {
 	case TypeVarchar, TypeAscii, TypeBlob:
 		return unmarshalVarchar(info, data, value)
@@ -95,8 +113,6 @@ func Unmarshal(info *TypeInfo, data []byte, value interface{}) error {
 
 func marshalVarchar(info *TypeInfo, value interface{}) ([]byte, error) {
 	switch v := value.(type) {
-	case Marshaler:
-		return v.MarshalCQL(info)
 	case string:
 		return []byte(v), nil
 	case []byte:
@@ -118,8 +134,6 @@ func marshalVarchar(info *TypeInfo, value interface{}) ([]byte, error) {
 
 func unmarshalVarchar(info *TypeInfo, data []byte, value interface{}) error {
 	switch v := value.(type) {
-	case Unmarshaler:
-		return v.UnmarshalCQL(info, data)
 	case *string:
 		*v = string(data)
 		return nil
@@ -157,8 +171,6 @@ func unmarshalVarchar(info *TypeInfo, data []byte, value interface{}) error {
 
 func marshalInt(info *TypeInfo, value interface{}) ([]byte, error) {
 	switch v := value.(type) {
-	case Marshaler:
-		return v.MarshalCQL(info)
 	case int:
 		if v > math.MaxInt32 || v < math.MinInt32 {
 			return nil, marshalErrorf("marshal int: value %d out of range", v)
@@ -221,8 +233,6 @@ func encInt(x int32) []byte {
 
 func unmarshalInt(info *TypeInfo, data []byte, value interface{}) error {
 	switch v := value.(type) {
-	case Unmarshaler:
-		return v.UnmarshalCQL(info, data)
 	case *int:
 		*v = int(decInt(data))
 		return nil
@@ -339,8 +349,6 @@ func decInt(x []byte) int32 {
 
 func marshalBigInt(info *TypeInfo, value interface{}) ([]byte, error) {
 	switch v := value.(type) {
-	case Marshaler:
-		return v.MarshalCQL(info)
 	case int:
 		return encBigInt(int64(v)), nil
 	case uint:
@@ -392,8 +400,6 @@ func encBigInt(x int64) []byte {
 
 func unmarshalBigInt(info *TypeInfo, data []byte, value interface{}) error {
 	switch v := value.(type) {
-	case Unmarshaler:
-		return v.UnmarshalCQL(info, data)
 	case *int:
 		x := decBigInt(data)
 		if ^uint(0) == math.MaxUint32 && (x < math.MinInt32 || x > math.MaxInt32) {
@@ -549,8 +555,6 @@ func decBigInt(data []byte) int64 {
 
 func marshalBool(info *TypeInfo, value interface{}) ([]byte, error) {
 	switch v := value.(type) {
-	case Marshaler:
-		return v.MarshalCQL(info)
 	case bool:
 		return encBool(v), nil
 	}
@@ -573,8 +577,6 @@ func encBool(v bool) []byte {
 
 func unmarshalBool(info *TypeInfo, data []byte, value interface{}) error {
 	switch v := value.(type) {
-	case Unmarshaler:
-		return v.UnmarshalCQL(info, data)
 	case *bool:
 		*v = decBool(data)
 		return nil
@@ -601,8 +603,6 @@ func decBool(v []byte) bool {
 
 func marshalFloat(info *TypeInfo, value interface{}) ([]byte, error) {
 	switch v := value.(type) {
-	case Marshaler:
-		return v.MarshalCQL(info)
 	case float32:
 		return encInt(int32(math.Float32bits(v))), nil
 	}
@@ -618,8 +618,6 @@ func marshalFloat(info *TypeInfo, value interface{}) ([]byte, error) {
 
 func unmarshalFloat(info *TypeInfo, data []byte, value interface{}) error {
 	switch v := value.(type) {
-	case Unmarshaler:
-		return v.UnmarshalCQL(info, data)
 	case *float32:
 		*v = math.Float32frombits(uint32(decInt(data)))
 		return nil
@@ -639,8 +637,6 @@ func unmarshalFloat(info *TypeInfo, data []byte, value interface{}) error {
 
 func marshalDouble(info *TypeInfo, value interface{}) ([]byte, error) {
 	switch v := value.(type) {
-	case Marshaler:
-		return v.MarshalCQL(info)
 	case float64:
 		return encBigInt(int64(math.Float64bits(v))), nil
 	}
@@ -656,8 +652,6 @@ func marshalDouble(info *TypeInfo, value interface{}) ([]byte, error) {
 
 func unmarshalDouble(info *TypeInfo, data []byte, value interface{}) error {
 	switch v := value.(type) {
-	case Unmarshaler:
-		return v.UnmarshalCQL(info, data)
 	case *float64:
 		*v = math.Float64frombits(uint64(decBigInt(data)))
 		return nil
@@ -677,8 +671,6 @@ func unmarshalDouble(info *TypeInfo, data []byte, value interface{}) error {
 
 func marshalTimestamp(info *TypeInfo, value interface{}) ([]byte, error) {
 	switch v := value.(type) {
-	case Marshaler:
-		return v.MarshalCQL(info)
 	case int64:
 		return encBigInt(v), nil
 	case time.Time:
@@ -697,8 +689,6 @@ func marshalTimestamp(info *TypeInfo, value interface{}) ([]byte, error) {
 
 func unmarshalTimestamp(info *TypeInfo, data []byte, value interface{}) error {
 	switch v := value.(type) {
-	case Unmarshaler:
-		return v.UnmarshalCQL(info, data)
 	case *int64:
 		*v = decBigInt(data)
 		return nil
@@ -903,10 +893,14 @@ func unmarshalMap(info *TypeInfo, data []byte, value interface{}) error {
 }
 
 func marshalUUID(info *TypeInfo, value interface{}) ([]byte, error) {
-	if val, ok := value.([]byte); ok && len(val) == 16 {
-		return val, nil
-	}
-	if val, ok := value.(uuid.UUID); ok {
+	switch val := value.(type) {
+	case []byte:
+		if len(val) == 16 {
+			return val, nil
+		}
+	case [16]byte:
+		return val[:], nil
+	case uuid.UUID:
 		return val.Bytes(), nil
 	}
 	return nil, marshalErrorf("can not marshal %T into %s", value, info)
@@ -914,8 +908,12 @@ func marshalUUID(info *TypeInfo, value interface{}) ([]byte, error) {
 
 func unmarshalTimeUUID(info *TypeInfo, data []byte, value interface{}) error {
 	switch v := value.(type) {
-	case Unmarshaler:
-		return v.UnmarshalCQL(info, data)
+	case *[]byte:
+		*v = data
+		return nil
+	case *[16]byte:
+		copy(v[:], data)
+		return nil
 	case *uuid.UUID:
 		*v = uuid.FromBytes(data)
 		return nil
@@ -932,8 +930,6 @@ func unmarshalTimeUUID(info *TypeInfo, data []byte, value interface{}) error {
 
 func unmarshalInet(info *TypeInfo, data []byte, value interface{}) error {
 	switch v := value.(type) {
-	case Unmarshaler:
-		return v.UnmarshalCQL(info, data)
 	case *string:
 		if len(data) == 0 {
 			*v = ""
