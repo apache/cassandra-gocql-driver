@@ -6,7 +6,7 @@
 // identifiers, a standardized format in the form of a 128 bit number.
 //
 // http://tools.ietf.org/html/rfc4122
-package uuid
+package gocql
 
 import (
 	"crypto/rand"
@@ -75,9 +75,9 @@ func ParseUUID(input string) (UUID, error) {
 	return u, nil
 }
 
-// FromBytes converts a raw byte slice to an UUID. It will panic if the slice
-// isn't exactly 16 bytes long.
-func FromBytes(input []byte) UUID {
+// UUIDFromBytes converts a raw byte slice to an UUID. It will panic if the
+// slice isn't exactly 16 bytes long.
+func UUIDFromBytes(input []byte) UUID {
 	var u UUID
 	if len(input) != 16 {
 		panic("UUIDs must be exactly 16 bytes long")
@@ -103,13 +103,13 @@ var timeBase = time.Date(1582, time.October, 15, 0, 0, 0, 0, time.UTC).Unix()
 // TimeUUID generates a new time based UUID (version 1) using the current
 // time as the timestamp.
 func TimeUUID() UUID {
-	return FromTime(time.Now())
+	return UUIDFromTime(time.Now())
 }
 
-// FromTime generates a new time based UUID (version 1) as described in RFC
-// 4122. This UUID contains the MAC address of the node that generated the
-// UUID, the given timestamp and a sequence number.
-func FromTime(aTime time.Time) UUID {
+// UUIDFromTime generates a new time based UUID (version 1) as described in
+// RFC 4122. This UUID contains the MAC address of the node that generated
+// the UUID, the given timestamp and a sequence number.
+func UUIDFromTime(aTime time.Time) UUID {
 	var u UUID
 
 	utcTime := aTime.In(time.UTC)

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package uuid
+package gocql
 
 import (
 	"bytes"
@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-func TestNil(t *testing.T) {
+func TestUUIDNil(t *testing.T) {
 	var uuid UUID
 	want, got := "00000000-0000-0000-0000-000000000000", uuid.String()
 	if want != got {
@@ -18,7 +18,7 @@ func TestNil(t *testing.T) {
 	}
 }
 
-var tests = []struct {
+var testsUUID = []struct {
 	input   string
 	variant int
 	version int
@@ -37,26 +37,26 @@ var tests = []struct {
 	{"d0e817e1-e4b1-1801-ffe6-b4b60ccecf9d", VariantFuture, 0},
 }
 
-func TestPredefined(t *testing.T) {
-	for i := range tests {
-		uuid, err := ParseUUID(tests[i].input)
+func TestPredefinedUUID(t *testing.T) {
+	for i := range testsUUID {
+		uuid, err := ParseUUID(testsUUID[i].input)
 		if err != nil {
 			t.Errorf("ParseUUID #%d: %v", i, err)
 			continue
 		}
 
-		if str := uuid.String(); str != tests[i].input {
-			t.Errorf("String #%d: expected %q got %q", i, tests[i].input, str)
+		if str := uuid.String(); str != testsUUID[i].input {
+			t.Errorf("String #%d: expected %q got %q", i, testsUUID[i].input, str)
 			continue
 		}
 
-		if variant := uuid.Variant(); variant != tests[i].variant {
-			t.Errorf("Variant #%d: expected %d got %d", i, tests[i].variant, variant)
+		if variant := uuid.Variant(); variant != testsUUID[i].variant {
+			t.Errorf("Variant #%d: expected %d got %d", i, testsUUID[i].variant, variant)
 		}
 
-		if tests[i].variant == VariantIETF {
-			if version := uuid.Version(); version != tests[i].version {
-				t.Errorf("Version #%d: expected %d got %d", i, tests[i].version, version)
+		if testsUUID[i].variant == VariantIETF {
+			if version := uuid.Version(); version != testsUUID[i].version {
+				t.Errorf("Version #%d: expected %d got %d", i, testsUUID[i].version, version)
 			}
 		}
 	}
@@ -75,16 +75,16 @@ func TestRandomUUID(t *testing.T) {
 	}
 }
 
-func TestFromTime(t *testing.T) {
+func TestUUIDFromTime(t *testing.T) {
 	date := time.Date(1982, 5, 5, 12, 34, 56, 0, time.UTC)
-	uuid := FromTime(date)
+	uuid := UUIDFromTime(date)
 
 	if uuid.Time() != date {
 		t.Errorf("embedded time incorrect. Expected %v got %v", date, uuid.Time())
 	}
 }
 
-func TestParse(t *testing.T) {
+func TestParseUUID(t *testing.T) {
 	uuid, _ := ParseUUID("486f3a88-775b-11e3-ae07-d231feb1dc81")
 	if uuid.Time().Truncate(time.Second) != time.Date(2014, 1, 7, 5, 19, 29, 0, time.UTC) {
 		t.Errorf("Expected date of 1/7/2014 at 5:19:29, got %v", uuid.Time())

@@ -13,8 +13,6 @@ import (
 	"sync"
 	"testing"
 	"time"
-
-	"tux21b.org/v1/gocql/uuid"
 )
 
 var (
@@ -196,9 +194,9 @@ func TestCAS(t *testing.T) {
 		t.Fatal("create:", err)
 	}
 
-	title, revid := "baz", uuid.TimeUUID()
+	title, revid := "baz", TimeUUID()
 	var titleCAS string
-	var revidCAS uuid.UUID
+	var revidCAS UUID
 
 	if applied, err := session.Query(`INSERT INTO cas_table (title, revid)
 		VALUES (?, ?) IF NOT EXISTS`,
@@ -249,7 +247,7 @@ func TestBatch(t *testing.T) {
 
 type Page struct {
 	Title       string
-	RevId       uuid.UUID
+	RevId       UUID
 	Body        string
 	Views       int64
 	Protected   bool
@@ -263,7 +261,7 @@ type Attachment []byte
 var pageTestData = []*Page{
 	&Page{
 		Title:    "Frontpage",
-		RevId:    uuid.TimeUUID(),
+		RevId:    TimeUUID(),
 		Body:     "Welcome to this wiki page!",
 		Modified: time.Date(2013, time.August, 13, 9, 52, 3, 0, time.UTC),
 		Tags:     []string{"start", "important", "test"},
@@ -274,7 +272,7 @@ var pageTestData = []*Page{
 	},
 	&Page{
 		Title:    "Foobar",
-		RevId:    uuid.TimeUUID(),
+		RevId:    TimeUUID(),
 		Body:     "foo::Foo f = new foo::Foo(foo::Foo::INIT);",
 		Modified: time.Date(2013, time.August, 13, 9, 52, 3, 0, time.UTC),
 	},

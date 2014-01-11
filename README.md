@@ -55,7 +55,6 @@ import (
 	"log"
 
 	"tux21b.org/v1/gocql"
-	"tux21b.org/v1/gocql/uuid"
 )
 
 func main() {
@@ -68,11 +67,11 @@ func main() {
 
 	// insert a tweet
 	if err := session.Query(`INSERT INTO tweet (timeline, id, text) VALUES (?, ?, ?)`,
-		"me", uuid.TimeUUID(), "hello world").Exec(); err != nil {
+		"me", gocql.TimeUUID(), "hello world").Exec(); err != nil {
 		log.Fatal(err)
 	}
 
-	var id uuid.UUID
+	var id gocql.UUID
 	var text string
 
 	// select a single tweet
@@ -96,6 +95,6 @@ func main() {
 License
 -------
 
-> Copyright (c) 2012 The gocql Authors. All rights reserved.
+> Copyright (c) 2012-2014 The gocql Authors. All rights reserved.
 > Use of this source code is governed by a BSD-style
 > license that can be found in the LICENSE file.
