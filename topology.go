@@ -6,22 +6,21 @@ package gocql
 
 import (
 	"sync"
-	"tux21b.org/v1/gocql/uuid"
 )
 
 //Host represents the structure for storing key host information
 //that is used by load balancing and fail over policies.
 type Host struct {
-	HostID     uuid.UUID
+	HostID     UUID
 	DataCenter string
 	Rack       string
 	conn       []*Conn //Array of connections to host
 }
 
 type HostPool struct {
-	pool        map[uuid.UUID]Host //A map of hosts
-	topologyMap map[string]map[string][]uuid.UUID
-	hostIDs     []uuid.UUID
+	pool        map[UUID]Host //A map of hosts
+	topologyMap map[string]map[string][]UUID
+	hostIDs     []UUID
 	mu          sync.RWMutex
 	defaultLBP  LoadBalancePolicy
 }
@@ -29,8 +28,8 @@ type HostPool struct {
 //NewHostPool creates a new host pool
 func NewHostPool(lbp LoadBalancePolicy) *HostPool {
 	return &HostPool{
-		pool:        make(map[uuid.UUID]Host),
-		topologyMap: make(map[string]map[string][]uuid.UUID),
+		pool:        make(map[UUID]Host),
+		topologyMap: make(map[string]map[string][]UUID),
 		defaultLBP:  lbp,
 	}
 }
@@ -43,12 +42,12 @@ func (p *HostPool) AddHost(host Host) {
 		p.pool[host.HostID] = host
 		p.hostIDs = append(p.hostIDs, host.HostID)
 
-		var dc map[string][]uuid.UUID
+		var dc map[string][]UUID
 		var ok bool
 		//Check if the map for the datacenter exists
 		//If not create one.
 		if dc, ok = p.topologyMap[host.DataCenter]; !ok {
-			dc = make(map[string][]uuid.UUID)
+			dc = make(map[string][]UUID)
 			p.topologyMap[host.DataCenter] = dc
 		}
 		//Update the array of host ids for the rack.

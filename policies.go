@@ -6,7 +6,6 @@ package gocql
 
 import (
 	"sync/atomic"
-	"tux21b.org/v1/gocql/uuid"
 )
 
 //RetyPolicy policy defines the rety stradegy for a query. It can be assigned to the
@@ -20,14 +19,14 @@ type RetryPolicy struct {
 }
 
 type LoadBalancePolicy interface {
-	Pick(hostIDs []uuid.UUID, hosts map[uuid.UUID]Host) *Conn
+	Pick(hostIDs []UUID, hosts map[UUID]Host) *Conn
 }
 
 type RoundRobin struct {
 	pos uint64
 }
 
-func (r *RoundRobin) Pick(hostIDs []uuid.UUID, hosts map[uuid.UUID]Host) *Conn {
+func (r *RoundRobin) Pick(hostIDs []UUID, hosts map[UUID]Host) *Conn {
 	h := uint64(len(hostIDs))
 	if h > 0 {
 		pos := atomic.AddUint64(&r.pos, 1)

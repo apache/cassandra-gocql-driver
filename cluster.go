@@ -11,8 +11,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"tux21b.org/v1/gocql/uuid"
 )
 
 // ClusterConfig is a struct to configure the default cluster implementation
@@ -188,7 +186,7 @@ func (c *clusterImpl) addConn(conn *Conn, keyspace string) error {
 		log.Printf("Iterator error: %v", iter.err)
 		return iter.err
 	}
-	var hostID uuid.UUID
+	var hostID UUID
 	var dc, rack, ready string
 	iter.Scan(&hostID, &dc, &rack, &ready)
 
@@ -271,7 +269,7 @@ func (c *clusterImpl) autoDiscover() {
 			log.Printf("failed to collect peer information %v", itr.err)
 			return
 		}
-		var hid uuid.UUID
+		var hid UUID
 		var peerAddr, rpcAddr string
 		//Get a read lock on the host pool and create connections with hosts.
 		c.hostPool.mu.RLock()

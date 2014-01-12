@@ -11,8 +11,6 @@ import (
 	"log"
 	"sync"
 	"time"
-
-	"tux21b.org/v1/gocql/uuid"
 )
 
 // Session is the interface used by users to interact with the database.
@@ -163,7 +161,7 @@ type Query struct {
 	session    *Session
 	lbPolicy   LoadBalancePolicy
 	rtPolicy   RetryPolicy
-	lastHostID uuid.UUID
+	lastHostID UUID
 	prefDC     string
 	prefRack   string
 }
