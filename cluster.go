@@ -178,6 +178,7 @@ func (c *clusterImpl) removeConn(conn *Conn) {
 	connPool.RemoveNode(conn)
 	if connPool.Size() == 0 {
 		c.hostPool.RemoveNode(connPool)
+		delete(c.connPool, conn.addr)
 	}
 	delete(c.conns, conn)
 }
