@@ -903,31 +903,70 @@ func unmarshalMap(info *TypeInfo, data []byte, value interface{}) error {
 }
 
 func marshalUUID(info *TypeInfo, value interface{}) ([]byte, error) {
-	if val, ok := value.([]byte); ok && len(val) == 16 {
-		return val, nil
-	}
-	if val, ok := value.(UUID); ok {
+	switch val := value.(type) {
+	case UUID:
 		return val.Bytes(), nil
+	case []byte:
+		if len(val) == 16 {
+			return val, nil
+		}
+	case string:
+		b, err := ParseUUID(val)
+		if err != nil {
+			return nil, err
+		}
+		return b[:], nil
 	}
 	return nil, marshalErrorf("can not marshal %T into %s", value, info)
 }
 
 func unmarshalUUID(info *TypeInfo, data []byte, value interface{}) error {
-	switch v := value.(type) {
-	case Unmarshaler:
-		return v.UnmarshalCQL(info, data)
-	case *UUID:
-		*v = UUIDFromBytes(data)
+	if data == nil {
 		return nil
 	}
-	return unmarshalErrorf("can not unmarshal %s into %T", info, value)
+
+	switch v := value.(type) {
+	case *string:
+		u, err := UUIDFromBytes(data)
+		if err != nil {
+			return unmarshalErrorf("Unable to parse UUID: %s", err)
+		}
+
+		*v = u.String()
+		return nil
+	case *[]byte:
+		u, err := UUIDFromBytes(data)
+		if err != nil {
+			return unmarshalErrorf("Unable to parse UUID: %s", err)
+		}
+
+		b := [16]byte(u)
+
+		*v = b[:]
+		return nil
+	case *UUID:
+		u, err := UUIDFromBytes(data)
+		if err != nil {
+			return unmarshalErrorf("Unable to parse UUID: %s", err)
+		}
+
+		*v = u
+
+		return nil
+	}
+
+	return unmarshalErrorf("can not unmarshal X %s into %T", info, value)
 }
 
 func unmarshalTimeUUID(info *TypeInfo, data []byte, value interface{}) error {
 	switch v := value.(type) {
+	case Unmarshaler:
+		return v.UnmarshalCQL(info, data)
 	case *time.Time:
-		id := UUIDFromBytes(data)
-		if id.Version() != 1 {
+		id, err := UUIDFromBytes(data)
+		if err != nil {
+			return err
+		} else if id.Version() != 1 {
 			return unmarshalErrorf("invalid timeuuid")
 		}
 		*v = id.Time()
