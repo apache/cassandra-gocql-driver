@@ -10,6 +10,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"tux21b.org/v1/gocql/uuid"
 
 	"code.google.com/p/snappy-go/snappy"
 )
@@ -56,6 +57,7 @@ type Conn struct {
 	compressor Compressor
 	addr       string
 	version    uint8
+	hostID     uuid.UUID
 }
 
 // Connect establishes a connection to a Cassandra node.
@@ -346,9 +348,9 @@ func (c *Conn) executeQuery(qry *Query) *Iter {
 				return c.executeQuery(qry)
 			}
 			c.prepMu.Unlock()
-			return &Iter{err: x}
+			return &Iter{err: x, errFrame: &x}
 		} else {
-			return &Iter{err: x}
+			return &Iter{err: x, errFrame: &x}
 		}
 	case error:
 		return &Iter{err: x}
@@ -470,6 +472,7 @@ func (c *Conn) decodeFrame(f frame, trace Tracer) (rval interface{}, err error) 
 		case resultKindVoid:
 			return resultVoidFrame{}, nil
 		case resultKindRows:
+
 			columns, pageState := f.readMetaData()
 			numRows := f.readInt()
 			values := make([][]byte, numRows*len(columns))
@@ -479,6 +482,7 @@ func (c *Conn) decodeFrame(f frame, trace Tracer) (rval interface{}, err error) 
 			rows := make([][][]byte, numRows)
 			for i := 0; i < numRows; i++ {
 				rows[i], values = values[:len(columns)], values[len(columns):]
+
 			}
 			return resultRowsFrame{columns, rows, pageState}, nil
 		case resultKindKeyspace:

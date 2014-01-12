@@ -8,8 +8,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"sync"
 	"time"
+
+	"tux21b.org/v1/gocql/uuid"
 )
 
 // Session is the interface used by users to interact with the database.
@@ -24,11 +27,15 @@ type Session struct {
 	prefetch float64
 	trace    Tracer
 	mu       sync.RWMutex
+	cfg      ClusterConfig
 }
 
 // NewSession wraps an existing Node.
-func NewSession(node Node) *Session {
-	return &Session{Node: node, cons: Quorum, prefetch: 0.25}
+func NewSession(c *clusterImpl) *Session {
+	return &Session{Node: c,
+		cons:     Quorum,
+		prefetch: 0.25,
+		cfg:      c.cfg}
 }
 
 // SetConsistency sets the default consistency level for this session. This
@@ -71,9 +78,22 @@ func (s *Session) SetTrace(trace Tracer) {
 // value before the query is executed.
 func (s *Session) Query(stmt string, values ...interface{}) *Query {
 	s.mu.RLock()
-	qry := &Query{stmt: stmt, values: values, cons: s.cons,
-		session: s, pageSize: s.pageSize, trace: s.trace,
-		prefetch: s.prefetch}
+	rt := RetryPolicy{}
+	rt.DataCenter = s.cfg.DefaultRetryPolicy.DataCenter
+	rt.Rack = s.cfg.DefaultRetryPolicy.Rack
+
+	qry := &Query{stmt: stmt,
+		values:   values,
+		cons:     s.cons,
+		session:  s,
+		pageSize: s.pageSize,
+		trace:    s.trace,
+		prefetch: s.prefetch,
+		lbPolicy: s.cfg.DefaultLBPolicy,
+		rtPolicy: rt,
+		prefDC:   s.cfg.PreferredDataCenter,
+		prefRack: s.cfg.PreferredRack,
+	}
 	s.mu.RUnlock()
 	return qry
 }
@@ -85,11 +105,42 @@ func (s *Session) Close() {
 }
 
 func (s *Session) executeQuery(qry *Query) *Iter {
-	conn := s.Node.Pick(nil)
-	if conn == nil {
-		return &Iter{err: ErrUnavailable}
+	var err error
+	var itr *Iter
+	rtyNum := qry.rtPolicy.Rack + qry.rtPolicy.DataCenter
+	if rtyNum == 0 {
+		rtyNum = 1
 	}
-	return conn.executeQuery(qry)
+	for qry.rtPolicy.Count < rtyNum {
+		conn := s.Node.Pick(qry)
+
+		if conn == nil {
+			itr = &Iter{err: ErrUnavailable}
+		} else {
+			qry.lastHostID = conn.hostID
+			itr = conn.executeQuery(qry)
+		}
+		//Check if there was even an error
+		if itr.err == nil {
+			return itr
+		}
+		//Check if an errFrame was configured. If not we can't retry the query
+		if itr.errFrame == nil {
+			return itr
+		}
+		//Determine if we can retry the query based on the error frame.
+		switch itr.errFrame.Code {
+		case errServer, errWriteTimeout, errReadTimeout, errOverloaded:
+			err = itr.errFrame
+			continue
+		default:
+			return itr
+		}
+
+		qry.rtPolicy.Count++
+	}
+	log.Println("Default Return")
+	return &Iter{err: err}
 }
 
 func (s *Session) ExecuteBatch(batch *Batch) error {
@@ -102,14 +153,19 @@ func (s *Session) ExecuteBatch(batch *Batch) error {
 
 // Query represents a CQL statement that can be executed.
 type Query struct {
-	stmt      string
-	values    []interface{}
-	cons      Consistency
-	pageSize  int
-	pageState []byte
-	prefetch  float64
-	trace     Tracer
-	session   *Session
+	stmt       string
+	values     []interface{}
+	cons       Consistency
+	pageSize   int
+	pageState  []byte
+	prefetch   float64
+	trace      Tracer
+	session    *Session
+	lbPolicy   LoadBalancePolicy
+	rtPolicy   RetryPolicy
+	lastHostID uuid.UUID
+	prefDC     string
+	prefRack   string
 }
 
 // Consistency sets the consistency level for this query. If no consistency
@@ -136,11 +192,37 @@ func (q *Query) PageSize(n int) *Query {
 	return q
 }
 
-// SetPrefetch sets the default threshold for pre-fetching new pages. If
+// Prefetch sets the default threshold for pre-fetching new pages. If
 // there are only p*pageSize rows remaining, the next page will be requested
 // automatically.
 func (q *Query) Prefetch(p float64) *Query {
 	q.prefetch = p
+	return q
+}
+
+// RetryPolicy sets the retry policy to use for this query that may differ
+// from the default cluster retry policy
+func (q *Query) RetryPolicy(rt RetryPolicy) *Query {
+	q.rtPolicy = rt
+	return q
+}
+
+// LoadBalancePolicy sets the load balancing policy to use for this query
+// that may differ from the default cluster policy.
+func (q *Query) LoadBalancePolicy(lbp LoadBalancePolicy) *Query {
+	q.lbPolicy = lbp
+	return q
+}
+
+// PreferredDataCenter sets the datacenter to prefer when executing the query
+func (q *Query) PreferredDataCenter(dc string) *Query {
+	q.prefDC = dc
+	return q
+}
+
+// PreferredRack sets the rack to prefer when executing the query
+func (q *Query) PreferredRack(rack string) *Query {
+	q.prefRack = rack
 	return q
 }
 
@@ -196,11 +278,12 @@ func (q *Query) ScanCAS(dest ...interface{}) (applied bool, err error) {
 // were returned by a query. The iterator might send additional queries to the
 // database during the iteration if paging was enabled.
 type Iter struct {
-	err     error
-	pos     int
-	rows    [][][]byte
-	columns []ColumnInfo
-	next    *nextIter
+	err      error
+	pos      int
+	rows     [][][]byte
+	columns  []ColumnInfo
+	next     *nextIter
+	errFrame *errorFrame
 }
 
 // Columns returns the name and type of the selected columns.
