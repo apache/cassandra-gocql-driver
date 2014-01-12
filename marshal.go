@@ -922,39 +922,32 @@ func marshalUUID(info *TypeInfo, value interface{}) ([]byte, error) {
 
 func unmarshalUUID(info *TypeInfo, data []byte, value interface{}) error {
 	if data == nil {
-		return nil
+		switch v := value.(type) {
+		case *string:
+			*v = ""
+		case *[]byte:
+			*v = nil
+		case *UUID:
+			*v = UUID{}
+		default:
+			return unmarshalErrorf("can not unmarshal X %s into %T", info, value)
+		}
 	}
-
+	u, err := UUIDFromBytes(data)
+	if err != nil {
+		return unmarshalErrorf("Unable to parse UUID: %s", err)
+	}
 	switch v := value.(type) {
 	case *string:
-		u, err := UUIDFromBytes(data)
-		if err != nil {
-			return unmarshalErrorf("Unable to parse UUID: %s", err)
-		}
-
 		*v = u.String()
 		return nil
 	case *[]byte:
-		u, err := UUIDFromBytes(data)
-		if err != nil {
-			return unmarshalErrorf("Unable to parse UUID: %s", err)
-		}
-
-		b := [16]byte(u)
-
-		*v = b[:]
+		*v = u[:]
 		return nil
 	case *UUID:
-		u, err := UUIDFromBytes(data)
-		if err != nil {
-			return unmarshalErrorf("Unable to parse UUID: %s", err)
-		}
-
 		*v = u
-
 		return nil
 	}
-
 	return unmarshalErrorf("can not unmarshal X %s into %T", info, value)
 }
 
