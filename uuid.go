@@ -96,9 +96,12 @@ func UUIDFromBytes(input []byte) (UUID, error) {
 
 // RandomUUID generates a totally random UUID (version 4) as described in
 // RFC 4122.
-func RandomUUID() UUID {
+func RandomUUID() (UUID, error) {
 	var u UUID
-	io.ReadFull(rand.Reader, u[:])
+	_, err := io.ReadFull(rand.Reader, u[:])
+	if err != nil {
+		return err
+	}
 	u[6] &= 0x0F // clear version
 	u[6] |= 0x40 // set version to 4 (random uuid)
 	u[8] &= 0x3F // clear variant
