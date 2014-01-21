@@ -100,13 +100,13 @@ func RandomUUID() (UUID, error) {
 	var u UUID
 	_, err := io.ReadFull(rand.Reader, u[:])
 	if err != nil {
-		return err
+		return u, err
 	}
 	u[6] &= 0x0F // clear version
 	u[6] |= 0x40 // set version to 4 (random uuid)
 	u[8] &= 0x3F // clear variant
 	u[8] |= 0x80 // set to IETF variant
-	return u
+	return u, nil
 }
 
 var timeBase = time.Date(1582, time.October, 15, 0, 0, 0, 0, time.UTC).Unix()
