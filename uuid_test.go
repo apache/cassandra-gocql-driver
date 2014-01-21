@@ -64,8 +64,10 @@ func TestPredefinedUUID(t *testing.T) {
 
 func TestRandomUUID(t *testing.T) {
 	for i := 0; i < 20; i++ {
-		uuid := RandomUUID()
-
+		uuid, err := RandomUUID()
+		if err != nil {
+			t.Errorf("RandomUUID: %v", err)
+		}
 		if variant := uuid.Variant(); variant != VariantIETF {
 			t.Errorf("wrong variant. expected %d got %d", VariantIETF, variant)
 		}
