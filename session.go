@@ -14,8 +14,12 @@ import (
 
 // Session is the interface used by users to interact with the database.
 //
-// It extends the Node interface by adding a convinient query builder and
-// automatically sets a default consinstency level on all operations
+// It's safe for concurrent use by multiple goroutines and a typical usage
+// scenario is to have one global session object to interact with the
+// whole Cassandra cluster.
+//
+// This type extends the Node interface by adding a convinient query builder
+// and automatically sets a default consinstency level on all operations
 // that do not have a consistency level set.
 type Session struct {
 	Node     Node
