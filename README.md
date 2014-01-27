@@ -95,6 +95,11 @@ func main() {
 }
 ```
 
+Other Projects
+--------------
+
+* [cqlc](http://relops.com/cqlc) generates gocql compliant code from your Cassandra schema so that you can write type safe CQL statements in Go with a natural query syntax
+
 License
 -------
 
