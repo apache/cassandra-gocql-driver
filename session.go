@@ -234,11 +234,14 @@ func (iter *Iter) Scan(dest ...interface{}) bool {
 	if iter.next != nil && iter.pos == iter.next.pos {
 		go iter.next.fetch()
 	}
-	if len(dest) > len(iter.columns) {
+	if len(dest) != len(iter.columns) {
 		iter.err = errors.New("count mismatch")
 		return false
 	}
-	for i := 0; i < len(dest); i++ {
+	for i := 0; i < len(iter.columns); i++ {
+		if dest[i] == nil {
+			continue
+		}
 		err := Unmarshal(iter.columns[i].TypeInfo, iter.rows[iter.pos][i], dest[i])
 		if err != nil {
 			iter.err = err
