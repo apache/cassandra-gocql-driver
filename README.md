@@ -9,12 +9,6 @@ gocql
 Package gocql implements a fast and robust Cassandra client for the
 Go programming language.
 
-
-**Attention:** This package is currently actively developed and the API may
-change in the future. The old "datbase/sql" based package is now called
-[gocqldriver](https://github.com/tux21b/gocqldriver) and is no longer
-maintained.
-
 Project Website: http://tux21b.org/gocql/<br>
 API documentation: http://godoc.org/tux21b.org/v1/gocql<br>
 Discussions: https://groups.google.com/forum/#!forum/gocql
@@ -98,7 +92,8 @@ func main() {
 Other Projects
 --------------
 
-* [cqlc](http://relops.com/cqlc) generates gocql compliant code from your Cassandra schema so that you can write type safe CQL statements in Go with a natural query syntax
+* [cqlc](http://relops.com/cqlc) generates gocql compliant code from your Cassandra schema so that you can write type safe CQL statements in Go with a natural query syntax.
+* [gocqldriver](https://github.com/tux21b/gocqldriver) is the predecessor of gocql based on Go's "database/sql" package. This project isn't maintained anymore, because Cassandra wasn't a good fit for the traditional "database/sql" API. Use this package instead.
 
 License
 -------
