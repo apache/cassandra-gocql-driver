@@ -27,16 +27,21 @@ type RoundRobin struct {
 }
 
 func (r *RoundRobin) Pick(hostIDs []UUID, hosts map[UUID]Host) *Conn {
+	// Zariel: Could there be a race condition with hostIds here? Looks
+	// like all callers are wrapped in the hostPools mutex.
 	h := uint64(len(hostIDs))
+
 	if h > 0 {
 		pos := atomic.AddUint64(&r.pos, 1)
 		host := hosts[hostIDs[pos%h]]
 		conns := len(host.conn)
+
 		for i := 0; i < conns; i++ {
 			if len(host.conn[i].uniq) > 0 {
 				return host.conn[i]
 			}
 		}
 	}
+
 	return nil
 }

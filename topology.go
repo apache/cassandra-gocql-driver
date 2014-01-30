@@ -38,22 +38,29 @@ func NewHostPool(lbp LoadBalancePolicy) *HostPool {
 //map so that it is available for queries.
 func (p *HostPool) AddHost(host Host) {
 	p.mu.Lock()
-	if _, exists := p.pool[host.HostID]; !exists {
-		p.pool[host.HostID] = host
-		p.hostIDs = append(p.hostIDs, host.HostID)
+	defer p.mu.Unlock()
 
-		var dc map[string][]UUID
-		var ok bool
-		//Check if the map for the datacenter exists
-		//If not create one.
-		if dc, ok = p.topologyMap[host.DataCenter]; !ok {
-			dc = make(map[string][]UUID)
-			p.topologyMap[host.DataCenter] = dc
-		}
-		//Update the array of host ids for the rack.
-		dc[host.Rack] = append(dc[host.Rack], host.HostID)
+	if _, exists := p.pool[host.HostID]; exists {
+		return
 	}
-	p.mu.Unlock()
+
+	p.pool[host.HostID] = host
+	p.hostIDs = append(p.hostIDs, host.HostID)
+
+	var (
+		dc map[string][]UUID
+		ok bool
+	)
+
+	//Check if the map for the datacenter exists
+	//If not create one.
+	if dc, ok = p.topologyMap[host.DataCenter]; !ok {
+		dc = make(map[string][]UUID)
+		p.topologyMap[host.DataCenter] = dc
+	}
+
+	//Update the array of host ids for the rack.
+	dc[host.Rack] = append(dc[host.Rack], host.HostID)
 }
 
 //RemoveHost removes the host from the topologymap, closes open connections
@@ -66,6 +73,7 @@ func (p *HostPool) RemoveHost(host Host) {
 	dc := p.topologyMap[host.DataCenter]
 	rack := dc[host.Rack]
 	n := len(rack)
+
 	if n == 1 {
 		delete(dc, host.Rack)
 		if len(dc) == 0 {
@@ -80,6 +88,7 @@ func (p *HostPool) RemoveHost(host Host) {
 			}
 		}
 	}
+
 	//Remove host from hostIDs list
 	n = len(p.hostIDs)
 	for i := 0; i < n; i++ {
@@ -100,8 +109,10 @@ func (p *HostPool) RemoveHost(host Host) {
 //it will be removed from the pool.
 func (p *HostPool) RemoveConn(conn *Conn) {
 	p.mu.Lock()
+
 	host := p.pool[conn.hostID]
 	conns := len(host.conn)
+
 	if conns > 1 {
 		for i := 0; i < conns; i++ {
 			if host.conn[i] == conn {
@@ -115,6 +126,7 @@ func (p *HostPool) RemoveConn(conn *Conn) {
 		//Remove the host as it may be unhealthy. Let auto discover reconnect.
 		defer p.RemoveHost(host)
 	}
+
 	p.mu.Unlock()
 }
 
@@ -128,54 +140,62 @@ func (r *HostPool) Size() int {
 //Pick selects a host randomly that has atleast one stream available
 //for processing the provided query.
 //TODO: Add code to use the cluster defined preferred Datacenter and or rack.
+// Zariel: Can we move the picking logic down into another interface?
 func (p *HostPool) Pick(qry *Query) *Conn {
+	// Can we make this lock more finely grained?
 	p.mu.RLock()
 	defer p.mu.RUnlock()
+
 	if qry == nil {
 		return p.defaultLBP.Pick(p.hostIDs, p.pool)
-	} else {
-		rtp := qry.rtPolicy
-		//Check if a query is being retried
-		if rtp.Count > 0 {
-			h := p.pool[qry.lastHostID]
-			if rtp.Count < rtp.Rack {
-				//Retrying the query in the same rack
-				hList := p.topologyMap[h.DataCenter][h.Rack]
-				if len(hList) > 1 {
-					return qry.lbPolicy.Pick(hList, p.pool)
-				}
-			} else if rtp.Count >= rtp.Rack && rtp.DataCenter > 0 {
-				//Retrying the query in a different datacenter
-				if len(p.topologyMap) > 1 {
-					//Select the next datacenter
-					for n, dc := range p.topologyMap {
-						//Only if the datacenter does not match the last host
-						if n != h.DataCenter {
-							//Select a rack inside the datacenter
-							for _, r := range dc {
-								return qry.lbPolicy.Pick(r, p.pool)
-							}
+	}
+
+	rtp := qry.rtPolicy
+	//Check if a query is being retried
+	if rtp.Count > 0 {
+		h := p.pool[qry.lastHostID]
+
+		if rtp.Count < rtp.Rack {
+			//Retrying the query in the same rack
+			hList := p.topologyMap[h.DataCenter][h.Rack]
+
+			if len(hList) > 1 {
+				return qry.lbPolicy.Pick(hList, p.pool)
+			}
+		} else if rtp.Count >= rtp.Rack && rtp.DataCenter > 0 {
+			//Retrying the query in a different datacenter
+			if len(p.topologyMap) > 1 {
+				//Select the next datacenter
+				for n, dc := range p.topologyMap {
+					//Only if the datacenter does not match the last host
+					if n != h.DataCenter {
+						//Select a rack inside the datacenter
+						for _, r := range dc {
+							return qry.lbPolicy.Pick(r, p.pool)
 						}
 					}
 				}
 			}
-		} else if (qry.prefDC != "" && qry.prefRack != "") || qry.prefDC != "" {
-			//topology preferences have been defined
-			dc := p.topologyMap[qry.prefDC]
-			if dc != nil {
-				rack := dc[qry.prefRack]
-				if rack == nil {
-					//Get a rack that is defined in the DC
-					for _, rack = range dc {
-						break
-					}
-				}
-				return qry.lbPolicy.Pick(rack, p.pool)
-			}
 		}
-		return qry.lbPolicy.Pick(p.hostIDs, p.pool)
+	} else if (qry.prefDC != "" && qry.prefRack != "") || qry.prefDC != "" {
+		//topology preferences have been defined
+		dc := p.topologyMap[qry.prefDC]
 
+		if dc != nil {
+			rack := dc[qry.prefRack]
+
+			if rack == nil {
+				//Get a rack that is defined in the DC
+				for _, rack = range dc {
+					break
+				}
+			}
+
+			return qry.lbPolicy.Pick(rack, p.pool)
+		}
 	}
+
+	return qry.lbPolicy.Pick(p.hostIDs, p.pool)
 }
 
 //Close tears down the pool and closes all the open connections,
@@ -183,6 +203,7 @@ func (p *HostPool) Pick(qry *Query) *Conn {
 func (r *HostPool) Close() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+
 	//Nil the topologymap
 	r.topologyMap = nil
 	//Close all the connections
@@ -193,6 +214,7 @@ func (r *HostPool) Close() {
 			host.conn[i].Close()
 		}
 	}
+
 	r.pool = nil
 }
 
