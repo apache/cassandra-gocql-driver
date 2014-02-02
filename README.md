@@ -1,22 +1,22 @@
 gocql
 =====
 
-[![Build Status](https://travis-ci.org/tux21b/gocql.png?branch=master)](https://travis-ci.org/tux21b/gocql)
-[![GoDoc](http://godoc.org/tux21b.org/v1/gocql?status.png)](http://godoc.org/tux21b.org/v1/gocql)
+[![Build Status](https://travis-ci.org/gocql/gocql.png?branch=master)](https://travis-ci.org/gocql/gocql)
+[![GoDoc](http://godoc.org/github.com/gocql/gocql?status.png)](http://godoc.org/github.com/gocql/gocql)
 
 **Package Status:** Alpha 
 
 Package gocql implements a fast and robust Cassandra client for the
 Go programming language.
 
-Project Website: http://tux21b.org/gocql/<br>
-API documentation: http://godoc.org/tux21b.org/v1/gocql<br>
+Project Website: http://http://gocql.github.io/<br>
+API documentation: http://godoc.org/github.com/gocql/gocql<br>
 Discussions: https://groups.google.com/forum/#!forum/gocql
 
 Installation
 ------------
 
-    go get tux21b.org/v1/gocql
+    go get github.com/gocql/gocql
 
 
 Features
@@ -39,7 +39,7 @@ Features
 * Automatic query preparation
 * Support for query tracing
 
-Please visit the [Roadmap](https://github.com/tux21b/gocql/wiki/Roadmap) page to see what is on the horizion.
+Please visit the [Roadmap](https://github.com/gocql/gocql/wiki/Roadmap) page to see what is on the horizion.
 
 Example
 -------
@@ -51,7 +51,7 @@ import (
 	"fmt"
 	"log"
 
-	"tux21b.org/v1/gocql"
+	"github.com/gocql/gocql"
 )
 
 func main() {
