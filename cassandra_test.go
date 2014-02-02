@@ -27,6 +27,10 @@ func createSession(t *testing.T) *Session {
 	cluster := NewCluster(strings.Split(*flagCluster, ",")...)
 	cluster.ProtoVersion = *flagProto
 	cluster.CQLVersion = *flagCQL
+	cluster.Authenticator = PasswordAuthenticator{
+		Username: "cassandra",
+		Password: "cassandra",
+	}
 
 	session, err := cluster.CreateSession()
 	if err != nil {

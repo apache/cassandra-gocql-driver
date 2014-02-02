@@ -18,19 +18,20 @@ import (
 // behavior to fit the most common use cases. Applications that requre a
 // different setup must implement their own cluster.
 type ClusterConfig struct {
-	Hosts        []string      // addresses for the initial connections
-	CQLVersion   string        // CQL version (default: 3.0.0)
-	ProtoVersion int           // version of the native protocol (default: 2)
-	Timeout      time.Duration // connection timeout (default: 200ms)
-	DefaultPort  int           // default port (default: 9042)
-	Keyspace     string        // initial keyspace (optional)
-	NumConns     int           // number of connections per host (default: 2)
-	NumStreams   int           // number of streams per connection (default: 128)
-	DelayMin     time.Duration // minimum reconnection delay (default: 1s)
-	DelayMax     time.Duration // maximum reconnection delay (default: 10min)
-	StartupMin   int           // wait for StartupMin hosts (default: len(Hosts)/2+1)
-	Consistency  Consistency   // default consistency level (default: Quorum)
-	Compressor   Compressor    // compression algorithm (default: nil)
+	Hosts         []string      // addresses for the initial connections
+	CQLVersion    string        // CQL version (default: 3.0.0)
+	ProtoVersion  int           // version of the native protocol (default: 2)
+	Timeout       time.Duration // connection timeout (default: 200ms)
+	DefaultPort   int           // default port (default: 9042)
+	Keyspace      string        // initial keyspace (optional)
+	NumConns      int           // number of connections per host (default: 2)
+	NumStreams    int           // number of streams per connection (default: 128)
+	DelayMin      time.Duration // minimum reconnection delay (default: 1s)
+	DelayMax      time.Duration // maximum reconnection delay (default: 10min)
+	StartupMin    int           // wait for StartupMin hosts (default: len(Hosts)/2+1)
+	Consistency   Consistency   // default consistency level (default: Quorum)
+	Compressor    Compressor    // compression algorithm (default: nil)
+	Authenticator Authenticator // authenticator (default: nil)
 }
 
 // NewCluster generates a new config for the default cluster implementation.
@@ -102,11 +103,12 @@ type clusterImpl struct {
 
 func (c *clusterImpl) connect(addr string) {
 	cfg := ConnConfig{
-		ProtoVersion: c.cfg.ProtoVersion,
-		CQLVersion:   c.cfg.CQLVersion,
-		Timeout:      c.cfg.Timeout,
-		NumStreams:   c.cfg.NumStreams,
-		Compressor:   c.cfg.Compressor,
+		ProtoVersion:  c.cfg.ProtoVersion,
+		CQLVersion:    c.cfg.CQLVersion,
+		Timeout:       c.cfg.Timeout,
+		NumStreams:    c.cfg.NumStreams,
+		Compressor:    c.cfg.Compressor,
+		Authenticator: c.cfg.Authenticator,
 	}
 	delay := c.cfg.DelayMin
 	for {
