@@ -8,9 +8,11 @@ import (
 	"bufio"
 	"fmt"
 	"net"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode"
 
 	"code.google.com/p/snappy-go/snappy"
 )
@@ -348,12 +350,18 @@ func (c *Conn) prepareStatement(stmt string, trace Tracer) (*queryInfo, error) {
 
 func (c *Conn) executeQuery(qry *Query) *Iter {
 	op := &queryFrame{
-		Stmt:      qry.stmt,
+		Stmt:      strings.TrimSpace(qry.stmt),
 		Cons:      qry.cons,
 		PageSize:  qry.pageSize,
 		PageState: qry.pageState,
 	}
-	if len(qry.values) > 0 {
+	stmtType := op.Stmt
+	if n := strings.IndexFunc(stmtType, unicode.IsSpace); n >= 0 {
+		stmtType = strings.ToLower(stmtType[:n])
+	}
+	switch stmtType {
+	case "select", "insert", "update", "delete":
+		// Prepare all DML queries. Other queries can not be prepared.
 		info, err := c.prepareStatement(qry.stmt, qry.trace)
 		if err != nil {
 			return &Iter{err: err}
