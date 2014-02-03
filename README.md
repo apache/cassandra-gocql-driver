@@ -9,7 +9,7 @@ gocql
 Package gocql implements a fast and robust Cassandra client for the
 Go programming language.
 
-Project Website: http://http://gocql.github.io/<br>
+Project Website: http://gocql.github.io/<br>
 API documentation: http://godoc.org/github.com/gocql/gocql<br>
 Discussions: https://groups.google.com/forum/#!forum/gocql
 
