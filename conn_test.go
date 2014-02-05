@@ -60,7 +60,7 @@ func TestTimeout(t *testing.T) {
 	}
 
 	go func() {
-		<-time.After(1 * time.Second)
+		<-time.After(2 * time.Second)
 		t.Fatal("no timeout")
 	}()
 
