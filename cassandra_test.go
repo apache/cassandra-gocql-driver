@@ -308,7 +308,7 @@ func TestSliceMap(t *testing.T) {
 	m["testfloat"] = float32(4.564)
 	m["testdouble"] = float64(4.815162342)
 	m["testint"] = 2343
-	m["testset"] = []int{1,2,3,4,5,6,7,8,9}
+	m["testset"] = []int{1, 2, 3, 4, 5, 6, 7, 8, 9}
 	m["testmap"] = map[string]string{"field1": "val1", "field2": "val2", "field3": "val3"}
 	sliceMap := []map[string]interface{}{m}
 	if err := session.Query(`INSERT INTO slice_map_table (testuuid, testvarchar, testbigint, testblob, testbool, testfloat, testdouble, testint, testset, testmap) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,

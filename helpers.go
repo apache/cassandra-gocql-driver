@@ -62,3 +62,21 @@ func (iter *Iter) SliceMap() ([]map[string]interface{}, error) {
 	}
 	return dataToReturn, nil
 }
+
+func (iter *Iter) MapScan(m map[string]interface{}) bool {
+	if iter.err != nil {
+		return false
+	}
+	interfacesToScan := make([]interface{}, 0)
+	for _, column := range iter.Columns() {
+		i := column.TypeInfo.New()
+		interfacesToScan = append(interfacesToScan, i)
+	}
+	if iter.Scan(interfacesToScan...) {
+		for i, column := range iter.Columns() {
+			m[column.Name] = dereference(interfacesToScan[i])
+		}
+		return true
+	}
+	return false
+}
