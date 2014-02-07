@@ -21,7 +21,7 @@ func goType(t *TypeInfo) reflect.Type {
 	case TypeDouble:
 		return reflect.TypeOf(*new(float64))
 	case TypeInt:
-		return reflect.TypeOf(*new(int32))
+		return reflect.TypeOf(*new(int))
 	case TypeUUID, TypeTimeUUID:
 		return reflect.TypeOf(*new(UUID))
 	case TypeList, TypeSet:
