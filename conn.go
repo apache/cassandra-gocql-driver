@@ -264,6 +264,10 @@ func (c *Conn) exec(op operation, trace Tracer) (interface{}, error) {
 	req.setLength(len(req) - headerSize)
 
 	id := <-c.uniq
+	defer func() {
+		c.uniq <- id
+	}()
+
 	req[2] = id
 	call := &c.calls[id]
 	call.resp = make(chan callResp, 1)
@@ -280,7 +284,6 @@ func (c *Conn) exec(op operation, trace Tracer) (interface{}, error) {
 
 	reply := <-call.resp
 	call.resp = nil
-	c.uniq <- id
 
 	if reply.err != nil {
 		return nil, reply.err
