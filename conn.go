@@ -272,6 +272,7 @@ func (c *Conn) exec(op operation, trace Tracer) (interface{}, error) {
 
 	if n, err := c.conn.Write(req); err != nil {
 		c.conn.Close()
+		c.uniq <- id
 		if n > 0 {
 			return nil, ErrProtocol
 		}
