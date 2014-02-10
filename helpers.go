@@ -35,7 +35,17 @@ func goType(t *TypeInfo) reflect.Type {
 
 func dereference(i interface{}) interface{} {
 	return reflect.Indirect(reflect.ValueOf(i)).Interface()
+}
 
+func (iter *Iter) RowData() (map[string]interface{}, error) {
+	if iter.err != nil {
+		return nil, iter.err
+	}
+	rowData := make(map[string]interface{})
+	for _, column := range iter.Columns() {
+		rowData[column.Name] = column.TypeInfo.New()
+	}
+	return rowData, nil
 }
 
 // SliceMap is a helper function to make the API easier to use
