@@ -349,4 +349,41 @@ func TestSliceMap(t *testing.T) {
 			t.Fatal("returned testmap did not match")
 		}
 	}
+
+	// Test for MapScan()
+	testMap := make(map[string]interface{})
+	if !session.Query(`SELECT * FROM slice_map_table`).Iter().MapScan(testMap) {
+		t.Fatal("MapScan failed to work with one row")
+	}
+	if sliceMap[0]["testuuid"] != testMap["testuuid"] {
+		t.Fatal("returned testuuid did not match")
+	}
+	if sliceMap[0]["testvarchar"] != testMap["testvarchar"] {
+		t.Fatal("returned testvarchar did not match")
+	}
+	if sliceMap[0]["testbigint"] != testMap["testbigint"] {
+		t.Fatal("returned testbigint did not match")
+	}
+	if !reflect.DeepEqual(sliceMap[0]["testblob"], testMap["testblob"]) {
+		t.Fatal("returned testblob did not match")
+	}
+	if sliceMap[0]["testbool"] != testMap["testbool"] {
+		t.Fatal("returned testbool did not match")
+	}
+	if sliceMap[0]["testfloat"] != testMap["testfloat"] {
+		t.Fatal("returned testfloat did not match")
+	}
+	if sliceMap[0]["testdouble"] != testMap["testdouble"] {
+		t.Fatal("returned testdouble did not match")
+	}
+	if sliceMap[0]["testint"] != testMap["testint"] {
+		t.Fatal("returned testint did not match")
+	}
+	if !reflect.DeepEqual(sliceMap[0]["testset"], testMap["testset"]) {
+		t.Fatal("returned testset did not match")
+	}
+	if !reflect.DeepEqual(sliceMap[0]["testmap"], testMap["testmap"]) {
+		t.Fatal("returned testmap did not match")
+	}
+
 }
