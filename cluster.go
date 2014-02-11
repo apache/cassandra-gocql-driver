@@ -32,6 +32,7 @@ type ClusterConfig struct {
 	Consistency   Consistency   // default consistency level (default: Quorum)
 	Compressor    Compressor    // compression algorithm (default: nil)
 	Authenticator Authenticator // authenticator (default: nil)
+	RetryPolicy   RetryPolicy   // Default retry policy to use for queries(default:0)
 }
 
 // NewCluster generates a new config for the default cluster implementation.

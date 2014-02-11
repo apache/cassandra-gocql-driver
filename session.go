@@ -28,11 +28,12 @@ type Session struct {
 	prefetch float64
 	trace    Tracer
 	mu       sync.RWMutex
+	cfg      ClusterConfig
 }
 
 // NewSession wraps an existing Node.
-func NewSession(node Node) *Session {
-	return &Session{Node: node, cons: Quorum, prefetch: 0.25}
+func NewSession(c *clusterImpl) *Session {
+	return &Session{Node: c, cons: Quorum, prefetch: 0.25, cfg: c.cfg}
 }
 
 // SetConsistency sets the default consistency level for this session. This
@@ -77,7 +78,7 @@ func (s *Session) Query(stmt string, values ...interface{}) *Query {
 	s.mu.RLock()
 	qry := &Query{stmt: stmt, values: values, cons: s.cons,
 		session: s, pageSize: s.pageSize, trace: s.trace,
-		prefetch: s.prefetch}
+		prefetch: s.prefetch, rt: s.cfg.RetryPolicy}
 	s.mu.RUnlock()
 	return qry
 }
@@ -89,19 +90,51 @@ func (s *Session) Close() {
 }
 
 func (s *Session) executeQuery(qry *Query) *Iter {
-	conn := s.Node.Pick(nil)
-	if conn == nil {
-		return &Iter{err: ErrUnavailable}
+	itr := &Iter{}
+	count := 0
+	for count <= qry.rt.NumRetries {
+		conn := s.Node.Pick(nil)
+		//Assign the error unavailable to the iterator
+		if conn == nil {
+			itr.err = ErrUnavailable
+			break
+		}
+		itr = conn.executeQuery(qry)
+		//Exit for loop if the query was successful
+		if itr.err == nil {
+			break
+		}
+		count++
 	}
-	return conn.executeQuery(qry)
+	return itr
 }
 
+// ExecuteBatch executes a batch operation and returns nil if successful
+// otherwise an error is returned describing the failure.
 func (s *Session) ExecuteBatch(batch *Batch) error {
-	conn := s.Node.Pick(nil)
-	if conn == nil {
-		return ErrUnavailable
+	// Prevent the execution of the batch if greater than the limit
+	// Currently batches have a limit of 65536 queries.
+	// https://datastax-oss.atlassian.net/browse/JAVA-229
+	if len(batch.Entries) > 65536 {
+		return ErrTooManyStmts
 	}
-	return conn.executeBatch(batch)
+	var err error
+	count := 0
+	for count <= batch.rt.NumRetries {
+		conn := s.Node.Pick(nil)
+		//Assign the error unavailable and break loop
+		if conn == nil {
+			err = ErrUnavailable
+			break
+		}
+		err = conn.executeBatch(batch)
+		//Exit loop if operation executed correctly
+		if err == nil {
+			break
+		}
+		count++
+	}
+	return err
 }
 
 // Query represents a CQL statement that can be executed.
@@ -114,6 +147,7 @@ type Query struct {
 	prefetch  float64
 	trace     Tracer
 	session   *Session
+	rt        RetryPolicy
 }
 
 // Consistency sets the consistency level for this query. If no consistency
@@ -145,6 +179,12 @@ func (q *Query) PageSize(n int) *Query {
 // automatically.
 func (q *Query) Prefetch(p float64) *Query {
 	q.prefetch = p
+	return q
+}
+
+// RetryPolicy sets the policy to use when retrying the query.
+func (q *Query) RetryPolicy(r RetryPolicy) *Query {
+	q.rt = r
 	return q
 }
 
@@ -273,14 +313,28 @@ type Batch struct {
 	Type    BatchType
 	Entries []BatchEntry
 	Cons    Consistency
+	rt      RetryPolicy
 }
 
+// NewBatch creates a new batch operation without defaults from the cluster
 func NewBatch(typ BatchType) *Batch {
 	return &Batch{Type: typ}
 }
 
+// NewBatch creates a new batch operation using defaults defined in the cluster
+func (s *Session) NewBatch(typ BatchType) *Batch {
+	return &Batch{Type: typ, rt: s.cfg.RetryPolicy}
+}
+
+// Query adds the query to the batch operation
 func (b *Batch) Query(stmt string, args ...interface{}) {
 	b.Entries = append(b.Entries, BatchEntry{Stmt: stmt, Args: args})
+}
+
+// RetryPolicy sets the retry policy to use when executing the batch operation
+func (b *Batch) RetryPolicy(r RetryPolicy) *Batch {
+	b.rt = r
+	return b
 }
 
 type BatchType int
@@ -400,8 +454,9 @@ func (e Error) Error() string {
 }
 
 var (
-	ErrNotFound    = errors.New("not found")
-	ErrUnavailable = errors.New("unavailable")
-	ErrProtocol    = errors.New("protocol error")
-	ErrUnsupported = errors.New("feature not supported")
+	ErrNotFound     = errors.New("not found")
+	ErrUnavailable  = errors.New("unavailable")
+	ErrProtocol     = errors.New("protocol error")
+	ErrUnsupported  = errors.New("feature not supported")
+	ErrTooManyStmts = errors.New("too many statements")
 )
