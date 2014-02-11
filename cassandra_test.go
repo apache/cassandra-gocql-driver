@@ -266,7 +266,7 @@ func TestBatchLimit(t *testing.T) {
 	for i := 0; i < 65537; i++ {
 		batch.Query(`INSERT INTO batch_table2 (id) VALUES (?)`, i)
 	}
-	if err := session.ExecuteBatch(batch); err == nil {
+	if err := session.ExecuteBatch(batch); err != ErrTooManyStmts {
 		t.Fatal("gocql attempted to execute a batch larger than the support limit of statements.")
 	}
 
