@@ -2,10 +2,9 @@ package gocql
 
 import "reflect"
 
-type RowData struct {
+type rowData struct {
 	Columns []string
 	Values []interface{}
-	RowMap map[string]interface{}
 }
 
 func (t *TypeInfo) New() interface{} {
@@ -43,23 +42,26 @@ func dereference(i interface{}) interface{} {
 	return reflect.Indirect(reflect.ValueOf(i)).Interface()
 }
 
-func (iter *Iter) RowData() (RowData, error) {
-	if iter.err != nil {
-		return RowData{}, iter.err
+func (r *rowData) Map(m map[string]interface{}) {
+	for i, column := range r.Columns {
+		m[column] = dereference(r.Values[i])
 	}
-	rowMap := make(map[string]interface{})
+}
+
+func (iter *Iter) rowData() (rowData, error) {
+	if iter.err != nil {
+		return rowData{}, iter.err
+	}
 	columns := make([]string, 0)
 	values := make([]interface{}, 0)
 	for _, column := range iter.Columns() {
 		val := column.TypeInfo.New()
-		rowMap[column.Name] = val
 		columns = append(columns, column.Name)
 		values = append(values, val)
 	}
-	rowData := RowData{
+	rowData := rowData{
 		Columns: columns,
 		Values: values,
-		RowMap: rowMap,
 	}
 	return rowData, nil
 }
@@ -72,13 +74,11 @@ func (iter *Iter) SliceMap() ([]map[string]interface{}, error) {
 	}
 
 	// Not checking for the error because we just did
-	rowData, _ := iter.RowData()
+	rowData, _ := iter.rowData()
 	dataToReturn := make([]map[string]interface{}, 0)
 	for iter.Scan(rowData.Values...) {
 		m := make(map[string]interface{})
-		for i, column := range rowData.Columns {
-			m[column] = dereference(rowData.Values[i])
-		}
+		rowData.Map(m)
 		dataToReturn = append(dataToReturn, m)
 	}
 	if iter.err != nil {
@@ -93,12 +93,10 @@ func (iter *Iter) MapScan(m map[string]interface{}) bool {
 	}
 
 	// Not checking for the error because we just did
-	rowData, _ := iter.RowData()
+	rowData, _ := iter.rowData()
 
 	if iter.Scan(rowData.Values...) {
-		for i, column := range rowData.Columns {
-			m[column] = dereference(rowData.Values[i])
-		}
+		rowData.Map(m)	
 		return true
 	}
 	return false
