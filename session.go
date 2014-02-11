@@ -90,13 +90,13 @@ func (s *Session) Close() {
 }
 
 func (s *Session) executeQuery(qry *Query) *Iter {
-	itr := &Iter{}
+	var itr *Iter
 	count := 0
 	for count <= qry.rt.NumRetries {
 		conn := s.Node.Pick(nil)
 		//Assign the error unavailable to the iterator
 		if conn == nil {
-			itr.err = ErrUnavailable
+			itr = &Iter{err: ErrUnavailable}
 			break
 		}
 		itr = conn.executeQuery(qry)
