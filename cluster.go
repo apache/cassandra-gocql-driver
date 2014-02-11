@@ -89,6 +89,7 @@ func (cfg *ClusterConfig) CreateSession() (*Session, error) {
 		s.SetConsistency(cfg.Consistency)
 		return s, nil
 	case <-time.After(cfg.StartupTimeout):
+		impl.Close()
 		return nil, ErrNoConnections
 	}
 

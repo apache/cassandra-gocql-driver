@@ -272,6 +272,21 @@ func TestBatchLimit(t *testing.T) {
 
 }
 
+// TestCreateSessionTimeout tests to make sure the CreateSession function timeouts out correctly
+// and prevents an infinite loop of connection retries.
+func TestCreateSessionTimeout(t *testing.T) {
+	go func() {
+		<-time.After(2 * time.Second)
+		t.Fatal("no startup timeout")
+	}()
+	c := NewCluster("127.0.0.1:1")
+	c.StartupTimeout = 1 * time.Second
+
+	if _, err := c.CreateSession(); err != ErrNoConnections {
+		t.Fatal("Create session did not fail with the ErrNoConnections error.")
+	}
+}
+
 type Page struct {
 	Title       string
 	RevId       UUID
