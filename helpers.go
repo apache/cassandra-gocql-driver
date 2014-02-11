@@ -2,6 +2,12 @@ package gocql
 
 import "reflect"
 
+type RowData struct {
+	Columns []string
+	Values []interface{}
+	RowMap map[string]interface{}
+}
+
 func (t *TypeInfo) New() interface{} {
 	return reflect.New(goType(t)).Interface()
 }
@@ -37,13 +43,23 @@ func dereference(i interface{}) interface{} {
 	return reflect.Indirect(reflect.ValueOf(i)).Interface()
 }
 
-func (iter *Iter) RowData() (map[string]interface{}, error) {
+func (iter *Iter) RowData() (RowData, error) {
 	if iter.err != nil {
-		return nil, iter.err
+		return RowData{}, iter.err
 	}
-	rowData := make(map[string]interface{})
+	rowMap := make(map[string]interface{})
+	columns := make([]string, 0)
+	values := make([]interface{}, 0)
 	for _, column := range iter.Columns() {
-		rowData[column.Name] = column.TypeInfo.New()
+		val := column.TypeInfo.New()
+		rowMap[column.Name] = val
+		columns = append(columns, column.Name)
+		values = append(values, val)
+	}
+	rowData := RowData{
+		Columns: columns,
+		Values: values,
+		RowMap: rowMap,
 	}
 	return rowData, nil
 }
@@ -54,16 +70,14 @@ func (iter *Iter) SliceMap() ([]map[string]interface{}, error) {
 	if iter.err != nil {
 		return nil, iter.err
 	}
-	interfacesToScan := make([]interface{}, 0)
-	for _, column := range iter.Columns() {
-		i := column.TypeInfo.New()
-		interfacesToScan = append(interfacesToScan, i)
-	}
+
+	// Not checking for the error because we just did
+	rowData, _ := iter.RowData()
 	dataToReturn := make([]map[string]interface{}, 0)
-	for iter.Scan(interfacesToScan...) {
+	for iter.Scan(rowData.Values...) {
 		m := make(map[string]interface{})
-		for i, column := range iter.Columns() {
-			m[column.Name] = dereference(interfacesToScan[i])
+		for i, column := range rowData.Columns {
+			m[column] = dereference(rowData.Values[i])
 		}
 		dataToReturn = append(dataToReturn, m)
 	}
@@ -77,14 +91,13 @@ func (iter *Iter) MapScan(m map[string]interface{}) bool {
 	if iter.err != nil {
 		return false
 	}
-	interfacesToScan := make([]interface{}, 0)
-	for _, column := range iter.Columns() {
-		i := column.TypeInfo.New()
-		interfacesToScan = append(interfacesToScan, i)
-	}
-	if iter.Scan(interfacesToScan...) {
-		for i, column := range iter.Columns() {
-			m[column.Name] = dereference(interfacesToScan[i])
+
+	// Not checking for the error because we just did
+	rowData, _ := iter.RowData()
+
+	if iter.Scan(rowData.Values...) {
+		for i, column := range rowData.Columns {
+			m[column] = dereference(rowData.Values[i])
 		}
 		return true
 	}
