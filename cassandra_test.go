@@ -152,6 +152,9 @@ func TestTracing(t *testing.T) {
 }
 
 func TestPaging(t *testing.T) {
+
+	t.Skip("Skip until https://github.com/gocql/gocql/issues/110 is resolved")
+
 	if *flagProto == 1 {
 		t.Skip("Paging not supported. Please use Cassandra >= 2.0")
 	}
