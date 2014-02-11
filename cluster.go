@@ -18,37 +18,39 @@ import (
 // behavior to fit the most common use cases. Applications that requre a
 // different setup must implement their own cluster.
 type ClusterConfig struct {
-	Hosts         []string      // addresses for the initial connections
-	CQLVersion    string        // CQL version (default: 3.0.0)
-	ProtoVersion  int           // version of the native protocol (default: 2)
-	Timeout       time.Duration // connection timeout (default: 600ms)
-	DefaultPort   int           // default port (default: 9042)
-	Keyspace      string        // initial keyspace (optional)
-	NumConns      int           // number of connections per host (default: 2)
-	NumStreams    int           // number of streams per connection (default: 128)
-	DelayMin      time.Duration // minimum reconnection delay (default: 1s)
-	DelayMax      time.Duration // maximum reconnection delay (default: 10min)
-	StartupMin    int           // wait for StartupMin hosts (default: len(Hosts)/2+1)
-	Consistency   Consistency   // default consistency level (default: Quorum)
-	Compressor    Compressor    // compression algorithm (default: nil)
-	Authenticator Authenticator // authenticator (default: nil)
-	RetryPolicy   RetryPolicy   // Default retry policy to use for queries(default:0)
+	Hosts          []string      // addresses for the initial connections
+	CQLVersion     string        // CQL version (default: 3.0.0)
+	ProtoVersion   int           // version of the native protocol (default: 2)
+	Timeout        time.Duration // connection timeout (default: 600ms)
+	DefaultPort    int           // default port (default: 9042)
+	Keyspace       string        // initial keyspace (optional)
+	NumConns       int           // number of connections per host (default: 2)
+	NumStreams     int           // number of streams per connection (default: 128)
+	DelayMin       time.Duration // minimum reconnection delay (default: 1s)
+	DelayMax       time.Duration // maximum reconnection delay (default: 10min)
+	StartupMin     int           // wait for StartupMin hosts (default: len(Hosts)/2+1)
+	StartupTimeout time.Duration // amount of to wait for a connection (default: 5s)
+	Consistency    Consistency   // default consistency level (default: Quorum)
+	Compressor     Compressor    // compression algorithm (default: nil)
+	Authenticator  Authenticator // authenticator (default: nil)
+	RetryPolicy    RetryPolicy   // Default retry policy to use for queries(default:0)
 }
 
 // NewCluster generates a new config for the default cluster implementation.
 func NewCluster(hosts ...string) *ClusterConfig {
 	cfg := &ClusterConfig{
-		Hosts:        hosts,
-		CQLVersion:   "3.0.0",
-		ProtoVersion: 2,
-		Timeout:      600 * time.Millisecond,
-		DefaultPort:  9042,
-		NumConns:     2,
-		NumStreams:   128,
-		DelayMin:     1 * time.Second,
-		DelayMax:     10 * time.Minute,
-		StartupMin:   len(hosts)/2 + 1,
-		Consistency:  Quorum,
+		Hosts:          hosts,
+		CQLVersion:     "3.0.0",
+		ProtoVersion:   2,
+		Timeout:        600 * time.Millisecond,
+		DefaultPort:    9042,
+		NumConns:       2,
+		NumStreams:     128,
+		DelayMin:       1 * time.Second,
+		DelayMax:       10 * time.Minute,
+		StartupMin:     len(hosts)/2 + 1,
+		StartupTimeout: 5 * time.Second,
+		Consistency:    Quorum,
 	}
 	return cfg
 }
@@ -68,9 +70,9 @@ func (cfg *ClusterConfig) CreateSession() (*Session, error) {
 		connPool: make(map[string]*RoundRobin),
 		conns:    make(map[*Conn]struct{}),
 		quitWait: make(chan bool),
+		cStart:   make(chan int, 1),
 		keyspace: cfg.Keyspace,
 	}
-	impl.wgStart.Add(1)
 	for i := 0; i < len(impl.cfg.Hosts); i++ {
 		addr := strings.TrimSpace(impl.cfg.Hosts[i])
 		if strings.Index(addr, ":") < 0 {
@@ -80,10 +82,16 @@ func (cfg *ClusterConfig) CreateSession() (*Session, error) {
 			go impl.connect(addr)
 		}
 	}
-	impl.wgStart.Wait()
-	s := NewSession(impl)
-	s.SetConsistency(cfg.Consistency)
-	return s, nil
+	//See if a connection is made within the StartupTimeout window.
+	select {
+	case <-impl.cStart:
+		s := NewSession(impl)
+		s.SetConsistency(cfg.Consistency)
+		return s, nil
+	case <-time.After(cfg.StartupTimeout):
+		return nil, ErrNoConnections
+	}
+
 }
 
 type clusterImpl struct {
@@ -95,7 +103,7 @@ type clusterImpl struct {
 	mu       sync.Mutex
 
 	started bool
-	wgStart sync.WaitGroup
+	cStart  chan int
 
 	quit     bool
 	quitWait chan bool
@@ -163,7 +171,7 @@ func (c *clusterImpl) addConn(conn *Conn, keyspace string) {
 		c.hostPool.AddNode(connPool)
 		if !c.started && c.hostPool.Size() >= c.cfg.StartupMin {
 			c.started = true
-			c.wgStart.Done()
+			c.cStart <- 1
 		}
 	}
 	connPool.AddNode(conn)
@@ -236,5 +244,6 @@ func (c *clusterImpl) Close() {
 }
 
 var (
-	ErrNoHosts = errors.New("no hosts provided")
+	ErrNoHosts       = errors.New("no hosts provided")
+	ErrNoConnections = errors.New("no connections were made in startup time frame")
 )
