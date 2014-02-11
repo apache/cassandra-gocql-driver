@@ -249,6 +249,29 @@ func TestBatch(t *testing.T) {
 	}
 }
 
+// TestBatchLimit tests gocql to make sure batch operations larger than the maximum
+// statement limit are not submitted to a cassandra node.
+func TestBatchLimit(t *testing.T) {
+	if *flagProto == 1 {
+		t.Skip("atomic batches not supported. Please use Cassandra >= 2.0")
+	}
+	session := createSession(t)
+	defer session.Close()
+
+	if err := session.Query(`CREATE TABLE batch_table2 (id int primary key)`).Exec(); err != nil {
+		t.Fatal("create table:", err)
+	}
+
+	batch := NewBatch(LoggedBatch)
+	for i := 0; i < 65537; i++ {
+		batch.Query(`INSERT INTO batch_table2 (id) VALUES (?)`, i)
+	}
+	if err := session.ExecuteBatch(batch); err != ErrTooManyStmts {
+		t.Fatal("gocql attempted to execute a batch larger than the support limit of statements.")
+	}
+
+}
+
 type Page struct {
 	Title       string
 	RevId       UUID
