@@ -42,7 +42,7 @@ func dereference(i interface{}) interface{} {
 	return reflect.Indirect(reflect.ValueOf(i)).Interface()
 }
 
-func (r *rowData) Map(m map[string]interface{}) {
+func (r *rowData) rowMap(m map[string]interface{}) {
 	for i, column := range r.Columns {
 		m[column] = dereference(r.Values[i])
 	}
@@ -78,7 +78,7 @@ func (iter *Iter) SliceMap() ([]map[string]interface{}, error) {
 	dataToReturn := make([]map[string]interface{}, 0)
 	for iter.Scan(rowData.Values...) {
 		m := make(map[string]interface{})
-		rowData.Map(m)
+		rowData.rowMap(m)
 		dataToReturn = append(dataToReturn, m)
 	}
 	if iter.err != nil {
@@ -96,7 +96,7 @@ func (iter *Iter) MapScan(m map[string]interface{}) bool {
 	rowData, _ := iter.rowData()
 
 	if iter.Scan(rowData.Values...) {
-		rowData.Map(m)	
+		rowData.rowMap(m)	
 		return true
 	}
 	return false
