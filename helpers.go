@@ -7,6 +7,8 @@ type rowData struct {
 	Values []interface{}
 }
 
+// New creates a pointer to an empty version of whatever type 
+// is referenced by the TypeInfo receiver
 func (t *TypeInfo) New() interface{} {
 	return reflect.New(goType(t)).Interface()
 }
@@ -87,6 +89,8 @@ func (iter *Iter) SliceMap() ([]map[string]interface{}, error) {
 	return dataToReturn, nil
 }
 
+// MapScan takes a map[string]interface{} and populates it with a row
+// That is returned from cassandra.
 func (iter *Iter) MapScan(m map[string]interface{}) bool {
 	if iter.err != nil {
 		return false
