@@ -413,3 +413,83 @@ func TestSliceMap(t *testing.T) {
 	}
 
 }
+
+func TestScanWithNilArguments(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+
+	if err := session.Query(`CREATE TABLE scan_with_nil_arguments (
+			foo   varchar,
+			bar   int,
+			PRIMARY KEY (foo, bar)
+	)`).Exec(); err != nil {
+		t.Fatal("create:", err)
+	}
+	for i := 1; i <= 20; i++ {
+		if err := session.Query("INSERT INTO scan_with_nil_arguments (foo, bar) VALUES (?, ?)",
+			"squares", i*i).Exec(); err != nil {
+			t.Fatal("insert:", err)
+		}
+	}
+
+	iter := session.Query("SELECT * FROM scan_with_nil_arguments WHERE foo = ?", "squares").Iter()
+	var n int
+	count := 0
+	for iter.Scan(nil, &n) {
+		count += n
+	}
+	if err := iter.Close(); err != nil {
+		t.Fatal("close:", err)
+	}
+	if count != 2870 {
+		t.Fatalf("expected %d, got %d", 2870, count)
+	}
+}
+
+func TestScanCASWithNilArguments(t *testing.T) {
+	if *flagProto == 1 {
+		t.Skip("lightweight transactions not supported. Please use Cassandra >= 2.0")
+	}
+
+	session := createSession(t)
+	defer session.Close()
+
+	if err := session.Query(`CREATE TABLE scan_cas_with_nil_arguments (
+		foo   varchar,
+		bar   varchar,
+		PRIMARY KEY (foo, bar)
+	)`).Exec(); err != nil {
+		t.Fatal("create:", err)
+	}
+
+	foo := "baz"
+	var cas string
+
+	if applied, err := session.Query(`INSERT INTO scan_cas_with_nil_arguments (foo, bar)
+		VALUES (?, ?) IF NOT EXISTS`,
+		foo, foo).ScanCAS(nil, nil); err != nil {
+		t.Fatal("insert:", err)
+	} else if !applied {
+		t.Fatal("insert should have been applied")
+	}
+
+	if applied, err := session.Query(`INSERT INTO scan_cas_with_nil_arguments (foo, bar)
+		VALUES (?, ?) IF NOT EXISTS`,
+		foo, foo).ScanCAS(&cas, nil); err != nil {
+		t.Fatal("insert:", err)
+	} else if applied {
+		t.Fatal("insert should not have been applied")
+	} else if foo != cas {
+		t.Fatalf("expected %v but got %v", foo, cas)
+	}
+
+	if applied, err := session.Query(`INSERT INTO scan_cas_with_nil_arguments (foo, bar)
+		VALUES (?, ?) IF NOT EXISTS`,
+		foo, foo).ScanCAS(nil, &cas); err != nil {
+		t.Fatal("insert:", err)
+	} else if applied {
+		t.Fatal("insert should not have been applied")
+	} else if foo != cas {
+		t.Fatalf("expected %v but got %v", foo, cas)
+	}
+}
