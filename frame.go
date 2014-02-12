@@ -432,3 +432,28 @@ func (op *optionsFrame) encodeFrame(version uint8, f frame) (frame, error) {
 	f.setHeader(version, 0, 0, opOptions)
 	return f, nil
 }
+
+type authenticateFrame struct {
+	Authenticator string
+}
+
+type authResponseFrame struct {
+	Data []byte
+}
+
+func (op *authResponseFrame) encodeFrame(version uint8, f frame) (frame, error) {
+	if f == nil {
+		f = make(frame, headerSize, defaultFrameSize)
+	}
+	f.setHeader(version, 0, 0, opAuthResponse)
+	f.writeBytes(op.Data)
+	return f, nil
+}
+
+type authSuccessFrame struct {
+	Data []byte
+}
+
+type authChallengeFrame struct {
+	Data []byte
+}

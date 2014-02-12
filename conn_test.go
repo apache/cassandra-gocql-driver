@@ -15,10 +15,11 @@ import (
 )
 
 type TestServer struct {
-	Address string
-	t       *testing.T
-	nreq    uint64
-	listen  net.Listener
+	Address  string
+	t        *testing.T
+	nreq     uint64
+	listen   net.Listener
+	nKillReq uint64
 }
 
 func TestSimple(t *testing.T) {
@@ -60,12 +61,38 @@ func TestTimeout(t *testing.T) {
 	}
 
 	go func() {
-		<-time.After(1 * time.Second)
+		<-time.After(2 * time.Second)
 		t.Fatal("no timeout")
 	}()
 
 	if err := db.Query("kill").Exec(); err == nil {
 		t.Fatal("expected error")
+	}
+}
+
+// TestQueryRetry will test to make sure that gocql will execute
+// the exact amount of retry queries designated by the user.
+func TestQueryRetry(t *testing.T) {
+	srv := NewTestServer(t)
+	defer srv.Stop()
+
+	db, err := NewCluster(srv.Address).CreateSession()
+	if err != nil {
+		t.Errorf("NewCluster: %v", err)
+	}
+
+	go func() {
+		<-time.After(5 * time.Second)
+		t.Fatal("no timeout")
+	}()
+	rt := RetryPolicy{NumRetries: 1}
+
+	if err := db.Query("kill").RetryPolicy(rt).Exec(); err == nil {
+		t.Fatal("expected error")
+	}
+	//Minus 1 from the nKillReq variable since there is the initial query attempt
+	if srv.nKillReq-1 != uint64(rt.NumRetries) {
+		t.Fatalf("failed to retry the query %v time(s). Query executed %v times", rt.NumRetries, srv.nKillReq-1)
 	}
 }
 
@@ -183,6 +210,7 @@ func (srv *TestServer) process(frame frame, conn net.Conn) {
 		}
 		switch strings.ToLower(first) {
 		case "kill":
+			atomic.AddUint64(&srv.nKillReq, 1)
 			select {}
 		case "slow":
 			go func() {
