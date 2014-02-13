@@ -253,9 +253,9 @@ func (iter *Iter) Columns() []ColumnInfo {
 }
 
 // Scan consumes the next row of the iterator and copies the columns of the
-// current row into the values pointed at by dest. Scan might send additional
-// queries to the database to retrieve the next set of rows if paging was
-// enabled.
+// current row into the values pointed at by dest. Use nil as a dest value
+// to skip the corresponding column. Scan might send additional queries
+// to the database to retrieve the next set of rows if paging was enabled.
 //
 // Scan returns true if the row was successfully unmarshaled or false if the
 // end of the result set was reached or if an error occurred. Close should
@@ -279,6 +279,9 @@ func (iter *Iter) Scan(dest ...interface{}) bool {
 		return false
 	}
 	for i := 0; i < len(iter.columns); i++ {
+		if dest[i] == nil {
+			continue
+		}
 		err := Unmarshal(iter.columns[i].TypeInfo, iter.rows[iter.pos][i], dest[i])
 		if err != nil {
 			iter.err = err
