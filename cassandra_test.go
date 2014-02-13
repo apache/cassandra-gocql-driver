@@ -284,9 +284,13 @@ func TestCreateSessionTimeout(t *testing.T) {
 	}()
 	c := NewCluster("127.0.0.1:1")
 	c.StartupTimeout = 1 * time.Second
+	_, err := c.CreateSession()
 
-	if _, err := c.CreateSession(); err != ErrNoConnections {
-		t.Fatal("Create session did not fail with the ErrNoConnections error.")
+	if err == nil {
+		t.Fatal("expected ErrNoConncetions, but no error was returned.")
+	}
+	if err != ErrNoConnections {
+		t.Fatal("expected ErrNoConnections, but recevied %v", err)
 	}
 }
 
