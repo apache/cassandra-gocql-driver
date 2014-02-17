@@ -18,22 +18,23 @@ import (
 // behavior to fit the most common use cases. Applications that requre a
 // different setup must implement their own cluster.
 type ClusterConfig struct {
-	Hosts          []string      // addresses for the initial connections
-	CQLVersion     string        // CQL version (default: 3.0.0)
-	ProtoVersion   int           // version of the native protocol (default: 2)
-	Timeout        time.Duration // connection timeout (default: 600ms)
-	DefaultPort    int           // default port (default: 9042)
-	Keyspace       string        // initial keyspace (optional)
-	NumConns       int           // number of connections per host (default: 2)
-	NumStreams     int           // number of streams per connection (default: 128)
-	DelayMin       time.Duration // minimum reconnection delay (default: 1s)
-	DelayMax       time.Duration // maximum reconnection delay (default: 10min)
-	StartupMin     int           // wait for StartupMin hosts (default: len(Hosts)/2+1)
-	StartupTimeout time.Duration // amount of to wait for a connection (default: 5s)
-	Consistency    Consistency   // default consistency level (default: Quorum)
-	Compressor     Compressor    // compression algorithm (default: nil)
-	Authenticator  Authenticator // authenticator (default: nil)
-	RetryPolicy    RetryPolicy   // Default retry policy to use for queries(default:0)
+	Hosts           []string      // addresses for the initial connections
+	CQLVersion      string        // CQL version (default: 3.0.0)
+	ProtoVersion    int           // version of the native protocol (default: 2)
+	Timeout         time.Duration // connection timeout (default: 600ms)
+	DefaultPort     int           // default port (default: 9042)
+	Keyspace        string        // initial keyspace (optional)
+	NumConns        int           // number of connections per host (default: 2)
+	NumStreams      int           // number of streams per connection (default: 128)
+	DelayMin        time.Duration // minimum reconnection delay (default: 1s)
+	DelayMax        time.Duration // maximum reconnection delay (default: 10min)
+	StartupMin      int           // wait for StartupMin hosts (default: len(Hosts)/2+1)
+	StartupTimeout  time.Duration // amount of to wait for a connection (default: 5s)
+	Consistency     Consistency   // default consistency level (default: Quorum)
+	Compressor      Compressor    // compression algorithm (default: nil)
+	Authenticator   Authenticator // authenticator (default: nil)
+	RetryPolicy     RetryPolicy   // Default retry policy to use for queries (default: 0)
+	SocketKeepalive time.Duration // The keepalive period to use, enabled if > 0 (default: 0)
 }
 
 // NewCluster generates a new config for the default cluster implementation.
@@ -119,7 +120,9 @@ func (c *clusterImpl) connect(addr string) {
 		NumStreams:    c.cfg.NumStreams,
 		Compressor:    c.cfg.Compressor,
 		Authenticator: c.cfg.Authenticator,
+		Keepalive:     c.cfg.SocketKeepalive,
 	}
+
 	delay := c.cfg.DelayMin
 	for {
 		conn, err := Connect(addr, cfg, c)
