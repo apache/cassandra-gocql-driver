@@ -168,6 +168,7 @@ func (c *Conn) startup(cfg *ConnConfig) error {
 			}
 			return nil
 		default:
+			Log.Err(fmt.Sprintf("Unexpected response type to startup %T", x))
 			return ErrProtocol
 		}
 	}
@@ -177,9 +178,11 @@ func (c *Conn) startup(cfg *ConnConfig) error {
 // to execute any queries. This method runs as long as the connection is
 // open and is therefore usually called in a separate goroutine.
 func (c *Conn) serve() {
+	Log.Info(fmt.Sprintf("Connection serve loop starting for host: %s", c.addr))
 	for {
 		resp, err := c.recv()
 		if err != nil {
+			Log.Err(fmt.Sprintf("recv error: %s", err.Error()))
 			break
 		}
 		c.dispatch(resp)
@@ -193,6 +196,7 @@ func (c *Conn) serve() {
 		}
 	}
 	c.cluster.HandleError(c, ErrProtocol, true)
+	Log.Info(fmt.Sprintf("Connection serve loop stopped for host: %s", c.addr))
 }
 
 func (c *Conn) recv() (frame, error) {
@@ -271,6 +275,7 @@ func (c *Conn) exec(op operation, trace Tracer) (interface{}, error) {
 	atomic.StoreInt32(&call.active, 1)
 
 	if n, err := c.conn.Write(req); err != nil {
+		Log.Err(fmt.Sprintf("exec error: %s", err.Error()))
 		c.conn.Close()
 		c.uniq <- id
 		if n > 0 {
@@ -569,6 +574,7 @@ func (c *Conn) decodeFrame(f frame, trace Tracer) (rval interface{}, err error) 
 		msg := f.readString()
 		return errorFrame{code, msg}, nil
 	default:
+		Log.Warning(fmt.Sprintf("Unknown response opcode: %x", op))
 		return nil, ErrProtocol
 	}
 }
