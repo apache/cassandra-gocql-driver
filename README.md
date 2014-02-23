@@ -38,6 +38,7 @@ Features
 * Optional frame compression (using snappy)
 * Automatic query preparation
 * Support for query tracing
+* Syslog logging
 
 Please visit the [Roadmap](https://github.com/gocql/gocql/wiki/Roadmap) page to see what is on the horizion.
 
@@ -50,11 +51,19 @@ package main
 import (
 	"fmt"
 	"log"
+	"log/syslog"
 
 	"github.com/gocql/gocql"
 )
 
 func main() {
+	// setup the logger to use syslog, optional. By default uses stderr.
+	l, err := syslog.Dial("udp", "127.0.0.1:514", syslog.LOG_WARNING, "gocql")
+	if err != nil {
+		log.Fatal(err)
+	}
+	gocql.Log = l
+
 	// connect to the cluster
 	cluster := gocql.NewCluster("192.168.1.1", "192.168.1.2", "192.168.1.3")
 	cluster.Keyspace = "example"
