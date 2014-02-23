@@ -59,6 +59,7 @@ type ConnConfig struct {
 	NumStreams    int
 	Compressor    Compressor
 	Authenticator Authenticator
+	Keepalive     time.Duration
 }
 
 // Conn is a single connection to a Cassandra node. It can be used to execute
@@ -90,6 +91,7 @@ func Connect(addr string, cfg ConnConfig, cluster Cluster) (*Conn, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	if cfg.NumStreams <= 0 || cfg.NumStreams > 128 {
 		cfg.NumStreams = 128
 	}
@@ -109,6 +111,11 @@ func Connect(addr string, cfg ConnConfig, cluster Cluster) (*Conn, error) {
 		compressor: cfg.Compressor,
 		auth:       cfg.Authenticator,
 	}
+
+	if cfg.Keepalive > 0 {
+		c.setKeepalive(cfg.Keepalive)
+	}
+
 	for i := 0; i < cap(c.uniq); i++ {
 		c.uniq <- uint8(i)
 	}
