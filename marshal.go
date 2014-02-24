@@ -704,9 +704,11 @@ func unmarshalDecimal(info *TypeInfo, data []byte, value interface{}) error {
 	case Unmarshaler:
 		return v.UnmarshalCQL(info, data)
 	case **big.Rat:
-		denom := new(big.Int).SetBytes(data[0:4])
-		num := new(big.Int).SetBytes(data[4:])
-		*v = new(big.Rat).SetFrac(num, denom)
+		if len(data) > 4 {
+			denom := new(big.Int).SetBytes(data[0:4])
+			num := new(big.Int).SetBytes(data[4:])
+			*v = new(big.Rat).SetFrac(num, denom)
+		}
 		return nil
 	}
 	return unmarshalErrorf("can not unmarshal %s into %T", info, value)

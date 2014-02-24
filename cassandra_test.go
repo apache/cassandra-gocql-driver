@@ -7,6 +7,7 @@ package gocql
 import (
 	"bytes"
 	"flag"
+	"math/big"
 	"reflect"
 	"sort"
 	"strings"
@@ -78,6 +79,7 @@ func TestCRUD(t *testing.T) {
 			views       bigint,
 			protected   boolean,
 			modified    timestamp,
+			rating		decimal,
 			tags        set<varchar>,
 			attachments map<varchar, text>,
 			PRIMARY KEY (title, revid)
@@ -87,10 +89,10 @@ func TestCRUD(t *testing.T) {
 
 	for _, page := range pageTestData {
 		if err := session.Query(`INSERT INTO page
-			(title, revid, body, views, protected, modified, tags, attachments)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+			(title, revid, body, views, protected, modified, rating, tags, attachments)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			page.Title, page.RevId, page.Body, page.Views, page.Protected,
-			page.Modified, page.Tags, page.Attachments).Exec(); err != nil {
+			page.Modified, page.Rating, page.Tags, page.Attachments).Exec(); err != nil {
 			t.Fatal("insert:", err)
 		}
 	}
@@ -106,11 +108,11 @@ func TestCRUD(t *testing.T) {
 	for _, original := range pageTestData {
 		page := new(Page)
 		err := session.Query(`SELECT title, revid, body, views, protected, modified,
-			tags, attachments
+			tags, attachments, rating
 			FROM page WHERE title = ? AND revid = ? LIMIT 1`,
 			original.Title, original.RevId).Scan(&page.Title, &page.RevId,
 			&page.Body, &page.Views, &page.Protected, &page.Modified, &page.Tags,
-			&page.Attachments)
+			&page.Attachments, &page.Rating)
 		if err != nil {
 			t.Error("select page:", err)
 			continue
@@ -301,6 +303,7 @@ type Page struct {
 	Views       int64
 	Protected   bool
 	Modified    time.Time
+	Rating      *big.Rat
 	Tags        []string
 	Attachments map[string]Attachment
 }
@@ -312,6 +315,7 @@ var pageTestData = []*Page{
 		Title:    "Frontpage",
 		RevId:    TimeUUID(),
 		Body:     "Welcome to this wiki page!",
+		Rating:   big.NewRat(871298379, 243),
 		Modified: time.Date(2013, time.August, 13, 9, 52, 3, 0, time.UTC),
 		Tags:     []string{"start", "important", "test"},
 		Attachments: map[string]Attachment{
