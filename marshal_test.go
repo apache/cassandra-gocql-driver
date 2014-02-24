@@ -3,6 +3,7 @@ package gocql
 import (
 	"bytes"
 	"math"
+	"math/big"
 	"reflect"
 	"strings"
 	"testing"
@@ -116,6 +117,11 @@ var marshalTests = []struct {
 		&TypeInfo{Type: TypeDouble},
 		[]byte("\x40\x09\x21\xfb\x53\xc8\xd4\xf1"),
 		float64(3.14159265),
+	},
+	{
+		&TypeInfo{Type: TypeDecimal},
+		[]byte("\x00\x01\x86\xa0\xcb\xd7\x12\xbb\x6d"),
+		big.NewRat(875486690157, 100000),
 	},
 	{
 		&TypeInfo{Type: TypeTimestamp},

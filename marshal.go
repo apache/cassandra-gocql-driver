@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"fmt"
 	"math"
+	"math/big"
 	"reflect"
 	"time"
 )
@@ -43,6 +44,8 @@ func Marshal(info *TypeInfo, value interface{}) ([]byte, error) {
 		return marshalFloat(info, value)
 	case TypeDouble:
 		return marshalDouble(info, value)
+	case TypeDecimal:
+		return marshalDecimal(info, value)
 	case TypeTimestamp:
 		return marshalTimestamp(info, value)
 	case TypeList, TypeSet:
@@ -76,6 +79,8 @@ func Unmarshal(info *TypeInfo, data []byte, value interface{}) error {
 		return unmarshalFloat(info, data, value)
 	case TypeDouble:
 		return unmarshalDouble(info, data, value)
+	case TypeDecimal:
+		return unmarshalDecimal(info, data, value)
 	case TypeTimestamp:
 		return unmarshalTimestamp(info, data, value)
 	case TypeList, TypeSet:
@@ -670,6 +675,38 @@ func unmarshalDouble(info *TypeInfo, data []byte, value interface{}) error {
 	switch rv.Type().Kind() {
 	case reflect.Float64:
 		rv.SetFloat(math.Float64frombits(uint64(decBigInt(data))))
+		return nil
+	}
+	return unmarshalErrorf("can not unmarshal %s into %T", info, value)
+}
+
+func marshalDecimal(info *TypeInfo, value interface{}) ([]byte, error) {
+	switch v := value.(type) {
+	case Marshaler:
+		return v.MarshalCQL(info)
+	case *big.Rat:
+
+		if v == nil {
+			return nil, nil
+		}
+		num := v.Num().Bytes()
+		denom := v.Denom().Bytes()
+		buf := make([]byte, 4+len(num))
+		copy(buf[4-len(denom):4], denom)
+		copy(buf[4:], num)
+		return buf, nil
+	}
+	return nil, marshalErrorf("can not marshal %T into %s", value, info)
+}
+
+func unmarshalDecimal(info *TypeInfo, data []byte, value interface{}) error {
+	switch v := value.(type) {
+	case Unmarshaler:
+		return v.UnmarshalCQL(info, data)
+	case **big.Rat:
+		denom := new(big.Int).SetBytes(data[0:4])
+		num := new(big.Int).SetBytes(data[4:])
+		*v = new(big.Rat).SetFrac(num, denom)
 		return nil
 	}
 	return unmarshalErrorf("can not unmarshal %s into %T", info, value)
