@@ -6,10 +6,12 @@ package gocql
 
 import (
 	"bytes"
+	"encoding/binary"
 	"fmt"
 	"math"
 	"math/big"
 	"reflect"
+	"speter.net/go/exp/math/dec/inf"
 	"time"
 )
 
@@ -684,16 +686,17 @@ func marshalDecimal(info *TypeInfo, value interface{}) ([]byte, error) {
 	switch v := value.(type) {
 	case Marshaler:
 		return v.MarshalCQL(info)
-	case *big.Rat:
+	case *inf.Dec:
 
 		if v == nil {
 			return nil, nil
 		}
-		num := v.Num().Bytes()
-		denom := v.Denom().Bytes()
-		buf := make([]byte, 4+len(num))
-		copy(buf[4-len(denom):4], denom)
-		copy(buf[4:], num)
+
+		unscaled := v.UnscaledBig().Bytes()
+		scale := v.Scale()
+		buf := make([]byte, 4+len(unscaled))
+		binary.BigEndian.PutUint32(buf, uint32(scale))
+		copy(buf[4:], unscaled)
 		return buf, nil
 	}
 	return nil, marshalErrorf("can not marshal %T into %s", value, info)
@@ -703,11 +706,11 @@ func unmarshalDecimal(info *TypeInfo, data []byte, value interface{}) error {
 	switch v := value.(type) {
 	case Unmarshaler:
 		return v.UnmarshalCQL(info, data)
-	case **big.Rat:
+	case **inf.Dec:
 		if len(data) > 4 {
-			denom := new(big.Int).SetBytes(data[0:4])
-			num := new(big.Int).SetBytes(data[4:])
-			*v = new(big.Rat).SetFrac(num, denom)
+			scale := binary.BigEndian.Uint32(data[0:4])
+			unscaled := new(big.Int).SetBytes(data[4:])
+			*v = inf.NewDecBig(unscaled, inf.Scale(scale))
 		}
 		return nil
 	}

@@ -3,8 +3,8 @@ package gocql
 import (
 	"bytes"
 	"math"
-	"math/big"
 	"reflect"
+	"speter.net/go/exp/math/dec/inf"
 	"strings"
 	"testing"
 	"time"
@@ -121,7 +121,12 @@ var marshalTests = []struct {
 	{
 		&TypeInfo{Type: TypeDecimal},
 		[]byte("\x00\x01\x86\xa0\xcb\xd7\x12\xbb\x6d"),
-		big.NewRat(875486690157, 100000),
+		inf.NewDec(875486690157, 100000),
+	},
+	{
+		&TypeInfo{Type: TypeDecimal},
+		[]byte("\x00\x00\x00\x00\x00"),
+		inf.NewDec(0, 1),
 	},
 	{
 		&TypeInfo{Type: TypeTimestamp},
