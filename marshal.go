@@ -693,6 +693,9 @@ func marshalDecimal(info *TypeInfo, value interface{}) ([]byte, error) {
 		}
 
 		unscaled := v.UnscaledBig().Bytes()
+		if len(unscaled) == 0 {
+			unscaled = []byte{0}
+		}
 		scale := v.Scale()
 		buf := make([]byte, 4+len(unscaled))
 		binary.BigEndian.PutUint32(buf, uint32(scale))

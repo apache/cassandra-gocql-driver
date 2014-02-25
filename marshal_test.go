@@ -126,7 +126,7 @@ var marshalTests = []struct {
 	{
 		&TypeInfo{Type: TypeDecimal},
 		[]byte("\x00\x00\x00\x00\x00"),
-		inf.NewDec(0, 1),
+		inf.NewDec(0, 0),
 	},
 	{
 		&TypeInfo{Type: TypeTimestamp},

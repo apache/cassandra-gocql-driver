@@ -7,9 +7,9 @@ package gocql
 import (
 	"bytes"
 	"flag"
-	"math/big"
 	"reflect"
 	"sort"
+	"speter.net/go/exp/math/dec/inf"
 	"strings"
 	"sync"
 	"testing"
@@ -303,7 +303,7 @@ type Page struct {
 	Views       int64
 	Protected   bool
 	Modified    time.Time
-	Rating      *big.Rat
+	Rating      *inf.Dec
 	Tags        []string
 	Attachments map[string]Attachment
 }
@@ -315,7 +315,7 @@ var pageTestData = []*Page{
 		Title:    "Frontpage",
 		RevId:    TimeUUID(),
 		Body:     "Welcome to this wiki page!",
-		Rating:   big.NewRat(871298379, 243),
+		Rating:   inf.NewDec(871298379, 243),
 		Modified: time.Date(2013, time.August, 13, 9, 52, 3, 0, time.UTC),
 		Tags:     []string{"start", "important", "test"},
 		Attachments: map[string]Attachment{
