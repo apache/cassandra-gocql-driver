@@ -10,6 +10,8 @@ import (
 	"time"
 )
 
+var quarter, _ = inf.NewDec(0, 0).SetString("0.25")
+
 var marshalTests = []struct {
 	Info  *TypeInfo
 	Data  []byte
@@ -127,6 +129,16 @@ var marshalTests = []struct {
 		&TypeInfo{Type: TypeDecimal},
 		[]byte("\x00\x00\x00\x00\x00"),
 		inf.NewDec(0, 0),
+	},
+	{
+		&TypeInfo{Type: TypeDecimal},
+		[]byte("\x00\x00\x00\x00\x64"),
+		inf.NewDec(100, 0),
+	},
+	{
+		&TypeInfo{Type: TypeDecimal},
+		[]byte("\x00\x00\x00\x02\x19"),
+		quarter,
 	},
 	{
 		&TypeInfo{Type: TypeTimestamp},
