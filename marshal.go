@@ -6,7 +6,6 @@ package gocql
 
 import (
 	"bytes"
-	"encoding/binary"
 	"fmt"
 	"math"
 	"math/big"
@@ -698,7 +697,7 @@ func marshalDecimal(info *TypeInfo, value interface{}) ([]byte, error) {
 		}
 		scale := v.Scale()
 		buf := make([]byte, 4+len(unscaled))
-		binary.BigEndian.PutUint32(buf, uint32(scale))
+		copy(buf[0:4], encInt(int32(scale)))
 		copy(buf[4:], unscaled)
 		return buf, nil
 	}
@@ -711,7 +710,7 @@ func unmarshalDecimal(info *TypeInfo, data []byte, value interface{}) error {
 		return v.UnmarshalCQL(info, data)
 	case **inf.Dec:
 		if len(data) > 4 {
-			scale := binary.BigEndian.Uint32(data[0:4])
+			scale := decInt(data[0:4])
 			unscaled := new(big.Int).SetBytes(data[4:])
 			*v = inf.NewDecBig(unscaled, inf.Scale(scale))
 		}

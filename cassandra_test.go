@@ -310,12 +310,14 @@ type Page struct {
 
 type Attachment []byte
 
+var rating, _ = inf.NewDec(0, 0).SetString("0.131")
+
 var pageTestData = []*Page{
 	&Page{
 		Title:    "Frontpage",
 		RevId:    TimeUUID(),
 		Body:     "Welcome to this wiki page!",
-		Rating:   inf.NewDec(871298379, 243),
+		Rating:   rating,
 		Modified: time.Date(2013, time.August, 13, 9, 52, 3, 0, time.UTC),
 		Tags:     []string{"start", "important", "test"},
 		Attachments: map[string]Attachment{
