@@ -6,12 +6,17 @@ package gocql
 
 import (
 	"bytes"
+	"encoding/binary"
 	"fmt"
 	"math"
 	"math/big"
 	"reflect"
 	"speter.net/go/exp/math/dec/inf"
 	"time"
+)
+
+var (
+	bigOne = big.NewInt(1)
 )
 
 // Marshaler is the interface implemented by objects that can marshal
@@ -691,15 +696,10 @@ func marshalDecimal(info *TypeInfo, value interface{}) ([]byte, error) {
 			return nil, nil
 		}
 
-		unscaled := v.UnscaledBig().Bytes()
-		if len(unscaled) == 0 {
-			unscaled = []byte{0}
-		}
-		scale := v.Scale()
-		buf := make([]byte, 4+len(unscaled))
-		copy(buf[0:4], encInt(int32(scale)))
-		copy(buf[4:], unscaled)
-		return buf, nil
+		b := new(bytes.Buffer)
+		binary.Write(b, binary.BigEndian, v.Scale())
+		encBigInt2C(b, v.UnscaledBig())
+		return b.Bytes(), nil
 	}
 	return nil, marshalErrorf("can not marshal %T into %s", value, info)
 }
@@ -711,12 +711,66 @@ func unmarshalDecimal(info *TypeInfo, data []byte, value interface{}) error {
 	case **inf.Dec:
 		if len(data) > 4 {
 			scale := decInt(data[0:4])
-			unscaled := new(big.Int).SetBytes(data[4:])
+			unscaled := decBigInt2C(data[4:])
 			*v = inf.NewDecBig(unscaled, inf.Scale(scale))
 		}
 		return nil
 	}
 	return unmarshalErrorf("can not unmarshal %s into %T", info, value)
+}
+
+func decBigInt2C(bytes []byte) *big.Int {
+	ret := new(big.Int)
+	if len(bytes) > 0 && bytes[0]&0x80 == 0x80 {
+		// This is a negative number.
+		notBytes := make([]byte, len(bytes))
+		for i := range notBytes {
+			notBytes[i] = ^bytes[i]
+		}
+		ret.SetBytes(notBytes)
+		ret.Add(ret, bigOne)
+		ret.Neg(ret)
+		return ret
+	}
+	ret.SetBytes(bytes)
+	return ret
+}
+
+func encBigInt2C(out *bytes.Buffer, n *big.Int) (err error) {
+	if n.Sign() < 0 {
+		// A negative number has to be converted to two's-complement
+		// form. So we'll subtract 1 and invert. If the
+		// most-significant-bit isn't set then we'll need to pad the
+		// beginning with 0xff in order to keep the number negative.
+		nMinus1 := new(big.Int).Neg(n)
+		nMinus1.Sub(nMinus1, bigOne)
+		bytes := nMinus1.Bytes()
+		for i := range bytes {
+			bytes[i] ^= 0xff
+		}
+		if len(bytes) == 0 || bytes[0]&0x80 == 0 {
+			err = out.WriteByte(0xff)
+			if err != nil {
+				return
+			}
+		}
+		_, err = out.Write(bytes)
+	} else if n.Sign() == 0 {
+		// Zero is written as a single 0 zero rather than no bytes.
+		err = out.WriteByte(0x00)
+	} else {
+		bytes := n.Bytes()
+		if len(bytes) > 0 && bytes[0]&0x80 != 0 {
+			// We'll have to pad this with 0x00 in order to stop it
+			// looking like a negative number.
+			err = out.WriteByte(0)
+			if err != nil {
+				return
+			}
+		}
+		_, err = out.Write(bytes)
+	}
+	return
 }
 
 func marshalTimestamp(info *TypeInfo, value interface{}) ([]byte, error) {

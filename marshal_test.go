@@ -10,8 +10,6 @@ import (
 	"time"
 )
 
-var quarter, _ = inf.NewDec(0, 0).SetString("0.25")
-
 var marshalTests = []struct {
 	Info  *TypeInfo
 	Data  []byte
@@ -122,11 +120,6 @@ var marshalTests = []struct {
 	},
 	{
 		&TypeInfo{Type: TypeDecimal},
-		[]byte("\x00\x01\x86\xa0\xcb\xd7\x12\xbb\x6d"),
-		inf.NewDec(875486690157, 100000),
-	},
-	{
-		&TypeInfo{Type: TypeDecimal},
 		[]byte("\x00\x00\x00\x00\x00"),
 		inf.NewDec(0, 0),
 	},
@@ -138,7 +131,47 @@ var marshalTests = []struct {
 	{
 		&TypeInfo{Type: TypeDecimal},
 		[]byte("\x00\x00\x00\x02\x19"),
-		quarter,
+		decimalize("0.25"),
+	},
+	{
+		&TypeInfo{Type: TypeDecimal},
+		[]byte("\x00\x00\x00\x13\xD5\a;\x20\x14\xA2\x91"),
+		decimalize("-0.0012095473475870063"), // From the iconara/cql-rb test suite
+	},
+	{
+		&TypeInfo{Type: TypeDecimal},
+		[]byte("\x00\x00\x00\x13*\xF8\xC4\xDF\xEB]o"),
+		decimalize("0.0012095473475870063"), // From the iconara/cql-rb test suite
+	},
+	{
+		&TypeInfo{Type: TypeDecimal},
+		[]byte("\x00\x00\x00\x12\xF2\xD8\x02\xB6R\x7F\x99\xEE\x98#\x99\xA9V"),
+		decimalize("-1042342234234.123423435647768234"), // From the iconara/cql-rb test suite
+	},
+	{
+		&TypeInfo{Type: TypeDecimal},
+		[]byte("\x00\x00\x00\r\nJ\x04\"^\x91\x04\x8a\xb1\x18\xfe"),
+		decimalize("1243878957943.1234124191998"), // From the datastax/python-driver test suite
+	},
+	{
+		&TypeInfo{Type: TypeDecimal},
+		[]byte("\x00\x00\x00\x06\xe5\xde]\x98Y"),
+		decimalize("-112233.441191"), // From the datastax/python-driver test suite
+	},
+	{
+		&TypeInfo{Type: TypeDecimal},
+		[]byte("\x00\x00\x00\x14\x00\xfa\xce"),
+		decimalize("0.00000000000000064206"), // From the datastax/python-driver test suite
+	},
+	{
+		&TypeInfo{Type: TypeDecimal},
+		[]byte("\x00\x00\x00\x14\xff\x052"),
+		decimalize("-0.00000000000000064206"), // From the datastax/python-driver test suite
+	},
+	{
+		&TypeInfo{Type: TypeDecimal},
+		[]byte("\xff\xff\xff\x9c\x00\xfa\xce"),
+		inf.NewDec(64206, -100), // From the datastax/python-driver test suite
 	},
 	{
 		&TypeInfo{Type: TypeTimestamp},
@@ -207,6 +240,11 @@ var marshalTests = []struct {
 			strings.Repeat("X", 65535): strings.Repeat("Y", 65535),
 		},
 	},
+}
+
+func decimalize(s string) *inf.Dec {
+	i, _ := new(inf.Dec).SetString(s)
+	return i
 }
 
 func TestMarshal(t *testing.T) {
