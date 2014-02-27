@@ -59,6 +59,15 @@ func TestPredefinedUUID(t *testing.T) {
 				t.Errorf("Version #%d: expected %d got %d", i, testsUUID[i].version, version)
 			}
 		}
+
+		json, err := uuid.MarshalJSON()
+		if err != nil {
+			t.Errorf("MarshalJSON #%d: %v", i, err)
+		}
+		expectedJson := `"` + testsUUID[i].input + `"`
+		if string(json) != expectedJson {
+			t.Errorf("MarshalJSON #%d: expected %d got %d", i, expectedJson, string(json))
+		}
 	}
 }
 
