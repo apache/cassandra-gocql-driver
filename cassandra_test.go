@@ -79,7 +79,7 @@ func TestCRUD(t *testing.T) {
 			views       bigint,
 			protected   boolean,
 			modified    timestamp,
-			rating		decimal,
+			rating      decimal,
 			tags        set<varchar>,
 			attachments map<varchar, text>,
 			PRIMARY KEY (title, revid)
