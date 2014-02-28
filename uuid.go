@@ -208,3 +208,8 @@ func (u UUID) Time() time.Time {
 	nsec := t % 1e7
 	return time.Unix(sec+timeBase, nsec).UTC()
 }
+
+// Marshaling for JSON
+func (u UUID) MarshalJSON() ([]byte, error) {
+	return []byte(`"` + u.String() + `"`), nil
+}
