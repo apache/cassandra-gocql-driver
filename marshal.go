@@ -15,7 +15,7 @@ import (
 )
 
 var (
-	bigOne = big.NewInt(1)
+	zero = big.NewInt(0)
 )
 
 // Marshaler is the interface implemented by objects that can marshal
@@ -725,7 +725,7 @@ func unmarshalDecimal(info *TypeInfo, data []byte, value interface{}) error {
 func decBigInt2C(data []byte) *big.Int {
 	n := new(big.Int).SetBytes(data)
 	if len(data) > 0 && data[0]&0x80 > 0 {
-		n.Sub(n, new(big.Int).Lsh(bigOne, uint(len(data))*8))
+		n.Sub(n, exp2(new(big.Int), len(data)*8))
 	}
 	return n
 }
@@ -743,8 +743,8 @@ func encBigInt2C(n *big.Int) []byte {
 		}
 		return b
 	case -1:
-		length := uint(n.BitLen()/8+1) * 8
-		b := new(big.Int).Add(n, new(big.Int).Lsh(bigOne, length)).Bytes()
+		length := (n.BitLen()/8 + 1) * 8
+		b := new(big.Int).Add(n, exp2(new(big.Int), length)).Bytes()
 		// When the most significant bit is on a byte
 		// boundary, we can get some extra significant
 		// bits, so strip them off when that happens.
@@ -754,6 +754,13 @@ func encBigInt2C(n *big.Int) []byte {
 		return b
 	}
 	return nil
+}
+
+// exp2 sets z to 2**n.
+func exp2(z *big.Int, n int) *big.Int {
+	z.Set(zero)
+	z.SetBit(z, n, 1)
+	return z
 }
 
 func marshalTimestamp(info *TypeInfo, value interface{}) ([]byte, error) {
