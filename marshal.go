@@ -723,7 +723,7 @@ func unmarshalDecimal(info *TypeInfo, data []byte, value interface{}) error {
 	return unmarshalErrorf("can not unmarshal %s into %T", info, value)
 }
 
-// SetSignedBytes sets the value of n to the big-endian two's complement
+// decBigInt2C sets the value of n to the big-endian two's complement
 // value stored in the given data. If data[0]&80 != 0, the number
 // is negative. If data is empty, the result will be 0.
 func decBigInt2C(data []byte) *big.Int {
@@ -734,7 +734,7 @@ func decBigInt2C(data []byte) *big.Int {
 	return n
 }
 
-// SignedBytes returns the big-endian two's complement
+// encBigInt2C returns the big-endian two's complement
 // form of n.
 func encBigInt2C(n *big.Int) []byte {
 	switch n.Sign() {
