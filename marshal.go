@@ -6,7 +6,6 @@ package gocql
 
 import (
 	"bytes"
-	"encoding/binary"
 	"fmt"
 	"math"
 	"math/big"
@@ -696,10 +695,11 @@ func marshalDecimal(info *TypeInfo, value interface{}) ([]byte, error) {
 			return nil, nil
 		}
 
-		b := new(bytes.Buffer)
-		binary.Write(b, binary.BigEndian, v.Scale())
-		encBigInt2C(b, v.UnscaledBig())
-		return b.Bytes(), nil
+		unscaled := encBigInt2C(v.UnscaledBig())
+		buf := make([]byte, 4+len(unscaled))
+		copy(buf[0:4], encInt(int32(v.Scale())))
+		copy(buf[4:], unscaled)
+		return buf, nil
 	}
 	return nil, marshalErrorf("can not marshal %T into %s", value, info)
 }
@@ -719,58 +719,41 @@ func unmarshalDecimal(info *TypeInfo, data []byte, value interface{}) error {
 	return unmarshalErrorf("can not unmarshal %s into %T", info, value)
 }
 
-func decBigInt2C(bytes []byte) *big.Int {
-	ret := new(big.Int)
-	if len(bytes) > 0 && bytes[0]&0x80 == 0x80 {
-		// This is a negative number.
-		notBytes := make([]byte, len(bytes))
-		for i := range notBytes {
-			notBytes[i] = ^bytes[i]
-		}
-		ret.SetBytes(notBytes)
-		ret.Add(ret, bigOne)
-		ret.Neg(ret)
-		return ret
+// SetSignedBytes sets the value of n to the big-endian two's complement
+// value stored in the given data. If data[0]&80 != 0, the number
+// is negative. If data is empty, the result will be 0.
+func decBigInt2C(data []byte) *big.Int {
+	n := new(big.Int).SetBytes(data)
+	if len(data) > 0 && data[0]&0x80 > 0 {
+		n.Sub(n, new(big.Int).Lsh(bigOne, uint(len(data))*8))
 	}
-	ret.SetBytes(bytes)
-	return ret
+	return n
 }
 
-func encBigInt2C(out *bytes.Buffer, n *big.Int) (err error) {
-	if n.Sign() < 0 {
-		// A negative number has to be converted to two's-complement
-		// form. So we'll subtract 1 and invert. If the
-		// most-significant-bit isn't set then we'll need to pad the
-		// beginning with 0xff in order to keep the number negative.
-		nMinus1 := new(big.Int).Neg(n)
-		nMinus1.Sub(nMinus1, bigOne)
-		bytes := nMinus1.Bytes()
-		for i := range bytes {
-			bytes[i] ^= 0xff
+// SignedBytes returns the big-endian two's complement
+// form of n.
+func encBigInt2C(n *big.Int) []byte {
+	switch n.Sign() {
+	case 0:
+		return []byte{0}
+	case 1:
+		b := n.Bytes()
+		if b[0]&0x80 > 0 {
+			b = append([]byte{0}, b...)
 		}
-		if len(bytes) == 0 || bytes[0]&0x80 == 0 {
-			err = out.WriteByte(0xff)
-			if err != nil {
-				return
-			}
+		return b
+	case -1:
+		length := uint(n.BitLen()/8+1) * 8
+		b := new(big.Int).Add(n, new(big.Int).Lsh(bigOne, length)).Bytes()
+		// When the most significant bit is on a byte
+		// boundary, we can get some extra significant
+		// bits, so strip them off when that happens.
+		if len(b) >= 2 && b[0] == 0xff && b[1]&0x80 != 0 {
+			b = b[1:]
 		}
-		_, err = out.Write(bytes)
-	} else if n.Sign() == 0 {
-		// Zero is written as a single 0 zero rather than no bytes.
-		err = out.WriteByte(0x00)
-	} else {
-		bytes := n.Bytes()
-		if len(bytes) > 0 && bytes[0]&0x80 != 0 {
-			// We'll have to pad this with 0x00 in order to stop it
-			// looking like a negative number.
-			err = out.WriteByte(0)
-			if err != nil {
-				return
-			}
-		}
-		_, err = out.Write(bytes)
+		return b
 	}
-	return
+	return nil
 }
 
 func marshalTimestamp(info *TypeInfo, value interface{}) ([]byte, error) {
