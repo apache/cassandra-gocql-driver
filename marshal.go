@@ -696,6 +696,10 @@ func marshalDecimal(info *TypeInfo, value interface{}) ([]byte, error) {
 		}
 
 		unscaled := encBigInt2C(v.UnscaledBig())
+		if unscaled == nil {
+			return nil, marshalErrorf("can not marshal %T into %s", value, info)
+		}
+
 		buf := make([]byte, 4+len(unscaled))
 		copy(buf[0:4], encInt(int32(v.Scale())))
 		copy(buf[4:], unscaled)
