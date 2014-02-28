@@ -717,8 +717,12 @@ func unmarshalDecimal(info *TypeInfo, data []byte, value interface{}) error {
 			scale := decInt(data[0:4])
 			unscaled := decBigInt2C(data[4:])
 			*v = inf.NewDecBig(unscaled, inf.Scale(scale))
+			return nil
+		} else if len(data) == 0 {
+			return nil
+		} else {
+			return unmarshalErrorf("can not unmarshal %s into %T", info, value)
 		}
-		return nil
 	}
 	return unmarshalErrorf("can not unmarshal %s into %T", info, value)
 }
