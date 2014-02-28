@@ -8,8 +8,14 @@ import (
 	"bytes"
 	"fmt"
 	"math"
+	"math/big"
 	"reflect"
+	"speter.net/go/exp/math/dec/inf"
 	"time"
+)
+
+var (
+	bigOne = big.NewInt(1)
 )
 
 // Marshaler is the interface implemented by objects that can marshal
@@ -43,6 +49,8 @@ func Marshal(info *TypeInfo, value interface{}) ([]byte, error) {
 		return marshalFloat(info, value)
 	case TypeDouble:
 		return marshalDouble(info, value)
+	case TypeDecimal:
+		return marshalDecimal(info, value)
 	case TypeTimestamp:
 		return marshalTimestamp(info, value)
 	case TypeList, TypeSet:
@@ -76,6 +84,8 @@ func Unmarshal(info *TypeInfo, data []byte, value interface{}) error {
 		return unmarshalFloat(info, data, value)
 	case TypeDouble:
 		return unmarshalDouble(info, data, value)
+	case TypeDecimal:
+		return unmarshalDecimal(info, data, value)
 	case TypeTimestamp:
 		return unmarshalTimestamp(info, data, value)
 	case TypeList, TypeSet:
@@ -673,6 +683,86 @@ func unmarshalDouble(info *TypeInfo, data []byte, value interface{}) error {
 		return nil
 	}
 	return unmarshalErrorf("can not unmarshal %s into %T", info, value)
+}
+
+func marshalDecimal(info *TypeInfo, value interface{}) ([]byte, error) {
+	switch v := value.(type) {
+	case Marshaler:
+		return v.MarshalCQL(info)
+	case *inf.Dec:
+
+		if v == nil {
+			return nil, nil
+		}
+
+		unscaled := encBigInt2C(v.UnscaledBig())
+		if unscaled == nil {
+			return nil, marshalErrorf("can not marshal %T into %s", value, info)
+		}
+
+		buf := make([]byte, 4+len(unscaled))
+		copy(buf[0:4], encInt(int32(v.Scale())))
+		copy(buf[4:], unscaled)
+		return buf, nil
+	}
+	return nil, marshalErrorf("can not marshal %T into %s", value, info)
+}
+
+func unmarshalDecimal(info *TypeInfo, data []byte, value interface{}) error {
+	switch v := value.(type) {
+	case Unmarshaler:
+		return v.UnmarshalCQL(info, data)
+	case **inf.Dec:
+		if len(data) > 4 {
+			scale := decInt(data[0:4])
+			unscaled := decBigInt2C(data[4:])
+			*v = inf.NewDecBig(unscaled, inf.Scale(scale))
+			return nil
+		} else if len(data) == 0 {
+			*v = nil
+			return nil
+		} else {
+			return unmarshalErrorf("can not unmarshal %s into %T", info, value)
+		}
+	}
+	return unmarshalErrorf("can not unmarshal %s into %T", info, value)
+}
+
+// decBigInt2C sets the value of n to the big-endian two's complement
+// value stored in the given data. If data[0]&80 != 0, the number
+// is negative. If data is empty, the result will be 0.
+func decBigInt2C(data []byte) *big.Int {
+	n := new(big.Int).SetBytes(data)
+	if len(data) > 0 && data[0]&0x80 > 0 {
+		n.Sub(n, new(big.Int).Lsh(bigOne, uint(len(data))*8))
+	}
+	return n
+}
+
+// encBigInt2C returns the big-endian two's complement
+// form of n.
+func encBigInt2C(n *big.Int) []byte {
+	switch n.Sign() {
+	case 0:
+		return []byte{0}
+	case 1:
+		b := n.Bytes()
+		if b[0]&0x80 > 0 {
+			b = append([]byte{0}, b...)
+		}
+		return b
+	case -1:
+		length := uint(n.BitLen()/8+1) * 8
+		b := new(big.Int).Add(n, new(big.Int).Lsh(bigOne, length)).Bytes()
+		// When the most significant bit is on a byte
+		// boundary, we can get some extra significant
+		// bits, so strip them off when that happens.
+		if len(b) >= 2 && b[0] == 0xff && b[1]&0x80 != 0 {
+			b = b[1:]
+		}
+		return b
+	}
+	return nil
 }
 
 func marshalTimestamp(info *TypeInfo, value interface{}) ([]byte, error) {
