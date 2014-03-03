@@ -361,7 +361,7 @@ func (c *Conn) executeQuery(qry *Query) *Iter {
 		stmtType = strings.ToLower(stmtType[:n])
 		switch stmtType {
 		case "begin":
-			stmtTail := strings.TrimSpace(stmtType[n:])
+			stmtTail := strings.TrimSpace(op.Stmt[n:])
 			if n := strings.IndexFunc(stmtTail, unicode.IsSpace); n >= 0 {
 				stmtType = stmtType + " " + strings.ToLower(stmtTail[:n])
 			}
