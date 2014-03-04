@@ -7,7 +7,6 @@ package gocql
 import (
 	"errors"
 	"fmt"
-	"log"
 	"strings"
 	"sync"
 	"time"
@@ -62,6 +61,7 @@ func (cfg *ClusterConfig) CreateSession() (*Session, error) {
 
 	//Check that hosts in the ClusterConfig is not empty
 	if len(cfg.Hosts) < 1 {
+		Log.Alert("Cannot create cluster with no hosts")
 		return nil, ErrNoHosts
 	}
 
@@ -127,7 +127,7 @@ func (c *clusterImpl) connect(addr string) {
 	for {
 		conn, err := Connect(addr, cfg, c)
 		if err != nil {
-			log.Printf("failed to connect to %q: %v", addr, err)
+			Log.Warning(fmt.Sprintf("failed to connect to %q: %v", addr, err))
 			select {
 			case <-time.After(delay):
 				if delay *= 2; delay > c.cfg.DelayMax {
@@ -138,6 +138,7 @@ func (c *clusterImpl) connect(addr string) {
 				return
 			}
 		}
+		Log.Info(fmt.Sprintf("Connected to %s", addr))
 		c.addConn(conn, "")
 		return
 	}
@@ -145,6 +146,7 @@ func (c *clusterImpl) connect(addr string) {
 
 func (c *clusterImpl) changeKeyspace(conn *Conn, keyspace string, connected bool) {
 	if err := conn.UseKeyspace(keyspace); err != nil {
+		Log.Err(fmt.Sprintf("ChangeKeyspace: %s", err.Error()))
 		conn.Close()
 		if connected {
 			c.removeConn(conn)
@@ -174,10 +176,12 @@ func (c *clusterImpl) addConn(conn *Conn, keyspace string) {
 		c.connPool[conn.Address()] = connPool
 		c.hostPool.AddNode(connPool)
 		if !c.started && c.hostPool.Size() >= c.cfg.StartupMin {
+			Log.Info("Cluster connected")
 			c.started = true
 			c.cStart <- 1
 		}
 	}
+	Log.Info(fmt.Sprintf("Added connection: %s", conn.addr))
 	connPool.AddNode(conn)
 	c.conns[conn] = struct{}{}
 }
@@ -190,6 +194,7 @@ func (c *clusterImpl) removeConn(conn *Conn) {
 	if connPool == nil {
 		return
 	}
+	Log.Info(fmt.Sprintf("Removed host %s", conn.addr))
 	connPool.RemoveNode(conn)
 	if connPool.Size() == 0 {
 		c.hostPool.RemoveNode(connPool)
@@ -200,6 +205,7 @@ func (c *clusterImpl) removeConn(conn *Conn) {
 
 func (c *clusterImpl) HandleError(conn *Conn, err error, closed bool) {
 	if !closed {
+		Log.Info(fmt.Sprintf("Non fatal error from host %s: %s", conn.addr, err.Error()))
 		// ignore all non-fatal errors
 		return
 	}
@@ -237,6 +243,7 @@ func (c *clusterImpl) Pick(qry *Query) *Conn {
 
 func (c *clusterImpl) Close() {
 	c.quitOnce.Do(func() {
+		Log.Info("Closing cluster")
 		c.mu.Lock()
 		defer c.mu.Unlock()
 		c.quit = true
