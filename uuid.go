@@ -221,9 +221,9 @@ func (u *UUID) UnmarshalJSON(data []byte) error {
 		return fmt.Errorf("invalid JSON UUID %s", str)
 	}
 
-	newU, err := ParseUUID(str[1:37])
+	parsed, err := ParseUUID(str[1:37])
 	if err == nil {
-		copy(u[:], newU[:])
+		copy(u[:], parsed[:])
 	}
 
 	return err
