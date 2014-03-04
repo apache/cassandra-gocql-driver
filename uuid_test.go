@@ -68,6 +68,15 @@ func TestPredefinedUUID(t *testing.T) {
 		if string(json) != expectedJson {
 			t.Errorf("MarshalJSON #%d: expected %v got %v", i, expectedJson, string(json))
 		}
+
+		var unmarshaled UUID
+		err = unmarshaled.UnmarshalJSON(json)
+		if err != nil {
+			t.Errorf("UnmarshalJSON #%d: %v", i, err)
+		}
+		if unmarshaled != uuid {
+			t.Errorf("UnmarshalJSON #%d: expected %v got %v", i, uuid, unmarshaled)
+		}
 	}
 }
 
