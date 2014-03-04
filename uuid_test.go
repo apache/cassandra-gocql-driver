@@ -66,7 +66,7 @@ func TestPredefinedUUID(t *testing.T) {
 		}
 		expectedJson := `"` + testsUUID[i].input + `"`
 		if string(json) != expectedJson {
-			t.Errorf("MarshalJSON #%d: expected %d got %d", i, expectedJson, string(json))
+			t.Errorf("MarshalJSON #%d: expected %v got %v", i, expectedJson, string(json))
 		}
 	}
 }
