@@ -371,9 +371,16 @@ func (c *Conn) executeQuery(qry *Query) *Iter {
 	stmtType := op.Stmt
 	if n := strings.IndexFunc(stmtType, unicode.IsSpace); n >= 0 {
 		stmtType = strings.ToLower(stmtType[:n])
+		switch stmtType {
+		case "begin":
+			stmtTail := strings.TrimSpace(op.Stmt[n:])
+			if n := strings.IndexFunc(stmtTail, unicode.IsSpace); n >= 0 {
+				stmtType = stmtType + " " + strings.ToLower(stmtTail[:n])
+			}
+		}
 	}
 	switch stmtType {
-	case "select", "insert", "update", "delete":
+	case "select", "insert", "update", "delete", "begin batch":
 		// Prepare all DML queries. Other queries can not be prepared.
 		info, err := c.prepareStatement(qry.stmt, qry.trace)
 		if err != nil {
