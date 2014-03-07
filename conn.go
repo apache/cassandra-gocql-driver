@@ -371,15 +371,14 @@ func (c *Conn) executeQuery(qry *Query) *Iter {
 	var stmtType string
 	if n := strings.IndexFunc(op.Stmt, unicode.IsSpace); n >= 0 {
 		stmtType = strings.ToLower(op.Stmt[:n])
-		switch stmtType {
-		case "begin":
-			if n := strings.LastIndexFunc(op.Stmt, unicode.IsSpace); n >= 0 {
-				stmtType = stmtType + " " + strings.ToLower(op.Stmt[n+1:])
-			}
+	}
+	if stmtType == "begin" {
+		if n := strings.LastIndexFunc(op.Stmt, unicode.IsSpace); n >= 0 {
+			stmtType = strings.ToLower(op.Stmt[n+1:])
 		}
 	}
 	switch stmtType {
-	case "select", "insert", "update", "delete", "begin batch":
+	case "select", "insert", "update", "delete", "batch":
 		// Prepare all DML queries. Other queries can not be prepared.
 		info, err := c.prepareStatement(qry.stmt, qry.trace)
 		if err != nil {
