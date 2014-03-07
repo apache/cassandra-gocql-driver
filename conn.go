@@ -368,14 +368,13 @@ func (c *Conn) executeQuery(qry *Query) *Iter {
 		PageSize:  qry.pageSize,
 		PageState: qry.pageState,
 	}
-	stmtType := op.Stmt
-	if n := strings.IndexFunc(stmtType, unicode.IsSpace); n >= 0 {
-		stmtType = strings.ToLower(stmtType[:n])
+	var stmtType string
+	if n := strings.IndexFunc(op.Stmt, unicode.IsSpace); n >= 0 {
+		stmtType = strings.ToLower(op.Stmt[:n])
 		switch stmtType {
 		case "begin":
-			stmtTail := strings.TrimSpace(op.Stmt[n:])
-			if n := strings.IndexFunc(stmtTail, unicode.IsSpace); n >= 0 {
-				stmtType = stmtType + " " + strings.ToLower(stmtTail[:n])
+			if n := strings.LastIndexFunc(op.Stmt, unicode.IsSpace); n >= 0 {
+				stmtType = stmtType + " " + strings.ToLower(op.Stmt[n+1:])
 			}
 		}
 	}
