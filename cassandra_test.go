@@ -292,7 +292,7 @@ func TestCreateSessionTimeout(t *testing.T) {
 		t.Fatal("expected ErrNoConncetions, but no error was returned.")
 	}
 	if err != ErrNoConnections {
-		t.Fatal("expected ErrNoConnections, but received %v", err)
+		t.Fatalf("expected ErrNoConnections, but received %v", err)
 	}
 }
 
