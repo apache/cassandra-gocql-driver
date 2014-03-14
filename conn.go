@@ -361,13 +361,11 @@ func (c *Conn) prepareStatement(stmt string, trace Tracer) (*queryInfo, error) {
 	return flight.info, flight.err
 }
 
-func normalizeStatement(stmt string) string {
-	return strings.TrimLeftFunc(strings.TrimRightFunc(stmt, func(r rune) bool {
+func shouldPrepare(stmt string) bool {
+	stmt = strings.TrimLeftFunc(strings.TrimRightFunc(stmt, func(r rune) bool {
 		return unicode.IsSpace(r) || r == ';'
 	}), unicode.IsSpace)
-}
 
-func shouldPrepare(stmt string) bool {
 	var stmtType string
 	if n := strings.IndexFunc(stmt, unicode.IsSpace); n >= 0 {
 		stmtType = strings.ToLower(stmt[:n])
@@ -386,7 +384,7 @@ func shouldPrepare(stmt string) bool {
 
 func (c *Conn) executeQuery(qry *Query) *Iter {
 	op := &queryFrame{
-		Stmt:      normalizeStatement(qry.stmt),
+		Stmt:      qry.stmt,
 		Cons:      qry.cons,
 		PageSize:  qry.pageSize,
 		PageState: qry.pageState,
