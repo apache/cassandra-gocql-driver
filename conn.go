@@ -361,6 +361,23 @@ func (c *Conn) prepareStatement(stmt string, trace Tracer) (*queryInfo, error) {
 	return flight.info, flight.err
 }
 
+func shouldPrepare(stmt string) bool {
+	var stmtType string
+	if n := strings.IndexFunc(stmt, unicode.IsSpace); n >= 0 {
+		stmtType = strings.ToLower(stmt[:n])
+	}
+	if stmtType == "begin" {
+		if n := strings.LastIndexFunc(stmt, unicode.IsSpace); n >= 0 {
+			stmtType = strings.ToLower(stmt[n+1:])
+		}
+	}
+	switch stmtType {
+	case "select", "insert", "update", "delete", "batch":
+		return true
+	}
+	return false
+}
+
 func (c *Conn) executeQuery(qry *Query) *Iter {
 	op := &queryFrame{
 		Stmt:      strings.TrimSpace(qry.stmt),
@@ -368,17 +385,7 @@ func (c *Conn) executeQuery(qry *Query) *Iter {
 		PageSize:  qry.pageSize,
 		PageState: qry.pageState,
 	}
-	var stmtType string
-	if n := strings.IndexFunc(op.Stmt, unicode.IsSpace); n >= 0 {
-		stmtType = strings.ToLower(op.Stmt[:n])
-	}
-	if stmtType == "begin" {
-		if n := strings.LastIndexFunc(op.Stmt, unicode.IsSpace); n >= 0 {
-			stmtType = strings.ToLower(op.Stmt[n+1:])
-		}
-	}
-	switch stmtType {
-	case "select", "insert", "update", "delete", "batch":
+	if shouldPrepare(op.Stmt) {
 		// Prepare all DML queries. Other queries can not be prepared.
 		info, err := c.prepareStatement(qry.stmt, qry.trace)
 		if err != nil {
