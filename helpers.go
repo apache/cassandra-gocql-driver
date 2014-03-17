@@ -6,12 +6,12 @@ package gocql
 
 import "reflect"
 
-type rowData struct {
+type RowData struct {
 	Columns []string
-	Values []interface{}
+	Values  []interface{}
 }
 
-// New creates a pointer to an empty version of whatever type 
+// New creates a pointer to an empty version of whatever type
 // is referenced by the TypeInfo receiver
 func (t *TypeInfo) New() interface{} {
 	return reflect.New(goType(t)).Interface()
@@ -48,15 +48,15 @@ func dereference(i interface{}) interface{} {
 	return reflect.Indirect(reflect.ValueOf(i)).Interface()
 }
 
-func (r *rowData) rowMap(m map[string]interface{}) {
+func (r *RowData) rowMap(m map[string]interface{}) {
 	for i, column := range r.Columns {
 		m[column] = dereference(r.Values[i])
 	}
 }
 
-func (iter *Iter) rowData() (rowData, error) {
+func (iter *Iter) RowData() (RowData, error) {
 	if iter.err != nil {
-		return rowData{}, iter.err
+		return RowData{}, iter.err
 	}
 	columns := make([]string, 0)
 	values := make([]interface{}, 0)
@@ -65,9 +65,9 @@ func (iter *Iter) rowData() (rowData, error) {
 		columns = append(columns, column.Name)
 		values = append(values, val)
 	}
-	rowData := rowData{
+	rowData := RowData{
 		Columns: columns,
-		Values: values,
+		Values:  values,
 	}
 	return rowData, nil
 }
@@ -80,7 +80,7 @@ func (iter *Iter) SliceMap() ([]map[string]interface{}, error) {
 	}
 
 	// Not checking for the error because we just did
-	rowData, _ := iter.rowData()
+	rowData, _ := iter.RowData()
 	dataToReturn := make([]map[string]interface{}, 0)
 	for iter.Scan(rowData.Values...) {
 		m := make(map[string]interface{})
@@ -101,10 +101,10 @@ func (iter *Iter) MapScan(m map[string]interface{}) bool {
 	}
 
 	// Not checking for the error because we just did
-	rowData, _ := iter.rowData()
+	rowData, _ := iter.RowData()
 
 	if iter.Scan(rowData.Values...) {
-		rowData.rowMap(m)	
+		rowData.rowMap(m)
 		return true
 	}
 	return false
