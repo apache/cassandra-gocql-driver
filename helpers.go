@@ -4,14 +4,17 @@
 
 package gocql
 
-import "reflect"
+import (
+	"reflect"
+	"time"
+)
 
 type rowData struct {
 	Columns []string
-	Values []interface{}
+	Values  []interface{}
 }
 
-// New creates a pointer to an empty version of whatever type 
+// New creates a pointer to an empty version of whatever type
 // is referenced by the TypeInfo receiver
 func (t *TypeInfo) New() interface{} {
 	return reflect.New(goType(t)).Interface()
@@ -21,8 +24,10 @@ func goType(t *TypeInfo) reflect.Type {
 	switch t.Type {
 	case TypeVarchar, TypeAscii:
 		return reflect.TypeOf(*new(string))
-	case TypeBigInt, TypeCounter, TypeTimestamp:
+	case TypeBigInt, TypeCounter:
 		return reflect.TypeOf(*new(int64))
+	case TypeTimestamp:
+		return reflect.TypeOf(*new(time.Time))
 	case TypeBlob:
 		return reflect.TypeOf(*new([]byte))
 	case TypeBoolean:
@@ -67,7 +72,7 @@ func (iter *Iter) rowData() (rowData, error) {
 	}
 	rowData := rowData{
 		Columns: columns,
-		Values: values,
+		Values:  values,
 	}
 	return rowData, nil
 }
@@ -104,7 +109,7 @@ func (iter *Iter) MapScan(m map[string]interface{}) bool {
 	rowData, _ := iter.rowData()
 
 	if iter.Scan(rowData.Values...) {
-		rowData.rowMap(m)	
+		rowData.rowMap(m)
 		return true
 	}
 	return false
