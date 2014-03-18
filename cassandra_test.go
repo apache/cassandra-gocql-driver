@@ -338,6 +338,7 @@ func TestSliceMap(t *testing.T) {
 	defer session.Close()
 	if err := session.Query(`CREATE TABLE slice_map_table (
 			testuuid       timeuuid PRIMARY KEY,
+			testtimestamp  timestamp,
 			testvarchar    varchar,
 			testbigint     bigint,
 			testblob       blob,
@@ -354,6 +355,7 @@ func TestSliceMap(t *testing.T) {
 	m["testuuid"] = TimeUUID()
 	m["testvarchar"] = "Test VarChar"
 	m["testbigint"] = time.Now().Unix()
+	m["testtimestamp"] = time.Now().Truncate(time.Millisecond).UTC()
 	m["testblob"] = []byte("test blob")
 	m["testbool"] = true
 	m["testfloat"] = float32(4.564)
@@ -362,8 +364,8 @@ func TestSliceMap(t *testing.T) {
 	m["testset"] = []int{1, 2, 3, 4, 5, 6, 7, 8, 9}
 	m["testmap"] = map[string]string{"field1": "val1", "field2": "val2", "field3": "val3"}
 	sliceMap := []map[string]interface{}{m}
-	if err := session.Query(`INSERT INTO slice_map_table (testuuid, testvarchar, testbigint, testblob, testbool, testfloat, testdouble, testint, testset, testmap) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		m["testuuid"], m["testvarchar"], m["testbigint"], m["testblob"], m["testbool"], m["testfloat"], m["testdouble"], m["testint"], m["testset"], m["testmap"]).Exec(); err != nil {
+	if err := session.Query(`INSERT INTO slice_map_table (testuuid, testtimestamp, testvarchar, testbigint, testblob, testbool, testfloat, testdouble, testint, testset, testmap) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		m["testuuid"], m["testtimestamp"], m["testvarchar"], m["testbigint"], m["testblob"], m["testbool"], m["testfloat"], m["testdouble"], m["testint"], m["testset"], m["testmap"]).Exec(); err != nil {
 		t.Fatal("insert:", err)
 	}
 	if returned, retErr := session.Query(`SELECT * FROM slice_map_table`).Iter().SliceMap(); retErr != nil {
@@ -371,6 +373,9 @@ func TestSliceMap(t *testing.T) {
 	} else {
 		if sliceMap[0]["testuuid"] != returned[0]["testuuid"] {
 			t.Fatal("returned testuuid did not match")
+		}
+		if sliceMap[0]["testtimestamp"] != returned[0]["testtimestamp"] {
+			t.Fatalf("returned testtimestamp did not match: %v %v", sliceMap[0]["testtimestamp"], returned[0]["testtimestamp"])
 		}
 		if sliceMap[0]["testvarchar"] != returned[0]["testvarchar"] {
 			t.Fatal("returned testvarchar did not match")
@@ -408,6 +413,9 @@ func TestSliceMap(t *testing.T) {
 	}
 	if sliceMap[0]["testuuid"] != testMap["testuuid"] {
 		t.Fatal("returned testuuid did not match")
+	}
+	if sliceMap[0]["testtimestamp"] != testMap["testtimestamp"] {
+		t.Fatal("returned testtimestamp did not match")
 	}
 	if sliceMap[0]["testvarchar"] != testMap["testvarchar"] {
 		t.Fatal("returned testvarchar did not match")
