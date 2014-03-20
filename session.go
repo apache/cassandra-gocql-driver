@@ -469,4 +469,6 @@ var (
 	ErrTooManyStmts = errors.New("too many statements")
 )
 
-const BatchSizeMaximum = 65536
+// BatchSizeMaximum is the maximum number of statements a batch operation can have.
+// This limit is set by cassandra and could change in the future.
+const BatchSizeMaximum = 65535
