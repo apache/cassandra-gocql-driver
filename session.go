@@ -115,7 +115,7 @@ func (s *Session) ExecuteBatch(batch *Batch) error {
 	// Prevent the execution of the batch if greater than the limit
 	// Currently batches have a limit of 65536 queries.
 	// https://datastax-oss.atlassian.net/browse/JAVA-229
-	if len(batch.Entries) > 65536 {
+	if batch.Size() > BatchSizeMaximum {
 		return ErrTooManyStmts
 	}
 	var err error
@@ -340,6 +340,11 @@ func (b *Batch) RetryPolicy(r RetryPolicy) *Batch {
 	return b
 }
 
+// Size returns the number of batch statements to be executed by the batch operation.
+func (b *Batch) Size() int {
+	return len(b.Entries)
+}
+
 type BatchType int
 
 const (
@@ -463,3 +468,5 @@ var (
 	ErrUnsupported  = errors.New("feature not supported")
 	ErrTooManyStmts = errors.New("too many statements")
 )
+
+const BatchSizeMaximum = 65536
