@@ -6,6 +6,7 @@ package gocql
 
 import (
 	"reflect"
+	"speter.net/go/exp/math/dec/inf"
 	"time"
 )
 
@@ -38,6 +39,8 @@ func goType(t *TypeInfo) reflect.Type {
 		return reflect.TypeOf(*new(float64))
 	case TypeInt:
 		return reflect.TypeOf(*new(int))
+	case TypeDecimal:
+		return reflect.TypeOf(*new(*inf.Dec))
 	case TypeUUID, TypeTimeUUID:
 		return reflect.TypeOf(*new(UUID))
 	case TypeList, TypeSet:
