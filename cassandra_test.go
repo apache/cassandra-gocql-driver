@@ -155,25 +155,23 @@ func TestTracing(t *testing.T) {
 
 func TestPaging(t *testing.T) {
 
-	t.Skip("Skip until https://github.com/gocql/gocql/issues/110 is resolved")
-
 	if *flagProto == 1 {
 		t.Skip("Paging not supported. Please use Cassandra >= 2.0")
 	}
 
 	session := createSession(t)
 	defer session.Close()
-
-	if err := session.Query("CREATE TABLE large (id int primary key)").Exec(); err != nil {
+	//session.Query("DROP TABLE large").Exec()
+	if err := session.Query("CREATE TABLE paging_test (id int primary key)").Exec(); err != nil {
 		t.Fatal("create table:", err)
 	}
 	for i := 0; i < 100; i++ {
-		if err := session.Query("INSERT INTO large (id) VALUES (?)", i).Exec(); err != nil {
+		if err := session.Query("INSERT INTO paging_test (id) VALUES (?)", i).Exec(); err != nil {
 			t.Fatal("insert:", err)
 		}
 	}
 
-	iter := session.Query("SELECT id FROM large").PageSize(10).Iter()
+	iter := session.Query("SELECT id FROM paging_test").PageSize(10).Iter()
 	var id int
 	count := 0
 	for iter.Scan(&id) {
