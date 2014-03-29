@@ -249,6 +249,7 @@ func (c *Conn) execSimple(op operation) (interface{}, error) {
 	f.setLength(len(f) - headerSize)
 	if _, err := c.conn.Write([]byte(f)); err != nil {
 		c.conn.Close()
+		c.cluster.HandleError(c, err, true)
 		return nil, err
 	}
 	if f, err = c.recv(); err != nil {
@@ -284,6 +285,7 @@ func (c *Conn) exec(op operation, trace Tracer) (interface{}, error) {
 
 	if n, err := c.conn.Write(req); err != nil {
 		c.conn.Close()
+		c.cluster.HandleError(c, err, true)
 		c.uniq <- id
 		if n > 0 {
 			return nil, ErrProtocol
