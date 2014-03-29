@@ -182,9 +182,8 @@ func (c *clusterImpl) addConn(conn *Conn, keyspace string) {
 	c.conns[conn] = struct{}{}
 }
 
-func (c *clusterImpl) removeConn(conn *Conn) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+// Should only be called if c.mu is locked
+func (c *clusterImpl) removeConnLocked(conn *Conn) {
 	conn.Close()
 	connPool := c.connPool[conn.addr]
 	if connPool == nil {
@@ -196,6 +195,12 @@ func (c *clusterImpl) removeConn(conn *Conn) {
 		delete(c.connPool, conn.addr)
 	}
 	delete(c.conns, conn)
+}
+
+func (c *clusterImpl) removeConn(conn *Conn) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.removeConnLocked(conn)
 }
 
 func (c *clusterImpl) HandleError(conn *Conn, err error, closed bool) {
@@ -242,7 +247,7 @@ func (c *clusterImpl) Close() {
 		c.quit = true
 		close(c.quitWait)
 		for conn := range c.conns {
-			conn.Close()
+			c.removeConnLocked(conn)
 		}
 	})
 }
