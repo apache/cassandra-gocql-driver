@@ -283,14 +283,11 @@ func (c *Conn) exec(op operation, trace Tracer) (interface{}, error) {
 	atomic.AddInt32(&c.nwait, 1)
 	atomic.StoreInt32(&call.active, 1)
 
-	if n, err := c.conn.Write(req); err != nil {
+	if _, err = c.conn.Write(req); err != nil {
 		c.conn.Close()
 		c.cluster.HandleError(c, err, true)
 		c.uniq <- id
-		if n > 0 {
-			return nil, ErrProtocol
-		}
-		return nil, ErrUnavailable
+		return nil, err
 	}
 
 	reply := <-call.resp
