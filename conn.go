@@ -215,7 +215,7 @@ func (c *Conn) recv() (frame, error) {
 		nn, err := c.r.Read(resp[n:])
 		n += nn
 		if err != nil {
-			if nerr, ok := err.(net.Error); ok && nerr.Timeout() {
+			if nerr, ok := err.(net.Error); ok && nerr.Temporary() {
 				if n > last {
 					// we hit the deadline but we made progress.
 					// simply extend the deadline
