@@ -29,6 +29,8 @@ type Session struct {
 	trace    Tracer
 	mu       sync.RWMutex
 	cfg      ClusterConfig
+	closeMu  sync.RWMutex
+	isClosed bool
 }
 
 // NewSession wraps an existing Node.
@@ -83,58 +85,87 @@ func (s *Session) Query(stmt string, values ...interface{}) *Query {
 	return qry
 }
 
+func (s *Session) Closed() bool {
+	s.closeMu.RLock()
+	closed := s.isClosed
+	s.closeMu.RUnlock()
+	return closed
+}
+
 // Close closes all connections. The session is unusable after this
 // operation.
 func (s *Session) Close() {
+	s.closeMu.Lock()
+	if s.isClosed {
+		s.closeMu.Unlock()
+		return
+	}
+	s.isClosed = true
+	s.closeMu.Unlock()
+
 	s.Node.Close()
 }
 
 func (s *Session) executeQuery(qry *Query) *Iter {
-	var itr *Iter
-	count := 0
-	for count <= qry.rt.NumRetries {
-		conn := s.Node.Pick(nil)
+	// fail fast
+	if s.Closed() {
+		// not a great error
+		return &Iter{err: ErrUnavailable}
+	}
+
+	var iter *Iter
+	for count := 0; count <= qry.rt.NumRetries; count++ {
+		conn := s.Node.Pick(qry)
 		//Assign the error unavailable to the iterator
 		if conn == nil {
-			itr = &Iter{err: ErrUnavailable}
-			break
+			time.Sleep(1 * time.Millisecond)
+			continue
 		}
-		itr = conn.executeQuery(qry)
+		iter = conn.executeQuery(qry)
 		//Exit for loop if the query was successful
-		if itr.err == nil {
+		if iter.err == nil {
 			break
 		}
-		count++
 	}
-	return itr
+
+	if iter == nil {
+		iter = &Iter{err: ErrUnavailable}
+	}
+
+	return iter
 }
 
 // ExecuteBatch executes a batch operation and returns nil if successful
 // otherwise an error is returned describing the failure.
 func (s *Session) ExecuteBatch(batch *Batch) error {
+	// fail fast
+	if s.Closed() {
+		// not a great error
+		return ErrUnavailable
+	}
+
 	// Prevent the execution of the batch if greater than the limit
 	// Currently batches have a limit of 65536 queries.
 	// https://datastax-oss.atlassian.net/browse/JAVA-229
 	if batch.Size() > BatchSizeMaximum {
 		return ErrTooManyStmts
 	}
+
 	var err error
-	count := 0
-	for count <= batch.rt.NumRetries {
+	for count := 0; count <= batch.rt.NumRetries; count++ {
 		conn := s.Node.Pick(nil)
-		//Assign the error unavailable and break loop
+		// no connection was available, wait a tiny ammount of time for a new one
 		if conn == nil {
-			err = ErrUnavailable
-			break
+			time.Sleep(1 * time.Millisecond)
+			continue
 		}
 		err = conn.executeBatch(batch)
 		//Exit loop if operation executed correctly
 		if err == nil {
-			break
+			return nil
 		}
-		count++
 	}
-	return err
+	return ErrUnavailable
 }
 
 // Query represents a CQL statement that can be executed.
