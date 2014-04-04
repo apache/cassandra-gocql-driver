@@ -211,12 +211,16 @@ func (c *Conn) serve() {
 	}
 }
 
+func (c *Conn) Read(p []byte) (int, error) {
+	c.conn.SetReadDeadline(time.Now().Add(c.timeout))
+	return c.r.Read(p)
+}
+
 func (c *Conn) recv() (frame, error) {
 	resp := make(frame, headerSize, headerSize+512)
-	c.conn.SetReadDeadline(time.Now().Add(c.timeout))
 	n, last, pinged := 0, 0, false
 	for n < len(resp) {
-		nn, err := c.r.Read(resp[n:])
+		nn, err := c.Read(resp[n:])
 		n += nn
 		if err != nil {
 			if nerr, ok := err.(net.Error); ok && nerr.Temporary() {
