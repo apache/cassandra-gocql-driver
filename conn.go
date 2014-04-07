@@ -84,7 +84,7 @@ type Conn struct {
 	addr       string
 	version    uint8
 
-	// protected isClsoed
+	// Protects isClosed
 	closedMu sync.RWMutex
 	isClosed bool
 	quit     chan struct{}

@@ -153,7 +153,7 @@ func (s *Session) ExecuteBatch(batch *Batch) error {
 	var err error
 	for count := 0; count <= batch.rt.NumRetries; count++ {
 		conn := s.Node.Pick(nil)
-		// no connection was available, wait a tiny ammount of time for a new one
+		// no connection was available, wait a tiny amount of time for a new one
 		if conn == nil {
 			time.Sleep(1 * time.Millisecond)
 			continue
