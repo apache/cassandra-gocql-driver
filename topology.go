@@ -64,7 +64,7 @@ func (r *RoundRobin) Pick(qry *Query) *Conn {
 	}
 
 	for i := 0; i < l; i++ {
-		node = r.pool[pos%uint32(l+i)]
+		node = r.pool[(pos+uint32(i))%uint32(l)]
 		if node == nil {
 			continue
 		}
