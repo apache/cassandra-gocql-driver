@@ -6,6 +6,7 @@ package gocql
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"net"
 	"strings"
@@ -82,7 +83,12 @@ type Conn struct {
 	auth       Authenticator
 	addr       string
 	version    uint8
-	isClosed   bool
+
+	// Protects isClosed
+	closedMu sync.RWMutex
+	isClosed bool
+	quit     chan struct{}
+	once     sync.Once
 }
 
 // Connect establishes a connection to a Cassandra node.
@@ -110,8 +116,8 @@ func Connect(addr string, cfg ConnConfig, cluster Cluster) (*Conn, error) {
 		addr:       conn.RemoteAddr().String(),
 		cluster:    cluster,
 		compressor: cfg.Compressor,
-		isClosed:   false,
 		auth:       cfg.Authenticator,
+		quit:       make(chan struct{}),
 	}
 
 	if cfg.Keepalive > 0 {
@@ -200,22 +206,21 @@ func (c *Conn) serve() {
 		c.dispatch(resp)
 	}
 
-	c.Close()
-	for id := 0; id < len(c.calls); id++ {
-		req := &c.calls[id]
-		if atomic.LoadInt32(&req.active) == 1 {
-			req.resp <- callResp{nil, err}
-		}
+	if err != nil {
+		c.handleError(err)
 	}
-	c.cluster.HandleError(c, err, true)
+}
+
+func (c *Conn) Read(p []byte) (int, error) {
+	c.conn.SetReadDeadline(time.Now().Add(c.timeout))
+	return c.r.Read(p)
 }
 
 func (c *Conn) recv() (frame, error) {
 	resp := make(frame, headerSize, headerSize+512)
-	c.conn.SetReadDeadline(time.Now().Add(c.timeout))
 	n, last, pinged := 0, 0, false
 	for n < len(resp) {
-		nn, err := c.r.Read(resp[n:])
+		nn, err := c.Read(resp[n:])
 		n += nn
 		if err != nil {
 			if nerr, ok := err.(net.Error); ok && nerr.Temporary() {
@@ -248,6 +253,10 @@ func (c *Conn) recv() (frame, error) {
 }
 
 func (c *Conn) execSimple(op operation) (interface{}, error) {
+	if c.closed() {
+		return nil, ErrConnClosed
+	}
+
 	f, err := op.encodeFrame(c.version, nil)
 	f.setLength(len(f) - headerSize)
 	if _, err := c.conn.Write([]byte(f)); err != nil {
@@ -261,6 +270,10 @@ func (c *Conn) execSimple(op operation) (interface{}, error) {
 }
 
 func (c *Conn) exec(op operation, trace Tracer) (interface{}, error) {
+	if c.closed() {
+		return nil, ErrConnClosed
+	}
+
 	req, err := op.encodeFrame(c.version, nil)
 	if err != nil {
 		return nil, err
@@ -278,7 +291,16 @@ func (c *Conn) exec(op operation, trace Tracer) (interface{}, error) {
 	}
 	req.setLength(len(req) - headerSize)
 
-	id := <-c.uniq
+	var id uint8
+	select {
+	case id = <-c.uniq:
+		if id == 0 && c.closed() {
+			return nil, ErrConnClosed
+		}
+	case <-c.quit:
+		return nil, ErrConnClosed
+	}
+
 	req[2] = id
 	call := &c.calls[id]
 	call.resp = make(chan callResp, 1)
@@ -291,9 +313,19 @@ func (c *Conn) exec(op operation, trace Tracer) (interface{}, error) {
 		return nil, err
 	}
 
-	reply := <-call.resp
+	var reply callResp
+	select {
+	case reply = <-call.resp:
+	case <-c.quit:
+		return nil, ErrConnClosed
+	}
+
 	call.resp = nil
-	c.uniq <- id
+
+	// send on closed channel is bad
+	if !c.closed() {
+		c.uniq <- id
+	}
 
 	if reply.err != nil {
 		return nil, reply.err
@@ -449,19 +481,63 @@ func (c *Conn) executeQuery(qry *Query) *Iter {
 }
 
 func (c *Conn) Pick(qry *Query) *Conn {
-	if c.isClosed || len(c.uniq) == 0 {
+	if c.closed() || len(c.uniq) == 0 {
 		return nil
 	}
 	return c
 }
 
 func (c *Conn) Close() {
+	c.closedMu.Lock()
+	if c.isClosed {
+		c.closedMu.Unlock()
+		return
+	}
 	c.isClosed = true
+	c.closedMu.Unlock()
+
 	c.conn.Close()
+	close(c.quit)
 }
 
 func (c *Conn) Address() string {
 	return c.addr
+}
+
+func (c *Conn) closed() bool {
+	// avoid defer overhead
+	c.closedMu.RLock()
+	closed := c.isClosed
+	c.closedMu.RUnlock()
+	return closed
+}
+
+func (c *Conn) handleError(err error) {
+	// need to do a lock upgrade here or hold the write lock
+	c.closedMu.Lock()
+	if c.isClosed {
+		c.closedMu.Unlock()
+		return
+	}
+	c.isClosed = true
+	c.closedMu.Unlock()
+
+	c.conn.Close()
+
+	c.once.Do(func() {
+		close(c.quit)
+		for id := 0; id < len(c.calls); id++ {
+			req := &c.calls[id]
+			if atomic.LoadInt32(&req.active) == 1 {
+				select {
+				case req.resp <- callResp{nil, err}:
+				default:
+				}
+			}
+		}
+
+		c.cluster.HandleError(c, err, true)
+	})
 }
 
 func (c *Conn) UseKeyspace(keyspace string) error {
@@ -649,3 +725,7 @@ func (s SnappyCompressor) Encode(data []byte) ([]byte, error) {
 func (s SnappyCompressor) Decode(data []byte) ([]byte, error) {
 	return snappy.Decode(nil, data)
 }
+
+var (
+	ErrConnClosed = errors.New("Connection has been closed")
+)

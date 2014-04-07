@@ -51,16 +51,33 @@ func (r *RoundRobin) Size() int {
 }
 
 func (r *RoundRobin) Pick(qry *Query) *Conn {
-	pos := atomic.AddUint32(&r.pos, 1)
-	var node Node
+	pos := atomic.AddUint32(&r.pos, 1) - 1
+
 	r.mu.RLock()
-	if len(r.pool) > 0 {
-		node = r.pool[pos%uint32(len(r.pool))]
+
+	var node Node
+	l := len(r.pool)
+	defer r.mu.RUnlock()
+
+	if l == 0 {
+		return nil
 	}
-	r.mu.RUnlock()
+
+	for i := 0; i < l; i++ {
+		node = r.pool[(pos+uint32(i))%uint32(l)]
+		if node == nil {
+			continue
+		}
+
+		if n := node.Pick(qry); n != nil {
+			return n
+		}
+	}
+
 	if node == nil {
 		return nil
 	}
+
 	return node.Pick(qry)
 }
 
