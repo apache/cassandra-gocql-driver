@@ -167,10 +167,18 @@ func TestConnClosing(t *testing.T) {
 	}
 
 	numConns := db.cfg.NumConns
+	count := db.cfg.NumStreams * numConns
 
-	for i := 0; i < 128*numConns; i++ {
-		go db.Query("kill").Exec()
+	wg := &sync.WaitGroup{}
+	wg.Add(count)
+	for i := 0; i < count; i++ {
+		go func(wg *sync.WaitGroup) {
+			wg.Done()
+			db.Query("kill").Exec()
+		}(wg)
 	}
+
+	wg.Wait()
 
 	cluster := db.Node.(*clusterImpl)
 	cluster.mu.Lock()
