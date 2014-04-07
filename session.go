@@ -109,8 +109,7 @@ func (s *Session) Close() {
 func (s *Session) executeQuery(qry *Query) *Iter {
 	// fail fast
 	if s.Closed() {
-		// not a great error
-		return &Iter{err: ErrUnavailable}
+		return &Iter{err: ErrSessionClosed}
 	}
 
 	var iter *Iter
@@ -121,6 +120,7 @@ func (s *Session) executeQuery(qry *Query) *Iter {
 			time.Sleep(1 * time.Millisecond)
 			continue
 		}
+
 		iter = conn.executeQuery(qry)
 		//Exit for loop if the query was successful
 		if iter.err == nil {
@@ -129,7 +129,7 @@ func (s *Session) executeQuery(qry *Query) *Iter {
 	}
 
 	if iter == nil {
-		iter = &Iter{err: ErrUnavailable}
+		iter = &Iter{err: ErrNoConnections}
 	}
 
 	return iter
@@ -140,8 +140,7 @@ func (s *Session) executeQuery(qry *Query) *Iter {
 func (s *Session) ExecuteBatch(batch *Batch) error {
 	// fail fast
 	if s.Closed() {
-		// not a great error
-		return ErrUnavailable
+		return ErrSessionClosed
 	}
 
 	// Prevent the execution of the batch if greater than the limit
@@ -165,7 +164,7 @@ func (s *Session) ExecuteBatch(batch *Batch) error {
 			return nil
 		}
 	}
-	return ErrUnavailable
+	return ErrNoConnections
 }
 
 // Query represents a CQL statement that can be executed.
@@ -493,11 +492,13 @@ func (e Error) Error() string {
 }
 
 var (
-	ErrNotFound     = errors.New("not found")
-	ErrUnavailable  = errors.New("unavailable")
-	ErrProtocol     = errors.New("protocol error")
-	ErrUnsupported  = errors.New("feature not supported")
-	ErrTooManyStmts = errors.New("too many statements")
+	ErrNotFound      = errors.New("not found")
+	ErrUnavailable   = errors.New("unavailable")
+	ErrProtocol      = errors.New("protocol error")
+	ErrUnsupported   = errors.New("feature not supported")
+	ErrTooManyStmts  = errors.New("too many statements")
+	ErrSessionClosed = errors.New("session has been closed")
+	ErrNoConnections = errors.New("no connections available")
 )
 
 // BatchSizeMaximum is the maximum number of statements a batch operation can have.
