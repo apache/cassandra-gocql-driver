@@ -82,7 +82,9 @@ type Conn struct {
 	auth       Authenticator
 	addr       string
 	version    uint8
-	isClosed   bool
+
+	closedMu sync.RWMutex
+	isClosed bool
 }
 
 // Connect establishes a connection to a Cassandra node.
@@ -110,7 +112,6 @@ func Connect(addr string, cfg ConnConfig, cluster Cluster) (*Conn, error) {
 		addr:       conn.RemoteAddr().String(),
 		cluster:    cluster,
 		compressor: cfg.Compressor,
-		isClosed:   false,
 		auth:       cfg.Authenticator,
 	}
 
@@ -449,14 +450,28 @@ func (c *Conn) executeQuery(qry *Query) *Iter {
 }
 
 func (c *Conn) Pick(qry *Query) *Conn {
-	if c.isClosed || len(c.uniq) == 0 {
+	if c.Closed() || len(c.uniq) == 0 {
 		return nil
 	}
 	return c
 }
 
+func (c *Conn) Closed() bool {
+	c.closedMu.RLock()
+	closed := c.isClosed
+	c.closedMu.RUnlock()
+	return closed
+}
+
 func (c *Conn) Close() {
+	c.closedMu.Lock()
+	if c.isClosed {
+		c.closedMu.Unlock()
+		return
+	}
 	c.isClosed = true
+	c.closedMu.Unlock()
+
 	c.conn.Close()
 }
 
