@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 	"sync"
 	"time"
 )
@@ -190,13 +191,16 @@ func (q *Query) RetryPolicy(r RetryPolicy) *Query {
 
 // Exec executes the query without returning any rows.
 func (q *Query) Exec() error {
-	iter := q.session.executeQuery(q)
+	iter := q.Iter()
 	return iter.err
 }
 
 // Iter executes the query and returns an iterator capable of iterating
 // over all results.
 func (q *Query) Iter() *Iter {
+	if strings.Index(strings.ToLower(q.stmt), "use") == 0 {
+		return &Iter{err: ErrUseStmt}
+	}
 	return q.session.executeQuery(q)
 }
 
@@ -467,6 +471,7 @@ var (
 	ErrProtocol     = errors.New("protocol error")
 	ErrUnsupported  = errors.New("feature not supported")
 	ErrTooManyStmts = errors.New("too many statements")
+	ErrUseStmt      = errors.New("use statements aren't supported. Please see https://github.com/gocql/gocql for explaination.")
 )
 
 // BatchSizeMaximum is the maximum number of statements a batch operation can have.
