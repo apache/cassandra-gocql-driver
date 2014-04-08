@@ -138,35 +138,26 @@ func (c *clusterImpl) connect(addr string) {
 				return
 			}
 		}
-		c.addConn(conn, "")
+		c.addConn(conn)
 		return
 	}
 }
 
-func (c *clusterImpl) changeKeyspace(conn *Conn, keyspace string, connected bool) {
-	if err := conn.UseKeyspace(keyspace); err != nil {
-		conn.Close()
-		if connected {
-			c.removeConn(conn)
-		}
-		go c.connect(conn.Address())
-	}
-	if !connected {
-		c.addConn(conn, keyspace)
-	}
-}
-
-func (c *clusterImpl) addConn(conn *Conn, keyspace string) {
+func (c *clusterImpl) addConn(conn *Conn) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.quit {
 		conn.Close()
 		return
 	}
-	if keyspace != c.keyspace && c.keyspace != "" {
-		// change the keyspace before adding the node to the pool
-		go c.changeKeyspace(conn, c.keyspace, false)
-		return
+	//Set the connection's keyspace if any before adding it to the pool
+	if c.keyspace != "" {
+		if err := conn.UseKeyspace(c.keyspace); err != nil {
+			log.Printf("error setting connection keyspace. %v", err)
+			conn.Close()
+			go c.connect(conn.Address())
+			return
+		}
 	}
 	connPool := c.connPool[conn.Address()]
 	if connPool == nil {
@@ -211,28 +202,6 @@ func (c *clusterImpl) HandleError(conn *Conn, err error, closed bool) {
 	c.removeConn(conn)
 	if !c.quit {
 		go c.connect(conn.Address()) // reconnect
-	}
-}
-
-func (c *clusterImpl) HandleKeyspace(conn *Conn, keyspace string) {
-	c.mu.Lock()
-	if c.keyspace == keyspace {
-		c.mu.Unlock()
-		return
-	}
-	c.keyspace = keyspace
-	conns := make([]*Conn, 0, len(c.conns))
-	for conn := range c.conns {
-		conns = append(conns, conn)
-	}
-	c.mu.Unlock()
-
-	// change the keyspace of all other connections too
-	for i := 0; i < len(conns); i++ {
-		if conns[i] == conn {
-			continue
-		}
-		c.changeKeyspace(conns[i], keyspace, true)
 	}
 }
 
