@@ -74,15 +74,9 @@ func (cfg *ClusterConfig) CreateSession() (*Session, error) {
 		cStart:   make(chan int, 1),
 		keyspace: cfg.Keyspace,
 	}
-	for i := 0; i < len(impl.cfg.Hosts); i++ {
-		addr := strings.TrimSpace(impl.cfg.Hosts[i])
-		if strings.Index(addr, ":") < 0 {
-			addr = fmt.Sprintf("%s:%d", addr, impl.cfg.DefaultPort)
-		}
-		for j := 0; j < impl.cfg.NumConns; j++ {
-			go impl.connect(addr)
-		}
-	}
+
+	errCh := impl.connectAll()
+
 	//See if a connection is made within the StartupTimeout window.
 	select {
 	case <-impl.cStart:
@@ -92,8 +86,10 @@ func (cfg *ClusterConfig) CreateSession() (*Session, error) {
 	case <-time.After(cfg.StartupTimeout):
 		impl.Close()
 		return nil, ErrNoConnections
+	case err := <-errCh:
+		impl.Close()
+		return nil, err
 	}
-
 }
 
 type clusterImpl struct {
@@ -112,7 +108,24 @@ type clusterImpl struct {
 	quitOnce sync.Once
 }
 
-func (c *clusterImpl) connect(addr string) {
+func (c *clusterImpl) connectAll() <-chan error {
+	errChan := make(chan error, 1)
+
+	for i := 0; i < len(c.cfg.Hosts); i++ {
+		addr := strings.TrimSpace(c.cfg.Hosts[i])
+		if strings.Index(addr, ":") < 0 {
+			addr = fmt.Sprintf("%s:%d", addr, c.cfg.DefaultPort)
+		}
+
+		for j := 0; j < c.cfg.NumConns; j++ {
+			go c.connect(addr, errChan)
+		}
+	}
+
+	return errChan
+}
+
+func (c *clusterImpl) connect(addr string, errChan chan<- error) {
 	cfg := ConnConfig{
 		ProtoVersion:  c.cfg.ProtoVersion,
 		CQLVersion:    c.cfg.CQLVersion,
@@ -123,9 +136,14 @@ func (c *clusterImpl) connect(addr string) {
 		Keepalive:     c.cfg.SocketKeepalive,
 	}
 
+	var (
+		conn *Conn
+		err  error
+	)
+
 	delay := c.cfg.DelayMin
 	for {
-		conn, err := Connect(addr, cfg, c)
+		conn, err = Connect(addr, cfg, c)
 		if err != nil {
 			log.Printf("failed to connect to %q: %v", addr, err)
 			select {
@@ -138,9 +156,24 @@ func (c *clusterImpl) connect(addr string) {
 				return
 			}
 		}
-		c.addConn(conn)
+		break
+
+	}
+
+	// Here should we treat all errors from UseKeyspace as fatal?
+	if err = conn.UseKeyspace(c.keyspace); err != nil {
+		// connect failed, closing
+		log.Println(err)
+		conn.Close()
+		select {
+		case errChan <- err:
+		default:
+			// only need to return out the first error
+		}
 		return
 	}
+
+	c.addConn(conn)
 }
 
 func (c *clusterImpl) addConn(conn *Conn) {
@@ -150,15 +183,7 @@ func (c *clusterImpl) addConn(conn *Conn) {
 		conn.Close()
 		return
 	}
-	//Set the connection's keyspace if any before adding it to the pool
-	if c.keyspace != "" {
-		if err := conn.UseKeyspace(c.keyspace); err != nil {
-			log.Printf("error setting connection keyspace. %v", err)
-			conn.Close()
-			go c.connect(conn.Address())
-			return
-		}
-	}
+
 	connPool := c.connPool[conn.Address()]
 	if connPool == nil {
 		connPool = NewRoundRobin()
@@ -201,7 +226,7 @@ func (c *clusterImpl) HandleError(conn *Conn, err error, closed bool) {
 	}
 	c.removeConn(conn)
 	if !c.quit {
-		go c.connect(conn.Address()) // reconnect
+		go c.connect(conn.Address(), make(chan error, 1)) // reconnect
 	}
 }
 
