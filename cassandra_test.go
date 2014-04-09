@@ -33,12 +33,11 @@ func createSession(t *testing.T) *Session {
 		Password: "cassandra",
 	}
 
-	session, err := cluster.CreateSession()
-	if err != nil {
-		t.Fatal("createSession:", err)
-	}
-
 	initOnce.Do(func() {
+		session, err := cluster.CreateSession()
+		if err != nil {
+			t.Fatal("createSession:", err)
+		}
 		// Drop and re-create the keyspace once. Different tests should use their own
 		// individual tables, but can assume that the table does not exist before.
 		if err := session.Query(`DROP KEYSPACE gocql_test`).Exec(); err != nil {
@@ -51,9 +50,11 @@ func createSession(t *testing.T) *Session {
 			}`).Exec(); err != nil {
 			t.Fatal("create keyspace:", err)
 		}
+		session.Close()
 	})
-
-	if err := session.Query(`USE gocql_test`).Exec(); err != nil {
+	cluster.Keyspace = "gocql_test"
+	session, err := cluster.CreateSession()
+	if err != nil {
 		t.Fatal("createSession:", err)
 	}
 
@@ -65,6 +66,20 @@ func TestEmptyHosts(t *testing.T) {
 	if session, err := cluster.CreateSession(); err == nil {
 		session.Close()
 		t.Error("expected err, got nil")
+	}
+}
+
+//TestUseStatementError checks to make sure the correct error is returned when the user tries to execute a use statement.
+func TestUseStatementError(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+
+	if err := session.Query("USE gocql_test").Exec(); err != nil {
+		if err != ErrUseStmt {
+			t.Error("expected ErrUseStmt, got " + err.Error())
+		}
+	} else {
+		t.Error("expected err, got nil.")
 	}
 }
 

@@ -23,7 +23,6 @@ const maskVersion = 0x7F
 
 type Cluster interface {
 	HandleError(conn *Conn, err error, closed bool)
-	HandleKeyspace(conn *Conn, keyspace string)
 }
 
 type Authenticator interface {
@@ -427,7 +426,6 @@ func (c *Conn) executeQuery(qry *Query) *Iter {
 		}
 		return iter
 	case resultKeyspaceFrame:
-		c.cluster.HandleKeyspace(c, x.Keyspace)
 		return &Iter{}
 	case errorFrame:
 		if x.Code == errUnprepared && len(qry.values) > 0 {

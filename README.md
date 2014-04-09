@@ -41,6 +41,37 @@ Features
 
 Please visit the [Roadmap](https://github.com/gocql/gocql/wiki/Roadmap) page to see what is on the horizion.
 
+Important Default Keyspace Changes
+----------------------------------
+gocql no longer supports executing "use <keyspace>" statements to simplfy the library. The user still has the
+ability to define the default keyspace for connections but now the keyspace can only be defined before a
+session is created. Queries can still access keyspaces by indicating the keyspace in the query:
+```sql
+SELECT * FROM example2.table;
+```
+
+Example of correct usage:
+```go
+	cluster := gocql.NewCluster("192.168.1.1", "192.168.1.2", "192.168.1.3")
+	cluster.Keyspace = "example"
+	...
+	session, err := cluster.CreateSession()
+
+```
+Example of incorrect usage:
+```go
+	cluster := gocql.NewCluster("192.168.1.1", "192.168.1.2", "192.168.1.3")
+	cluster.Keyspace = "example"
+	...
+	session, err := cluster.CreateSession()
+
+	if err = session.Query("use example2").Exec(); err != nil {
+		log.Fatal(err)
+	}
+```
+This will result in an err being returned from the session.Query line as the user is trying to execute a "use"
+statement. 
+
 Example
 -------
 
