@@ -92,12 +92,11 @@ func (s *Session) Query(stmt string, values ...interface{}) *Query {
 // operation.
 func (s *Session) Close() {
 	s.closeMu.Lock()
+	defer s.closeMu.Unlock()
 	if s.isClosed {
-		s.closeMu.Unlock()
 		return
 	}
 	s.isClosed = true
-	s.closeMu.Unlock()
 
 	s.Node.Close()
 }
