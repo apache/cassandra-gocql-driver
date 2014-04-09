@@ -7,6 +7,8 @@ package gocql
 import (
 	"bytes"
 	"flag"
+	"fmt"
+	"log"
 	"reflect"
 	"sort"
 	"strings"
@@ -23,9 +25,70 @@ var (
 	flagCQL     = flag.String("cql", "3.0.0", "CQL version")
 )
 
+func init() {
+	log.SetFlags(log.LstdFlags | log.Lshortfile)
+}
+
 var initOnce sync.Once
 
+type mockCluster struct{}
+
+func (*mockCluster) HandleError(*Conn, error, bool) {
+}
+
+func (*mockCluster) HandleKeyspace(*Conn, string) {
+}
+
+func createKeyspace(t *testing.T) {
+
+	cfg := ConnConfig{
+		ProtoVersion: *flagProto,
+		CQLVersion:   *flagCQL,
+		NumStreams:   128,
+		Timeout:      500 * time.Millisecond,
+	}
+
+	addrs := strings.Split(*flagCluster, ",")
+	addr := strings.TrimSpace(addrs[0])
+	if strings.Index(addr, ":") < 0 {
+		addr = fmt.Sprintf("%s:%d", addr, 9042)
+	}
+
+	conn, err := Connect(addr, cfg, &mockCluster{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	op := &queryFrame{
+		Stmt: `DROP KEYSPACE gocql_test`,
+		Cons: Any,
+	}
+
+	_, err = conn.exec(op, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	op.Stmt = `CREATE KEYSPACE gocql_test
+			WITH replication = {
+				'class' : 'SimpleStrategy',
+				'replication_factor' : 1
+			}`
+	_, err = conn.exec(op, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
 func createSession(t *testing.T) *Session {
+
+	initOnce.Do(func() {
+		// Drop and re-create the keyspace once. Different tests should use their own
+		// individual tables, but can assume that the table does not exist before.
+		createKeyspace(t)
+	})
+
 	cluster := NewCluster(strings.Split(*flagCluster, ",")...)
 	cluster.ProtoVersion = *flagProto
 	cluster.CQLVersion = *flagCQL
@@ -33,27 +96,9 @@ func createSession(t *testing.T) *Session {
 		Username: "cassandra",
 		Password: "cassandra",
 	}
-
-	initOnce.Do(func() {
-		session, err := cluster.CreateSession()
-		if err != nil {
-			t.Fatal("createSession:", err)
-		}
-		// Drop and re-create the keyspace once. Different tests should use their own
-		// individual tables, but can assume that the table does not exist before.
-		if err := session.Query(`DROP KEYSPACE gocql_test`).Exec(); err != nil {
-			t.Log("drop keyspace:", err)
-		}
-		if err := session.Query(`CREATE KEYSPACE gocql_test
-			WITH replication = {
-				'class' : 'SimpleStrategy',
-				'replication_factor' : 1
-			}`).Exec(); err != nil {
-			t.Fatal("create keyspace:", err)
-		}
-		session.Close()
-	})
 	cluster.Keyspace = "gocql_test"
+	cluster.Timeout = 500 * time.Millisecond
+
 	session, err := cluster.CreateSession()
 	if err != nil {
 		t.Fatal("createSession:", err)
