@@ -9,11 +9,12 @@ import (
 	"flag"
 	"reflect"
 	"sort"
-	"speter.net/go/exp/math/dec/inf"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"speter.net/go/exp/math/dec/inf"
 )
 
 var (
@@ -556,5 +557,31 @@ func TestScanCASWithNilArguments(t *testing.T) {
 		t.Fatal("insert should not have been applied")
 	} else if foo != cas {
 		t.Fatalf("expected %v but got %v", foo, cas)
+	}
+}
+
+func TestInvalidKeyspace(t *testing.T) {
+	cluster := NewCluster(strings.Split(*flagCluster, ",")...)
+	cluster.ProtoVersion = *flagProto
+	cluster.CQLVersion = *flagCQL
+	cluster.Keyspace = "not-valid-keyspace"
+
+	session, err := cluster.CreateSession()
+	if err != nil {
+		frame, ok := err.(errorFrame)
+		if !ok {
+			t.Fatalf("Expected to get an error frame during createSession. Got (%T) %+v", err, err)
+		}
+
+		if frame.Message != "Keyspace 'not-valid-keyspace' does not exist" {
+			t.Fatalf("Expected to get keyspace does not exist error, got Code: %x Message: %s", frame.Code, frame.Message)
+		}
+	} else {
+		t.Fatal("Expected to get an error creating session with invalid keyspace, got nothing")
+	}
+
+	if session != nil {
+		session.Close()
+		t.Fatal("Expected session to be nil")
 	}
 }
