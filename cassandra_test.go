@@ -96,7 +96,7 @@ func TestInvalidKeyspace(t *testing.T) {
 		}
 	} else {
 		session.Close() //Clean up the session
-		t.Error("Expected an error but CreateSession returned none.")
+		t.Error("expected err, got nil.")
 	}
 }
 

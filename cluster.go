@@ -58,12 +58,13 @@ func (cfg *ClusterConfig) CreateSession() (*Session, error) {
 	}
 
 	impl := &clusterImpl{
-		cfg:      *cfg,
-		hostPool: NewRoundRobin(),
-		connPool: make(map[string]*RoundRobin),
-		conns:    make(map[*Conn]struct{}),
-		quitWait: make(chan bool),
-		keyspace: cfg.Keyspace,
+		cfg:          *cfg,
+		hostPool:     NewRoundRobin(),
+		connPool:     make(map[string]*RoundRobin),
+		conns:        make(map[*Conn]struct{}),
+		quitWait:     make(chan bool),
+		cFillingPool: make(chan int, 1),
+		keyspace:     cfg.Keyspace,
 	}
 	//Walk through connecting to hosts. As soon as one host connects
 	//defer the remaining connections to cluster.fillPool()
@@ -74,6 +75,7 @@ func (cfg *ClusterConfig) CreateSession() (*Session, error) {
 		}
 		err := impl.connect(addr)
 		if err == nil {
+			impl.cFillingPool <- 1
 			go impl.fillPool()
 			break
 		}
@@ -94,13 +96,14 @@ func (cfg *ClusterConfig) CreateSession() (*Session, error) {
 }
 
 type clusterImpl struct {
-	cfg        ClusterConfig
-	hostPool   *RoundRobin
-	connPool   map[string]*RoundRobin
-	conns      map[*Conn]struct{}
-	keyspace   string
-	mu         sync.Mutex
-	muFillPool sync.Mutex
+	cfg      ClusterConfig
+	hostPool *RoundRobin
+	connPool map[string]*RoundRobin
+	conns    map[*Conn]struct{}
+	keyspace string
+	mu       sync.Mutex
+
+	cFillingPool chan int
 
 	quit     bool
 	quitWait chan bool
@@ -118,7 +121,6 @@ func (c *clusterImpl) connect(addr string) error {
 		Keepalive:     c.cfg.SocketKeepalive,
 	}
 
-	//delay := c.cfg.DelayMin
 	for {
 		conn, err := Connect(addr, cfg, c)
 		if err != nil {
@@ -159,8 +161,13 @@ func (c *clusterImpl) addConn(conn *Conn) error {
 //amount of connections defined. Also the method will test a host with one connection
 //instead of flooding the host with number of connections defined in the cluster config
 func (c *clusterImpl) fillPool() {
-	c.muFillPool.Lock()
-	defer c.muFillPool.Unlock()
+	//Debounce large amounts of requests to fill pool
+	select {
+	case <-time.After(1 * time.Millisecond):
+		return
+	case <-c.cFillingPool:
+		defer func() { c.cFillingPool <- 1 }()
+	}
 
 	c.mu.Lock()
 	isClosed := c.quit
