@@ -119,8 +119,9 @@ func TestRoundRobin(t *testing.T) {
 		defer servers[i].Stop()
 	}
 	cluster := NewCluster(addrs...)
-	cluster.StartupMin = len(addrs)
 	db, err := cluster.CreateSession()
+	time.Sleep(1 * time.Second) //Sleep to allow the Cluster.fillPool to complete
+
 	if err != nil {
 		t.Errorf("NewCluster: %v", err)
 	}
@@ -181,12 +182,14 @@ func TestConnClosing(t *testing.T) {
 	wg.Wait()
 
 	cluster := db.Node.(*clusterImpl)
-	cluster.mu.Lock()
+	//Commented out as not sure the reason for closing the connections
+	//after they have been killed via queries.
+	/*cluster.mu.Lock()
 	for conn := range cluster.conns {
 		conn.conn.Close()
 	}
 
-	cluster.mu.Unlock()
+	cluster.mu.Unlock()*/
 
 	time.Sleep(20 * time.Millisecond)
 	cluster.mu.Lock()
