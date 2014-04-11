@@ -13,8 +13,6 @@ import (
 	"sync/atomic"
 	"time"
 	"unicode"
-
-	"code.google.com/p/snappy-go/snappy"
 )
 
 const defaultFrameSize = 4096
@@ -634,31 +632,9 @@ type callResp struct {
 	err error
 }
 
-type Compressor interface {
-	Name() string
-	Encode(data []byte) ([]byte, error)
-	Decode(data []byte) ([]byte, error)
-}
-
 type inflightPrepare struct {
 	info *queryInfo
 	err  error
 	wg   sync.WaitGroup
 }
 
-// SnappyCompressor implements the Compressor interface and can be used to
-// compress incoming and outgoing frames. The snappy compression algorithm
-// aims for very high speeds and reasonable compression.
-type SnappyCompressor struct{}
-
-func (s SnappyCompressor) Name() string {
-	return "snappy"
-}
-
-func (s SnappyCompressor) Encode(data []byte) ([]byte, error) {
-	return snappy.Encode(nil, data)
-}
-
-func (s SnappyCompressor) Decode(data []byte) ([]byte, error) {
-	return snappy.Decode(nil, data)
-}
