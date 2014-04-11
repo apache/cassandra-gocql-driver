@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 )
 
 // Session is the interface used by users to interact with the database.
@@ -173,6 +174,28 @@ func (q *Query) Trace(trace Tracer) *Query {
 func (q *Query) PageSize(n int) *Query {
 	q.pageSize = n
 	return q
+}
+
+func (q *Query) ShouldPrepare() bool {
+
+	stmt := strings.TrimLeftFunc(strings.TrimRightFunc(q.stmt, func(r rune) bool {
+		return unicode.IsSpace(r) || r == ';'
+	}), unicode.IsSpace)
+
+	var stmtType string
+	if n := strings.IndexFunc(stmt, unicode.IsSpace); n >= 0 {
+		stmtType = strings.ToLower(stmt[:n])
+	}
+	if stmtType == "begin" {
+		if n := strings.LastIndexFunc(stmt, unicode.IsSpace); n >= 0 {
+			stmtType = strings.ToLower(stmt[n+1:])
+		}
+	}
+	switch stmtType {
+	case "select", "insert", "update", "delete", "batch":
+		return true
+	}
+	return false
 }
 
 // SetPrefetch sets the default threshold for pre-fetching new pages. If

@@ -8,11 +8,9 @@ import (
 	"bufio"
 	"fmt"
 	"net"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
-	"unicode"
 )
 
 const defaultFrameSize = 4096
@@ -359,26 +357,6 @@ func (c *Conn) prepareStatement(stmt string, trace Tracer) (*queryInfo, error) {
 	return flight.info, flight.err
 }
 
-func shouldPrepare(stmt string) bool {
-	stmt = strings.TrimLeftFunc(strings.TrimRightFunc(stmt, func(r rune) bool {
-		return unicode.IsSpace(r) || r == ';'
-	}), unicode.IsSpace)
-
-	var stmtType string
-	if n := strings.IndexFunc(stmt, unicode.IsSpace); n >= 0 {
-		stmtType = strings.ToLower(stmt[:n])
-	}
-	if stmtType == "begin" {
-		if n := strings.LastIndexFunc(stmt, unicode.IsSpace); n >= 0 {
-			stmtType = strings.ToLower(stmt[n+1:])
-		}
-	}
-	switch stmtType {
-	case "select", "insert", "update", "delete", "batch":
-		return true
-	}
-	return false
-}
 
 func (c *Conn) executeQuery(qry *Query) *Iter {
 	op := &queryFrame{
@@ -387,7 +365,7 @@ func (c *Conn) executeQuery(qry *Query) *Iter {
 		PageSize:  qry.pageSize,
 		PageState: qry.pageState,
 	}
-	if shouldPrepare(op.Stmt) {
+	if qry.ShouldPrepare() {
 		// Prepare all DML queries. Other queries can not be prepared.
 		info, err := c.prepareStatement(qry.stmt, qry.trace)
 		if err != nil {
