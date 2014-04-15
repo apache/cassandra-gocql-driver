@@ -357,7 +357,6 @@ func (c *Conn) prepareStatement(stmt string, trace Tracer) (*queryInfo, error) {
 	return flight.info, flight.err
 }
 
-
 func (c *Conn) executeQuery(qry *Query) *Iter {
 	op := &queryFrame{
 		Stmt:      qry.stmt,
@@ -365,7 +364,7 @@ func (c *Conn) executeQuery(qry *Query) *Iter {
 		PageSize:  qry.pageSize,
 		PageState: qry.pageState,
 	}
-	if qry.ShouldPrepare() {
+	if qry.shouldPrepare() {
 		// Prepare all DML queries. Other queries can not be prepared.
 		info, err := c.prepareStatement(qry.stmt, qry.trace)
 		if err != nil {
@@ -615,4 +614,3 @@ type inflightPrepare struct {
 	err  error
 	wg   sync.WaitGroup
 }
-

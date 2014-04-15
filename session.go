@@ -176,7 +176,7 @@ func (q *Query) PageSize(n int) *Query {
 	return q
 }
 
-func (q *Query) ShouldPrepare() bool {
+func (q *Query) shouldPrepare() bool {
 
 	stmt := strings.TrimLeftFunc(strings.TrimRightFunc(q.stmt, func(r rune) bool {
 		return unicode.IsSpace(r) || r == ';'
