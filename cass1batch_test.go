@@ -50,7 +50,7 @@ func TestShouldPrepareFunction(t *testing.T) {
 
 	for _, test := range shouldPrepareTests {
 		q := &Query{stmt: test.Stmt}
-		if got := q.ShouldPrepare(); got != test.Result {
+		if got := q.shouldPrepare(); got != test.Result {
 			t.Fatalf("%q: got %v, expected %v\n", test.Stmt, got, test.Result)
 		}
 	}
