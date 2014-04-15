@@ -7,13 +7,16 @@ package gocql
 import (
 	"bytes"
 	"flag"
+	"fmt"
+	"log"
 	"reflect"
 	"sort"
-	"speter.net/go/exp/math/dec/inf"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"speter.net/go/exp/math/dec/inf"
 )
 
 var (
@@ -22,9 +25,70 @@ var (
 	flagCQL     = flag.String("cql", "3.0.0", "CQL version")
 )
 
+func init() {
+	log.SetFlags(log.LstdFlags | log.Lshortfile)
+}
+
 var initOnce sync.Once
 
+type mockCluster struct{}
+
+func (*mockCluster) HandleError(*Conn, error, bool) {
+}
+
+func (*mockCluster) HandleKeyspace(*Conn, string) {
+}
+
+func createKeyspace(t *testing.T) {
+
+	cfg := ConnConfig{
+		ProtoVersion: *flagProto,
+		CQLVersion:   *flagCQL,
+		NumStreams:   128,
+		Timeout:      500 * time.Millisecond,
+	}
+
+	addrs := strings.Split(*flagCluster, ",")
+	addr := strings.TrimSpace(addrs[0])
+	if strings.Index(addr, ":") < 0 {
+		addr = fmt.Sprintf("%s:%d", addr, 9042)
+	}
+
+	conn, err := Connect(addr, cfg, &mockCluster{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	op := &queryFrame{
+		Stmt: `DROP KEYSPACE gocql_test`,
+		Cons: Any,
+	}
+
+	_, err = conn.exec(op, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	op.Stmt = `CREATE KEYSPACE gocql_test
+			WITH replication = {
+				'class' : 'SimpleStrategy',
+				'replication_factor' : 1
+			}`
+	_, err = conn.exec(op, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
 func createSession(t *testing.T) *Session {
+
+	initOnce.Do(func() {
+		// Drop and re-create the keyspace once. Different tests should use their own
+		// individual tables, but can assume that the table does not exist before.
+		createKeyspace(t)
+	})
+
 	cluster := NewCluster(strings.Split(*flagCluster, ",")...)
 	cluster.ProtoVersion = *flagProto
 	cluster.CQLVersion = *flagCQL
@@ -32,27 +96,9 @@ func createSession(t *testing.T) *Session {
 		Username: "cassandra",
 		Password: "cassandra",
 	}
-
-	initOnce.Do(func() {
-		session, err := cluster.CreateSession()
-		if err != nil {
-			t.Fatal("createSession:", err)
-		}
-		// Drop and re-create the keyspace once. Different tests should use their own
-		// individual tables, but can assume that the table does not exist before.
-		if err := session.Query(`DROP KEYSPACE gocql_test`).Exec(); err != nil {
-			t.Log("drop keyspace:", err)
-		}
-		if err := session.Query(`CREATE KEYSPACE gocql_test
-			WITH replication = {
-				'class' : 'SimpleStrategy',
-				'replication_factor' : 1
-			}`).Exec(); err != nil {
-			t.Fatal("create keyspace:", err)
-		}
-		session.Close()
-	})
 	cluster.Keyspace = "gocql_test"
+	cluster.Timeout = 500 * time.Millisecond
+
 	session, err := cluster.CreateSession()
 	if err != nil {
 		t.Fatal("createSession:", err)
@@ -556,5 +602,31 @@ func TestScanCASWithNilArguments(t *testing.T) {
 		t.Fatal("insert should not have been applied")
 	} else if foo != cas {
 		t.Fatalf("expected %v but got %v", foo, cas)
+	}
+}
+
+func TestInvalidKeyspace(t *testing.T) {
+	cluster := NewCluster(strings.Split(*flagCluster, ",")...)
+	cluster.ProtoVersion = *flagProto
+	cluster.CQLVersion = *flagCQL
+	cluster.Keyspace = "not-valid-keyspace"
+
+	session, err := cluster.CreateSession()
+	if err != nil {
+		frame, ok := err.(errorFrame)
+		if !ok {
+			t.Fatalf("Expected to get an error frame during createSession. Got (%T) %+v", err, err)
+		}
+
+		if frame.Message != "Keyspace 'not-valid-keyspace' does not exist" {
+			t.Fatalf("Expected to get keyspace does not exist error, got Code: %x Message: %s", frame.Code, frame.Message)
+		}
+	} else {
+		t.Fatal("Expected to get an error creating session with invalid keyspace, got nothing")
+	}
+
+	if session != nil {
+		session.Close()
+		t.Fatal("Expected session to be nil")
 	}
 }
