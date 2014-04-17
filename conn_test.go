@@ -119,8 +119,9 @@ func TestRoundRobin(t *testing.T) {
 		defer servers[i].Stop()
 	}
 	cluster := NewCluster(addrs...)
-	cluster.StartupMin = len(addrs)
 	db, err := cluster.CreateSession()
+	time.Sleep(1 * time.Second) //Sleep to allow the Cluster.fillPool to complete
+
 	if err != nil {
 		t.Errorf("NewCluster: %v", err)
 	}
@@ -165,6 +166,7 @@ func TestConnClosing(t *testing.T) {
 	if err != nil {
 		t.Errorf("NewCluster: %v", err)
 	}
+	defer db.Close()
 
 	numConns := db.cfg.NumConns
 	count := db.cfg.NumStreams * numConns
@@ -180,15 +182,9 @@ func TestConnClosing(t *testing.T) {
 
 	wg.Wait()
 
+	time.Sleep(1 * time.Second) //Sleep so the fillPool can complete.
 	cluster := db.Node.(*clusterImpl)
-	cluster.mu.Lock()
-	for conn := range cluster.conns {
-		conn.conn.Close()
-	}
 
-	cluster.mu.Unlock()
-
-	time.Sleep(20 * time.Millisecond)
 	cluster.mu.Lock()
 	conns := len(cluster.conns)
 	cluster.mu.Unlock()

@@ -83,6 +83,23 @@ func TestUseStatementError(t *testing.T) {
 	}
 }
 
+//TestInvalidKeyspace checks that an invalid keyspace will return promptly and without a flood of connections
+func TestInvalidKeyspace(t *testing.T) {
+	cluster := NewCluster(strings.Split(*flagCluster, ",")...)
+	cluster.ProtoVersion = *flagProto
+	cluster.CQLVersion = *flagCQL
+	cluster.Keyspace = "invalidKeyspace"
+	session, err := cluster.CreateSession()
+	if err != nil {
+		if err != ErrNoConnections {
+			t.Errorf("Expected ErrNoConnections but got %v", err)
+		}
+	} else {
+		session.Close() //Clean up the session
+		t.Error("expected err, got nil.")
+	}
+}
+
 func TestCRUD(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
@@ -300,7 +317,6 @@ func TestCreateSessionTimeout(t *testing.T) {
 		t.Fatal("no startup timeout")
 	}()
 	c := NewCluster("127.0.0.1:1")
-	c.StartupTimeout = 1 * time.Second
 	_, err := c.CreateSession()
 
 	if err == nil {
