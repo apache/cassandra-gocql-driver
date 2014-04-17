@@ -130,10 +130,6 @@ func (s *Session) executeQuery(qry *Query) *Iter {
 		}
 	}
 
-	if iter == nil {
-		iter = &Iter{err: ErrNoConnections}
-	}
-
 	return iter
 }
 
