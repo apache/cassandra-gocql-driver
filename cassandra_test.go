@@ -91,7 +91,7 @@ func TestInvalidKeyspace(t *testing.T) {
 	cluster.Keyspace = "invalidKeyspace"
 	session, err := cluster.CreateSession()
 	if err != nil {
-		if err != ErrNoConnections {
+		if err != ErrNoConnectionsStarted {
 			t.Errorf("Expected ErrNoConnections but got %v", err)
 		}
 	} else {
