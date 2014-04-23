@@ -491,11 +491,16 @@ func (e Error) Error() string {
 var (
 	ErrNotFound     = errors.New("not found")
 	ErrUnavailable  = errors.New("unavailable")
-	ErrProtocol     = errors.New("protocol error")
 	ErrUnsupported  = errors.New("feature not supported")
 	ErrTooManyStmts = errors.New("too many statements")
 	ErrUseStmt      = errors.New("use statements aren't supported. Please see https://github.com/gocql/gocql for explaination.")
 )
+
+type ErrProtocol struct{ error }
+
+func NewErrProtocol(format string, args ...interface{}) error {
+	return ErrProtocol{fmt.Errorf(format, args...)}
+}
 
 // BatchSizeMaximum is the maximum number of statements a batch operation can have.
 // This limit is set by cassandra and could change in the future.

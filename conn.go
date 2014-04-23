@@ -174,7 +174,7 @@ func (c *Conn) startup(cfg *ConnConfig) error {
 			}
 			return nil
 		default:
-			return ErrProtocol
+			return NewErrProtocol("Unknown type of response to startup frame: %s", x)
 		}
 	}
 }
@@ -235,7 +235,7 @@ func (c *Conn) recv() (frame, error) {
 		}
 		if n == headerSize && len(resp) == headerSize {
 			if resp[0] != c.version|flagResponse {
-				return nil, ErrProtocol
+				return nil, NewErrProtocol("recv: Response protocol version does not match connection protocol version (%d != %d)", resp[0], c.version|flagResponse)
 			}
 			resp.grow(resp.Length())
 		}
@@ -342,7 +342,7 @@ func (c *Conn) prepareStatement(stmt string, trace Tracer) (*queryInfo, error) {
 		case error:
 			flight.err = x
 		default:
-			flight.err = ErrProtocol
+			flight.err = NewErrProtocol("Unknown type in response to prepare frame: %s", x)
 		}
 	}
 
@@ -418,7 +418,7 @@ func (c *Conn) executeQuery(qry *Query) *Iter {
 	case error:
 		return &Iter{err: x}
 	default:
-		return &Iter{err: ErrProtocol}
+		return &Iter{err: NewErrProtocol("Unknown type in response to execute query: %s", x)}
 	}
 }
 
@@ -462,7 +462,7 @@ func (c *Conn) UseKeyspace(keyspace string) error {
 	case error:
 		return x
 	default:
-		return ErrProtocol
+		return NewErrProtocol("Unknown type in response to USE: %s", x)
 	}
 	return nil
 }
@@ -511,22 +511,24 @@ func (c *Conn) executeBatch(batch *Batch) error {
 	case error:
 		return x
 	default:
-		return ErrProtocol
+		return NewErrProtocol("Unknown type in response to batch statement: %s", x)
 	}
 }
 
 func (c *Conn) decodeFrame(f frame, trace Tracer) (rval interface{}, err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			if e, ok := r.(error); ok && e == ErrProtocol {
+			if e, ok := r.(ErrProtocol); ok {
 				err = e
 				return
 			}
 			panic(r)
 		}
 	}()
-	if len(f) < headerSize || (f[0] != c.version|flagResponse) {
-		return nil, ErrProtocol
+	if len(f) < headerSize {
+		return nil, NewErrProtocol("Decoding frame: less data received than required for header: %d < %d", len(f), headerSize)
+	} else if f[0] != c.version|flagResponse {
+		return nil, NewErrProtocol("Decoding frame: response protocol version does not match connection protocol version (%d != %d)", f[0], c.version|flagResponse)
 	}
 	flags, op, f := f[1], f[3], f[headerSize:]
 	if flags&flagCompress != 0 && len(f) > 0 && c.compressor != nil {
@@ -538,7 +540,7 @@ func (c *Conn) decodeFrame(f frame, trace Tracer) (rval interface{}, err error) 
 	}
 	if flags&flagTrace != 0 {
 		if len(f) < 16 {
-			return nil, ErrProtocol
+			return nil, NewErrProtocol("Decoding frame: length of frame less than 16 while tracing is enabled")
 		}
 		traceId := []byte(f[:16])
 		f = f[16:]
@@ -574,7 +576,7 @@ func (c *Conn) decodeFrame(f frame, trace Tracer) (rval interface{}, err error) 
 		case resultKindSchemaChanged:
 			return resultVoidFrame{}, nil
 		default:
-			return nil, ErrProtocol
+			return nil, NewErrProtocol("Decoding frame: unknown result kind %s", kind)
 		}
 	case opAuthenticate:
 		return authenticateFrame{f.readString()}, nil
@@ -589,7 +591,7 @@ func (c *Conn) decodeFrame(f frame, trace Tracer) (rval interface{}, err error) 
 		msg := f.readString()
 		return errorFrame{code, msg}, nil
 	default:
-		return nil, ErrProtocol
+		return nil, NewErrProtocol("Decoding frame: unknown op", op)
 	}
 }
 
