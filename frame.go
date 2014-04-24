@@ -178,7 +178,7 @@ func (f *frame) skipHeader() {
 
 func (f *frame) readInt() int {
 	if len(*f) < 4 {
-		panic(ErrProtocol)
+		panic(NewErrProtocol("Trying to read an int while >4 bytes in the buffer"))
 	}
 	v := uint32((*f)[0])<<24 | uint32((*f)[1])<<16 | uint32((*f)[2])<<8 | uint32((*f)[3])
 	*f = (*f)[4:]
@@ -187,7 +187,7 @@ func (f *frame) readInt() int {
 
 func (f *frame) readShort() uint16 {
 	if len(*f) < 2 {
-		panic(ErrProtocol)
+		panic(NewErrProtocol("Trying to read a short while >2 bytes in the buffer"))
 	}
 	v := uint16((*f)[0])<<8 | uint16((*f)[1])
 	*f = (*f)[2:]
@@ -197,7 +197,7 @@ func (f *frame) readShort() uint16 {
 func (f *frame) readString() string {
 	n := int(f.readShort())
 	if len(*f) < n {
-		panic(ErrProtocol)
+		panic(NewErrProtocol("Trying to read a string of %d bytes from a buffer with %d bytes in it", n, len(*f)))
 	}
 	v := string((*f)[:n])
 	*f = (*f)[n:]
@@ -207,7 +207,7 @@ func (f *frame) readString() string {
 func (f *frame) readLongString() string {
 	n := f.readInt()
 	if len(*f) < n {
-		panic(ErrProtocol)
+		panic(NewErrProtocol("Trying to read a string of %d bytes from a buffer with %d bytes in it", n, len(*f)))
 	}
 	v := string((*f)[:n])
 	*f = (*f)[n:]
@@ -220,7 +220,7 @@ func (f *frame) readBytes() []byte {
 		return nil
 	}
 	if len(*f) < n {
-		panic(ErrProtocol)
+		panic(NewErrProtocol("Trying to read %d bytes from a buffer with %d bytes in it", n, len(*f)))
 	}
 	v := (*f)[:n]
 	*f = (*f)[n:]
@@ -230,7 +230,7 @@ func (f *frame) readBytes() []byte {
 func (f *frame) readShortBytes() []byte {
 	n := int(f.readShort())
 	if len(*f) < n {
-		panic(ErrProtocol)
+		panic(NewErrProtocol("Trying to read %d bytes from a buffer with %d bytes in it", n, len(*f)))
 	}
 	v := (*f)[:n]
 	*f = (*f)[n:]
