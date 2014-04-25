@@ -111,7 +111,7 @@ func (c *Conn) testLatency() error {
     defer c.connectLatencyMu.Unlock()
 
     // Already updated
-    if (time.Since(c.connectLatencyLastUpdate) < CONNECT_LATENCY_UPDATE_INTERVAL) {
+    if (c.connectLatency != -1 && time.Since(c.connectLatencyLastUpdate) < CONNECT_LATENCY_UPDATE_INTERVAL) {
         return nil
     }
 
@@ -165,6 +165,7 @@ func Connect(addr string, cfg ConnConfig, cluster Cluster) (*Conn, error) {
 		cluster:    cluster,
 		compressor: cfg.Compressor,
 		auth:       cfg.Authenticator,
+                connectLatency: int64(-1),
                 connectLatencyLastUpdate: time.Now().UTC(), // First time during creation
 	}
 
