@@ -72,7 +72,7 @@ func (r *RoundRobin) Pick(qry *Query) *Conn {
                     for i,node := range r.pool {
                         nodeCon := node.Pick(qry)
                         totalLatency += nodeCon.connectLatency
-                        log.Printf("Latency %d", nodeCon.connectLatency)
+                        log.Printf("Latency %s %d", nodeCon.addr, nodeCon.connectLatency)
                         conMap[i] = nodeCon
                     }
                     var avgLatency int64 = totalLatency / int64(len(conMap))
@@ -87,9 +87,10 @@ func (r *RoundRobin) Pick(qry *Query) *Conn {
                     }
                     log.Printf("Nodes pool length %d", len(r.pool))
                     log.Printf("Fast len %d", len(fastConns))
-                    log.Printf("Fast %s", fastConns)
-                    
-                    return fastConns[pos%uint32(len(fastConns))]
+                    res := fastConns[pos%uint32(len(fastConns))]
+                    log.Printf("Selected %s", res)
+                    log.Printf("Selected latency %s", res.connectLatency)
+                    return res
                 }
 	}
 	if node == nil {
