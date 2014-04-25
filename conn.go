@@ -95,11 +95,6 @@ func (c *Conn) getConnectLatency() int64 {
         go func() {
             // Lock
             log.Printf("Updating latency of %s", c.addr)
-            c.connectLatencyMu.Lock()
-            defer c.connectLatencyMu.Unlock()
-
-            // Updating
-            c.connectLatencyLastUpdate = time.Now().UTC()
             
             // Update latency
             latencyTestErr := c.testLatency()
@@ -113,16 +108,26 @@ func (c *Conn) getConnectLatency() int64 {
 }
 
 // Test latency to a connection by opening a socket and closing it afterwards
+var LATENCY_TEST_TIMEOUT time.Duration = 5 * time.Second
 func (c *Conn) testLatency() error {
-    // @todo Configure
-    var latencyTimeout time.Duration = 5 * time.Second
+    // Lock
+    c.connectLatencyMu.Lock()
+    defer c.connectLatencyMu.Unlock()
+
+    // Already updated
+    if (time.Since(c.connectLatencyLastUpdate) < CONNECT_LATENCY_UPDATE_INTERVAL) {
+        return nil
+    }
+
+    // Updating
+    c.connectLatencyLastUpdate = time.Now().UTC()
 
     // Open connection
     startTime := time.Now()
-    conn, err := net.DialTimeout("tcp", c.addr, 5 * time.Second)
+    conn, err := net.DialTimeout("tcp", c.addr, LATENCY_TEST_TIMEOUT)
     if err != nil {
         // If connection error, set latency to timeout
-        c.connectLatency = latencyTimeout.Nanoseconds()
+        c.connectLatency = LATENCY_TEST_TIMEOUT.Nanoseconds()
         return err
     }
     // Set latency
