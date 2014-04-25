@@ -93,15 +93,11 @@ const CONNECT_LATENCY_UPDATE_INTERVAL = 1 * time.Minute
 func (c *Conn) getConnectLatency() int64 {
     if (time.Since(c.connectLatencyLastUpdate) >= CONNECT_LATENCY_UPDATE_INTERVAL) {
         go func() {
-            // Lock
-            log.Printf("Updating latency of %s", c.addr)
-            
             // Update latency
             latencyTestErr := c.testLatency()
             if latencyTestErr != nil {
                 log.Printf("error updating connection latency. %v", latencyTestErr)
             }
-            log.Printf("Updated latency of %s", c.addr)
         }()
     }
     return c.connectLatency
@@ -135,6 +131,9 @@ func (c *Conn) testLatency() error {
 
     // Close connection
     conn.Close()
+
+    // Logging
+    log.Printf("Updated latency of %s to %d", c.addr, c.connectLatency)
 
     // OK
     return nil
