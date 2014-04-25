@@ -11,6 +11,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+        "log"
 )
 
 const defaultFrameSize = 4096
@@ -82,7 +83,33 @@ type Conn struct {
 	isClosed bool
 
         // Store nanosecond latency to the node to have a very simple geo balance policy
+        connectLatencyMu sync.Mutex
         connectLatency  int64
+        connectLatencyLastUpdate time.Time
+}
+
+// Get connection latency
+const CONNECT_LATENCY_UPDATE_INTERVAL = 1 * time.Minute
+func (c *Conn) getConnectLatency() int64 {
+    if (time.Since(c.connectLatencyLastUpdate) >= CONNECT_LATENCY_UPDATE_INTERVAL) {
+        go func() {
+            // Lock
+            log.Printf("Updating latency of %s", c.addr)
+            c.connectLatencyMu.Lock()
+            defer c.connectLatencyMu.Unlock()
+
+            // Updating
+            c.connectLatencyLastUpdate = time.Now().UTC()
+            
+            // Update latency
+            latencyTestErr := c.testLatency()
+            if latencyTestErr != nil {
+                log.Printf("error updating connection latency. %v", latencyTestErr)
+            }
+            log.Printf("Updated latency of %s", c.addr)
+        }()
+    }
+    return c.connectLatency
 }
 
 // Test latency to a connection by opening a socket and closing it afterwards
@@ -134,6 +161,7 @@ func Connect(addr string, cfg ConnConfig, cluster Cluster) (*Conn, error) {
 		cluster:    cluster,
 		compressor: cfg.Compressor,
 		auth:       cfg.Authenticator,
+                connectLatencyLastUpdate: time.Now().UTC(), // First time during creation
 	}
 
 	if cfg.Keepalive > 0 {

@@ -7,7 +7,7 @@ package gocql
 import (
 	"sync"
 	"sync/atomic"
-        "log"
+       //"log"
 )
 
 type Node interface {
@@ -65,18 +65,18 @@ func (r *RoundRobin) Pick(qry *Query) *Conn {
                     node = r.pool[pos%uint32(len(r.pool))]
                 } else {
                     // Slice round robin to use only the lowest latency servers
-                    log.Println("New round robin")
+                    //log.Println("New round robin")
                     // Get latencies + connections
                     var conMap map[int]*Conn = make( map[int]*Conn )
                     var totalLatency int64 = 0
                     for i,node := range r.pool {
                         nodeCon := node.Pick(qry)
-                        totalLatency += nodeCon.connectLatency
-                        log.Printf("Latency of %s is %d", nodeCon.addr, nodeCon.connectLatency)
+                        totalLatency += nodeCon.getConnectLatency()
+                        //log.Printf("Latency of %s is %d", nodeCon.addr, nodeCon.connectLatency)
                         conMap[i] = nodeCon
                     }
                     var avgLatency int64 = totalLatency / int64(len(conMap))
-                    log.Printf("Latency avg %d", avgLatency)
+                    //log.Printf("Latency avg %d", avgLatency)
 
                     // Find nodes that are average or faster
                     var fastConns []*Conn
@@ -85,11 +85,12 @@ func (r *RoundRobin) Pick(qry *Query) *Conn {
                             fastConns = append(fastConns, conn)
                         }
                     }
-                    log.Printf("Nodes pool length %d", len(r.pool))
-                    log.Printf("Fast len %d", len(fastConns))
+                    //log.Printf("Nodes pool length %d", len(r.pool))
+                    //log.Printf("Fast len %d", len(fastConns))
                     res := fastConns[pos%uint32(len(fastConns))]
-                    log.Printf("Selected node %s", res.addr)
-                    log.Printf("Selected latency %d", res.connectLatency)
+                    //log.Printf("Selected node %s", res.addr)
+                    //log.Printf("Selected latency %d", res.connectLatency)
+
                     return res
                 }
 	}
