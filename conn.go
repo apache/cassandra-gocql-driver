@@ -80,6 +80,32 @@ type Conn struct {
 
 	closedMu sync.RWMutex
 	isClosed bool
+
+        // Store nanosecond latency to the node to have a very simple geo balance policy
+        connectLatency  int64
+}
+
+// Test latency to a connection by opening a socket and closing it afterwards
+func (c *Conn) testLatency() error {
+    // @todo Configure
+    var latencyTimeout time.Duration = 5 * time.Second
+
+    // Open connection
+    startTime := time.Now()
+    conn, err := net.DialTimeout("tcp", c.addr, 5 * time.Second)
+    if err != nil {
+        // If connection error, set latency to timeout
+        c.connectLatency = latencyTimeout.Nanoseconds()
+        return err
+    }
+    // Set latency
+    c.connectLatency = time.Since(startTime).Nanoseconds()
+
+    // Close connection
+    conn.Close()
+
+    // OK
+    return nil
 }
 
 // Connect establishes a connection to a Cassandra node.
