@@ -152,6 +152,13 @@ func (c *clusterImpl) addConn(conn *Conn) error {
 		c.connPool[conn.Address()] = connPool
 		c.hostPool.AddNode(connPool)
 	}
+
+        // Test latency before adding to pool
+        latencyTestErr := conn.testLatency()
+        if latencyTestErr != nil {
+            log.Printf("error determining connection latency. %v", latencyTestErr)
+        }
+        
 	connPool.AddNode(conn)
 	c.conns[conn] = struct{}{}
 	return nil
