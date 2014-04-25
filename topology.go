@@ -18,10 +18,13 @@ type RoundRobin struct {
 	pool []Node
 	pos  uint32
 	mu   sync.RWMutex
+        useNodeLatency bool
 }
 
 func NewRoundRobin() *RoundRobin {
-	return &RoundRobin{}
+        rr := &RoundRobin{}
+        rr.useNodeLatency = true
+	return rr
 }
 
 func (r *RoundRobin) AddNode(node Node) {
@@ -55,7 +58,31 @@ func (r *RoundRobin) Pick(qry *Query) *Conn {
 	var node Node
 	r.mu.RLock()
 	if len(r.pool) > 0 {
-		node = r.pool[pos%uint32(len(r.pool))]
+                if r.useNodeLatency == false || len(r.pool) < 3 {
+                    // Fully round robin
+                    node = r.pool[pos%uint32(len(r.pool))]
+                } else {
+                    // Slice round robin to use only the lowest latency servers
+
+                    // Get latencies + connections
+                    var conMap map[int]*Conn = make( map[int]*Conn )
+                    var totalLatency int64 = 0
+                    for i,node := range r.pool {
+                        nodeCon := node.Pick(qry)
+                        totalLatency += nodeCon.connectLatency
+                        conMap[i] = nodeCon
+                    }
+                    var avgLatency int64 = totalLatency / int64(len(conMap))
+
+                    // Find nodes that are average or faster
+                    var fastConns []*Conn
+                    for _,conn := range conMap {
+                        if conn.connectLatency <= avgLatency {
+                            fastConns = append(fastConns, conn)
+                        }
+                    }
+                    return fastConns[pos%uint32(len(fastConns))]
+                }
 	}
 	r.mu.RUnlock()
 	if node == nil {
