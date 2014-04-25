@@ -58,6 +58,7 @@ func (r *RoundRobin) Pick(qry *Query) *Conn {
 	pos := atomic.AddUint32(&r.pos, 1)
 	var node Node
 	r.mu.RLock()
+        defer r.mu.RUnlock()
 	if len(r.pool) > 0 {
                 if r.useNodeLatency == false || len(r.pool) < 3 {
                     // Fully round robin
@@ -91,7 +92,6 @@ func (r *RoundRobin) Pick(qry *Query) *Conn {
                     return fastConns[pos%uint32(len(fastConns))]
                 }
 	}
-	r.mu.RUnlock()
 	if node == nil {
 		return nil
 	}
