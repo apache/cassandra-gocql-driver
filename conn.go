@@ -423,7 +423,7 @@ func (c *Conn) executeQuery(qry *Query) *Iter {
 }
 
 func (c *Conn) Pick(qry *Query) *Conn {
-	if c.Closed() || len(c.uniq) == 0 {
+	if c.Closed() {
 		return nil
 	}
 	return c
