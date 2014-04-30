@@ -38,7 +38,7 @@ type Session struct {
 }
 
 // NewSession wraps an existing Node.
-func NewSession(p ConnectionPool, c *ClusterConfig) *Session {
+func NewSession(p ConnectionPool, c ClusterConfig) *Session {
 	return &Session{Pool: p, cons: Quorum, prefetch: 0.25, cfg: c}
 }
 
@@ -100,7 +100,7 @@ func (s *Session) Close() {
 	}
 	s.isClosed = true
 
-	s.Node.Close()
+	s.Pool.Close()
 }
 
 func (s *Session) Closed() bool {
@@ -119,7 +119,7 @@ func (s *Session) executeQuery(qry *Query) *Iter {
 
 	var iter *Iter
 	for count := 0; count <= qry.rt.NumRetries; count++ {
-		conn := s.Node.Pick(qry)
+		conn := s.Pool.Pick(qry)
 
 		//Assign the error unavailable to the iterator
 		if conn == nil {
@@ -154,7 +154,7 @@ func (s *Session) ExecuteBatch(batch *Batch) error {
 
 	var err error
 	for count := 0; count <= batch.rt.NumRetries; count++ {
-		conn := s.Node.Pick(nil)
+		conn := s.Pool.Pick(nil)
 
 		//Assign the error unavailable and break loop
 		if conn == nil {

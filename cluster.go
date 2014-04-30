@@ -58,12 +58,12 @@ func (cfg *ClusterConfig) CreateSession() (*Session, error) {
 
 	//See if there are any connections in the pool
 	if pool.Size() > 0 {
-		s := NewSession(pool, cfg)
+		s := NewSession(pool, *cfg)
 		s.SetConsistency(cfg.Consistency)
 		return s, nil
 	}
 
-	impl.Close()
+	pool.Close()
 	return nil, ErrNoConnectionsStarted
 
 }
