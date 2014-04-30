@@ -4,13 +4,14 @@ set -e
 
 PID_FILE=cassandra.pid
 STARTUP_LOG=startup.log
+ARCHIVE_BASE_URL=http://archive.apache.org/dist/cassandra
 
 for v in 2.0.6 2.0.7
 do
 	TARBALL=apache-cassandra-$v-bin.tar.gz
 	CASSANDRA_DIR=apache-cassandra-$v
 
-	curl -L -O -C - http://archive.apache.org/dist/cassandra/$v/$TARBALL
+	curl -L -O -C - $ARCHIVE_BASE_URL/$v/$TARBALL
 	
 	if [ ! -f $CASSANDRA_DIR/bin/cassandra ]
 	then
