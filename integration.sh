@@ -21,13 +21,14 @@ do
 	cp log4j-server.properties $CASSANDRA_DIR/conf
 	: >$CASSANDRA_LOG  # create an empty log file
 
-	echo "Booting Cassandra ${v}"
+	echo "Booting Cassandra ${v}, waiting for CQL listener ...."
 
-	apache-cassandra-2.0.7/bin/cassandra -p $PID_FILE &> $STARTUP_LOG
-	# { tail -n +1 -f $CASSANDRA_LOG & } | sed -n '/Starting listening for CQL clients/q'
+	$CASSANDRA_DIR/bin/cassandra -p $PID_FILE &> $STARTUP_LOG
+	
+	sleep 5
+	tail -5 $CASSANDRA_LOG
 
-	sleep 30
-	tail $CASSANDRA_LOG
+	{ tail -n +1 -f $CASSANDRA_LOG & } | sed -n '/Starting listening for CQL clients/q'
 
 	PID=$(<"$PID_FILE")
 
