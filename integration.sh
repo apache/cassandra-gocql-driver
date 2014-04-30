@@ -20,7 +20,8 @@ do
 	
 	cp log4j-server.properties $CASSANDRA_DIR/conf
 	: >$CASSANDRA_LOG  # create an empty log file
-	sed -i -e 's/\/var/\/tmp/' $CASSANDRA_DIR/conf/cassandra.yaml
+	#sed -i -e 's/\/var/\/tmp/' $CASSANDRA_DIR/conf/cassandra.yaml
+	sed -i -e 's?/var?'`pwd`'?' $CASSANDRA_DIR/conf/cassandra.yaml
 
 	echo "Booting Cassandra ${v}, waiting for CQL listener ...."
 
