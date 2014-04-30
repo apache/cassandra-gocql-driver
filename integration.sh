@@ -4,7 +4,7 @@ set -e
 
 PID_FILE=cassandra.pid
 STARTUP_LOG=startup.log
-CASSANDRA_LOG=/var/log/cassandra/system.log
+CASSANDRA_LOG=cassandra.log
 
 for v in 2.0.7
 do
@@ -17,10 +17,12 @@ do
 	then
    		tar xzf $TARBALL
 	fi
+	
+	cp log4j-server.properties $CASSANDRA_DIR/conf
+	: >$CASSANDRA_LOG  # create an empty log file
 
 	echo "Booting Cassandra ${v}"
 
-	#: >$STARTUP_LOG  # create an empty log file
 	apache-cassandra-2.0.7/bin/cassandra -p $PID_FILE &> $STARTUP_LOG
 	#while ! grep -q 'state jump to normal' $STARTUP_LOG; do sleep 1; done
 	{ tail -n +1 -f $CASSANDRA_LOG & } | sed -n '/Starting listening for CQL clients/q'
