@@ -3,12 +3,13 @@
 set -e
 
 PID_FILE=cassandra.pid
+STARTUP_LOG=startup.log
+CASSANDRA_LOG=/var/log/cassandra/system.log
 
 for v in 2.0.7
 do
 	TARBALL=apache-cassandra-$v-bin.tar.gz
 	CASSANDRA_DIR=apache-cassandra-$v
-	STARTUP_LOG=startup.log
 
 	curl -L -O -C - ftp://ftp.mirrorservice.org/sites/ftp.apache.org/cassandra/$v/$TARBALL
 	
@@ -19,10 +20,10 @@ do
 
 	echo "Booting Cassandra ${v}"
 
-	: >$STARTUP_LOG  # create an empty log file
+	#: >$STARTUP_LOG  # create an empty log file
 	apache-cassandra-2.0.7/bin/cassandra -p $PID_FILE &> $STARTUP_LOG
 	#while ! grep -q 'state jump to normal' $STARTUP_LOG; do sleep 1; done
-	{ tail -n +1 -f $STARTUP_LOG & } | sed -n '/state jump/q'
+	{ tail -n +1 -f $CASSANDRA_LOG & } | sed -n '/Starting listening for CQL clients/q'
 
 	PID=$(<"$PID_FILE")
 
