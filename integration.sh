@@ -1,5 +1,7 @@
 #!/bin/bash
 
+set -e
+
 PID_FILE=cassandra.pid
 
 for v in 2.0.7
@@ -17,10 +19,12 @@ do
 
 	echo "Booting Cassandra ${v}"
 
+	: >$STARTUP_LOG  # create an empty log file
 	apache-cassandra-2.0.7/bin/cassandra -p $PID_FILE &> $STARTUP_LOG
-	while ! grep -q 'state jump to normal' $STARTUP_LOG; do sleep 1; done
+	#while ! grep -q 'state jump to normal' $STARTUP_LOG; do sleep 1; done
+	{ tail -n +1 -f $STARTUP_LOG & } | sed -n '/state jump/q'
 
-	read PID <$PID_FILE
+	PID=$(<"$PID_FILE")
 
 	echo "Cassandra ${v} running (PID ${PID})"
 
