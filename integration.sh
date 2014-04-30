@@ -6,6 +6,7 @@ for v in 2.0.7
 do
 	TARBALL=apache-cassandra-$v-bin.tar.gz
 	CASSANDRA_DIR=apache-cassandra-$v
+	STARTUP_LOG=startup.log
 
 	curl -L -O -C - ftp://ftp.mirrorservice.org/sites/ftp.apache.org/cassandra/$v/$TARBALL
 	
@@ -16,7 +17,9 @@ do
 
 	echo "Booting Cassandra ${v}"
 
-	apache-cassandra-2.0.7/bin/cassandra -p $PID_FILE > /dev/null 2>&1
+	apache-cassandra-2.0.7/bin/cassandra -p $PID_FILE &> $STARTUP_LOG
+	while ! grep -q 'state jump to normal' $STARTUP_LOG; do sleep 1; done
+
 	read PID <$PID_FILE
 
 	echo "Cassandra ${v} running (PID ${PID})"
