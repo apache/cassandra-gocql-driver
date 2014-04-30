@@ -24,16 +24,18 @@ do
 	echo "Booting Cassandra ${v}"
 
 	apache-cassandra-2.0.7/bin/cassandra -p $PID_FILE &> $STARTUP_LOG
-	#while ! grep -q 'state jump to normal' $STARTUP_LOG; do sleep 1; done
-	{ tail -n +1 -f $CASSANDRA_LOG & } | sed -n '/Starting listening for CQL clients/q'
+	# { tail -n +1 -f $CASSANDRA_LOG & } | sed -n '/Starting listening for CQL clients/q'
+
+	sleep 30
+	tail $CASSANDRA_LOG
 
 	PID=$(<"$PID_FILE")
 
-	echo "Cassandra ${v} running (PID ${PID})"
+	echo "Cassandra ${v} running (PID ${PID}), about to run test suite ...."
 
 	go test -v ./...
 
-	echo "Killing Cassandra ${v} (PID ${PID})"
+	echo "Test suite passed against Cassandra ${v}, killing server instance (PID ${PID})"
 	
 	kill -9 $PID
 	rm $PID_FILE
