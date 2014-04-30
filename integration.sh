@@ -4,7 +4,6 @@ set -e
 
 PID_FILE=cassandra.pid
 STARTUP_LOG=startup.log
-CASSANDRA_LOG=cassandra.log
 
 for v in 2.0.7
 do
@@ -18,10 +17,16 @@ do
    		tar xzf $TARBALL
 	fi
 	
-	cp log4j-server.properties $CASSANDRA_DIR/conf
+	CASSANDRA_LOG_DIR=`pwd`/v${v}/log/cassandra
+	echo $CASSANDRA_LOG_DIR
+	CASSANDRA_LOG=$CASSANDRA_LOG_DIR/system.log
+
+	#cp log4j-server.properties $CASSANDRA_DIR/conf
+	mkdir -p $CASSANDRA_LOG_DIR
 	: >$CASSANDRA_LOG  # create an empty log file
 	#sed -i -e 's/\/var/\/tmp/' $CASSANDRA_DIR/conf/cassandra.yaml
-	sed -i -e 's?/var?'`pwd`'?' $CASSANDRA_DIR/conf/cassandra.yaml
+	sed -i -e 's?/var?'`pwd`/v${v}'?' $CASSANDRA_DIR/conf/cassandra.yaml
+	sed -i -e 's?/var?'`pwd`/v${v}'?' $CASSANDRA_DIR/conf/log4j-server.properties
 
 	echo "Booting Cassandra ${v}, waiting for CQL listener ...."
 
