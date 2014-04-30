@@ -18,27 +18,20 @@ do
 	fi
 	
 	CASSANDRA_LOG_DIR=`pwd`/v${v}/log/cassandra
-	echo $CASSANDRA_LOG_DIR
 	CASSANDRA_LOG=$CASSANDRA_LOG_DIR/system.log
 
-	#cp log4j-server.properties $CASSANDRA_DIR/conf
 	mkdir -p $CASSANDRA_LOG_DIR
 	: >$CASSANDRA_LOG  # create an empty log file
-	#sed -i -e 's/\/var/\/tmp/' $CASSANDRA_DIR/conf/cassandra.yaml
+	
 	sed -i -e 's?/var?'`pwd`/v${v}'?' $CASSANDRA_DIR/conf/cassandra.yaml
 	sed -i -e 's?/var?'`pwd`/v${v}'?' $CASSANDRA_DIR/conf/log4j-server.properties
 
-	echo "Booting Cassandra ${v}, waiting for CQL listener ...."
+	echo "Booting Cassandra ${v}, waiting for CQL listener to start ...."
 
 	$CASSANDRA_DIR/bin/cassandra -p $PID_FILE &> $STARTUP_LOG
-	
-	sleep 10
-	tail -5 $CASSANDRA_LOG
 
 	{ tail -n +1 -f $CASSANDRA_LOG & } | sed -n '/Starting listening for CQL clients/q'
-	#TAIL_PID=$!
-	#echo "tail pid ${TAIL_PID}"
-
+	
 	PID=$(<"$PID_FILE")
 
 	echo "Cassandra ${v} running (PID ${PID}), about to run test suite ...."
