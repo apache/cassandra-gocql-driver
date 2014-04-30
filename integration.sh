@@ -5,12 +5,12 @@ set -e
 PID_FILE=cassandra.pid
 STARTUP_LOG=startup.log
 
-for v in 2.0.7
+for v in 2.0.6 2.0.7
 do
 	TARBALL=apache-cassandra-$v-bin.tar.gz
 	CASSANDRA_DIR=apache-cassandra-$v
 
-	curl -L -O -C - ftp://ftp.mirrorservice.org/sites/ftp.apache.org/cassandra/$v/$TARBALL
+	curl -L -O -C - http://archive.apache.org/dist/cassandra/$v/$TARBALL
 	
 	if [ ! -f $CASSANDRA_DIR/bin/cassandra ]
 	then
