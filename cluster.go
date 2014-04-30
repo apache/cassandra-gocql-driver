@@ -91,7 +91,7 @@ func (cfg *ClusterConfig) CreateSession() (*Session, error) {
 		return s, nil
 	}
 	impl.Close()
-	return nil, ErrNoConnections
+	return nil, ErrNoConnectionsStarted
 
 }
 
@@ -270,5 +270,5 @@ func (c *clusterImpl) Close() {
 
 var (
 	ErrNoHosts       = errors.New("no hosts provided")
-	ErrNoConnections = errors.New("no connections were made when creating the session")
+	ErrNoConnectionsStarted = errors.New("no connections were made when creating the session")
 )

@@ -46,8 +46,8 @@ func TestClosed(t *testing.T) {
 	}
 	session.Close()
 
-	if err := session.Query("void").Exec(); err != ErrUnavailable {
-		t.Errorf("expected %#v, got %#v", ErrUnavailable, err)
+	if err := session.Query("void").Exec(); err != ErrSessionClosed {
+		t.Errorf("expected %#v, got %#v", ErrSessionClosed, err)
 	}
 }
 
