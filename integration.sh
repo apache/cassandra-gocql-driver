@@ -14,7 +14,7 @@ do
 	
 	if [ ! -f $CASSANDRA_DIR/bin/cassandra ]
 	then
-   		tar xzvf $TARBALL
+   		tar xzf $TARBALL
 	fi
 
 	echo "Booting Cassandra ${v}"
