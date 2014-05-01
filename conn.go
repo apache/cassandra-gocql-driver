@@ -514,7 +514,7 @@ func (c *Conn) executeBatch(batch *Batch) error {
 		found := false
 		for stmt, flight := range c.prep {
 			if bytes.Equal(flight.info.id, x.StatementId) {
-				found := true
+				found = true
 				delete(c.prep, stmt)
 				break
 			}
