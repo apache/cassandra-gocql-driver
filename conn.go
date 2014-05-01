@@ -6,6 +6,7 @@ package gocql
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
 	"net"
 	"sync"
@@ -508,6 +509,22 @@ func (c *Conn) executeBatch(batch *Batch) error {
 	switch x := resp.(type) {
 	case resultVoidFrame:
 		return nil
+	case errRespUnprepared:
+		c.prepMu.Lock()
+		found := false
+		for stmt, flight := range c.prep {
+			if bytes.Equal(flight.info.id, x.StatementId) {
+				found := true
+				delete(c.prep, stmt)
+				break
+			}
+		}
+		c.prepMu.Unlock()
+		if found {
+			return c.executeBatch(batch)
+		} else {
+			return x
+		}
 	case error:
 		return x
 	default:
