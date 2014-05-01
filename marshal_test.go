@@ -287,3 +287,40 @@ func (c *CustomString) UnmarshalCQL(info *TypeInfo, data []byte) error {
 type MyString string
 
 type MyInt int
+
+var typeLookupTest = []struct {
+	TypeName     string
+	ExpectedType Type
+}{
+	{"AsciiType", TypeAscii},
+	{"LongType", TypeBigInt},
+	{"BytesType", TypeBlob},
+	{"BooleanType", TypeBoolean},
+	{"CounterColumnType", TypeCounter},
+	{"DecimalType", TypeDecimal},
+	{"DoubleType", TypeDouble},
+	{"FloatType", TypeFloat},
+	{"Int32Type", TypeInt},
+	{"DateType", TypeTimestamp},
+	{"UUIDType", TypeUUID},
+	{"UTF8Type", TypeVarchar},
+	{"IntegerType", TypeVarint},
+	{"TimeUUIDType", TypeTimeUUID},
+	{"InetAddressType", TypeInet},
+	{"MapType", TypeMap},
+	{"ListType", TypeInet},
+	{"SetType", TypeInet},
+	{"unknown", TypeCustom},
+}
+
+func testType(t *testing.T, cassType string, expectedType Type) {
+	if computedType := getApacheCassandraType(apacheCassandraTypePrefix + cassType); computedType != expectedType {
+		t.Errorf("Cassandra custom type lookup for %s failed. Expected %s, got %s.", cassType, expectedType.String(), computedType.String())
+	}
+}
+
+func TestLookupCassType(t *testing.T) {
+	for _, lookupTest := range typeLookupTest {
+		testType(t, lookupTest.TypeName, lookupTest.ExpectedType)
+	}
+}

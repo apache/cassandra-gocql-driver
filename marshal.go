@@ -1098,7 +1098,7 @@ func (t TypeInfo) String() string {
 	case TypeList, TypeSet:
 		return fmt.Sprintf("%s(%s)", t.Type, t.Elem)
 	case TypeCustom:
-		return fmt.Sprintf("%s(%s)", t.Type, t.Elem)
+		return fmt.Sprintf("%s(%s)", t.Type, t.Custom)
 	}
 	return t.Type.String()
 }

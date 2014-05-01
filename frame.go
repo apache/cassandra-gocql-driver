@@ -59,6 +59,8 @@ const (
 	errUnprepared    = 0x2500
 
 	headerSize = 8
+
+	apacheCassandraTypePrefix = "org.apache.cassandra.db.marshal."
 )
 
 type frame []byte
@@ -243,6 +245,16 @@ func (f *frame) readTypeInfo() *TypeInfo {
 	switch typ.Type {
 	case TypeCustom:
 		typ.Custom = f.readString()
+		if cassType := getApacheCassandraType(typ.Custom); cassType != TypeCustom {
+			typ = &TypeInfo{Type: cassType}
+			switch typ.Type {
+			case TypeMap:
+				typ.Key = f.readTypeInfo()
+				fallthrough
+			case TypeList, TypeSet:
+				typ.Elem = f.readTypeInfo()
+			}
+		}
 	case TypeMap:
 		typ.Key = f.readTypeInfo()
 		fallthrough

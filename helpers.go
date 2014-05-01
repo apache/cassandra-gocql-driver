@@ -7,6 +7,7 @@ package gocql
 import (
 	"reflect"
 	"speter.net/go/exp/math/dec/inf"
+	"strings"
 	"time"
 )
 
@@ -54,6 +55,50 @@ func goType(t *TypeInfo) reflect.Type {
 
 func dereference(i interface{}) interface{} {
 	return reflect.Indirect(reflect.ValueOf(i)).Interface()
+}
+
+func getApacheCassandraType(class string) Type {
+	if strings.HasPrefix(class, apacheCassandraTypePrefix) {
+		switch strings.TrimPrefix(class, apacheCassandraTypePrefix) {
+		case "AsciiType":
+			return TypeAscii
+		case "LongType":
+			return TypeBigInt
+		case "BytesType":
+			return TypeBlob
+		case "BooleanType":
+			return TypeBoolean
+		case "CounterColumnType":
+			return TypeCounter
+		case "DecimalType":
+			return TypeDecimal
+		case "DoubleType":
+			return TypeDouble
+		case "FloatType":
+			return TypeFloat
+		case "Int32Type":
+			return TypeInt
+		case "DateType":
+			return TypeTimestamp
+		case "UUIDType":
+			return TypeUUID
+		case "UTF8Type":
+			return TypeVarchar
+		case "IntegerType":
+			return TypeVarint
+		case "TimeUUIDType":
+			return TypeTimeUUID
+		case "InetAddressType":
+			return TypeInet
+		case "MapType":
+			return TypeMap
+		case "ListType":
+			return TypeInet
+		case "SetType":
+			return TypeInet
+		}
+	}
+	return TypeCustom
 }
 
 func (r *RowData) rowMap(m map[string]interface{}) {
