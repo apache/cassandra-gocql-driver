@@ -1,8 +1,11 @@
 language: go
+
 go:
   - 1.1
   - 1.2
-services:
-  - cassandra
+
+script:
+  - bash integration.sh
+
 notifications:
-  email: false
+  - email: false
