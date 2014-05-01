@@ -194,16 +194,16 @@ func TestPaging(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 
-	if err := session.Query("CREATE TABLE large (id int primary key)").Exec(); err != nil {
+	if err := session.Query("CREATE TABLE paging (id int primary key)").Exec(); err != nil {
 		t.Fatal("create table:", err)
 	}
 	for i := 0; i < 100; i++ {
-		if err := session.Query("INSERT INTO large (id) VALUES (?)", i).Exec(); err != nil {
+		if err := session.Query("INSERT INTO paging (id) VALUES (?)", i).Exec(); err != nil {
 			t.Fatal("insert:", err)
 		}
 	}
 
-	iter := session.Query("SELECT id FROM large").PageSize(10).Iter()
+	iter := session.Query("SELECT id FROM paging").PageSize(10).Iter()
 	var id int
 	count := 0
 	for iter.Scan(&id) {
