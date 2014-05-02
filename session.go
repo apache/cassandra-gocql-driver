@@ -330,7 +330,7 @@ func (iter *Iter) Scan(dest ...interface{}) bool {
 		go iter.next.fetch()
 	}
 	if len(dest) != len(iter.columns) {
-		iter.err = errors.New("count mismatch")
+		iter.err = errors.New(fmt.Sprintf("count mismatch. was %d, should be %d", len(iter.columns), len(dest)))
 		return false
 	}
 	for i := 0; i < len(iter.columns); i++ {
