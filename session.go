@@ -24,21 +24,22 @@ import (
 // and automatically sets a default consinstency level on all operations
 // that do not have a consistency level set.
 type Session struct {
-	Node     Node
+	Pool     ConnectionPool
 	cons     Consistency
 	pageSize int
 	prefetch float64
 	trace    Tracer
 	mu       sync.RWMutex
-	cfg      ClusterConfig
+
+	cfg ClusterConfig
 
 	closeMu  sync.RWMutex
 	isClosed bool
 }
 
 // NewSession wraps an existing Node.
-func NewSession(c *clusterImpl) *Session {
-	return &Session{Node: c, cons: Quorum, prefetch: 0.25, cfg: c.cfg}
+func NewSession(p ConnectionPool, c ClusterConfig) *Session {
+	return &Session{Pool: p, cons: Quorum, prefetch: 0.25, cfg: c}
 }
 
 // SetConsistency sets the default consistency level for this session. This
@@ -91,6 +92,7 @@ func (s *Session) Query(stmt string, values ...interface{}) *Query {
 // Close closes all connections. The session is unusable after this
 // operation.
 func (s *Session) Close() {
+
 	s.closeMu.Lock()
 	defer s.closeMu.Unlock()
 	if s.isClosed {
@@ -98,7 +100,7 @@ func (s *Session) Close() {
 	}
 	s.isClosed = true
 
-	s.Node.Close()
+	s.Pool.Close()
 }
 
 func (s *Session) Closed() bool {
@@ -109,6 +111,7 @@ func (s *Session) Closed() bool {
 }
 
 func (s *Session) executeQuery(qry *Query) *Iter {
+
 	// fail fast
 	if s.Closed() {
 		return &Iter{err: ErrSessionClosed}
@@ -116,7 +119,8 @@ func (s *Session) executeQuery(qry *Query) *Iter {
 
 	var iter *Iter
 	for count := 0; count <= qry.rt.NumRetries; count++ {
-		conn := s.Node.Pick(qry)
+		conn := s.Pool.Pick(qry)
+
 		//Assign the error unavailable to the iterator
 		if conn == nil {
 			iter = &Iter{err: ErrNoConnections}
@@ -150,7 +154,8 @@ func (s *Session) ExecuteBatch(batch *Batch) error {
 
 	var err error
 	for count := 0; count <= batch.rt.NumRetries; count++ {
-		conn := s.Node.Pick(nil)
+		conn := s.Pool.Pick(nil)
+
 		//Assign the error unavailable and break loop
 		if conn == nil {
 			err = ErrNoConnections

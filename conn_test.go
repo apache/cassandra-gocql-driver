@@ -183,11 +183,8 @@ func TestConnClosing(t *testing.T) {
 	wg.Wait()
 
 	time.Sleep(1 * time.Second) //Sleep so the fillPool can complete.
-	cluster := db.Node.(*clusterImpl)
-
-	cluster.mu.Lock()
-	conns := len(cluster.conns)
-	cluster.mu.Unlock()
+	pool := db.Pool.(ConnectionPool)
+	conns := pool.Size()
 
 	if conns != numConns {
 		t.Fatalf("Expected to have %d connections but have %d", numConns, conns)

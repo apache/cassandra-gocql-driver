@@ -17,10 +17,6 @@ const defaultFrameSize = 4096
 const flagResponse = 0x80
 const maskVersion = 0x7F
 
-type Cluster interface {
-	HandleError(conn *Conn, err error, closed bool)
-}
-
 type Authenticator interface {
 	Challenge(req []byte) (resp []byte, auth Authenticator, err error)
 	Success(data []byte) error
@@ -72,7 +68,7 @@ type Conn struct {
 	prepMu sync.Mutex
 	prep   map[string]*inflightPrepare
 
-	cluster    Cluster
+	pool       ConnectionPool
 	compressor Compressor
 	auth       Authenticator
 	addr       string
@@ -84,7 +80,7 @@ type Conn struct {
 
 // Connect establishes a connection to a Cassandra node.
 // You must also call the Serve method before you can execute any queries.
-func Connect(addr string, cfg ConnConfig, cluster Cluster) (*Conn, error) {
+func Connect(addr string, cfg ConnConfig, pool ConnectionPool) (*Conn, error) {
 	conn, err := net.DialTimeout("tcp", addr, cfg.Timeout)
 	if err != nil {
 		return nil, err
@@ -105,7 +101,7 @@ func Connect(addr string, cfg ConnConfig, cluster Cluster) (*Conn, error) {
 		timeout:    cfg.Timeout,
 		version:    uint8(cfg.ProtoVersion),
 		addr:       conn.RemoteAddr().String(),
-		cluster:    cluster,
+		pool:       pool,
 		compressor: cfg.Compressor,
 		auth:       cfg.Authenticator,
 	}
@@ -203,7 +199,7 @@ func (c *Conn) serve() {
 			req.resp <- callResp{nil, err}
 		}
 	}
-	c.cluster.HandleError(c, err, true)
+	c.pool.HandleError(c, err, true)
 }
 
 func (c *Conn) recv() (frame, error) {
