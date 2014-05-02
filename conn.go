@@ -83,7 +83,7 @@ type Conn struct {
 	isClosed bool
 
         // Store nanosecond latency to the node to have a very simple geo balance policy
-        connectLatencyMu sync.Mutex
+        connectLatencyMu sync.RWMutex
         connectLatency  int64
         connectLatencyLastUpdate time.Time
 }
@@ -91,6 +91,11 @@ type Conn struct {
 // Get connection latency
 const CONNECT_LATENCY_UPDATE_INTERVAL = 1 * time.Minute
 func (c *Conn) getConnectLatency() int64 {
+    // Lock
+    c.connectLatencyMu.RLock()
+    defer c.connectLatencyMu.RUnlock()
+    
+    // Check
     if (time.Since(c.connectLatencyLastUpdate) >= CONNECT_LATENCY_UPDATE_INTERVAL) {
         go func() {
             // Update latency
