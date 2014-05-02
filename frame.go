@@ -42,22 +42,6 @@ const (
 	flagPageState   uint8 = 8
 	flagHasMore     uint8 = 2
 
-	errServer        = 0x0000
-	errProtocol      = 0x000A
-	errCredentials   = 0x0100
-	errUnavailable   = 0x1000
-	errOverloaded    = 0x1001
-	errBootstrapping = 0x1002
-	errTruncate      = 0x1003
-	errWriteTimeout  = 0x1100
-	errReadTimeout   = 0x1200
-	errSyntax        = 0x2000
-	errUnauthorized  = 0x2100
-	errInvalid       = 0x2200
-	errConfig        = 0x2300
-	errAlreadyExists = 0x2400
-	errUnprepared    = 0x2500
-
 	headerSize = 8
 
 	apacheCassandraTypePrefix = "org.apache.cassandra.db.marshal."
@@ -291,6 +275,59 @@ func (f *frame) readMetaData() ([]ColumnInfo, []byte) {
 	return columns, pageState
 }
 
+func (f *frame) readError() errorFrame {
+	code := f.readInt()
+	msg := f.readString()
+	errD := errorResponse{code, msg}
+	switch code {
+	case errUnavailable:
+		cl := Consistency(f.readShort())
+		required := f.readInt()
+		alive := f.readInt()
+		return errRespUnavailable{errorResponse: errD,
+			Consistency: cl,
+			Required:    required,
+			Alive:       alive}
+	case errWriteTimeout:
+		cl := Consistency(f.readShort())
+		received := f.readInt()
+		blockfor := f.readInt()
+		writeType := f.readString()
+		return errRespWriteTimeout{errorResponse: errD,
+			Consistency: cl,
+			Received:    received,
+			BlockFor:    blockfor,
+			WriteType:   writeType,
+		}
+	case errReadTimeout:
+		cl := Consistency(f.readShort())
+		received := f.readInt()
+		blockfor := f.readInt()
+		dataPresent := (*f)[0]
+		*f = (*f)[1:]
+		return errRespReadTimeout{errorResponse: errD,
+			Consistency: cl,
+			Received:    received,
+			BlockFor:    blockfor,
+			DataPresent: dataPresent,
+		}
+	case errAlreadyExists:
+		ks := f.readString()
+		table := f.readString()
+		return errRespAlreadyExists{errorResponse: errD,
+			Keyspace: ks,
+			Table:    table,
+		}
+	case errUnprepared:
+		stmtId := f.readShortBytes()
+		return errRespUnprepared{errorResponse: errD,
+			StatementId: stmtId,
+		}
+	default:
+		return errD
+	}
+}
+
 func (f *frame) writeConsistency(c Consistency) {
 	f.writeShort(consistencyCodes[c])
 }
@@ -331,15 +368,6 @@ type resultKeyspaceFrame struct {
 type resultPreparedFrame struct {
 	PreparedId []byte
 	Values     []ColumnInfo
-}
-
-type errorFrame struct {
-	Code    int
-	Message string
-}
-
-func (e errorFrame) Error() string {
-	return e.Message
 }
 
 type operation interface {

@@ -6,6 +6,7 @@ package gocql
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
 	"net"
 	"sync"
@@ -399,7 +400,7 @@ func (c *Conn) executeQuery(qry *Query) *Iter {
 	case resultKeyspaceFrame:
 		return &Iter{}
 	case errorFrame:
-		if x.Code == errUnprepared && len(qry.values) > 0 {
+		if x.Code() == errUnprepared && len(qry.values) > 0 {
 			c.prepMu.Lock()
 			if val, ok := c.prep[qry.stmt]; ok && val != nil {
 				delete(c.prep, qry.stmt)
@@ -504,6 +505,22 @@ func (c *Conn) executeBatch(batch *Batch) error {
 	switch x := resp.(type) {
 	case resultVoidFrame:
 		return nil
+	case errRespUnprepared:
+		c.prepMu.Lock()
+		found := false
+		for stmt, flight := range c.prep {
+			if bytes.Equal(flight.info.id, x.StatementId) {
+				found = true
+				delete(c.prep, stmt)
+				break
+			}
+		}
+		c.prepMu.Unlock()
+		if found {
+			return c.executeBatch(batch)
+		} else {
+			return x
+		}
 	case error:
 		return x
 	default:
@@ -583,9 +600,7 @@ func (c *Conn) decodeFrame(f frame, trace Tracer) (rval interface{}, err error) 
 	case opSupported:
 		return supportedFrame{}, nil
 	case opError:
-		code := f.readInt()
-		msg := f.readString()
-		return errorFrame{code, msg}, nil
+		return f.readError(), nil
 	default:
 		return nil, NewErrProtocol("Decoding frame: unknown op", op)
 	}
