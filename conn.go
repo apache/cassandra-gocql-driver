@@ -399,7 +399,7 @@ func (c *Conn) executeQuery(qry *Query) *Iter {
 	case resultKeyspaceFrame:
 		return &Iter{}
 	case errorFrame:
-		if x.Code == errUnprepared && len(qry.values) > 0 {
+		if x.Code() == errUnprepared && len(qry.values) > 0 {
 			c.prepMu.Lock()
 			if val, ok := c.prep[qry.stmt]; ok && val != nil {
 				delete(c.prep, qry.stmt)
@@ -583,9 +583,7 @@ func (c *Conn) decodeFrame(f frame, trace Tracer) (rval interface{}, err error) 
 	case opSupported:
 		return supportedFrame{}, nil
 	case opError:
-		code := f.readInt()
-		msg := f.readString()
-		return errorFrame{code, msg}, nil
+		return f.readError(), nil
 	default:
 		return nil, NewErrProtocol("Decoding frame: unknown op", op)
 	}
