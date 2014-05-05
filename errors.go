@@ -18,59 +18,59 @@ const (
 	errUnprepared    = 0x2500
 )
 
-type errorFrame interface {
+type RequestError interface {
 	Code() int
 	Message() string
 	Error() string
 }
 
-type errorResponse struct {
+type errorFrame struct {
 	code    int
 	message string
 }
 
-func (e errorResponse) Code() int {
+func (e errorFrame) Code() int {
 	return e.code
 }
 
-func (e errorResponse) Message() string {
+func (e errorFrame) Message() string {
 	return e.message
 }
 
-func (e errorResponse) Error() string {
+func (e errorFrame) Error() string {
 	return e.Message()
 }
 
-type errRespUnavailable struct {
-	errorResponse
+type RequestErrUnavailable struct {
+	errorFrame
 	Consistency Consistency
 	Required    int
 	Alive       int
 }
 
-type errRespWriteTimeout struct {
-	errorResponse
+type RequestErrWriteTimeout struct {
+	errorFrame
 	Consistency Consistency
 	Received    int
 	BlockFor    int
 	WriteType   string
 }
 
-type errRespReadTimeout struct {
-	errorResponse
+type RequestErrReadTimeout struct {
+	errorFrame
 	Consistency Consistency
 	Received    int
 	BlockFor    int
 	DataPresent byte
 }
 
-type errRespAlreadyExists struct {
-	errorResponse
+type RequestErrAlreadyExists struct {
+	errorFrame
 	Keyspace string
 	Table    string
 }
 
-type errRespUnprepared struct {
-	errorResponse
+type RequestErrUnprepared struct {
+	errorFrame
 	StatementId []byte
 }

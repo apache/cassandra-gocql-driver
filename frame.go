@@ -263,16 +263,16 @@ func (f *frame) readMetaData() ([]ColumnInfo, []byte) {
 	return columns, pageState
 }
 
-func (f *frame) readError() errorFrame {
+func (f *frame) readError() RequestError {
 	code := f.readInt()
 	msg := f.readString()
-	errD := errorResponse{code, msg}
+	errD := errorFrame{code, msg}
 	switch code {
 	case errUnavailable:
 		cl := Consistency(f.readShort())
 		required := f.readInt()
 		alive := f.readInt()
-		return errRespUnavailable{errorResponse: errD,
+		return RequestErrUnavailable{errorFrame: errD,
 			Consistency: cl,
 			Required:    required,
 			Alive:       alive}
@@ -281,7 +281,7 @@ func (f *frame) readError() errorFrame {
 		received := f.readInt()
 		blockfor := f.readInt()
 		writeType := f.readString()
-		return errRespWriteTimeout{errorResponse: errD,
+		return RequestErrWriteTimeout{errorFrame: errD,
 			Consistency: cl,
 			Received:    received,
 			BlockFor:    blockfor,
@@ -293,7 +293,7 @@ func (f *frame) readError() errorFrame {
 		blockfor := f.readInt()
 		dataPresent := (*f)[0]
 		*f = (*f)[1:]
-		return errRespReadTimeout{errorResponse: errD,
+		return RequestErrReadTimeout{errorFrame: errD,
 			Consistency: cl,
 			Received:    received,
 			BlockFor:    blockfor,
@@ -302,13 +302,13 @@ func (f *frame) readError() errorFrame {
 	case errAlreadyExists:
 		ks := f.readString()
 		table := f.readString()
-		return errRespAlreadyExists{errorResponse: errD,
+		return RequestErrAlreadyExists{errorFrame: errD,
 			Keyspace: ks,
 			Table:    table,
 		}
 	case errUnprepared:
 		stmtId := f.readShortBytes()
-		return errRespUnprepared{errorResponse: errD,
+		return RequestErrUnprepared{errorFrame: errD,
 			StatementId: stmtId,
 		}
 	default:
