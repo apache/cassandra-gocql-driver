@@ -572,3 +572,60 @@ func TestScanCASWithNilArguments(t *testing.T) {
 		t.Fatalf("expected %v but got %v", foo, cas)
 	}
 }
+
+func injectInvalidPreparedStatement(t *testing.T, session *Session, table string) (string, *Conn) {
+	if err := session.Query(`CREATE TABLE ` + table + ` (
+			foo   varchar,
+			bar   int,
+			PRIMARY KEY (foo, bar)
+	)`).Exec(); err != nil {
+		t.Fatal("create:", err)
+	}
+	stmt := "INSERT INTO " + table + " (foo, bar) VALUES (?, 7)"
+	conn := session.Pool.Pick(nil)
+	conn.prepMu.Lock()
+	flight := new(inflightPrepare)
+	conn.prep[stmt] = flight
+	flight.info = &queryInfo{
+		id: []byte{'f', 'o', 'o', 'b', 'a', 'r'},
+		args: []ColumnInfo{ColumnInfo{
+			Keyspace: "gocql_test",
+			Table:    table,
+			Name:     "foo",
+			TypeInfo: &TypeInfo{
+				Type: TypeVarchar,
+			},
+		}, ColumnInfo{
+			Keyspace: "gocql_test",
+			Table:    table,
+			Name:     "bar",
+			TypeInfo: &TypeInfo{
+				Type: TypeInt,
+			},
+		}},
+	}
+	conn.prepMu.Unlock()
+	return stmt, conn
+}
+
+func TestReprepareStatement(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+	stmt, conn := injectInvalidPreparedStatement(t, session, "test_reprepare_statement")
+	query := session.Query(stmt, "bar")
+	if err := conn.executeQuery(query).Close(); err != nil {
+		t.Fatalf("Failed to execute query for reprepare statement: %v", err)
+	}
+}
+
+func TestReprepareBatch(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+	stmt, conn := injectInvalidPreparedStatement(t, session, "test_reprepare_statement_batch")
+	batch := session.NewBatch(UnloggedBatch)
+	batch.Query(stmt, "bar")
+	if err := conn.executeBatch(batch); err != nil {
+		t.Fatalf("Failed to execute query for reprepare statement: %v", err)
+	}
+
+}

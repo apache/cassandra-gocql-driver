@@ -6,6 +6,7 @@ package gocql
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
 	"net"
 	"sync"
@@ -398,19 +399,15 @@ func (c *Conn) executeQuery(qry *Query) *Iter {
 		return iter
 	case resultKeyspaceFrame:
 		return &Iter{}
-	case errorFrame:
-		if x.Code() == errUnprepared && len(qry.values) > 0 {
-			c.prepMu.Lock()
-			if val, ok := c.prep[qry.stmt]; ok && val != nil {
-				delete(c.prep, qry.stmt)
-				c.prepMu.Unlock()
-				return c.executeQuery(qry)
-			}
+	case RequestErrUnprepared:
+		c.prepMu.Lock()
+		if val, ok := c.prep[qry.stmt]; ok && val != nil {
+			delete(c.prep, qry.stmt)
 			c.prepMu.Unlock()
-			return &Iter{err: x}
-		} else {
-			return &Iter{err: x}
+			return c.executeQuery(qry)
 		}
+		c.prepMu.Unlock()
+		return &Iter{err: x}
 	case error:
 		return &Iter{err: x}
 	default:
@@ -504,6 +501,22 @@ func (c *Conn) executeBatch(batch *Batch) error {
 	switch x := resp.(type) {
 	case resultVoidFrame:
 		return nil
+	case RequestErrUnprepared:
+		c.prepMu.Lock()
+		found := false
+		for stmt, flight := range c.prep {
+			if bytes.Equal(flight.info.id, x.StatementId) {
+				found = true
+				delete(c.prep, stmt)
+				break
+			}
+		}
+		c.prepMu.Unlock()
+		if found {
+			return c.executeBatch(batch)
+		} else {
+			return x
+		}
 	case error:
 		return x
 	default:
