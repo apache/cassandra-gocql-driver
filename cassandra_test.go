@@ -572,3 +572,87 @@ func TestScanCASWithNilArguments(t *testing.T) {
 		t.Fatalf("expected %v but got %v", foo, cas)
 	}
 }
+
+func TestReprepareStatement(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+
+	if err := session.Query(`CREATE TABLE test_reprepare_statement (
+			foo   varchar,
+			bar   int,
+			PRIMARY KEY (foo, bar)
+	)`).Exec(); err != nil {
+		t.Fatal("create:", err)
+	}
+	stmt := "INSERT INTO test_reprepare_statement (foo, bar) VALUES (?, 7)"
+	conn := session.Node.Pick(nil)
+	conn.prepMu.Lock()
+	flight := new(inflightPrepare)
+	conn.prep[stmt] = flight
+	flight.info = &queryInfo{
+		id: []byte{'f', 'o', 'o', 'b', 'a', 'r'},
+		args: []ColumnInfo{ColumnInfo{
+			Keyspace: "gocql_test",
+			Table:    "test_reprepare_statement",
+			Name:     "foo",
+			TypeInfo: &TypeInfo{
+				Type: TypeVarchar,
+			},
+		}, ColumnInfo{
+			Keyspace: "gocql_test",
+			Table:    "test_reprepare_statement",
+			Name:     "bar",
+			TypeInfo: &TypeInfo{
+				Type: TypeInt,
+			},
+		}},
+	}
+	conn.prepMu.Unlock()
+	query := session.Query(stmt, "bar")
+	if err := conn.executeQuery(query).Close(); err != nil {
+		t.Fatalf("Failed to execute query for reprepare statement: %v", err)
+	}
+}
+
+func TestReprepareBatch(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+
+	if err := session.Query(`CREATE TABLE test_reprepare_statement_batch (
+			foo   varchar,
+			bar   int,
+			PRIMARY KEY (foo, bar)
+	)`).Exec(); err != nil {
+		t.Fatal("create:", err)
+	}
+	stmt := "INSERT INTO test_reprepare_statement_batch (foo, bar) VALUES (?, 7)"
+	conn := session.Node.Pick(nil)
+	conn.prepMu.Lock()
+	flight := new(inflightPrepare)
+	conn.prep[stmt] = flight
+	flight.info = &queryInfo{
+		id: []byte{'f', 'o', 'o', 'b', 'a', 'r'},
+		args: []ColumnInfo{ColumnInfo{
+			Keyspace: "gocql_test",
+			Table:    "test_reprepare_statement_batch",
+			Name:     "foo",
+			TypeInfo: &TypeInfo{
+				Type: TypeVarchar,
+			},
+		}, ColumnInfo{
+			Keyspace: "gocql_test",
+			Table:    "test_reprepare_statement_batch",
+			Name:     "bar",
+			TypeInfo: &TypeInfo{
+				Type: TypeInt,
+			},
+		}},
+	}
+	conn.prepMu.Unlock()
+	batch := session.NewBatch(UnloggedBatch)
+	batch.Query(stmt, "bar")
+	if err := conn.executeBatch(batch); err != nil {
+		t.Fatalf("Failed to execute query for reprepare statement: %v", err)
+	}
+
+}
