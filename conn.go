@@ -399,19 +399,15 @@ func (c *Conn) executeQuery(qry *Query) *Iter {
 		return iter
 	case resultKeyspaceFrame:
 		return &Iter{}
-	case errorFrame:
-		if x.Code() == errUnprepared && len(qry.values) > 0 {
-			c.prepMu.Lock()
-			if val, ok := c.prep[qry.stmt]; ok && val != nil {
-				delete(c.prep, qry.stmt)
-				c.prepMu.Unlock()
-				return c.executeQuery(qry)
-			}
+	case RequestErrUnprepared:
+		c.prepMu.Lock()
+		if val, ok := c.prep[qry.stmt]; ok && val != nil {
+			delete(c.prep, qry.stmt)
 			c.prepMu.Unlock()
-			return &Iter{err: x}
-		} else {
-			return &Iter{err: x}
+			return c.executeQuery(qry)
 		}
+		c.prepMu.Unlock()
+		return &Iter{err: x}
 	case error:
 		return &Iter{err: x}
 	default:
