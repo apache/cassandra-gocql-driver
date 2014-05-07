@@ -585,7 +585,7 @@ func TestReprepareStatement(t *testing.T) {
 		t.Fatal("create:", err)
 	}
 	stmt := "INSERT INTO test_reprepare_statement (foo, bar) VALUES (?, 7)"
-	conn := session.Node.Pick(nil)
+	conn := session.Pool.Pick(nil)
 	conn.prepMu.Lock()
 	flight := new(inflightPrepare)
 	conn.prep[stmt] = flight
@@ -626,7 +626,7 @@ func TestReprepareBatch(t *testing.T) {
 		t.Fatal("create:", err)
 	}
 	stmt := "INSERT INTO test_reprepare_statement_batch (foo, bar) VALUES (?, 7)"
-	conn := session.Node.Pick(nil)
+	conn := session.Pool.Pick(nil)
 	conn.prepMu.Lock()
 	flight := new(inflightPrepare)
 	conn.prep[stmt] = flight
