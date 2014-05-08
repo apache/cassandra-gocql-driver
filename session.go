@@ -433,7 +433,7 @@ const (
 	LocalSerial
 )
 
-var consinstencyNames = []string{
+var ConsistencyNames = []string{
 	0:           "default",
 	Any:         "any",
 	One:         "one",
@@ -448,7 +448,7 @@ var consinstencyNames = []string{
 }
 
 func (c Consistency) String() string {
-	return consinstencyNames[c]
+	return ConsistencyNames[c]
 }
 
 type ColumnInfo struct {
