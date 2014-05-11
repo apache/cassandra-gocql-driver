@@ -9,11 +9,12 @@ import (
 	"flag"
 	"reflect"
 	"sort"
-	"speter.net/go/exp/math/dec/inf"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"speter.net/go/exp/math/dec/inf"
 )
 
 var (
@@ -516,6 +517,40 @@ func TestScanWithNilArguments(t *testing.T) {
 	count := 0
 	for iter.Scan(nil, &n) {
 		count += n
+	}
+	if err := iter.Close(); err != nil {
+		t.Fatal("close:", err)
+	}
+	if count != 2870 {
+		t.Fatalf("expected %d, got %d", 2870, count)
+	}
+}
+
+func TestScanWithNext(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+
+	if err := session.Query(`CREATE TABLE scan_with_next (
+			foo   varchar,
+			bar   int,
+			PRIMARY KEY (foo, bar)
+	)`).Exec(); err != nil {
+		t.Fatal("create:", err)
+	}
+	for i := 1; i <= 20; i++ {
+		if err := session.Query("INSERT INTO scan_with_next (foo, bar) VALUES (?, ?)",
+			"squares", i*i).Exec(); err != nil {
+			t.Fatal("insert:", err)
+		}
+	}
+
+	iter := session.Query("SELECT * FROM scan_with_next WHERE foo = ?", "squares").Iter()
+	var n int
+	count := 0
+	for iter.Next() {
+		if iter.Scan(nil, &n) {
+			count += n
+		}
 	}
 	if err := iter.Close(); err != nil {
 		t.Fatal("close:", err)
