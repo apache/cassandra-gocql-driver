@@ -312,6 +312,29 @@ func (iter *Iter) Columns() []ColumnInfo {
 	return iter.columns
 }
 
+// Next consumes the next row of the iterator for reading with the Scan method.
+// Next might send additional queries to the database to retrieve the next
+// set of rows if paging was enabled.
+//
+// Next returns true if the row was successfully unmarshaled or false if the
+// end of the result set was reached or if an error occurred.
+func (iter *Iter) Next() bool {
+	if iter.err != nil {
+		return false
+	}
+	if iter.pos >= len(iter.rows) {
+		if iter.next != nil {
+			*iter = *iter.next.fetch()
+			return iter.Next()
+		}
+		return false
+	}
+	if iter.next != nil && iter.pos == iter.next.pos {
+		go iter.next.fetch()
+	}
+	return true
+}
+
 // Scan consumes the next row of the iterator and copies the columns of the
 // current row into the values pointed at by dest. Use nil as a dest value
 // to skip the corresponding column. Scan might send additional queries
