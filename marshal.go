@@ -10,8 +10,9 @@ import (
 	"math"
 	"math/big"
 	"reflect"
-	"speter.net/go/exp/math/dec/inf"
 	"time"
+
+	"speter.net/go/exp/math/dec/inf"
 )
 
 var (
@@ -871,7 +872,7 @@ func unmarshalList(info *TypeInfo, data []byte, value interface{}) error {
 			if k == reflect.Array {
 				return unmarshalErrorf("unmarshal list: can not store nil in array value")
 			}
-			rv.Set(reflect.Zero(t))
+			rv.Set(reflect.MakeSlice(t, 0, 0))
 			return nil
 		}
 		if len(data) < 2 {
