@@ -23,6 +23,8 @@ type UUID [16]byte
 
 var hardwareAddr []byte
 var clockSeq uint32
+var hexString = "0123456789abcdef"
+var b1, b2 byte
 
 const (
 	VariantNCSCompat = 0
@@ -146,8 +148,34 @@ func UUIDFromTime(aTime time.Time) UUID {
 // String returns the UUID in it's canonical form, a 32 digit hexadecimal
 // number in the form of xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx.
 func (u UUID) String() string {
-	return fmt.Sprintf("%x-%x-%x-%x-%x",
-		u[0:4], u[4:6], u[6:8], u[8:10], u[10:16])
+	r := make([]byte, 36)
+	for i, b := range u {
+		b1 = hexString[b >> 4]
+		b2 = hexString[b &^ 240]
+		switch {
+		case i < 4:
+			r[i*2] = b1
+			r[(i*2)+1] = b2
+		case i >= 4 && i < 6:
+			r[(i*2)+1] = b1
+			r[(i*2)+2] = b2
+		case i >= 6 && i < 8:
+			r[(i*2)+2] = b1
+			r[(i*2)+3] = b2
+		case i >= 8 && i < 10:
+			r[(i*2)+3] = b1
+			r[(i*2)+4] = b2
+		case i >= 10:
+			r[(i*2)+4] = b1
+			r[(i*2)+5] = b2
+		}
+	}
+	r[8] = '-'
+	r[13] = '-'
+	r[18] = '-'
+	r[23] = '-'
+	return string(r)
+
 }
 
 // Bytes returns the raw byte slice for this UUID. A UUID is always 128 bits
