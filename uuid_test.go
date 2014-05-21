@@ -141,7 +141,6 @@ func TestTimeUUID(t *testing.T) {
 func TestUnmarshalJSON(t *testing.T) {
 	var withHyphens, withoutHypens, tooLong UUID
 
-	// With hyphens
 	withHyphens.UnmarshalJSON([]byte(`"486f3a88-775b-11e3-ae07-d231feb1dc81"`))
 	if withHyphens.Time().Truncate(time.Second) != time.Date(2014, 1, 7, 5, 19, 29, 0, time.UTC) {
 		t.Errorf("Expected date of 1/7/2014 at 5:19:29, got %v", withHyphens.Time())
