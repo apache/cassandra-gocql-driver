@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"strings"
 	"sync/atomic"
 	"time"
 )
@@ -216,12 +217,12 @@ func (u UUID) MarshalJSON() ([]byte, error) {
 
 // Unmarshaling for JSON
 func (u *UUID) UnmarshalJSON(data []byte) error {
-	str := string(data)
-	if len(str) != 38 {
+	str := strings.Trim(string(data), `"`)
+	if len(str) > 36 {
 		return fmt.Errorf("invalid JSON UUID %s", str)
 	}
 
-	parsed, err := ParseUUID(str[1:37])
+	parsed, err := ParseUUID(str)
 	if err == nil {
 		copy(u[:], parsed[:])
 	}
