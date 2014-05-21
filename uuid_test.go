@@ -137,3 +137,23 @@ func TestTimeUUID(t *testing.T) {
 		timestamp = ts
 	}
 }
+
+func TestUnmarshalJSON(t *testing.T) {
+	var withHyphens, withoutHypens, tooLong UUID
+
+	withHyphens.UnmarshalJSON([]byte(`"486f3a88-775b-11e3-ae07-d231feb1dc81"`))
+	if withHyphens.Time().Truncate(time.Second) != time.Date(2014, 1, 7, 5, 19, 29, 0, time.UTC) {
+		t.Errorf("Expected date of 1/7/2014 at 5:19:29, got %v", withHyphens.Time())
+	}
+
+	withoutHypens.UnmarshalJSON([]byte(`"486f3a88775b11e3ae07d231feb1dc81"`))
+	if withoutHypens.Time().Truncate(time.Second) != time.Date(2014, 1, 7, 5, 19, 29, 0, time.UTC) {
+		t.Errorf("Expected date of 1/7/2014 at 5:19:29, got %v", withoutHypens.Time())
+	}
+
+	err := tooLong.UnmarshalJSON([]byte(`"486f3a88-775b-11e3-ae07-d231feb1dc81486f3a88"`))
+	if err == nil {
+		t.Errorf("no error for invalid JSON UUID")
+	}
+
+}
