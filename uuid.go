@@ -23,14 +23,13 @@ type UUID [16]byte
 
 var hardwareAddr []byte
 var clockSeq uint32
-var hexString = "0123456789abcdef"
-var b1, b2 byte
 
 const (
 	VariantNCSCompat = 0
 	VariantIETF      = 2
 	VariantMicrosoft = 6
 	VariantFuture    = 7
+	HexString = "0123456789abcdef"
 )
 
 func init() {
@@ -148,10 +147,11 @@ func UUIDFromTime(aTime time.Time) UUID {
 // String returns the UUID in it's canonical form, a 32 digit hexadecimal
 // number in the form of xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx.
 func (u UUID) String() string {
+	var b1, b2 byte
 	r := make([]byte, 36)
 	for i, b := range u {
-		b1 = hexString[b >> 4]
-		b2 = hexString[b &^ 240]
+		b1 = HexString[b >> 4]
+		b2 = HexString[b &^ 240]
 		switch {
 		case i < 4:
 			r[i*2] = b1
