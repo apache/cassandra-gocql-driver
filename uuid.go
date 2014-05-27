@@ -146,8 +146,19 @@ func UUIDFromTime(aTime time.Time) UUID {
 // String returns the UUID in it's canonical form, a 32 digit hexadecimal
 // number in the form of xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx.
 func (u UUID) String() string {
-	return fmt.Sprintf("%x-%x-%x-%x-%x",
-		u[0:4], u[4:6], u[6:8], u[8:10], u[10:16])
+	var offsets = [...]int{0, 2, 4, 6, 9, 11, 14, 16, 19, 21, 24, 26, 28, 30, 32, 34}
+	const hexString = "0123456789abcdef"
+	r := make([]byte, 36)
+	for i, b := range u {
+                r[offsets[i]] = hexString[b>>4]
+		r[offsets[i]+1] = hexString[b&0xF]
+	}
+	r[8] = '-'
+	r[13] = '-'
+	r[18] = '-'
+	r[23] = '-'
+	return string(r)
+
 }
 
 // Bytes returns the raw byte slice for this UUID. A UUID is always 128 bits
