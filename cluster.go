@@ -60,6 +60,28 @@ func (cfg *ClusterConfig) CreateSession() (*Session, error) {
 	if pool.Size() > 0 {
 		s := NewSession(pool, *cfg)
 		s.SetConsistency(cfg.Consistency)
+
+		//Fill out cfg.Hosts
+		query := "SELECT peer FROM system.peers"
+		peers := s.Query(query).Iter()
+
+		var ip string
+		for peers.Scan(&ip) {
+			exists := false
+			for ii := 0; ii < len(cfg.Hosts); ii++ {
+				if cfg.Hosts[ii] == ip {
+					exists = true
+				}
+			}
+			if !exists {
+				cfg.Hosts = append(cfg.Hosts, ip)
+			}
+		}
+
+		if err := peers.Close(); err != nil {
+			return s, ErrHostQueryFailed
+		}
+
 		return s, nil
 	}
 
@@ -71,4 +93,5 @@ func (cfg *ClusterConfig) CreateSession() (*Session, error) {
 var (
 	ErrNoHosts              = errors.New("no hosts provided")
 	ErrNoConnectionsStarted = errors.New("no connections were made when creating the session")
+	ErrHostQueryFailed			= errors.New("unable to populate Hosts")
 )
