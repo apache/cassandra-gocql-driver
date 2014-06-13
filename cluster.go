@@ -73,7 +73,7 @@ func (cfg *ClusterConfig) CreateSession() (*Session, error) {
 					exists = true
 				}
 			}
-			if !exists {
+			if exists == false{
 				cfg.Hosts = append(cfg.Hosts, ip)
 			}
 		}
