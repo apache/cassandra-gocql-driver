@@ -63,7 +63,7 @@ func (cfg *ClusterConfig) CreateSession() (*Session, error) {
 		s := NewSession(pool, *cfg)
 		s.SetConsistency(cfg.Consistency)
 
-		if cfg.DiscoverHosts == true {
+		if cfg.DiscoverHosts {
 			//Fill out cfg.Hosts
 			query := "SELECT peer FROM system.peers"
 			peers := s.Query(query).Iter()
@@ -76,7 +76,7 @@ func (cfg *ClusterConfig) CreateSession() (*Session, error) {
 						exists = true
 					}
 				}
-				if exists == false{
+				if !exists{
 					cfg.Hosts = append(cfg.Hosts, ip)
 				}
 			}
