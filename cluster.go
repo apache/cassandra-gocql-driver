@@ -28,7 +28,7 @@ type ClusterConfig struct {
 	RetryPolicy     RetryPolicy   // Default retry policy to use for queries (default: 0)
 	SocketKeepalive time.Duration // The keepalive period to use, enabled if > 0 (default: 0)
 	ConnPoolType    NewPoolFunc   // The function used to create the connection pool for the session (default: NewSimplePool)
-	DiscoverHosts   bool          // Whether or not CreateSession should attempt to discover other hosts
+	DiscoverHosts   bool          // If set, gocql will attempt to automatically discover other members of the Cassandra cluster (default: false)
 }
 
 // NewCluster generates a new config for the default cluster implementation.
