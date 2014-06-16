@@ -28,22 +28,22 @@ type ClusterConfig struct {
 	RetryPolicy     RetryPolicy   // Default retry policy to use for queries (default: 0)
 	SocketKeepalive time.Duration // The keepalive period to use, enabled if > 0 (default: 0)
 	ConnPoolType    NewPoolFunc   // The function used to create the connection pool for the session (default: NewSimplePool)
-	DiscoverHosts		bool					// Whether or not CreateSession should attempt to fill out
+	DiscoverHosts   bool          // Whether or not CreateSession should attempt to fill out
 }
 
 // NewCluster generates a new config for the default cluster implementation.
 func NewCluster(hosts ...string) *ClusterConfig {
 	cfg := &ClusterConfig{
-		Hosts:        	hosts,
-		CQLVersion:   	"3.0.0",
-		ProtoVersion: 	2,
-		Timeout:      	600 * time.Millisecond,
-		DefaultPort:  	9042,
-		NumConns:     	2,
-		NumStreams:   	128,
-		Consistency:  	Quorum,
-		ConnPoolType: 	NewSimplePool,
-		DiscoverHosts:	false,
+		Hosts:         hosts,
+		CQLVersion:    "3.0.0",
+		ProtoVersion:  2,
+		Timeout:       600 * time.Millisecond,
+		DefaultPort:   9042,
+		NumConns:      2,
+		NumStreams:    128,
+		Consistency:   Quorum,
+		ConnPoolType:  NewSimplePool,
+		DiscoverHosts: false,
 	}
 	return cfg
 }
@@ -76,7 +76,7 @@ func (cfg *ClusterConfig) CreateSession() (*Session, error) {
 						exists = true
 					}
 				}
-				if !exists{
+				if !exists {
 					cfg.Hosts = append(cfg.Hosts, ip)
 				}
 			}
@@ -97,5 +97,5 @@ func (cfg *ClusterConfig) CreateSession() (*Session, error) {
 var (
 	ErrNoHosts              = errors.New("no hosts provided")
 	ErrNoConnectionsStarted = errors.New("no connections were made when creating the session")
-	ErrHostQueryFailed			= errors.New("unable to populate Hosts")
+	ErrHostQueryFailed      = errors.New("unable to populate Hosts")
 )
