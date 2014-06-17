@@ -28,20 +28,22 @@ type ClusterConfig struct {
 	RetryPolicy     RetryPolicy   // Default retry policy to use for queries (default: 0)
 	SocketKeepalive time.Duration // The keepalive period to use, enabled if > 0 (default: 0)
 	ConnPoolType    NewPoolFunc   // The function used to create the connection pool for the session (default: NewSimplePool)
+	DiscoverHosts   bool          // If set, gocql will attempt to automatically discover other members of the Cassandra cluster (default: false)
 }
 
 // NewCluster generates a new config for the default cluster implementation.
 func NewCluster(hosts ...string) *ClusterConfig {
 	cfg := &ClusterConfig{
-		Hosts:        hosts,
-		CQLVersion:   "3.0.0",
-		ProtoVersion: 2,
-		Timeout:      600 * time.Millisecond,
-		DefaultPort:  9042,
-		NumConns:     2,
-		NumStreams:   128,
-		Consistency:  Quorum,
-		ConnPoolType: NewSimplePool,
+		Hosts:         hosts,
+		CQLVersion:    "3.0.0",
+		ProtoVersion:  2,
+		Timeout:       600 * time.Millisecond,
+		DefaultPort:   9042,
+		NumConns:      2,
+		NumStreams:    128,
+		Consistency:   Quorum,
+		ConnPoolType:  NewSimplePool,
+		DiscoverHosts: false,
 	}
 	return cfg
 }
@@ -60,6 +62,30 @@ func (cfg *ClusterConfig) CreateSession() (*Session, error) {
 	if pool.Size() > 0 {
 		s := NewSession(pool, *cfg)
 		s.SetConsistency(cfg.Consistency)
+
+		if cfg.DiscoverHosts {
+			//Fill out cfg.Hosts
+			query := "SELECT peer FROM system.peers"
+			peers := s.Query(query).Iter()
+
+			var ip string
+			for peers.Scan(&ip) {
+				exists := false
+				for ii := 0; ii < len(cfg.Hosts); ii++ {
+					if cfg.Hosts[ii] == ip {
+						exists = true
+					}
+				}
+				if !exists {
+					cfg.Hosts = append(cfg.Hosts, ip)
+				}
+			}
+
+			if err := peers.Close(); err != nil {
+				return s, ErrHostQueryFailed
+			}
+		}
+
 		return s, nil
 	}
 
@@ -71,4 +97,5 @@ func (cfg *ClusterConfig) CreateSession() (*Session, error) {
 var (
 	ErrNoHosts              = errors.New("no hosts provided")
 	ErrNoConnectionsStarted = errors.New("no connections were made when creating the session")
+	ErrHostQueryFailed      = errors.New("unable to populate Hosts")
 )
