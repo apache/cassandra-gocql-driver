@@ -505,6 +505,9 @@ func (c *Conn) executeBatch(batch *Batch) error {
 		c.prepMu.Lock()
 		found := false
 		for stmt, flight := range c.prep {
+			if flight == nil || flight.info == nil {
+				continue
+			}
 			if bytes.Equal(flight.info.id, x.StatementId) {
 				found = true
 				delete(c.prep, stmt)
