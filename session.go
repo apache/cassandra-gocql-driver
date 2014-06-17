@@ -79,7 +79,8 @@ func (s *Session) SetTrace(trace Tracer) {
 
 // Query generates a new query object for interacting with the database.
 // Further details of the query may be tweaked using the resulting query
-// value before the query is executed.
+// value before the query is executed. Query is automatically prepared
+// if it has not previously been executed.
 func (s *Session) Query(stmt string, values ...interface{}) *Query {
 	s.mu.RLock()
 	qry := &Query{stmt: stmt, values: values, cons: s.cons,
