@@ -1,6 +1,6 @@
-# How to Contribute to the gocql Project
+# Contributing to gocql
 
-TL;DR - this manifesto sets out the bare mimimum requirements for submitting a patch to gocql.
+**TL;DR** - this manifesto sets out the bare mimimum requirements for submitting a patch to gocql.
 
 This guide outlines the process of landing patches in gocql and the general approach to maintaining the code base.
 
