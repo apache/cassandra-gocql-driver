@@ -14,11 +14,11 @@ The following is a check list of requirements that need to be satisfied in order
 
 * The pull request has a title that clearly summarizes the purpose of the patch
 * The motivation behind the patch is clearly defined in the pull request summary
-* Your name and email has been added to the `AUTHORS` file (for copyright purposes)
+* Your name and email have been added to the `AUTHORS` file (for copyright purposes)
 * The patch will merge cleanly
 * The merge commit passes the regression test suite on Travis
 * `go fmt` has been applied to the submitted code
-* Functional changes are appropriately documented, either as a godoc or in the README
+* Functional changes (i.e. new features or changed behavior) are appropriately documented, either as a godoc or in the README (non-functional changes such as bug fixes may not require documentation)
 
 ## Beyond The Checklist
 
@@ -26,9 +26,9 @@ In addition to stating the hard requirements, there are a bunch of things that w
 
 ### General QA Approach
 
-Your patch will get merged a lot quicker if you have some decent test cases that provide test coverage for the new behavior you wish to introduce.
+Your patch will get merged quicker if you have decent test cases that provide test coverage for the new behavior you wish to introduce.
 
-Unit tests are good, integration tests are even better. An example of a unit test is `marshal_test.go` - this tests the serialization code in isolation. `cassandra_test.go` is a test suite that is executed against every version of Cassandra that gocql supports as part of the CI process on Travis.
+Unit tests are good, integration tests are even better. An example of a unit test is `marshal_test.go` - this tests the serialization code in isolation. `cassandra_test.go` is an integration test suite that is executed against every version of Cassandra that gocql supports as part of the CI process on Travis.
 
 That said, the point of writing tests is to provide a safety net to catch regressions, so there is no need to go overboard with tests. Remember that the more tests you write, the more code we will have to maintain. So there's a balance to strike there.
 
@@ -47,7 +47,7 @@ Generally speaking, a pull request can get merged by any one of the core gocql t
 
 ### Supported Features
 
-gocql is a low level wire driver for Cassandra CQL. By and large, we would like to keep the functional scope of the library as narrow as possible. We think that gocql should be tight and focussed, and we will be naturally sceptical of things that could just as easily be implemented in a higher layer. Inevitably you will come accross something that could be implemented in a higher layer, save for a minor change to ciore API. In this instance, please strike up a conversation with the gocql team. Chances are we will understand what you are trying to acheive and will try to accommodate this in a mainttainable way.
+gocql is a low level wire driver for Cassandra CQL. By and large, we would like to keep the functional scope of the library as narrow as possible. We think that gocql should be tight and focussed, and we will be naturally sceptical of things that could just as easily be implemented in a higher layer. Inevitably you will come accross something that could be implemented in a higher layer, save for a minor change to ciore API. In this instance, please strike up a conversation with the gocql team. Chances are we will understand what you are trying to acheive and will try to accommodate this in a maintainable way.
 
 ### Longer Term Evolution
 
@@ -60,7 +60,7 @@ Currently, the officiallly supported versions of the Cassandra server include:
 * 2.0.6
 * 2.0.7
 
-Chances are that gocql will work with many other versions. If you would like us to support a particular version of Cassandra, please start a conversation about what version you'd like us to consider. We will be more likely to accept a new version in you help out by extending the regression suite to cover the new version to be supported.
+Chances are that gocql will work with many other versions. If you would like us to support a particular version of Cassandra, please start a conversation about what version you'd like us to consider. We are more likely to accept a new version in you help out by extending the regression suite to cover the new version to be supported.
 
 ## The Core Dev Team
 
