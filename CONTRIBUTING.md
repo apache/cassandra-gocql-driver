@@ -47,7 +47,7 @@ Generally speaking, a pull request can get merged by any one of the core gocql t
 
 ### Supported Features
 
-gocql is a low level wire driver for Cassandra CQL. By and large, we would like to keep the functional scope of the library as narrow as possible. We think that gocql should be tight and focussed, and we will be naturally sceptical of things that could just as easily be implemented in a higher layer. Inevitably you will come accross something that could be implemented in a higher layer, save for a minor change to ciore API. In this instance, please strike up a conversation with the gocql team. Chances are we will understand what you are trying to acheive and will try to accommodate this in a maintainable way.
+gocql is a low level wire driver for Cassandra CQL. By and large, we would like to keep the functional scope of the library as narrow as possible. We think that gocql should be tight and focussed, and we will be naturally sceptical of things that could just as easily be implemented in a higher layer. Inevitably you will come accross something that could be implemented in a higher layer, save for a minor change to the core API. In this instance, please strike up a conversation with the gocql team. Chances are we will understand what you are trying to acheive and will try to accommodate this in a maintainable way.
 
 ### Longer Term Evolution
 
@@ -60,7 +60,7 @@ Currently, the officiallly supported versions of the Cassandra server include:
 * 2.0.6
 * 2.0.7
 
-Chances are that gocql will work with many other versions. If you would like us to support a particular version of Cassandra, please start a conversation about what version you'd like us to consider. We are more likely to accept a new version in you help out by extending the regression suite to cover the new version to be supported.
+Chances are that gocql will work with many other versions. If you would like us to support a particular version of Cassandra, please start a conversation about what version you'd like us to consider. We are more likely to accept a new version if you help out by extending the regression suite to cover the new version to be supported.
 
 ## The Core Dev Team
 
