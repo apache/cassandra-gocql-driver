@@ -25,19 +25,20 @@ func TestProto1BatchInsert(t *testing.T) {
 func TestShouldPrepareFunction(t *testing.T) {
 	var shouldPrepareTests = []struct {
 		Stmt   string
+		Vals   []interface{}
 		Result bool
 	}{
 		{`
       BEGIN BATCH
         INSERT INTO users (userID, password)
-        VALUES ('smith', 'secret')
+        VALUES (?, ?)
       APPLY BATCH
     ;
-      `, true},
-		{`INSERT INTO users (userID, password, name) VALUES ('user2', 'ch@ngem3b', 'second user')`, true},
-		{`BEGIN COUNTER BATCH UPDATE stats SET views = views + 1 WHERE pageid = 1 APPLY BATCH`, true},
-		{`delete name from users where userID = 'smith';`, true},
-		{`  UPDATE users SET password = 'secret' WHERE userID = 'smith'   `, true},
+    `, []interface{}{"smith", "secret"}, true},
+		{`INSERT INTO users (userID, password, name) VALUES (?, ?, ?)`, []interface{}{"user2", "ch@ngem3b", "second user"}, true},
+		{`BEGIN COUNTER BATCH UPDATE stats SET views = views + 1 WHERE pageid = ? APPLY BATCH`, []interface{}{"1"}, true},
+		{`delete name from users where userID = '?';`, []interface{}{"smith"}, true},
+		{`  UPDATE users SET password = '?' WHERE userID = '?'   `, []interface{}{"secret", "smith"}, true},
 		{`CREATE TABLE users (
         user_name varchar PRIMARY KEY,
         password varchar,
@@ -45,11 +46,12 @@ func TestShouldPrepareFunction(t *testing.T) {
         session_token varchar,
         state varchar,
         birth_year bigint
-      );`, false},
+      );`, nil, false},
+		{`SELECT * FROM users WHERE user_id = 1234`, nil, false},
 	}
 
 	for _, test := range shouldPrepareTests {
-		q := &Query{stmt: test.Stmt}
+		q := &Query{stmt: test.Stmt, values: test.Vals}
 		if got := q.shouldPrepare(); got != test.Result {
 			t.Fatalf("%q: got %v, expected %v\n", test.Stmt, got, test.Result)
 		}
