@@ -36,6 +36,16 @@ func Marshal(info *TypeInfo, value interface{}) ([]byte, error) {
 	if v, ok := value.(Marshaler); ok {
 		return v.MarshalCQL(info)
 	}
+
+	// Check for nil Pointer. Will set the Cassandra column to null.
+	rv := reflect.ValueOf(value)
+	k := rv.Kind()
+	if k == reflect.Ptr {
+		if rv.IsNil() {
+			return nil, nil
+		}
+	}
+
 	switch info.Type {
 	case TypeVarchar, TypeAscii, TypeBlob:
 		return marshalVarchar(info, value)
