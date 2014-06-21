@@ -60,6 +60,14 @@ var marshalTests = []struct {
 		[]byte(nil),
 	},
 	{
+		&TypeInfo{Type: TypeBlob},
+		nil,
+		func() []byte {
+			var p []byte
+			return p
+		}(),
+	},
+	{
 		&TypeInfo{Type: TypeTimeUUID},
 		[]byte{0x3d, 0xcd, 0x98, 0x0, 0xf3, 0xd9, 0x11, 0xbf, 0x86, 0xd4, 0xb8, 0xe8, 0x56, 0x2c, 0xc, 0xd0},
 		func() UUID {
@@ -86,6 +94,15 @@ var marshalTests = []struct {
 		&TypeInfo{Type: TypeInt},
 		[]byte("\x7f\xff\xff\xff"),
 		int32(math.MaxInt32),
+	},
+	{
+		&TypeInfo{Type: TypeInt},
+		nil,
+		func() *int {
+			var p *int
+			p = nil
+			return p
+		}(),
 	},
 	{
 		&TypeInfo{Type: TypeBigInt},
