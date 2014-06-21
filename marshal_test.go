@@ -44,7 +44,7 @@ var marshalTests = []struct {
 		&TypeInfo{Type: TypeVarchar},
 		nil,
 		func() *string {
-			var p *str
+			var p *string
 			p = nil
 			return p
 		}(),
