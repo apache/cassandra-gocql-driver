@@ -41,6 +41,15 @@ var marshalTests = []struct {
 		CustomString("hello world"),
 	},
 	{
+		&TypeInfo{Type: TypeVarchar},
+		nil,
+		func() *string {
+			var p *str
+			p = nil
+			return p
+		}(),
+	},
+	{
 		&TypeInfo{Type: TypeBlob},
 		[]byte("hello\x00"),
 		[]byte("hello\x00"),
