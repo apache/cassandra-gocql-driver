@@ -81,6 +81,14 @@ func Unmarshal(info *TypeInfo, data []byte, value interface{}) error {
 	if v, ok := value.(Unmarshaler); ok {
 		return v.UnmarshalCQL(info, data)
 	}
+	rv := reflect.ValueOf(value)
+	k := rv.Kind()
+	if k == reflect.Ptr {
+		if len(data) == 0 {
+			return nil
+		}
+	}
+
 	switch info.Type {
 	case TypeVarchar, TypeAscii, TypeBlob:
 		return unmarshalVarchar(info, data, value)
