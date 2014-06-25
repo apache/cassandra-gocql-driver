@@ -191,6 +191,53 @@ func TestConnClosing(t *testing.T) {
 	}
 }
 
+// TestPrepStmtsLRU is a suite of tests to validate the logic of the LRU cache for prepared statements
+func TestPrepStmtsLRU(t *testing.T) {
+	stmtsLRU.setMaxStmts(2)
+	if len(stmtsLRU.stmts) != 2 {
+		t.Errorf("expecting LRU size of 2, got %v", len(stmtsLRU.stmts))
+	}
+	//Test reference movement when setting cached queries
+	f1 := &inflightPrepare{}
+	f2 := &inflightPrepare{}
+	f3 := &inflightPrepare{}
+
+	stmtsLRU.set("a", "1", f1)
+	stmtsLRU.set("a", "2", f2)
+	stmtsLRU.set("a", "3", f3)
+	stmtsLRU.mu.Lock()
+	if stmtsLRU.stmts[1].value != f2 {
+		t.Errorf("expected pointer %v which is last statement in cache, got %v", f2, stmtsLRU.stmts[1].value)
+	}
+	stmtsLRU.mu.Unlock()
+
+	//Test nil if query not cached
+	if stmtsLRU.get("a", "1") != nil {
+		t.Errorf("expected uncached query, got %v", stmtsLRU.get("a", "1"))
+	}
+
+	//Test Correct Retrieval of query
+	if stmtsLRU.get("a", "2") != f2 {
+		t.Errorf("expected cached query %v, got %v", f2, stmtsLRU.get("a", "2"))
+	}
+
+	//Test that query 3 got moved to top of cache
+	stmtsLRU.get("a", "3")
+	stmtsLRU.mu.Lock()
+	if stmtsLRU.stmts[0].value != f3 {
+		t.Errorf("expected cached query %v at top of cache, got %v", f3, stmtsLRU.stmts[0].value)
+	}
+	stmtsLRU.mu.Unlock()
+
+	//Test Removal of query
+	stmtsLRU.delete("a", "3")
+	stmtsLRU.mu.Lock()
+	if stmtsLRU.stmts[0].value != f2 {
+		t.Errorf("expected pointer %v which is next inline after delete, got %v", f2, stmtsLRU.stmts[0].value)
+	}
+	stmtsLRU.mu.Unlock()
+}
+
 func NewTestServer(t *testing.T) *TestServer {
 	laddr, err := net.ResolveTCPAddr("tcp", "127.0.0.1:0")
 	if err != nil {

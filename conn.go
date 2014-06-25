@@ -6,7 +6,6 @@ package gocql
 
 import (
 	"bufio"
-	"bytes"
 	"fmt"
 	"net"
 	"sync"
@@ -17,6 +16,122 @@ import (
 const defaultFrameSize = 4096
 const flagResponse = 0x80
 const maskVersion = 0x7F
+
+//stmtsLRU is a private variable used as an internal reference to the prepared statements cache
+var stmtsLRU *preparedLRU
+
+//init houses could to initialize components related to connections like LRU for prepared statements
+func init() {
+	stmtsLRU = &preparedLRU{}
+	stmtsLRU.stmts = make([]*keyvalue, 10) //Really low embedded default
+}
+
+//keyvalue is an internal structure used by preparedLRU
+type keyvalue struct {
+	key   string
+	value interface{}
+}
+
+//preparedLRU is a structure that houses the logic for caching and maintaing the cache of prepared
+//statements for all connections
+type preparedLRU struct {
+	stmts []*keyvalue
+	count int
+	mu    sync.Mutex
+}
+
+//get fetchs the request query from the cache. If query is not cached nil will be returned
+func (c *preparedLRU) get(address, stmt string) (ifp *inflightPrepare) {
+	c.mu.Lock()
+	pos := -1
+	for i := 0; i < c.count; i++ {
+		if c.stmts[i].key == address+stmt {
+			pos = i
+			break
+		}
+	}
+	if pos == -1 {
+		ifp = nil
+	} else {
+		if pos > 0 {
+			//Remove existing reference and place at position 0
+			kv := c.stmts[pos]
+			copy(c.stmts[pos:c.count-1], c.stmts[pos+1:c.count])
+			copy(c.stmts[1:c.count], c.stmts[:c.count-1])
+			c.stmts[0] = kv
+		}
+		ifp = c.stmts[0].value.(*inflightPrepare)
+	}
+	c.mu.Unlock()
+	return
+}
+
+//set puts the prepared statement into the cache. Set will update the existing reference
+//if the query is already cached.
+func (c *preparedLRU) set(address, stmt string, ifp *inflightPrepare) {
+	c.mu.Lock()
+	pos := 0
+	for i := 0; i < c.count; i++ {
+		if c.stmts[i].key == address+stmt {
+			pos = i
+			break
+		}
+	}
+	if pos != 0 {
+		copy(c.stmts[pos:c.count-1], c.stmts[pos+1:c.count])
+		c.stmts[c.count] = nil
+		c.count--
+	} else if c.count == len(c.stmts) {
+		c.stmts[len(c.stmts)-1] = nil
+		c.count--
+	}
+	if c.count > 0 {
+		copy(c.stmts[1:c.count+1], c.stmts[:c.count])
+	}
+	c.stmts[0] = &keyvalue{key: address + stmt, value: ifp}
+	c.count++
+	c.mu.Unlock()
+
+}
+
+//delete removes the query from the cache
+func (c *preparedLRU) delete(address, stmt string) {
+	c.mu.Lock()
+	key := -1
+	for i := 0; i < c.count; i++ {
+		if c.stmts[i].key == address+stmt {
+			key = i
+			break
+		}
+	}
+	if key != -1 {
+		copy(c.stmts[key:c.count-1], c.stmts[key+1:c.count])
+		if c.count == len(c.stmts) {
+			c.stmts[c.count-1] = nil
+		} else {
+			c.stmts[c.count] = nil
+		}
+		c.count--
+	}
+	c.mu.Unlock()
+}
+
+//setMaxStmts controls the size of the cache. This is safe to modify at run time.
+func (c *preparedLRU) setMaxStmts(max int) {
+	c.mu.Lock()
+	stmtsL := len(c.stmts)
+	if max != stmtsL {
+		newStmts := make([]*keyvalue, max)
+		if max > stmtsL {
+			copy(newStmts, c.stmts)
+		} else if max < stmtsL {
+			copy(newStmts, c.stmts[:max])
+			c.count = max
+		}
+		c.stmts = newStmts
+	}
+	c.mu.Unlock()
+}
 
 type Authenticator interface {
 	Challenge(req []byte) (resp []byte, auth Authenticator, err error)
@@ -66,9 +181,6 @@ type Conn struct {
 	calls []callReq
 	nwait int32
 
-	prepMu sync.Mutex
-	prep   map[string]*inflightPrepare
-
 	pool       ConnectionPool
 	compressor Compressor
 	auth       Authenticator
@@ -98,7 +210,6 @@ func Connect(addr string, cfg ConnConfig, pool ConnectionPool) (*Conn, error) {
 		r:          bufio.NewReader(conn),
 		uniq:       make(chan uint8, cfg.NumStreams),
 		calls:      make([]callReq, cfg.NumStreams),
-		prep:       make(map[string]*inflightPrepare),
 		timeout:    cfg.Timeout,
 		version:    uint8(cfg.ProtoVersion),
 		addr:       conn.RemoteAddr().String(),
@@ -313,18 +424,16 @@ func (c *Conn) ping() error {
 }
 
 func (c *Conn) prepareStatement(stmt string, trace Tracer) (*queryInfo, error) {
-	c.prepMu.Lock()
-	flight := c.prep[stmt]
+	flight := stmtsLRU.get(c.addr, stmt)
 	if flight != nil {
-		c.prepMu.Unlock()
 		flight.wg.Wait()
 		return flight.info, flight.err
 	}
 
 	flight = new(inflightPrepare)
+	flight.wg = sync.WaitGroup{}
 	flight.wg.Add(1)
-	c.prep[stmt] = flight
-	c.prepMu.Unlock()
+	stmtsLRU.set(c.addr, stmt, flight)
 
 	resp, err := c.exec(&prepareFrame{Stmt: stmt}, trace)
 	if err != nil {
@@ -344,11 +453,8 @@ func (c *Conn) prepareStatement(stmt string, trace Tracer) (*queryInfo, error) {
 	}
 
 	flight.wg.Done()
-
 	if err != nil {
-		c.prepMu.Lock()
-		delete(c.prep, stmt)
-		c.prepMu.Unlock()
+		stmtsLRU.delete(c.addr, stmt)
 	}
 
 	return flight.info, flight.err
@@ -400,13 +506,11 @@ func (c *Conn) executeQuery(qry *Query) *Iter {
 	case resultKeyspaceFrame:
 		return &Iter{}
 	case RequestErrUnprepared:
-		c.prepMu.Lock()
-		if val, ok := c.prep[qry.stmt]; ok && val != nil {
-			delete(c.prep, qry.stmt)
-			c.prepMu.Unlock()
+		if val := stmtsLRU.get(c.addr, qry.stmt); val != nil {
+			val.wg.Wait()
+			stmtsLRU.delete(c.addr, qry.stmt)
 			return c.executeQuery(qry)
 		}
-		c.prepMu.Unlock()
 		return &Iter{err: x}
 	case error:
 		return &Iter{err: x}
@@ -468,6 +572,7 @@ func (c *Conn) executeBatch(batch *Batch) error {
 	f.setHeader(c.version, 0, 0, opBatch)
 	f.writeByte(byte(batch.Type))
 	f.writeShort(uint16(len(batch.Entries)))
+	stmtMap := make(map[string]string)
 	for i := 0; i < len(batch.Entries); i++ {
 		entry := &batch.Entries[i]
 		var info *queryInfo
@@ -479,10 +584,12 @@ func (c *Conn) executeBatch(batch *Batch) error {
 			}
 			f.writeByte(1)
 			f.writeShortBytes(info.id)
+			stmtMap[string(info.id)] = entry.Stmt
 		} else {
 			f.writeByte(0)
 			f.writeLongString(entry.Stmt)
 		}
+
 		f.writeShort(uint16(len(entry.Args)))
 		for j := 0; j < len(entry.Args); j++ {
 			val, err := Marshal(info.args[j].TypeInfo, entry.Args[j])
@@ -502,24 +609,11 @@ func (c *Conn) executeBatch(batch *Batch) error {
 	case resultVoidFrame:
 		return nil
 	case RequestErrUnprepared:
-		c.prepMu.Lock()
-		found := false
-		for stmt, flight := range c.prep {
-			if flight == nil || flight.info == nil {
-				continue
-			}
-			if bytes.Equal(flight.info.id, x.StatementId) {
-				found = true
-				delete(c.prep, stmt)
-				break
-			}
-		}
-		c.prepMu.Unlock()
-		if found {
+		if val, ok := stmtMap[string(x.StatementId)]; ok {
+			stmtsLRU.delete(c.addr, val)
 			return c.executeBatch(batch)
-		} else {
-			return x
 		}
+		return x
 	case error:
 		return x
 	default:

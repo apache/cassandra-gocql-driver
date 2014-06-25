@@ -583,9 +583,11 @@ func injectInvalidPreparedStatement(t *testing.T, session *Session, table string
 	}
 	stmt := "INSERT INTO " + table + " (foo, bar) VALUES (?, 7)"
 	conn := session.Pool.Pick(nil)
-	conn.prepMu.Lock()
+
 	flight := new(inflightPrepare)
-	conn.prep[stmt] = flight
+	flight.wg = sync.WaitGroup{}
+	flight.wg.Add(1)
+	stmtsLRU.set(conn.addr, stmt, flight)
 	flight.info = &queryInfo{
 		id: []byte{'f', 'o', 'o', 'b', 'a', 'r'},
 		args: []ColumnInfo{ColumnInfo{
@@ -604,7 +606,7 @@ func injectInvalidPreparedStatement(t *testing.T, session *Session, table string
 			},
 		}},
 	}
-	conn.prepMu.Unlock()
+	flight.wg.Done()
 	return stmt, conn
 }
 
