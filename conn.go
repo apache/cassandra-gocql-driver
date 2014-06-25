@@ -181,8 +181,6 @@ type Conn struct {
 	calls []callReq
 	nwait int32
 
-	prepMu sync.Mutex
-
 	pool       ConnectionPool
 	compressor Compressor
 	auth       Authenticator
