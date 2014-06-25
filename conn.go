@@ -57,7 +57,7 @@ func (c *preparedLRU) get(address, stmt string) (ifp *inflightPrepare) {
 			//Remove existing reference and place at position 0
 			kv := c.stmts[pos]
 			copy(c.stmts[pos:c.count-1], c.stmts[pos+1:c.count])
-			copy(c.stmts[1:c.count+1], c.stmts[:c.count])
+			copy(c.stmts[1:c.count], c.stmts[:c.count-1])
 			c.stmts[0] = kv
 		}
 		ifp = c.stmts[0].value.(*inflightPrepare)
