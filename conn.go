@@ -6,7 +6,7 @@ package gocql
 
 import (
 	"bufio"
-	"bytes"
+	"container/list"
 	"fmt"
 	"net"
 	"sync"
@@ -17,6 +17,18 @@ import (
 const defaultFrameSize = 4096
 const flagResponse = 0x80
 const maskVersion = 0x7F
+
+//stmtsLRU is a private variable used as an internal reference to the prepared statements cache
+var stmtsLRU *preparedLRU
+
+//init houses could to initialize components related to connections like LRU for prepared statements
+func init() {
+	stmtsLRU = &preparedLRU{
+		max:   10,
+		ll:    list.New(),
+		cache: make(map[string]*list.Element),
+	}
+}
 
 type Authenticator interface {
 	Challenge(req []byte) (resp []byte, auth Authenticator, err error)
@@ -66,9 +78,6 @@ type Conn struct {
 	calls []callReq
 	nwait int32
 
-	prepMu sync.Mutex
-	prep   map[string]*inflightPrepare
-
 	pool       ConnectionPool
 	compressor Compressor
 	auth       Authenticator
@@ -98,7 +107,6 @@ func Connect(addr string, cfg ConnConfig, pool ConnectionPool) (*Conn, error) {
 		r:          bufio.NewReader(conn),
 		uniq:       make(chan uint8, cfg.NumStreams),
 		calls:      make([]callReq, cfg.NumStreams),
-		prep:       make(map[string]*inflightPrepare),
 		timeout:    cfg.Timeout,
 		version:    uint8(cfg.ProtoVersion),
 		addr:       conn.RemoteAddr().String(),
@@ -313,18 +321,15 @@ func (c *Conn) ping() error {
 }
 
 func (c *Conn) prepareStatement(stmt string, trace Tracer) (*queryInfo, error) {
-	c.prepMu.Lock()
-	flight := c.prep[stmt]
+	flight := stmtsLRU.get(c.addr + stmt)
 	if flight != nil {
-		c.prepMu.Unlock()
 		flight.wg.Wait()
 		return flight.info, flight.err
 	}
 
 	flight = new(inflightPrepare)
 	flight.wg.Add(1)
-	c.prep[stmt] = flight
-	c.prepMu.Unlock()
+	stmtsLRU.set(c.addr+stmt, flight)
 
 	resp, err := c.exec(&prepareFrame{Stmt: stmt}, trace)
 	if err != nil {
@@ -346,9 +351,7 @@ func (c *Conn) prepareStatement(stmt string, trace Tracer) (*queryInfo, error) {
 	flight.wg.Done()
 
 	if err != nil {
-		c.prepMu.Lock()
-		delete(c.prep, stmt)
-		c.prepMu.Unlock()
+		stmtsLRU.delete(c.addr + stmt)
 	}
 
 	return flight.info, flight.err
@@ -400,13 +403,10 @@ func (c *Conn) executeQuery(qry *Query) *Iter {
 	case resultKeyspaceFrame:
 		return &Iter{}
 	case RequestErrUnprepared:
-		c.prepMu.Lock()
-		if val, ok := c.prep[qry.stmt]; ok && val != nil {
-			delete(c.prep, qry.stmt)
-			c.prepMu.Unlock()
+		if ifp := stmtsLRU.get(c.addr + qry.stmt); ifp != nil {
+			stmtsLRU.delete(c.addr + qry.stmt)
 			return c.executeQuery(qry)
 		}
-		c.prepMu.Unlock()
 		return &Iter{err: x}
 	case error:
 		return &Iter{err: x}
@@ -468,6 +468,9 @@ func (c *Conn) executeBatch(batch *Batch) error {
 	f.setHeader(c.version, 0, 0, opBatch)
 	f.writeByte(byte(batch.Type))
 	f.writeShort(uint16(len(batch.Entries)))
+
+	cache := make(map[string]string)
+
 	for i := 0; i < len(batch.Entries); i++ {
 		entry := &batch.Entries[i]
 		var info *queryInfo
@@ -477,6 +480,7 @@ func (c *Conn) executeBatch(batch *Batch) error {
 			if err != nil {
 				return err
 			}
+			cache[string(info.id)] = entry.Stmt
 			f.writeByte(1)
 			f.writeShortBytes(info.id)
 		} else {
@@ -502,24 +506,11 @@ func (c *Conn) executeBatch(batch *Batch) error {
 	case resultVoidFrame:
 		return nil
 	case RequestErrUnprepared:
-		c.prepMu.Lock()
-		found := false
-		for stmt, flight := range c.prep {
-			if flight == nil || flight.info == nil {
-				continue
-			}
-			if bytes.Equal(flight.info.id, x.StatementId) {
-				found = true
-				delete(c.prep, stmt)
-				break
-			}
-		}
-		c.prepMu.Unlock()
-		if found {
+		if stmt, ok := cache[string(x.StatementId)]; ok {
+			stmtsLRU.delete(c.addr + stmt)
 			return c.executeBatch(batch)
-		} else {
-			return x
 		}
+		return x
 	case error:
 		return x
 	default:
@@ -625,4 +616,82 @@ type inflightPrepare struct {
 	info *queryInfo
 	err  error
 	wg   sync.WaitGroup
+}
+
+//prepQry is a structure used by the preparedLRU cache
+type prepQry struct {
+	key   string
+	value *inflightPrepare
+}
+
+//preparedLRU is a structure that houses the logic for caching and maintaing the cache of prepared
+//statements for all connections
+type preparedLRU struct {
+	max   int
+	ll    *list.List
+	cache map[string]*list.Element
+	mu    sync.Mutex
+}
+
+//get fetchs the request query from the cache. If query is not cached nil will be returned
+func (c *preparedLRU) get(key string) (ifp *inflightPrepare) {
+	c.mu.Lock()
+	if elem, ok := c.cache[key]; ok {
+		c.ll.MoveToFront(elem)
+		ifp = elem.Value.(*prepQry).value
+	}
+	c.mu.Unlock()
+	return
+}
+
+//set puts the prepared statement into the cache. Set will update the existing reference
+//if the query is already cached.
+func (c *preparedLRU) set(key string, ifp *inflightPrepare) {
+	c.mu.Lock()
+	if elem, ok := c.cache[key]; ok {
+		c.ll.MoveToFront(elem)
+		elem.Value.(*prepQry).value = ifp
+	} else {
+		elem := c.ll.PushFront(&prepQry{key: key, value: ifp})
+		c.cache[key] = elem
+		if c.ll.Len() > c.max {
+			c.removeOldest()
+		}
+	}
+	c.mu.Unlock()
+
+}
+
+//removeOldest will remove the query at the end of the linked list (oldest)
+func (c *preparedLRU) removeOldest() {
+	elem := c.ll.Back()
+	if elem != nil {
+		c.remove(elem)
+	}
+}
+
+//remove houses the logic to clean up a prepared query and its cache reference
+func (c *preparedLRU) remove(elem *list.Element) {
+	c.ll.Remove(elem)
+	kv := elem.Value.(*prepQry)
+	delete(c.cache, kv.key)
+}
+
+//delete removes the query from the cache
+func (c *preparedLRU) delete(key string) {
+	c.mu.Lock()
+	if elem, hit := c.cache[key]; hit {
+		c.remove(elem)
+	}
+	c.mu.Unlock()
+}
+
+//setMaxStmts controls the size of the cache. This is safe to modify at run time.
+func (c *preparedLRU) setMaxStmts(max int) {
+	c.mu.Lock()
+	for c.ll.Len() > max {
+		c.removeOldest()
+	}
+	c.max = max
+	c.mu.Unlock()
 }

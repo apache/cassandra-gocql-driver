@@ -10,6 +10,7 @@ import (
 	"reflect"
 	"sort"
 	"speter.net/go/exp/math/dec/inf"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -583,9 +584,8 @@ func injectInvalidPreparedStatement(t *testing.T, session *Session, table string
 	}
 	stmt := "INSERT INTO " + table + " (foo, bar) VALUES (?, 7)"
 	conn := session.Pool.Pick(nil)
-	conn.prepMu.Lock()
 	flight := new(inflightPrepare)
-	conn.prep[stmt] = flight
+	stmtsLRU.set(conn.addr+stmt, flight)
 	flight.info = &queryInfo{
 		id: []byte{'f', 'o', 'o', 'b', 'a', 'r'},
 		args: []ColumnInfo{ColumnInfo{
@@ -604,7 +604,6 @@ func injectInvalidPreparedStatement(t *testing.T, session *Session, table string
 			},
 		}},
 	}
-	conn.prepMu.Unlock()
 	return stmt, conn
 }
 
@@ -628,4 +627,81 @@ func TestReprepareBatch(t *testing.T) {
 		t.Fatalf("Failed to execute query for reprepare statement: %v", err)
 	}
 
+}
+
+//TestPreparedCacheEviction will make sure that the cache size is maintained
+func TestPreparedCacheEviction(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+	stmtsLRU.setMaxStmts(10)
+
+	if err := session.Query(`CREATE TABLE prepCacheEvict (
+			id       int,
+			mod 	int,
+			PRIMARY KEY (id)
+		)`).Exec(); err != nil {
+		t.Fatal("create table:", err)
+	}
+
+	for i := 0; i < 100; i++ {
+		if err := session.Query(`INSERT INTO prepCacheEvict (id,mod) VALUES (?, ?)`,
+			i, 10000%(i+1)).Exec(); err != nil {
+			t.Fatal("insert:", err)
+		}
+	}
+
+	var id, mod int
+	for i := 0; i < 100; i++ {
+		err := session.Query("SELECT id,mod FROM prepcacheevict WHERE id = "+strconv.FormatInt(int64(i), 10)).Scan(&id, &mod)
+		if err != nil {
+			t.Error("select prepcacheevit:", err)
+			continue
+		}
+	}
+	if stmtsLRU.ll.Len() != stmtsLRU.max {
+		t.Errorf("expected cache size of %v, got %v", stmtsLRU.max, stmtsLRU.ll.Len())
+	}
+}
+
+//TestPreparedCacheAccuracy will test to make sure cached queries are moving to expected positions within the cache
+func TestPreparedCacheAccuracy(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+	stmtsLRU.setMaxStmts(10)
+	//purge cache
+	stmtsLRU.mu.Lock()
+	for stmtsLRU.ll.Len() > 0 {
+		stmtsLRU.remove(stmtsLRU.ll.Front())
+	}
+	stmtsLRU.mu.Unlock()
+
+	if err := session.Query(`CREATE TABLE prepCacheacc (
+			id       int,
+			mod 	int,
+			PRIMARY KEY (id)
+		)`).Exec(); err != nil {
+		t.Fatal("create table:", err)
+	}
+
+	for i := 0; i < 100; i++ {
+		if err := session.Query(`INSERT INTO prepCacheacc (id,mod) VALUES (?, ?)`,
+			i, 10000%(i+1)).Exec(); err != nil {
+			t.Fatal("insert:", err)
+		}
+	}
+
+	var id, mod int
+	for i := 0; i < 100; i++ {
+		err := session.Query("SELECT id,mod FROM prepCacheacc WHERE id = ?", i).Scan(&id, &mod)
+		if err != nil {
+			t.Error("select prepCacheacc:", err)
+			continue
+		}
+	}
+	if stmtsLRU.ll.Len() != 2 {
+		t.Errorf("expected cache size of %v, got %v", 2, stmtsLRU.ll.Len())
+	}
+	if !strings.Contains(stmtsLRU.ll.Front().Value.(*prepQry).key, "SELECT id,mod FROM prepCacheacc WHERE id = ?") {
+		t.Errorf("expected top of cache key to contain \"%s\", got key %v", "SELECT id,mod FROM prepCacheacc WHERE id = ?", stmtsLRU.ll.Front().Value.(*prepQry).key)
+	}
 }
