@@ -6,8 +6,8 @@ package gocql
 
 import (
 	"bufio"
-	"bytes"
 	"fmt"
+	"github.com/golang/groupcache/lru"
 	"net"
 	"sync"
 	"sync/atomic"
@@ -17,6 +17,14 @@ import (
 const defaultFrameSize = 4096
 const flagResponse = 0x80
 const maskVersion = 0x7F
+
+//Package global reference to Prepared Statements LRU
+var stmtsLRU *preparedLRU
+
+//init houses could to initialize components related to connections like LRU for prepared statements
+func init() {
+	stmtsLRU = &preparedLRU{lru: lru.New(10)}
+}
 
 type Authenticator interface {
 	Challenge(req []byte) (resp []byte, auth Authenticator, err error)
@@ -66,9 +74,6 @@ type Conn struct {
 	calls []callReq
 	nwait int32
 
-	prepMu sync.Mutex
-	prep   map[string]*inflightPrepare
-
 	pool       ConnectionPool
 	compressor Compressor
 	auth       Authenticator
@@ -98,7 +103,6 @@ func Connect(addr string, cfg ConnConfig, pool ConnectionPool) (*Conn, error) {
 		r:          bufio.NewReader(conn),
 		uniq:       make(chan uint8, cfg.NumStreams),
 		calls:      make([]callReq, cfg.NumStreams),
-		prep:       make(map[string]*inflightPrepare),
 		timeout:    cfg.Timeout,
 		version:    uint8(cfg.ProtoVersion),
 		addr:       conn.RemoteAddr().String(),
@@ -313,18 +317,18 @@ func (c *Conn) ping() error {
 }
 
 func (c *Conn) prepareStatement(stmt string, trace Tracer) (*queryInfo, error) {
-	c.prepMu.Lock()
-	flight := c.prep[stmt]
-	if flight != nil {
-		c.prepMu.Unlock()
+	stmtsLRU.mu.Lock()
+	if val, ok := stmtsLRU.lru.Get(c.addr + stmt); ok {
+		flight := val.(*inflightPrepare)
+		stmtsLRU.mu.Unlock()
 		flight.wg.Wait()
 		return flight.info, flight.err
 	}
 
-	flight = new(inflightPrepare)
+	flight := new(inflightPrepare)
 	flight.wg.Add(1)
-	c.prep[stmt] = flight
-	c.prepMu.Unlock()
+	stmtsLRU.lru.Add(c.addr+stmt, flight)
+	stmtsLRU.mu.Unlock()
 
 	resp, err := c.exec(&prepareFrame{Stmt: stmt}, trace)
 	if err != nil {
@@ -346,9 +350,9 @@ func (c *Conn) prepareStatement(stmt string, trace Tracer) (*queryInfo, error) {
 	flight.wg.Done()
 
 	if err != nil {
-		c.prepMu.Lock()
-		delete(c.prep, stmt)
-		c.prepMu.Unlock()
+		stmtsLRU.mu.Lock()
+		stmtsLRU.lru.Remove(c.addr + stmt)
+		stmtsLRU.mu.Unlock()
 	}
 
 	return flight.info, flight.err
@@ -400,13 +404,13 @@ func (c *Conn) executeQuery(qry *Query) *Iter {
 	case resultKeyspaceFrame:
 		return &Iter{}
 	case RequestErrUnprepared:
-		c.prepMu.Lock()
-		if val, ok := c.prep[qry.stmt]; ok && val != nil {
-			delete(c.prep, qry.stmt)
-			c.prepMu.Unlock()
+		stmtsLRU.mu.Lock()
+		if _, ok := stmtsLRU.lru.Get(c.addr + qry.stmt); ok {
+			stmtsLRU.lru.Remove(c.addr + qry.stmt)
+			stmtsLRU.mu.Unlock()
 			return c.executeQuery(qry)
 		}
-		c.prepMu.Unlock()
+		stmtsLRU.mu.Unlock()
 		return &Iter{err: x}
 	case error:
 		return &Iter{err: x}
@@ -468,12 +472,16 @@ func (c *Conn) executeBatch(batch *Batch) error {
 	f.setHeader(c.version, 0, 0, opBatch)
 	f.writeByte(byte(batch.Type))
 	f.writeShort(uint16(len(batch.Entries)))
+
+	stmts := make(map[string]string)
+
 	for i := 0; i < len(batch.Entries); i++ {
 		entry := &batch.Entries[i]
 		var info *queryInfo
 		if len(entry.Args) > 0 {
 			var err error
 			info, err = c.prepareStatement(entry.Stmt, nil)
+			stmts[string(info.id)] = entry.Stmt
 			if err != nil {
 				return err
 			}
@@ -502,19 +510,12 @@ func (c *Conn) executeBatch(batch *Batch) error {
 	case resultVoidFrame:
 		return nil
 	case RequestErrUnprepared:
-		c.prepMu.Lock()
-		found := false
-		for stmt, flight := range c.prep {
-			if flight == nil || flight.info == nil {
-				continue
-			}
-			if bytes.Equal(flight.info.id, x.StatementId) {
-				found = true
-				delete(c.prep, stmt)
-				break
-			}
+		stmtsLRU.mu.Lock()
+		stmt, found := stmts[string(x.StatementId)]
+		if found {
+			stmtsLRU.lru.Remove(c.addr + stmt)
 		}
-		c.prepMu.Unlock()
+		stmtsLRU.mu.Unlock()
 		if found {
 			return c.executeBatch(batch)
 		} else {
@@ -625,4 +626,9 @@ type inflightPrepare struct {
 	info *queryInfo
 	err  error
 	wg   sync.WaitGroup
+}
+
+type preparedLRU struct {
+	lru *lru.Cache
+	mu  sync.Mutex
 }
