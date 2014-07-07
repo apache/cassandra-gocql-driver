@@ -639,15 +639,11 @@ func TestPreparedCacheEviction(t *testing.T) {
 	stmtsLRU.Max(10)
 	stmtsLRU.mu.Unlock()
 
-	if err := session.Query(`CREATE TABLE prepCacheEvict (
-id int,
-mod int,
-PRIMARY KEY (id)
-)`).Exec(); err != nil {
+	if err := session.Query(`CREATE TABLE prepCacheEvict (id int,mod int,PRIMARY KEY (id))`).Exec(); err != nil {
 		t.Fatal("create table:", err)
 	}
 
-	for i := 0; i < 15; i++ {
+	for i := 0; i < 11; i++ {
 		if err := session.Query(`INSERT INTO prepCacheEvict (id,mod) VALUES (?, ?)`,
 			i, 10000%(i+1)).Exec(); err != nil {
 			t.Fatal("insert:", err)
@@ -655,7 +651,7 @@ PRIMARY KEY (id)
 	}
 
 	var id, mod int
-	for i := 0; i < 15; i++ {
+	for i := 0; i < 11; i++ {
 		err := session.Query("SELECT id,mod FROM prepcacheevict WHERE id = "+strconv.FormatInt(int64(i), 10)).Scan(&id, &mod)
 		if err != nil {
 			t.Error("select prepcacheevit:", err)
@@ -664,6 +660,15 @@ PRIMARY KEY (id)
 	}
 	if stmtsLRU.lru.Len() != stmtsLRU.lru.MaxEntries {
 		t.Errorf("expected cache size of %v, got %v", stmtsLRU.lru.MaxEntries, stmtsLRU.lru.Len())
+	}
+	//Walk through all the configured hosts and see if the first query was evicted.
+	var selFound bool
+	for i := range session.cfg.Hosts {
+		_, ok := stmtsLRU.lru.Get(session.cfg.Hosts[i] + ":9042SELECT id,mod FROM prepcacheevict WHERE id = 0")
+		selFound = selFound || ok
+	}
+	if selFound {
+		t.Error("expected first select statement to be purged, but statement was found in the cache.")
 	}
 }
 
