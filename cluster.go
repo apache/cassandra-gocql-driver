@@ -6,8 +6,28 @@ package gocql
 
 import (
 	"errors"
+	"github.com/golang/groupcache/lru"
+	"sync"
 	"time"
 )
+
+//Package global reference to Prepared Statements LRU
+var stmtsLRU preparedLRU
+
+//preparedLRU is the prepared statement cache
+type preparedLRU struct {
+	lru *lru.Cache
+	mu  sync.Mutex
+}
+
+//Max adjusts the maximum size of the cache and cleans up the oldest records if
+//the new max is lower than the previous value. Not concurrency safe.
+func (p *preparedLRU) Max(max int) {
+	for p.lru.Len() > max {
+		p.lru.RemoveOldest()
+	}
+	p.lru.MaxEntries = max
+}
 
 // ClusterConfig is a struct to configure the default cluster implementation
 // of gocoql. It has a varity of attributes that can be used to modify the
@@ -62,10 +82,11 @@ func (cfg *ClusterConfig) CreateSession() (*Session, error) {
 
 	//Adjust the size of the prepared statements cache to match the latest configuration
 	stmtsLRU.mu.Lock()
-	for stmtsLRU.lru.Len() > cfg.MaxPreparedStmts {
-		stmtsLRU.lru.RemoveOldest()
+	if stmtsLRU.lru != nil {
+		stmtsLRU.Max(cfg.MaxPreparedStmts)
+	} else {
+		stmtsLRU.lru = lru.New(cfg.MaxPreparedStmts)
 	}
-	stmtsLRU.lru.MaxEntries = cfg.MaxPreparedStmts
 	stmtsLRU.mu.Unlock()
 
 	//See if there are any connections in the pool

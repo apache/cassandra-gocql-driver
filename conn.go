@@ -7,7 +7,6 @@ package gocql
 import (
 	"bufio"
 	"fmt"
-	"github.com/golang/groupcache/lru"
 	"net"
 	"sync"
 	"sync/atomic"
@@ -17,14 +16,6 @@ import (
 const defaultFrameSize = 4096
 const flagResponse = 0x80
 const maskVersion = 0x7F
-
-//Package global reference to Prepared Statements LRU
-var stmtsLRU *preparedLRU
-
-//init houses could to initialize components related to connections like LRU for prepared statements
-func init() {
-	stmtsLRU = &preparedLRU{lru: lru.New(10)}
-}
 
 type Authenticator interface {
 	Challenge(req []byte) (resp []byte, auth Authenticator, err error)
@@ -510,12 +501,12 @@ func (c *Conn) executeBatch(batch *Batch) error {
 	case resultVoidFrame:
 		return nil
 	case RequestErrUnprepared:
-		stmtsLRU.mu.Lock()
 		stmt, found := stmts[string(x.StatementId)]
 		if found {
+			stmtsLRU.mu.Lock()
 			stmtsLRU.lru.Remove(c.addr + stmt)
+			stmtsLRU.mu.Unlock()
 		}
-		stmtsLRU.mu.Unlock()
 		if found {
 			return c.executeBatch(batch)
 		} else {
@@ -626,9 +617,4 @@ type inflightPrepare struct {
 	info *queryInfo
 	err  error
 	wg   sync.WaitGroup
-}
-
-type preparedLRU struct {
-	lru *lru.Cache
-	mu  sync.Mutex
 }

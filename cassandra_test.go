@@ -636,10 +636,7 @@ func TestPreparedCacheEviction(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 	stmtsLRU.mu.Lock()
-	for stmtsLRU.lru.Len() > 10 {
-		stmtsLRU.lru.RemoveOldest()
-	}
-	stmtsLRU.lru.MaxEntries = 10
+	stmtsLRU.Max(10)
 	stmtsLRU.mu.Unlock()
 
 	if err := session.Query(`CREATE TABLE prepCacheEvict (
@@ -650,7 +647,7 @@ PRIMARY KEY (id)
 		t.Fatal("create table:", err)
 	}
 
-	for i := 0; i < 100; i++ {
+	for i := 0; i < 15; i++ {
 		if err := session.Query(`INSERT INTO prepCacheEvict (id,mod) VALUES (?, ?)`,
 			i, 10000%(i+1)).Exec(); err != nil {
 			t.Fatal("insert:", err)
@@ -658,7 +655,7 @@ PRIMARY KEY (id)
 	}
 
 	var id, mod int
-	for i := 0; i < 100; i++ {
+	for i := 0; i < 15; i++ {
 		err := session.Query("SELECT id,mod FROM prepcacheevict WHERE id = "+strconv.FormatInt(int64(i), 10)).Scan(&id, &mod)
 		if err != nil {
 			t.Error("select prepcacheevit:", err)
@@ -670,27 +667,20 @@ PRIMARY KEY (id)
 	}
 }
 
-//TestPreparedCacheAccuracy will test to make sure cached queries are moving to expected positions within the cache
-func TestPreparedCacheAccuracy(t *testing.T) {
+//TestPreparedCacheAccuracy will test to make sure cached queries are being retained properly
+func TestPreparedCaching(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 	//purge cache
 	stmtsLRU.mu.Lock()
-	for stmtsLRU.lru.Len() > 0 {
-		stmtsLRU.lru.RemoveOldest()
-	}
-	stmtsLRU.lru.MaxEntries = 10
+	stmtsLRU.Max(2)
 	stmtsLRU.mu.Unlock()
 
-	if err := session.Query(`CREATE TABLE prepCacheacc (
-id int,
-mod int,
-PRIMARY KEY (id)
-)`).Exec(); err != nil {
+	if err := session.Query(`CREATE TABLE prepCacheacc (id int,mod int,PRIMARY KEY (id))`).Exec(); err != nil {
 		t.Fatal("create table:", err)
 	}
 
-	for i := 0; i < 100; i++ {
+	for i := 0; i < 4; i++ {
 		if err := session.Query(`INSERT INTO prepCacheacc (id,mod) VALUES (?, ?)`,
 			i, 10000%(i+1)).Exec(); err != nil {
 			t.Fatal("insert:", err)
@@ -698,7 +688,7 @@ PRIMARY KEY (id)
 	}
 
 	var id, mod int
-	for i := 0; i < 100; i++ {
+	for i := 0; i < 4; i++ {
 		err := session.Query("SELECT id,mod FROM prepCacheacc WHERE id = ?", i).Scan(&id, &mod)
 		if err != nil {
 			t.Error("select prepCacheacc:", err)
@@ -707,5 +697,21 @@ PRIMARY KEY (id)
 	}
 	if stmtsLRU.lru.Len() != 2 {
 		t.Errorf("expected cache size of %v, got %v", 2, stmtsLRU.lru.Len())
+	}
+
+	//Walk through all the configured hosts and see if the queries were cached.
+	var insFound, selFound bool
+	for i := range session.cfg.Hosts {
+		_, ok := stmtsLRU.lru.Get(session.cfg.Hosts[i] + ":9042INSERT INTO prepCacheacc (id,mod) VALUES (?, ?)")
+		insFound = insFound || ok
+
+		_, ok = stmtsLRU.lru.Get(session.cfg.Hosts[i] + ":9042SELECT id,mod FROM prepCacheacc WHERE id = ?")
+		selFound = selFound || ok
+	}
+	if !insFound {
+		t.Error("expected cache to retain insert statement, but statement was purged.")
+	}
+	if !selFound {
+		t.Error("expected cache to retain select statement, but statement was purged.")
 	}
 }
