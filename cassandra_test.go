@@ -612,13 +612,6 @@ func injectInvalidPreparedStatement(t *testing.T, session *Session, table string
 			TypeInfo: &TypeInfo{
 				Type: TypeVarchar,
 			},
-		}, ColumnInfo{
-			Keyspace: "gocql_test",
-			Table:    table,
-			Name:     "bar",
-			TypeInfo: &TypeInfo{
-				Type: TypeInt,
-			},
 		}},
 	}
 	conn.prepMu.Unlock()
