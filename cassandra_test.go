@@ -317,8 +317,10 @@ func TestWrongQueryArgsLength(t *testing.T) {
 		t.Fatal("create table:", err)
 	}
 
-	if _, err := session.Query(`SELECT * FROM query_args_length WHERE id = ?`, 1, 2).Iter().SliceMap(); err != nil {
-		t.Fatal("select query_args_length:", err)
+	_, err := session.Query(`SELECT * FROM query_args_length WHERE id = ?`, 1, 2).Iter().SliceMap()
+
+	if err == nil || err != ErrQueryArgLength {
+		t.Fatal("'`SELECT * FROM query_args_length WHERE id = ?`, 1, 2' should return an ErrQueryArgLength")
 	}
 }
 

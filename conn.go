@@ -7,6 +7,7 @@ package gocql
 import (
 	"bufio"
 	"bytes"
+	"errors"
 	"fmt"
 	"net"
 	"sync"
@@ -367,6 +368,9 @@ func (c *Conn) executeQuery(qry *Query) *Iter {
 		if err != nil {
 			return &Iter{err: err}
 		}
+		if len(qry.values) != len(info.args) {
+			return &Iter{err: ErrQueryArgLength}
+		}
 		op.Prepared = info.id
 		op.Values = make([][]byte, len(qry.values))
 		for i := 0; i < len(qry.values); i++ {
@@ -626,3 +630,7 @@ type inflightPrepare struct {
 	err  error
 	wg   sync.WaitGroup
 }
+
+var (
+	ErrQueryArgLength = errors.New("query argument length mismatch")
+)
