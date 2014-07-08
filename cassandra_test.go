@@ -307,6 +307,21 @@ func TestBatchLimit(t *testing.T) {
 
 }
 
+// TestWrongQueryArgsLength tests to make sure the library correctly handles the application level bug
+// whereby the wrong number of query arguments are passed to a query
+func TestWrongQueryArgsLength(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+
+	if err := session.Query(`CREATE TABLE query_args_length (id int primary key, value int)`).Exec(); err != nil {
+		t.Fatal("create table:", err)
+	}
+
+	if _, err := session.Query(`SELECT * FROM query_args_length WHERE id = ?`, 1, 2).Iter().SliceMap(); err != nil {
+		t.Fatal("select query_args_length:", err)
+	}
+}
+
 // TestCreateSessionTimeout tests to make sure the CreateSession function timeouts out correctly
 // and prevents an infinite loop of connection retries.
 func TestCreateSessionTimeout(t *testing.T) {
