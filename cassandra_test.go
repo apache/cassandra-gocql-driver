@@ -636,87 +636,83 @@ func TestPreparedCacheEviction(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 	stmtsLRU.mu.Lock()
-	stmtsLRU.Max(10)
+	stmtsLRU.Max(4)
 	stmtsLRU.mu.Unlock()
 
-	if err := session.Query(`CREATE TABLE prepCacheEvict (id int,mod int,PRIMARY KEY (id))`).Exec(); err != nil {
+	if err := session.Query("CREATE TABLE prepcachetest (id int,mod int,PRIMARY KEY (id))").Exec(); err != nil {
 		t.Fatal("create table:", err)
 	}
-
-	for i := 0; i < 11; i++ {
-		if err := session.Query(`INSERT INTO prepCacheEvict (id,mod) VALUES (?, ?)`,
-			i, 10000%(i+1)).Exec(); err != nil {
+	//Fill the table
+	for i := 0; i < 2; i++ {
+		if err := session.Query("INSERT INTO prepcachetest (id,mod) VALUES (?, ?)", i, 10000%(i+1)).Exec(); err != nil {
 			t.Fatal("insert:", err)
 		}
 	}
-
+	//Populate the prepared statement cache with select statements
 	var id, mod int
-	for i := 0; i < 11; i++ {
-		err := session.Query("SELECT id,mod FROM prepcacheevict WHERE id = "+strconv.FormatInt(int64(i), 10)).Scan(&id, &mod)
+	for i := 0; i < 2; i++ {
+		err := session.Query("SELECT id,mod FROM prepcachetest WHERE id = "+strconv.FormatInt(int64(i), 10)).Scan(&id, &mod)
 		if err != nil {
-			t.Error("select prepcacheevit:", err)
+			t.Error("select from prepcachetest failed, error '%v'", err)
 			continue
 		}
 	}
+
+	//generate an update statement to test they are prepared
+	err := session.Query("UPDATE prepcachetest SET mod = ? WHERE id = ?", 1, 11).Exec()
+	if err != nil {
+		t.Error("update prepcachetest failed, error '%v'", err)
+	}
+
+	//generate a delete statement to test they are prepared
+	err = session.Query("DELETE FROM prepcachetest WHERE id = ?", 1).Exec()
+	if err != nil {
+		t.Error("delete from prepcachetest failed, error '%v'", err)
+	}
+
+	//generate an insert statement to test they are prepared
+	err = session.Query("INSERT INTO prepcachetest (id,mod) VALUES (?, ?)", 3, 11).Exec()
+	if err != nil {
+		t.Error("insert into prepcachetest failed, error '%v'", err)
+	}
+
+	//Make sure the cache size is maintained
 	if stmtsLRU.lru.Len() != stmtsLRU.lru.MaxEntries {
 		t.Errorf("expected cache size of %v, got %v", stmtsLRU.lru.MaxEntries, stmtsLRU.lru.Len())
 	}
-	//Walk through all the configured hosts and see if the first query was evicted.
-	var selFound bool
+
+	//Walk through all the configured hosts and test cache retention and eviction
+	var selFound, insFound, updFound, delFound, selEvict bool
 	for i := range session.cfg.Hosts {
-		_, ok := stmtsLRU.lru.Get(session.cfg.Hosts[i] + ":9042SELECT id,mod FROM prepcacheevict WHERE id = 0")
+		_, ok := stmtsLRU.lru.Get(session.cfg.Hosts[i] + ":9042SELECT id,mod FROM prepcachetest WHERE id = 1")
 		selFound = selFound || ok
-	}
-	if selFound {
-		t.Error("expected first select statement to be purged, but statement was found in the cache.")
-	}
-}
 
-//TestPreparedCacheAccuracy will test to make sure cached queries are being retained properly
-func TestPreparedCaching(t *testing.T) {
-	session := createSession(t)
-	defer session.Close()
-	//purge cache
-	stmtsLRU.mu.Lock()
-	stmtsLRU.Max(2)
-	stmtsLRU.mu.Unlock()
-
-	if err := session.Query(`CREATE TABLE prepCacheacc (id int,mod int,PRIMARY KEY (id))`).Exec(); err != nil {
-		t.Fatal("create table:", err)
-	}
-
-	for i := 0; i < 4; i++ {
-		if err := session.Query(`INSERT INTO prepCacheacc (id,mod) VALUES (?, ?)`,
-			i, 10000%(i+1)).Exec(); err != nil {
-			t.Fatal("insert:", err)
-		}
-	}
-
-	var id, mod int
-	for i := 0; i < 4; i++ {
-		err := session.Query("SELECT id,mod FROM prepCacheacc WHERE id = ?", i).Scan(&id, &mod)
-		if err != nil {
-			t.Error("select prepCacheacc:", err)
-			continue
-		}
-	}
-	if stmtsLRU.lru.Len() != 2 {
-		t.Errorf("expected cache size of %v, got %v", 2, stmtsLRU.lru.Len())
-	}
-
-	//Walk through all the configured hosts and see if the queries were cached.
-	var insFound, selFound bool
-	for i := range session.cfg.Hosts {
-		_, ok := stmtsLRU.lru.Get(session.cfg.Hosts[i] + ":9042INSERT INTO prepCacheacc (id,mod) VALUES (?, ?)")
+		_, ok = stmtsLRU.lru.Get(session.cfg.Hosts[i] + ":9042INSERT INTO prepcachetest (id,mod) VALUES (?, ?)")
 		insFound = insFound || ok
 
-		_, ok = stmtsLRU.lru.Get(session.cfg.Hosts[i] + ":9042SELECT id,mod FROM prepCacheacc WHERE id = ?")
-		selFound = selFound || ok
+		_, ok = stmtsLRU.lru.Get(session.cfg.Hosts[i] + ":9042UPDATE prepcachetest SET mod = ? WHERE id = ?")
+		updFound = updFound || ok
+
+		_, ok = stmtsLRU.lru.Get(session.cfg.Hosts[i] + ":9042DELETE FROM prepcachetest WHERE id = ?")
+		delFound = delFound || ok
+
+		_, ok = stmtsLRU.lru.Get(session.cfg.Hosts[i] + ":9042SELECT id,mod FROM prepcachetest WHERE id = 0")
+		selEvict = selEvict || !ok
+
 	}
-	if !insFound {
-		t.Error("expected cache to retain insert statement, but statement was purged.")
+	if !selEvict {
+		t.Error("expected first select statement to be purged, but statement was found in the cache.")
 	}
 	if !selFound {
-		t.Error("expected cache to retain select statement, but statement was purged.")
+		t.Error("expected second select statement to be cached, but statement was purged or not prepared.")
+	}
+	if !insFound {
+		t.Error("expected insert statement to be cached, but statement was purged or not prepared.")
+	}
+	if !updFound {
+		t.Error("expected update statement to be cached, but statement was purged or not prepared.")
+	}
+	if !delFound {
+		t.Error("expected delete statement to be cached, but statement was purged or not prepared.")
 	}
 }
