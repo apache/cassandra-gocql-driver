@@ -307,20 +307,45 @@ func TestBatchLimit(t *testing.T) {
 
 }
 
-// TestWrongQueryArgsLength tests to make sure the library correctly handles the application level bug
-// whereby the wrong number of query arguments are passed to a query
-func TestWrongQueryArgsLength(t *testing.T) {
+// TestTooManyQueryArgs tests to make sure the library correctly handles the application level bug
+// whereby the too few query arguments are passed to a query
+func TestTooManyQueryArgs(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 
-	if err := session.Query(`CREATE TABLE query_args_length (id int primary key, value int)`).Exec(); err != nil {
+	if err := session.Query(`CREATE TABLE too_many_query_args (id int primary key, value int)`).Exec(); err != nil {
 		t.Fatal("create table:", err)
 	}
 
-	_, err := session.Query(`SELECT * FROM query_args_length WHERE id = ?`, 1, 2).Iter().SliceMap()
+	_, err := session.Query(`SELECT * FROM too_many_query_args WHERE id = ?`, 1, 2).Iter().SliceMap()
 
-	if err == nil || err != ErrQueryArgLength {
-		t.Fatal("'`SELECT * FROM query_args_length WHERE id = ?`, 1, 2' should return an ErrQueryArgLength")
+	if err == nil {
+		t.Fatal("'`SELECT * FROM too_many_query_args WHERE id = ?`, 1, 2' should return an ErrQueryArgLength")
+	}
+
+	if err != ErrQueryArgLength {
+		t.Fatalf("'`SELECT * FROM too_many_query_args WHERE id = ?`, 1, 2' should return an ErrQueryArgLength, but returned: %s", err)
+	}
+}
+
+// TestTooFewQueryArgs tests to make sure the library correctly handles the application level bug
+// whereby the too few query arguments are passed to a query
+func TestTooFewQueryArgs(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+
+	if err := session.Query(`CREATE TABLE too_few_query_args (id int, cluster int, value int, primary key (id, cluster))`).Exec(); err != nil {
+		t.Fatal("create table:", err)
+	}
+
+	_, err := session.Query(`SELECT * FROM too_few_query_args WHERE id = ? and cluster = ?`, 1).Iter().SliceMap()
+
+	if err == nil {
+		t.Fatal("'`SELECT * FROM too_few_query_args WHERE id = ? and cluster = ?`, 1' should return an ErrQueryArgLength")
+	}
+
+	if err != ErrQueryArgLength {
+		t.Fatalf("'`SELECT * FROM too_few_query_args WHERE id = ? and cluster = ?`, 1' should return an ErrQueryArgLength, but returned: %s", err)
 	}
 }
 
