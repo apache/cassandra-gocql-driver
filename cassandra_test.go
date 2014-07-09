@@ -654,7 +654,6 @@ func TestPreparedCacheEviction(t *testing.T) {
 		err := session.Query("SELECT id,mod FROM prepcachetest WHERE id = "+strconv.FormatInt(int64(i), 10)).Scan(&id, &mod)
 		if err != nil {
 			t.Fatalf("select from prepcachetest failed, error '%v'", err)
-			continue
 		}
 	}
 
