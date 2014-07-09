@@ -308,6 +308,73 @@ func TestBatchLimit(t *testing.T) {
 
 }
 
+// TestTooManyQueryArgs tests to make sure the library correctly handles the application level bug
+// whereby too many query arguments are passed to a query
+func TestTooManyQueryArgs(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+
+	if err := session.Query(`CREATE TABLE too_many_query_args (id int primary key, value int)`).Exec(); err != nil {
+		t.Fatal("create table:", err)
+	}
+
+	_, err := session.Query(`SELECT * FROM too_many_query_args WHERE id = ?`, 1, 2).Iter().SliceMap()
+
+	if err == nil {
+		t.Fatal("'`SELECT * FROM too_many_query_args WHERE id = ?`, 1, 2' should return an ErrQueryArgLength")
+	}
+
+	if err != ErrQueryArgLength {
+		t.Fatalf("'`SELECT * FROM too_many_query_args WHERE id = ?`, 1, 2' should return an ErrQueryArgLength, but returned: %s", err)
+	}
+
+	batch := session.NewBatch(UnloggedBatch)
+	batch.Query("INSERT INTO too_many_query_args (id, value) VALUES (?, ?)", 1, 2, 3)
+	err = session.ExecuteBatch(batch)
+
+	if err == nil {
+		t.Fatal("'`INSERT INTO too_many_query_args (id, value) VALUES (?, ?)`, 1, 2, 3' should return an ErrQueryArgLength")
+	}
+
+	if err != ErrQueryArgLength {
+		t.Fatalf("'INSERT INTO too_many_query_args (id, value) VALUES (?, ?)`, 1, 2, 3' should return an ErrQueryArgLength, but returned: %s", err)
+	}
+
+}
+
+// TestNotEnoughQueryArgs tests to make sure the library correctly handles the application level bug
+// whereby not enough query arguments are passed to a query
+func TestNotEnoughQueryArgs(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+
+	if err := session.Query(`CREATE TABLE not_enough_query_args (id int, cluster int, value int, primary key (id, cluster))`).Exec(); err != nil {
+		t.Fatal("create table:", err)
+	}
+
+	_, err := session.Query(`SELECT * FROM not_enough_query_args WHERE id = ? and cluster = ?`, 1).Iter().SliceMap()
+
+	if err == nil {
+		t.Fatal("'`SELECT * FROM not_enough_query_args WHERE id = ? and cluster = ?`, 1' should return an ErrQueryArgLength")
+	}
+
+	if err != ErrQueryArgLength {
+		t.Fatalf("'`SELECT * FROM too_few_query_args WHERE id = ? and cluster = ?`, 1' should return an ErrQueryArgLength, but returned: %s", err)
+	}
+
+	batch := session.NewBatch(UnloggedBatch)
+	batch.Query("INSERT INTO not_enough_query_args (id, cluster, value) VALUES (?, ?, ?)", 1, 2)
+	err = session.ExecuteBatch(batch)
+
+	if err == nil {
+		t.Fatal("'`INSERT INTO not_enough_query_args (id, cluster, value) VALUES (?, ?, ?)`, 1, 2' should return an ErrQueryArgLength")
+	}
+
+	if err != ErrQueryArgLength {
+		t.Fatalf("'INSERT INTO not_enough_query_args (id, cluster, value) VALUES (?, ?, ?)`, 1, 2' should return an ErrQueryArgLength, but returned: %s", err)
+	}
+}
+
 // TestCreateSessionTimeout tests to make sure the CreateSession function timeouts out correctly
 // and prevents an infinite loop of connection retries.
 func TestCreateSessionTimeout(t *testing.T) {
@@ -596,13 +663,6 @@ func injectInvalidPreparedStatement(t *testing.T, session *Session, table string
 			Name:     "foo",
 			TypeInfo: &TypeInfo{
 				Type: TypeVarchar,
-			},
-		}, ColumnInfo{
-			Keyspace: "gocql_test",
-			Table:    table,
-			Name:     "bar",
-			TypeInfo: &TypeInfo{
-				Type: TypeInt,
 			},
 		}},
 	}
