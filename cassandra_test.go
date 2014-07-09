@@ -10,6 +10,7 @@ import (
 	"reflect"
 	"sort"
 	"speter.net/go/exp/math/dec/inf"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -625,9 +626,10 @@ func injectInvalidPreparedStatement(t *testing.T, session *Session, table string
 	}
 	stmt := "INSERT INTO " + table + " (foo, bar) VALUES (?, 7)"
 	conn := session.Pool.Pick(nil)
-	conn.prepMu.Lock()
 	flight := new(inflightPrepare)
-	conn.prep[stmt] = flight
+	stmtsLRU.mu.Lock()
+	stmtsLRU.lru.Add(conn.addr+stmt, flight)
+	stmtsLRU.mu.Unlock()
 	flight.info = &queryInfo{
 		id: []byte{'f', 'o', 'o', 'b', 'a', 'r'},
 		args: []ColumnInfo{ColumnInfo{
@@ -639,7 +641,6 @@ func injectInvalidPreparedStatement(t *testing.T, session *Session, table string
 			},
 		}},
 	}
-	conn.prepMu.Unlock()
 	return stmt, conn
 }
 
@@ -663,4 +664,89 @@ func TestReprepareBatch(t *testing.T) {
 		t.Fatalf("Failed to execute query for reprepare statement: %v", err)
 	}
 
+}
+
+//TestPreparedCacheEviction will make sure that the cache size is maintained
+func TestPreparedCacheEviction(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+	stmtsLRU.mu.Lock()
+	stmtsLRU.Max(4)
+	stmtsLRU.mu.Unlock()
+
+	if err := session.Query("CREATE TABLE prepcachetest (id int,mod int,PRIMARY KEY (id))").Exec(); err != nil {
+		t.Fatalf("failed to create table with error '%v'", err)
+	}
+	//Fill the table
+	for i := 0; i < 2; i++ {
+		if err := session.Query("INSERT INTO prepcachetest (id,mod) VALUES (?, ?)", i, 10000%(i+1)).Exec(); err != nil {
+			t.Fatalf("insert into prepcachetest failed, err '%v'", err)
+		}
+	}
+	//Populate the prepared statement cache with select statements
+	var id, mod int
+	for i := 0; i < 2; i++ {
+		err := session.Query("SELECT id,mod FROM prepcachetest WHERE id = "+strconv.FormatInt(int64(i), 10)).Scan(&id, &mod)
+		if err != nil {
+			t.Fatalf("select from prepcachetest failed, error '%v'", err)
+		}
+	}
+
+	//generate an update statement to test they are prepared
+	err := session.Query("UPDATE prepcachetest SET mod = ? WHERE id = ?", 1, 11).Exec()
+	if err != nil {
+		t.Fatalf("update prepcachetest failed, error '%v'", err)
+	}
+
+	//generate a delete statement to test they are prepared
+	err = session.Query("DELETE FROM prepcachetest WHERE id = ?", 1).Exec()
+	if err != nil {
+		t.Fatalf("delete from prepcachetest failed, error '%v'", err)
+	}
+
+	//generate an insert statement to test they are prepared
+	err = session.Query("INSERT INTO prepcachetest (id,mod) VALUES (?, ?)", 3, 11).Exec()
+	if err != nil {
+		t.Fatalf("insert into prepcachetest failed, error '%v'", err)
+	}
+
+	//Make sure the cache size is maintained
+	if stmtsLRU.lru.Len() != stmtsLRU.lru.MaxEntries {
+		t.Fatalf("expected cache size of %v, got %v", stmtsLRU.lru.MaxEntries, stmtsLRU.lru.Len())
+	}
+
+	//Walk through all the configured hosts and test cache retention and eviction
+	var selFound, insFound, updFound, delFound, selEvict bool
+	for i := range session.cfg.Hosts {
+		_, ok := stmtsLRU.lru.Get(session.cfg.Hosts[i] + ":9042SELECT id,mod FROM prepcachetest WHERE id = 1")
+		selFound = selFound || ok
+
+		_, ok = stmtsLRU.lru.Get(session.cfg.Hosts[i] + ":9042INSERT INTO prepcachetest (id,mod) VALUES (?, ?)")
+		insFound = insFound || ok
+
+		_, ok = stmtsLRU.lru.Get(session.cfg.Hosts[i] + ":9042UPDATE prepcachetest SET mod = ? WHERE id = ?")
+		updFound = updFound || ok
+
+		_, ok = stmtsLRU.lru.Get(session.cfg.Hosts[i] + ":9042DELETE FROM prepcachetest WHERE id = ?")
+		delFound = delFound || ok
+
+		_, ok = stmtsLRU.lru.Get(session.cfg.Hosts[i] + ":9042SELECT id,mod FROM prepcachetest WHERE id = 0")
+		selEvict = selEvict || !ok
+
+	}
+	if !selEvict {
+		t.Fatalf("expected first select statement to be purged, but statement was found in the cache.")
+	}
+	if !selFound {
+		t.Fatalf("expected second select statement to be cached, but statement was purged or not prepared.")
+	}
+	if !insFound {
+		t.Fatalf("expected insert statement to be cached, but statement was purged or not prepared.")
+	}
+	if !updFound {
+		t.Fatalf("expected update statement to be cached, but statement was purged or not prepared.")
+	}
+	if !delFound {
+		t.Error("expected delete statement to be cached, but statement was purged or not prepared.")
+	}
 }
