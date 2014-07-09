@@ -327,6 +327,19 @@ func TestTooManyQueryArgs(t *testing.T) {
 	if err != ErrQueryArgLength {
 		t.Fatalf("'`SELECT * FROM too_many_query_args WHERE id = ?`, 1, 2' should return an ErrQueryArgLength, but returned: %s", err)
 	}
+
+	batch := session.NewBatch(UnloggedBatch)
+	batch.Query("INSERT INTO too_many_query_args (id, value) VALUES (?, ?)", 1, 2, 3)
+	err = session.ExecuteBatch(batch)
+
+	if err == nil {
+		t.Fatal("'`INSERT INTO too_many_query_args (id, value) VALUES (?, ?)`, 1, 2, 3' should return an ErrQueryArgLength")
+	}
+
+	if err != ErrQueryArgLength {
+		t.Fatalf("'INSERT INTO too_many_query_args (id, value) VALUES (?, ?)`, 1, 2, 3' should return an ErrQueryArgLength, but returned: %s", err)
+	}
+
 }
 
 // TestNotEnoughQueryArgs tests to make sure the library correctly handles the application level bug
@@ -347,6 +360,18 @@ func TestNotEnoughQueryArgs(t *testing.T) {
 
 	if err != ErrQueryArgLength {
 		t.Fatalf("'`SELECT * FROM too_few_query_args WHERE id = ? and cluster = ?`, 1' should return an ErrQueryArgLength, but returned: %s", err)
+	}
+
+	batch := session.NewBatch(UnloggedBatch)
+	batch.Query("INSERT INTO not_enough_query_args (id, cluster, value) VALUES (?, ?, ?)", 1, 2)
+	err = session.ExecuteBatch(batch)
+
+	if err == nil {
+		t.Fatal("'`INSERT INTO not_enough_query_args (id, cluster, value) VALUES (?, ?, ?)`, 1, 2' should return an ErrQueryArgLength")
+	}
+
+	if err != ErrQueryArgLength {
+		t.Fatalf("'INSERT INTO not_enough_query_args (id, cluster, value) VALUES (?, ?, ?)`, 1, 2' should return an ErrQueryArgLength, but returned: %s", err)
 	}
 }
 

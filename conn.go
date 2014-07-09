@@ -476,6 +476,11 @@ func (c *Conn) executeBatch(batch *Batch) error {
 		if len(entry.Args) > 0 {
 			var err error
 			info, err = c.prepareStatement(entry.Stmt, nil)
+
+			if len(entry.Args) != len(info.args) {
+				return ErrQueryArgLength
+			}
+
 			stmts[string(info.id)] = entry.Stmt
 			if err != nil {
 				return err
