@@ -640,12 +640,12 @@ func TestPreparedCacheEviction(t *testing.T) {
 	stmtsLRU.mu.Unlock()
 
 	if err := session.Query("CREATE TABLE prepcachetest (id int,mod int,PRIMARY KEY (id))").Exec(); err != nil {
-		t.Fatal("create table:", err)
+		t.Fatalf("failed to create table with error '%v'", err)
 	}
 	//Fill the table
 	for i := 0; i < 2; i++ {
 		if err := session.Query("INSERT INTO prepcachetest (id,mod) VALUES (?, ?)", i, 10000%(i+1)).Exec(); err != nil {
-			t.Fatal("insert:", err)
+			t.Fatalf("insert into prepcachetest failed, err '%v'", err)
 		}
 	}
 	//Populate the prepared statement cache with select statements
@@ -653,7 +653,7 @@ func TestPreparedCacheEviction(t *testing.T) {
 	for i := 0; i < 2; i++ {
 		err := session.Query("SELECT id,mod FROM prepcachetest WHERE id = "+strconv.FormatInt(int64(i), 10)).Scan(&id, &mod)
 		if err != nil {
-			t.Error("select from prepcachetest failed, error '%v'", err)
+			t.Fatalf("select from prepcachetest failed, error '%v'", err)
 			continue
 		}
 	}
@@ -661,24 +661,24 @@ func TestPreparedCacheEviction(t *testing.T) {
 	//generate an update statement to test they are prepared
 	err := session.Query("UPDATE prepcachetest SET mod = ? WHERE id = ?", 1, 11).Exec()
 	if err != nil {
-		t.Error("update prepcachetest failed, error '%v'", err)
+		t.Fatalf("update prepcachetest failed, error '%v'", err)
 	}
 
 	//generate a delete statement to test they are prepared
 	err = session.Query("DELETE FROM prepcachetest WHERE id = ?", 1).Exec()
 	if err != nil {
-		t.Error("delete from prepcachetest failed, error '%v'", err)
+		t.Fatalf("delete from prepcachetest failed, error '%v'", err)
 	}
 
 	//generate an insert statement to test they are prepared
 	err = session.Query("INSERT INTO prepcachetest (id,mod) VALUES (?, ?)", 3, 11).Exec()
 	if err != nil {
-		t.Error("insert into prepcachetest failed, error '%v'", err)
+		t.Fatalf("insert into prepcachetest failed, error '%v'", err)
 	}
 
 	//Make sure the cache size is maintained
 	if stmtsLRU.lru.Len() != stmtsLRU.lru.MaxEntries {
-		t.Errorf("expected cache size of %v, got %v", stmtsLRU.lru.MaxEntries, stmtsLRU.lru.Len())
+		t.Fatalf("expected cache size of %v, got %v", stmtsLRU.lru.MaxEntries, stmtsLRU.lru.Len())
 	}
 
 	//Walk through all the configured hosts and test cache retention and eviction
@@ -701,16 +701,16 @@ func TestPreparedCacheEviction(t *testing.T) {
 
 	}
 	if !selEvict {
-		t.Error("expected first select statement to be purged, but statement was found in the cache.")
+		t.Fatalf("expected first select statement to be purged, but statement was found in the cache.")
 	}
 	if !selFound {
-		t.Error("expected second select statement to be cached, but statement was purged or not prepared.")
+		t.Fatalf("expected second select statement to be cached, but statement was purged or not prepared.")
 	}
 	if !insFound {
-		t.Error("expected insert statement to be cached, but statement was purged or not prepared.")
+		t.Fatalf("expected insert statement to be cached, but statement was purged or not prepared.")
 	}
 	if !updFound {
-		t.Error("expected update statement to be cached, but statement was purged or not prepared.")
+		t.Fatalf("expected update statement to be cached, but statement was purged or not prepared.")
 	}
 	if !delFound {
 		t.Error("expected delete statement to be cached, but statement was purged or not prepared.")
