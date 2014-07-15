@@ -311,6 +311,9 @@ func TestBatchLimit(t *testing.T) {
 // TestTooManyQueryArgs tests to make sure the library correctly handles the application level bug
 // whereby too many query arguments are passed to a query
 func TestTooManyQueryArgs(t *testing.T) {
+	if *flagProto == 1 {
+		t.Skip("atomic batches not supported. Please use Cassandra >= 2.0")
+	}
 	session := createSession(t)
 	defer session.Close()
 
@@ -345,6 +348,9 @@ func TestTooManyQueryArgs(t *testing.T) {
 // TestNotEnoughQueryArgs tests to make sure the library correctly handles the application level bug
 // whereby not enough query arguments are passed to a query
 func TestNotEnoughQueryArgs(t *testing.T) {
+	if *flagProto == 1 {
+		t.Skip("atomic batches not supported. Please use Cassandra >= 2.0")
+	}
 	session := createSession(t)
 	defer session.Close()
 
@@ -680,6 +686,9 @@ func TestReprepareStatement(t *testing.T) {
 }
 
 func TestReprepareBatch(t *testing.T) {
+	if *flagProto == 1 {
+		t.Skip("atomic batches not supported. Please use Cassandra >= 2.0")
+	}
 	session := createSession(t)
 	defer session.Close()
 	stmt, conn := injectInvalidPreparedStatement(t, session, "test_reprepare_statement_batch")
