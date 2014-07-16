@@ -6,7 +6,7 @@ PID_FILE=cassandra.pid
 STARTUP_LOG=startup.log
 ARCHIVE_BASE_URL=http://archive.apache.org/dist/cassandra
 
-for v in 2.0.6 2.0.7
+for v in 2.0.6 2.0.7 2.1.0-rc3
 do
 	TARBALL=apache-cassandra-$v-bin.tar.gz
 	CASSANDRA_DIR=apache-cassandra-$v
