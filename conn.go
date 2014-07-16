@@ -606,6 +606,19 @@ func (c *Conn) decodeFrame(f frame, trace Tracer) (rval interface{}, err error) 
 	}
 }
 
+func (c *Conn) setKeepalive(d time.Duration) error {
+	if tc, ok := c.conn.(*net.TCPConn); ok {
+		err := tc.SetKeepAlivePeriod(d)
+		if err != nil {
+			return err
+		}
+
+		return tc.SetKeepAlive(true)
+	}
+
+	return nil
+}
+
 type queryInfo struct {
 	id   []byte
 	args []ColumnInfo
