@@ -54,7 +54,8 @@ type WikiTest struct {
 }
 
 func (w *WikiTest) CreateSchema() {
-	if err := w.session.Query(`DROP TABLE IF EXISTS wiki_page`).Exec(); err != nil {
+
+	if err := w.session.Query(`DROP TABLE wiki_page`).Exec(); err != nil && err.Error() != "unconfigured columnfamily wiki_page" {
 		w.tb.Fatal("CreateSchema:", err)
 	}
 	if err := w.session.Query(`CREATE TABLE wiki_page (
