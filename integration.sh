@@ -45,7 +45,7 @@ do
 	rm $PID_FILE
 done
 
-for v in 2.1.0-rc3
+for v in 2.1.0-rc4
 do
 	TARBALL=apache-cassandra-$v-bin.tar.gz
 	CASSANDRA_HOME=`pwd`/apache-cassandra-$v
