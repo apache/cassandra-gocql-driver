@@ -6,7 +6,7 @@ PID_FILE=cassandra.pid
 STARTUP_LOG=startup.log
 ARCHIVE_BASE_URL=http://archive.apache.org/dist/cassandra
 
-for v in 2.0.6 2.0.7
+for v in 1.2.18 2.0.9
 do
 	TARBALL=apache-cassandra-$v-bin.tar.gz
 	CASSANDRA_DIR=apache-cassandra-$v
@@ -37,7 +37,12 @@ do
 
 	echo "Cassandra ${v} running (PID ${PID}), about to run test suite ...."
 
-	go test -v ./...
+	if [[ $v == 1.2.* ]]
+		then
+		go test -v ./... -proto 1
+	else
+		go test -v ./...
+	fi
 
 	echo "Test suite passed against Cassandra ${v}, killing server instance (PID ${PID})"
 	
