@@ -9,7 +9,6 @@ import (
 	"reflect"
 	"sort"
 	"speter.net/go/exp/math/dec/inf"
-	"strings"
 	"testing"
 	"time"
 )
@@ -244,7 +243,7 @@ func BenchmarkWikiSelectPageCount(b *testing.B) {
 }
 
 func TestWikiTypicalCRUD(t *testing.T) {
-	session := createUnpreparedSession(t)
+	session := createSession(t)
 	defer session.Close()
 
 	w := WikiTest{session, t}
@@ -269,45 +268,4 @@ func TestWikiTypicalCRUD(t *testing.T) {
 			t.Errorf("page: expected %#v, got %#v\n", original, page)
 		}
 	}
-}
-
-// This is a hack to workaround around https://issues.apache.org/jira/browse/CASSANDRA-7566,
-// but we should not let this go into the master branch
-func createUnpreparedSession(tb testing.TB) *Session {
-	cluster := NewCluster(strings.Split(*flagCluster, ",")...)
-	cluster.ProtoVersion = *flagProto
-	cluster.CQLVersion = *flagCQL
-	cluster.Authenticator = PasswordAuthenticator{
-		Username: "cassandra",
-		Password: "cassandra",
-	}
-
-	cluster.MaxPreparedStmts = 0
-
-	initOnce.Do(func() {
-		session, err := cluster.CreateSession()
-		if err != nil {
-			tb.Fatal("createSession:", err)
-		}
-		// Drop and re-create the keyspace once. Different tests should use their own
-		// individual tables, but can assume that the table does not exist before.
-		if err := session.Query(`DROP KEYSPACE gocql_test`).Exec(); err != nil {
-			tb.Log("drop keyspace:", err)
-		}
-		if err := session.Query(`CREATE KEYSPACE gocql_test
-			WITH replication = {
-				'class' : 'SimpleStrategy',
-				'replication_factor' : 1
-			}`).Exec(); err != nil {
-			tb.Fatal("create keyspace:", err)
-		}
-		session.Close()
-	})
-	cluster.Keyspace = "gocql_test"
-	session, err := cluster.CreateSession()
-	if err != nil {
-		tb.Fatal("createSession:", err)
-	}
-
-	return session
 }
