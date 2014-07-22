@@ -604,6 +604,23 @@ func TestReprepareBatch(t *testing.T) {
 
 }
 
+func TestQueryInfo(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+
+	conn := session.Pool.Pick(nil)
+	info, err := conn.prepareStatement("SELECT release_version, host_id FROM system.local WHERE key = ?", nil)
+
+	if err != nil {
+		t.Fatalf("Failed to execute query for preparing statement: %v", err)
+	}
+
+	if len(info.rval) == 0 {
+		t.Fatal("Was not expecting to get an empty return value as part of the query info")
+	}
+
+}
+
 //TestPreparedCacheEviction will make sure that the cache size is maintained
 func TestPreparedCacheEviction(t *testing.T) {
 	session := createSession(t)
