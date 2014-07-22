@@ -405,6 +405,10 @@ func (b *Batch) Query(stmt string, args ...interface{}) {
 	b.Entries = append(b.Entries, BatchEntry{Stmt: stmt, Args: args})
 }
 
+func (b *Batch) Bind(stmt string, bind func(q *QueryInfo) []interface{}) {
+	b.Entries = append(b.Entries, BatchEntry{Stmt: stmt, binding: bind})
+}
+
 // RetryPolicy sets the retry policy to use when executing the batch operation
 func (b *Batch) RetryPolicy(r RetryPolicy) *Batch {
 	b.rt = r
@@ -425,8 +429,9 @@ const (
 )
 
 type BatchEntry struct {
-	Stmt string
-	Args []interface{}
+	Stmt    string
+	Args    []interface{}
+	binding func(q *QueryInfo) []interface{}
 }
 
 type Consistency int

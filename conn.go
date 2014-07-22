@@ -482,11 +482,18 @@ func (c *Conn) executeBatch(batch *Batch) error {
 	for i := 0; i < len(batch.Entries); i++ {
 		entry := &batch.Entries[i]
 		var info *QueryInfo
-		if len(entry.Args) > 0 {
+		var args []interface{}
+		if len(entry.Args) > 0 || entry.binding != nil {
 			var err error
 			info, err = c.prepareStatement(entry.Stmt, nil)
 
-			if len(entry.Args) != len(info.args) {
+			if entry.binding == nil {
+				args = entry.Args
+			} else {
+				args = entry.binding(info)
+			}
+
+			if len(args) != len(info.args) {
 				return ErrQueryArgLength
 			}
 
@@ -500,9 +507,9 @@ func (c *Conn) executeBatch(batch *Batch) error {
 			f.writeByte(0)
 			f.writeLongString(entry.Stmt)
 		}
-		f.writeShort(uint16(len(entry.Args)))
-		for j := 0; j < len(entry.Args); j++ {
-			val, err := Marshal(info.args[j].TypeInfo, entry.Args[j])
+		f.writeShort(uint16(len(args)))
+		for j := 0; j < len(args); j++ {
+			val, err := Marshal(info.args[j].TypeInfo, args[j])
 			if err != nil {
 				return err
 			}

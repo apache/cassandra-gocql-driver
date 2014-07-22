@@ -644,7 +644,6 @@ func TestBoundQueryInfo(t *testing.T) {
 	var value string
 
 	iter.Scan(&id, &cluster, &value)
-	qry.Iter().Scan(&id, &cluster, &value)
 
 	if err := iter.Close(); err != nil {
 		t.Fatalf("query with clustered_query_info info failed, err '%v'", err)
@@ -654,6 +653,54 @@ func TestBoundQueryInfo(t *testing.T) {
 		t.Fatalf("Expected value %s, but got %s", "baz", value)
 	}
 
+}
+
+func TestBatchQueryInfo(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+
+	if err := session.Query("CREATE TABLE batch_query_info (id int, cluster int, value text, PRIMARY KEY (id, cluster))").Exec(); err != nil {
+		t.Fatalf("failed to create table with error '%v'", err)
+	}
+
+	write := func(q *QueryInfo) []interface{} {
+		values := make([]interface{}, 3)
+		values[0] = 4000
+		values[1] = 5000
+		values[2] = "bar"
+		return values
+	}
+
+	batch := session.NewBatch(LoggedBatch)
+	batch.Bind("INSERT INTO batch_query_info (id, cluster, value) VALUES (?, ?,?)", write)
+
+	if err := session.ExecuteBatch(batch); err != nil {
+		t.Fatalf("batch insert into batch_query_info failed, err '%v'", err)
+	}
+
+	read := func(q *QueryInfo) []interface{} {
+		values := make([]interface{}, 2)
+		values[0] = 4000
+		values[1] = 5000
+		return values
+	}
+
+	qry := session.Bind("SELECT id, cluster, value FROM batch_query_info WHERE id = ? and cluster = ?", read)
+
+	iter := qry.Iter()
+
+	var id, cluster int
+	var value string
+
+	iter.Scan(&id, &cluster, &value)
+
+	if err := iter.Close(); err != nil {
+		t.Fatalf("query with batch_query_info info failed, err '%v'", err)
+	}
+
+	if value != "bar" {
+		t.Fatalf("Expected value %s, but got %s", "bar", value)
+	}
 }
 
 func injectInvalidPreparedStatement(t *testing.T, session *Session, table string) (string, *Conn) {
