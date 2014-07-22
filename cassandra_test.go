@@ -564,10 +564,10 @@ func TestStaticQueryInfo(t *testing.T) {
 		t.Fatalf("insert into static_query_info failed, err '%v'", err)
 	}
 
-	autobinder := func(q *QueryInfo) []interface{} {
+	autobinder := func(q *QueryInfo) ([]interface{}, error) {
 		values := make([]interface{}, 1)
 		values[0] = 113
-		return values
+		return values, nil
 	}
 
 	qry := session.Bind("SELECT id, value FROM static_query_info WHERE id = ?", autobinder)
@@ -599,7 +599,7 @@ type ClusteredKeyValue struct {
 	Value   string
 }
 
-func (kv *ClusteredKeyValue) Bind(q *QueryInfo) []interface{} {
+func (kv *ClusteredKeyValue) Bind(q *QueryInfo) ([]interface{}, error) {
 	values := make([]interface{}, len(q.args))
 
 	for i, info := range q.args {
@@ -609,7 +609,7 @@ func (kv *ClusteredKeyValue) Bind(q *QueryInfo) []interface{} {
 		values[i] = field.Addr().Interface()
 	}
 
-	return values
+	return values, nil
 }
 
 func upcaseInitial(str string) string {
@@ -670,12 +670,12 @@ func TestBatchQueryInfo(t *testing.T) {
 		t.Fatalf("failed to create table with error '%v'", err)
 	}
 
-	write := func(q *QueryInfo) []interface{} {
+	write := func(q *QueryInfo) ([]interface{}, error) {
 		values := make([]interface{}, 3)
 		values[0] = 4000
 		values[1] = 5000
 		values[2] = "bar"
-		return values
+		return values, nil
 	}
 
 	batch := session.NewBatch(LoggedBatch)
@@ -685,11 +685,11 @@ func TestBatchQueryInfo(t *testing.T) {
 		t.Fatalf("batch insert into batch_query_info failed, err '%v'", err)
 	}
 
-	read := func(q *QueryInfo) []interface{} {
+	read := func(q *QueryInfo) ([]interface{}, error) {
 		values := make([]interface{}, 2)
 		values[0] = 4000
 		values[1] = 5000
-		return values
+		return values, nil
 	}
 
 	qry := session.Bind("SELECT id, cluster, value FROM batch_query_info WHERE id = ? and cluster = ?", read)

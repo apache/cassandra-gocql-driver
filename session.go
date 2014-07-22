@@ -90,7 +90,7 @@ func (s *Session) Query(stmt string, values ...interface{}) *Query {
 	return qry
 }
 
-func (s *Session) Bind(stmt string, b func(q *QueryInfo) []interface{}) *Query {
+func (s *Session) Bind(stmt string, b func(q *QueryInfo) ([]interface{}, error)) *Query {
 	s.mu.RLock()
 	qry := &Query{stmt: stmt, binding: b, cons: s.cons,
 		session: s, pageSize: s.pageSize, trace: s.trace,
@@ -193,7 +193,7 @@ type Query struct {
 	trace     Tracer
 	session   *Session
 	rt        RetryPolicy
-	binding   func(q *QueryInfo) []interface{}
+	binding   func(q *QueryInfo) ([]interface{}, error)
 }
 
 // Consistency sets the consistency level for this query. If no consistency
@@ -405,7 +405,7 @@ func (b *Batch) Query(stmt string, args ...interface{}) {
 	b.Entries = append(b.Entries, BatchEntry{Stmt: stmt, Args: args})
 }
 
-func (b *Batch) Bind(stmt string, bind func(q *QueryInfo) []interface{}) {
+func (b *Batch) Bind(stmt string, bind func(q *QueryInfo) ([]interface{}, error)) {
 	b.Entries = append(b.Entries, BatchEntry{Stmt: stmt, binding: bind})
 }
 
@@ -431,7 +431,7 @@ const (
 type BatchEntry struct {
 	Stmt    string
 	Args    []interface{}
-	binding func(q *QueryInfo) []interface{}
+	binding func(q *QueryInfo) ([]interface{}, error)
 }
 
 type Consistency int
