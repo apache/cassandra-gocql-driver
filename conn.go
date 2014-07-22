@@ -308,7 +308,7 @@ func (c *Conn) ping() error {
 	return err
 }
 
-func (c *Conn) prepareStatement(stmt string, trace Tracer) (*queryInfo, error) {
+func (c *Conn) prepareStatement(stmt string, trace Tracer) (*QueryInfo, error) {
 	stmtsLRU.mu.Lock()
 	if val, ok := stmtsLRU.lru.Get(c.addr + stmt); ok {
 		flight := val.(*inflightPrepare)
@@ -328,7 +328,7 @@ func (c *Conn) prepareStatement(stmt string, trace Tracer) (*queryInfo, error) {
 	} else {
 		switch x := resp.(type) {
 		case resultPreparedFrame:
-			flight.info = &queryInfo{
+			flight.info = &QueryInfo{
 				id:   x.PreparedId,
 				args: x.Values,
 			}
@@ -363,13 +363,22 @@ func (c *Conn) executeQuery(qry *Query) *Iter {
 		if err != nil {
 			return &Iter{err: err}
 		}
-		if len(qry.values) != len(info.args) {
+
+		var values []interface{}
+
+		if qry.binding == nil {
+			values = qry.values
+		} else {
+			values = qry.binding(info)
+		}
+
+		if len(values) != len(info.args) {
 			return &Iter{err: ErrQueryArgLength}
 		}
 		op.Prepared = info.id
-		op.Values = make([][]byte, len(qry.values))
-		for i := 0; i < len(qry.values); i++ {
-			val, err := Marshal(info.args[i].TypeInfo, qry.values[i])
+		op.Values = make([][]byte, len(values))
+		for i := 0; i < len(values); i++ {
+			val, err := Marshal(info.args[i].TypeInfo, values[i])
 			if err != nil {
 				return &Iter{err: err}
 			}
@@ -472,7 +481,7 @@ func (c *Conn) executeBatch(batch *Batch) error {
 
 	for i := 0; i < len(batch.Entries); i++ {
 		entry := &batch.Entries[i]
-		var info *queryInfo
+		var info *QueryInfo
 		if len(entry.Args) > 0 {
 			var err error
 			info, err = c.prepareStatement(entry.Stmt, nil)
@@ -619,7 +628,7 @@ func (c *Conn) setKeepalive(d time.Duration) error {
 	return nil
 }
 
-type queryInfo struct {
+type QueryInfo struct {
 	id   []byte
 	args []ColumnInfo
 	rval []ColumnInfo
@@ -636,7 +645,7 @@ type callResp struct {
 }
 
 type inflightPrepare struct {
-	info *queryInfo
+	info *QueryInfo
 	err  error
 	wg   sync.WaitGroup
 }

@@ -90,6 +90,15 @@ func (s *Session) Query(stmt string, values ...interface{}) *Query {
 	return qry
 }
 
+func (s *Session) Bind(stmt string, b func(q *QueryInfo) []interface{}) *Query {
+	s.mu.RLock()
+	qry := &Query{stmt: stmt, binding: b, cons: s.cons,
+		session: s, pageSize: s.pageSize, trace: s.trace,
+		prefetch: s.prefetch, rt: s.cfg.RetryPolicy}
+	s.mu.RUnlock()
+	return qry
+}
+
 // Close closes all connections. The session is unusable after this
 // operation.
 func (s *Session) Close() {
@@ -184,6 +193,7 @@ type Query struct {
 	trace     Tracer
 	session   *Session
 	rt        RetryPolicy
+	binding   func(q *QueryInfo) []interface{}
 }
 
 // Consistency sets the consistency level for this query. If no consistency
