@@ -656,6 +656,11 @@ func TestBoundQueryInfo(t *testing.T) {
 }
 
 func TestBatchQueryInfo(t *testing.T) {
+
+	if *flagProto == 1 {
+		t.Skip("atomic batches not supported. Please use Cassandra >= 2.0")
+	}
+
 	session := createSession(t)
 	defer session.Close()
 
