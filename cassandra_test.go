@@ -604,7 +604,9 @@ func (kv *ClusteredKeyValue) Bind(q *QueryInfo) []interface{} {
 
 	for i, info := range q.args {
 		fieldName := upcaseInitial(info.Name)
-		values[i] = reflect.Indirect(reflect.ValueOf(kv)).FieldByName(fieldName).Addr().Interface()
+		value := reflect.ValueOf(kv)
+		field := reflect.Indirect(value).FieldByName(fieldName)
+		values[i] = field.Addr().Interface()
 	}
 
 	return values
