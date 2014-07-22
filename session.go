@@ -90,6 +90,12 @@ func (s *Session) Query(stmt string, values ...interface{}) *Query {
 	return qry
 }
 
+// Bind generates a new query object based on the query statement passed in.
+// The query is automatically prepared if it has not previously been executed.
+// The binding callback allows the application to define which query argument
+// values will be marshalled as part of the query execution.
+// During execution, the meta data of the prepared query will be routed to the
+// binding callback, which is responsible for producing the query argument values.
 func (s *Session) Bind(stmt string, b func(q *QueryInfo) ([]interface{}, error)) *Query {
 	s.mu.RLock()
 	qry := &Query{stmt: stmt, binding: b, cons: s.cons,
@@ -405,6 +411,9 @@ func (b *Batch) Query(stmt string, args ...interface{}) {
 	b.Entries = append(b.Entries, BatchEntry{Stmt: stmt, Args: args})
 }
 
+// Bind adds the query to the batch operation and correlates it with a binding callback
+// that will be invoked when the batch is executed. The binding callback allows the application
+// to define which query argument values will be marshalled as part of the batch execution.
 func (b *Batch) Bind(stmt string, bind func(q *QueryInfo) ([]interface{}, error)) {
 	b.Entries = append(b.Entries, BatchEntry{Stmt: stmt, binding: bind})
 }

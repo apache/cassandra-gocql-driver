@@ -641,6 +641,7 @@ func (c *Conn) setKeepalive(d time.Duration) error {
 	return nil
 }
 
+// QueryInfo represents the meta data associated with a prepared CQL statement.
 type QueryInfo struct {
 	id   []byte
 	args []ColumnInfo

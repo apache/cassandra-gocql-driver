@@ -552,6 +552,7 @@ func TestScanCASWithNilArguments(t *testing.T) {
 	}
 }
 
+//TestStaticQueryInfo makes sure that the application can manually bind query parameters using the simplest possible static binding strategy
 func TestStaticQueryInfo(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
@@ -619,6 +620,7 @@ func upcaseInitial(str string) string {
 	return ""
 }
 
+//TestBoundQueryInfo makes sure that the application can manually bind query parameters using the query meta data supplied at runtime
 func TestBoundQueryInfo(t *testing.T) {
 
 	session := createSession(t)
@@ -657,6 +659,7 @@ func TestBoundQueryInfo(t *testing.T) {
 
 }
 
+//TestBatchQueryInfo makes sure that the application can manually bind query parameters when executing in a batch
 func TestBatchQueryInfo(t *testing.T) {
 
 	if *flagProto == 1 {
