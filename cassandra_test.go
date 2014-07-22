@@ -14,6 +14,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unicode"
 )
 
 var (
@@ -551,16 +552,16 @@ func TestScanCASWithNilArguments(t *testing.T) {
 	}
 }
 
-func TestQueryInfo(t *testing.T) {
+func TestStaticQueryInfo(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 
-	if err := session.Query("CREATE TABLE expose_query_info (id int, value text, PRIMARY KEY (id))").Exec(); err != nil {
+	if err := session.Query("CREATE TABLE static_query_info (id int, value text, PRIMARY KEY (id))").Exec(); err != nil {
 		t.Fatalf("failed to create table with error '%v'", err)
 	}
 
-	if err := session.Query("INSERT INTO expose_query_info (id, value) VALUES (?, ?)", 113, "foo").Exec(); err != nil {
-		t.Fatalf("insert into expose_query_info failed, err '%v'", err)
+	if err := session.Query("INSERT INTO static_query_info (id, value) VALUES (?, ?)", 113, "foo").Exec(); err != nil {
+		t.Fatalf("insert into static_query_info failed, err '%v'", err)
 	}
 
 	autobinder := func(q *QueryInfo) []interface{} {
@@ -569,7 +570,7 @@ func TestQueryInfo(t *testing.T) {
 		return values
 	}
 
-	qry := session.Bind("SELECT id, value FROM expose_query_info WHERE id = ?", autobinder)
+	qry := session.Bind("SELECT id, value FROM static_query_info WHERE id = ?", autobinder)
 
 	if err := qry.Exec(); err != nil {
 		t.Fatalf("expose query info failed, error '%v'", err)
@@ -588,6 +589,69 @@ func TestQueryInfo(t *testing.T) {
 
 	if value != "foo" {
 		t.Fatalf("Expected value %s, but got %s", "foo", value)
+	}
+
+}
+
+type ClusteredKeyValue struct {
+	Id      int
+	Cluster int
+	Value   string
+}
+
+func (kv *ClusteredKeyValue) Bind(q *QueryInfo) []interface{} {
+	values := make([]interface{}, len(q.args))
+
+	for i, info := range q.args {
+		fieldName := upcaseInitial(info.Name)
+		values[i] = reflect.Indirect(reflect.ValueOf(kv)).FieldByName(fieldName).Addr().Interface()
+	}
+
+	return values
+}
+
+func upcaseInitial(str string) string {
+	for i, v := range str {
+		return string(unicode.ToUpper(v)) + str[i+1:]
+	}
+	return ""
+}
+
+func TestBoundQueryInfo(t *testing.T) {
+
+	session := createSession(t)
+	defer session.Close()
+
+	if err := session.Query("CREATE TABLE clustered_query_info (id int, cluster int, value text, PRIMARY KEY (id, cluster))").Exec(); err != nil {
+		t.Fatalf("failed to create table with error '%v'", err)
+	}
+
+	write := &ClusteredKeyValue{Id: 200, Cluster: 300, Value: "baz"}
+
+	insert := session.Bind("INSERT INTO clustered_query_info (id, cluster, value) VALUES (?, ?,?)", write.Bind)
+
+	if err := insert.Exec(); err != nil {
+		t.Fatalf("insert into clustered_query_info failed, err '%v'", err)
+	}
+
+	read := &ClusteredKeyValue{Id: 200, Cluster: 300}
+
+	qry := session.Bind("SELECT id, cluster, value FROM clustered_query_info WHERE id = ? and cluster = ?", read.Bind)
+
+	iter := qry.Iter()
+
+	var id, cluster int
+	var value string
+
+	iter.Scan(&id, &cluster, &value)
+	qry.Iter().Scan(&id, &cluster, &value)
+
+	if err := iter.Close(); err != nil {
+		t.Fatalf("query with clustered_query_info info failed, err '%v'", err)
+	}
+
+	if value != "baz" {
+		t.Fatalf("Expected value %s, but got %s", "baz", value)
 	}
 
 }
