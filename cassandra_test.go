@@ -581,7 +581,7 @@ func TestStaticQueryInfo(t *testing.T) {
 	var id int
 	var value string
 
-	qry.Iter().Scan(&id, &value)
+	iter.Scan(&id, &value)
 
 	if err := iter.Close(); err != nil {
 		t.Fatalf("query with exposed info failed, err '%v'", err)
