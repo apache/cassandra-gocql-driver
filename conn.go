@@ -329,9 +329,9 @@ func (c *Conn) prepareStatement(stmt string, trace Tracer) (*QueryInfo, error) {
 		switch x := resp.(type) {
 		case resultPreparedFrame:
 			flight.info = &QueryInfo{
-				id:   x.PreparedId,
-				args: x.Arguments,
-				rval: x.ReturnValues,
+				Id:   x.PreparedId,
+				Args: x.Arguments,
+				Rval: x.ReturnValues,
 			}
 		case error:
 			flight.err = x
@@ -376,13 +376,13 @@ func (c *Conn) executeQuery(qry *Query) *Iter {
 			}
 		}
 
-		if len(values) != len(info.args) {
+		if len(values) != len(info.Args) {
 			return &Iter{err: ErrQueryArgLength}
 		}
-		op.Prepared = info.id
+		op.Prepared = info.Id
 		op.Values = make([][]byte, len(values))
 		for i := 0; i < len(values); i++ {
-			val, err := Marshal(info.args[i].TypeInfo, values[i])
+			val, err := Marshal(info.Args[i].TypeInfo, values[i])
 			if err != nil {
 				return &Iter{err: err}
 			}
@@ -500,23 +500,23 @@ func (c *Conn) executeBatch(batch *Batch) error {
 				}
 			}
 
-			if len(args) != len(info.args) {
+			if len(args) != len(info.Args) {
 				return ErrQueryArgLength
 			}
 
-			stmts[string(info.id)] = entry.Stmt
+			stmts[string(info.Id)] = entry.Stmt
 			if err != nil {
 				return err
 			}
 			f.writeByte(1)
-			f.writeShortBytes(info.id)
+			f.writeShortBytes(info.Id)
 		} else {
 			f.writeByte(0)
 			f.writeLongString(entry.Stmt)
 		}
 		f.writeShort(uint16(len(args)))
 		for j := 0; j < len(args); j++ {
-			val, err := Marshal(info.args[j].TypeInfo, args[j])
+			val, err := Marshal(info.Args[j].TypeInfo, args[j])
 			if err != nil {
 				return err
 			}
@@ -648,9 +648,9 @@ func (c *Conn) setKeepalive(d time.Duration) error {
 
 // QueryInfo represents the meta data associated with a prepared CQL statement.
 type QueryInfo struct {
-	id   []byte
-	args []ColumnInfo
-	rval []ColumnInfo
+	Id   []byte
+	Args []ColumnInfo
+	Rval []ColumnInfo
 }
 
 type callReq struct {

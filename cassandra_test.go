@@ -601,9 +601,9 @@ type ClusteredKeyValue struct {
 }
 
 func (kv *ClusteredKeyValue) Bind(q *QueryInfo) ([]interface{}, error) {
-	values := make([]interface{}, len(q.args))
+	values := make([]interface{}, len(q.Args))
 
-	for i, info := range q.args {
+	for i, info := range q.Args {
 		fieldName := upcaseInitial(info.Name)
 		value := reflect.ValueOf(kv)
 		field := reflect.Indirect(value).FieldByName(fieldName)
@@ -728,8 +728,8 @@ func injectInvalidPreparedStatement(t *testing.T, session *Session, table string
 	stmtsLRU.lru.Add(conn.addr+stmt, flight)
 	stmtsLRU.mu.Unlock()
 	flight.info = &QueryInfo{
-		id: []byte{'f', 'o', 'o', 'b', 'a', 'r'},
-		args: []ColumnInfo{ColumnInfo{
+		Id: []byte{'f', 'o', 'o', 'b', 'a', 'r'},
+		Args: []ColumnInfo{ColumnInfo{
 			Keyspace: "gocql_test",
 			Table:    table,
 			Name:     "foo",
@@ -777,13 +777,13 @@ func TestQueryInfo(t *testing.T) {
 		t.Fatalf("Failed to execute query for preparing statement: %v", err)
 	}
 
-	if len(info.args) != 1 {
-		t.Fatalf("Was not expecting meta data for %d query arguments, but got %d\n", 1, len(info.args))
+	if len(info.Args) != 1 {
+		t.Fatalf("Was not expecting meta data for %d query arguments, but got %d\n", 1, len(info.Args))
 	}
 
 	if *flagProto > 1 {
-		if len(info.rval) != 2 {
-			t.Fatalf("Was not expecting meta data for %d result columns, but got %d\n", 2, len(info.rval))
+		if len(info.Rval) != 2 {
+			t.Fatalf("Was not expecting meta data for %d result columns, but got %d\n", 2, len(info.Rval))
 		}
 	}
 }
