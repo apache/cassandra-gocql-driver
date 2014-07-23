@@ -90,6 +90,30 @@ func (s *Session) Query(stmt string, values ...interface{}) *Query {
 	return qry
 }
 
+func (s *Session) Prepare(stmt string) *Query {
+
+	// Is this thread safe?
+
+	qry := &Query{stmt: stmt, cons: s.cons,
+		session: s, pageSize: s.pageSize, trace: s.trace,
+		prefetch: s.prefetch, rt: s.cfg.RetryPolicy}
+
+	for count := 0; count <= s.cfg.RetryPolicy.NumRetries; count++ {
+		c := s.Pool.Pick(qry)
+		info, err := c.prepareStatement(stmt, s.trace)
+
+		if err == nil {
+			qry.info = info
+			qry.prepared = true
+			break
+		}
+		// Ideally this API call should return the error, but that means changing a lot right now
+		qry.err = err
+	}
+
+	return qry
+}
+
 // Close closes all connections. The session is unusable after this
 // operation.
 func (s *Session) Close() {
@@ -184,6 +208,13 @@ type Query struct {
 	trace     Tracer
 	session   *Session
 	rt        RetryPolicy
+	info      *QueryInfo
+	prepared  bool
+	// I only stuck this onto the query to avoid having to change the API
+	// but for now, we could get an error when preparing the query
+	// so we'll squirrel the potential error away - i.e. a nasty hack
+	// to avoid changing the API
+	err error
 }
 
 // Consistency sets the consistency level for this query. If no consistency
@@ -250,6 +281,15 @@ func (q *Query) RetryPolicy(r RetryPolicy) *Query {
 func (q *Query) Exec() error {
 	iter := q.Iter()
 	return iter.err
+}
+
+func (q *Query) Bind(values ...interface{}) *Query {
+	q.values = values
+	return q
+}
+
+func (q *Query) Info() *QueryInfo {
+	return q.info
 }
 
 // Iter executes the query and returns an iterator capable of iterating

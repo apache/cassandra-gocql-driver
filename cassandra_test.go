@@ -565,7 +565,7 @@ func injectInvalidPreparedStatement(t *testing.T, session *Session, table string
 	stmtsLRU.mu.Lock()
 	stmtsLRU.lru.Add(conn.addr+stmt, flight)
 	stmtsLRU.mu.Unlock()
-	flight.info = &queryInfo{
+	flight.info = &QueryInfo{
 		id: []byte{'f', 'o', 'o', 'b', 'a', 'r'},
 		args: []ColumnInfo{ColumnInfo{
 			Keyspace: "gocql_test",
@@ -577,6 +577,58 @@ func injectInvalidPreparedStatement(t *testing.T, session *Session, table string
 		}},
 	}
 	return stmt, conn
+}
+
+func TestManualPreparation(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+
+	if err := session.Query("CREATE TABLE manual_preparation (id int, value text, PRIMARY KEY (id))").Exec(); err != nil {
+		t.Fatalf("failed to create table with error '%v'", err)
+	}
+
+	if err := session.Query("INSERT INTO manual_preparation (id, value) VALUES (?, ?)", 113, "foo").Exec(); err != nil {
+		t.Fatalf("insert into manual_preparation failed, err '%v'", err)
+	}
+
+	qry := session.Prepare("SELECT id, value FROM manual_preparation WHERE id = ?")
+
+	if qry.err != nil {
+		t.Fatalf("manual preparation failed, error '%v'", qry.err)
+	}
+
+	info := qry.Info()
+
+	if info == nil {
+		t.Fatal("manual preparation did not produce prepared statement")
+	}
+
+	if len(info.args) != 1 {
+		t.Fatalf("Expected %d query argument, but got %d", 1, len(info.args))
+	}
+
+	// TODO Need to find out why the rval field is being thrown in the bin
+	// if len(info.rval) != 2 {
+	// 	t.Fatalf("Expected %d return values, but got %d", 2, len(info.rval))
+	// }
+
+	qry.Bind(113)
+
+	iter := qry.Iter()
+
+	var id int
+	var value string
+
+	qry.Iter().Scan(&id, &value)
+
+	if err := iter.Close(); err != nil {
+		t.Fatalf("query from manual_preparation failed, err '%v'", err)
+	}
+
+	if value != "foo" {
+		t.Fatalf("Expected value %s, but got %s", "foo", value)
+	}
+
 }
 
 func TestReprepareStatement(t *testing.T) {
