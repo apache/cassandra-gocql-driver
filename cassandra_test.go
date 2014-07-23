@@ -615,8 +615,8 @@ func TestQueryInfo(t *testing.T) {
 		t.Fatalf("Failed to execute query for preparing statement: %v", err)
 	}
 
-	if len(info.rval) == 0 {
-		t.Fatal("Was not expecting to get an empty return value as part of the query info")
+	if len(info.rval) != 2 {
+		t.Fatalf("Was not expecting meta data for %d result columns, but got %d\n", 2, len(info.rval))
 	}
 
 }
