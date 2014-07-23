@@ -615,10 +615,15 @@ func TestQueryInfo(t *testing.T) {
 		t.Fatalf("Failed to execute query for preparing statement: %v", err)
 	}
 
-	if len(info.rval) != 2 {
-		t.Fatalf("Was not expecting meta data for %d result columns, but got %d\n", 2, len(info.rval))
+	if len(info.args) != 1 {
+		t.Fatalf("Was not expecting meta data for %d query arguments, but got %d\n", 1, len(info.args))
 	}
 
+	if *flagProto > 1 {
+		if len(info.rval) != 2 {
+			t.Fatalf("Was not expecting meta data for %d result columns, but got %d\n", 2, len(info.rval))
+		}
+	}
 }
 
 //TestPreparedCacheEviction will make sure that the cache size is maintained

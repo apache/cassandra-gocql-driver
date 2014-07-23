@@ -586,6 +586,9 @@ func (c *Conn) decodeFrame(f frame, trace Tracer) (rval interface{}, err error) 
 		case resultKindPrepared:
 			id := f.readShortBytes()
 			args, _ := f.readMetaData()
+			if c.version < 2 {
+				return resultPreparedFrame{PreparedId: id, Arguments: args}, nil
+			}
 			rvals, _ := f.readMetaData()
 			return resultPreparedFrame{PreparedId: id, Arguments: args, ReturnValues: rvals}, nil
 		case resultKindSchemaChanged:
