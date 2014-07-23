@@ -330,7 +330,8 @@ func (c *Conn) prepareStatement(stmt string, trace Tracer) (*QueryInfo, error) {
 		case resultPreparedFrame:
 			flight.info = &QueryInfo{
 				id:   x.PreparedId,
-				args: x.Values,
+				args: x.Arguments,
+				rval: x.ReturnValues,
 			}
 		case error:
 			flight.err = x
@@ -600,8 +601,12 @@ func (c *Conn) decodeFrame(f frame, trace Tracer) (rval interface{}, err error) 
 			return resultKeyspaceFrame{keyspace}, nil
 		case resultKindPrepared:
 			id := f.readShortBytes()
-			values, _ := f.readMetaData()
-			return resultPreparedFrame{id, values}, nil
+			args, _ := f.readMetaData()
+			if c.version < 2 {
+				return resultPreparedFrame{PreparedId: id, Arguments: args}, nil
+			}
+			rvals, _ := f.readMetaData()
+			return resultPreparedFrame{PreparedId: id, Arguments: args, ReturnValues: rvals}, nil
 		case resultKindSchemaChanged:
 			return resultVoidFrame{}, nil
 		default:

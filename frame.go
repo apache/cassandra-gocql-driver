@@ -366,8 +366,9 @@ type resultKeyspaceFrame struct {
 }
 
 type resultPreparedFrame struct {
-	PreparedId []byte
-	Values     []ColumnInfo
+	PreparedId   []byte
+	Arguments    []ColumnInfo
+	ReturnValues []ColumnInfo
 }
 
 type operation interface {
