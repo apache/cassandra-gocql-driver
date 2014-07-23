@@ -370,7 +370,10 @@ func (c *Conn) executeQuery(qry *Query) *Iter {
 		if qry.binding == nil {
 			values = qry.values
 		} else {
-			values = qry.binding(info)
+			values, err = qry.binding(info)
+			if err != nil {
+				return &Iter{err: err}
+			}
 		}
 
 		if len(values) != len(info.args) {
@@ -491,7 +494,10 @@ func (c *Conn) executeBatch(batch *Batch) error {
 			if entry.binding == nil {
 				args = entry.Args
 			} else {
-				args = entry.binding(info)
+				args, err = entry.binding(info)
+				if err != nil {
+					return err
+				}
 			}
 
 			if len(args) != len(info.args) {
@@ -640,6 +646,7 @@ func (c *Conn) setKeepalive(d time.Duration) error {
 	return nil
 }
 
+// QueryInfo represents the meta data associated with a prepared CQL statement.
 type QueryInfo struct {
 	id   []byte
 	args []ColumnInfo

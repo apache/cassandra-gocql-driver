@@ -552,6 +552,7 @@ func TestScanCASWithNilArguments(t *testing.T) {
 	}
 }
 
+//TestStaticQueryInfo makes sure that the application can manually bind query parameters using the simplest possible static binding strategy
 func TestStaticQueryInfo(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
@@ -564,10 +565,10 @@ func TestStaticQueryInfo(t *testing.T) {
 		t.Fatalf("insert into static_query_info failed, err '%v'", err)
 	}
 
-	autobinder := func(q *QueryInfo) []interface{} {
+	autobinder := func(q *QueryInfo) ([]interface{}, error) {
 		values := make([]interface{}, 1)
 		values[0] = 113
-		return values
+		return values, nil
 	}
 
 	qry := session.Bind("SELECT id, value FROM static_query_info WHERE id = ?", autobinder)
@@ -599,7 +600,7 @@ type ClusteredKeyValue struct {
 	Value   string
 }
 
-func (kv *ClusteredKeyValue) Bind(q *QueryInfo) []interface{} {
+func (kv *ClusteredKeyValue) Bind(q *QueryInfo) ([]interface{}, error) {
 	values := make([]interface{}, len(q.args))
 
 	for i, info := range q.args {
@@ -609,7 +610,7 @@ func (kv *ClusteredKeyValue) Bind(q *QueryInfo) []interface{} {
 		values[i] = field.Addr().Interface()
 	}
 
-	return values
+	return values, nil
 }
 
 func upcaseInitial(str string) string {
@@ -619,6 +620,7 @@ func upcaseInitial(str string) string {
 	return ""
 }
 
+//TestBoundQueryInfo makes sure that the application can manually bind query parameters using the query meta data supplied at runtime
 func TestBoundQueryInfo(t *testing.T) {
 
 	session := createSession(t)
@@ -657,6 +659,7 @@ func TestBoundQueryInfo(t *testing.T) {
 
 }
 
+//TestBatchQueryInfo makes sure that the application can manually bind query parameters when executing in a batch
 func TestBatchQueryInfo(t *testing.T) {
 
 	if *flagProto == 1 {
@@ -670,12 +673,12 @@ func TestBatchQueryInfo(t *testing.T) {
 		t.Fatalf("failed to create table with error '%v'", err)
 	}
 
-	write := func(q *QueryInfo) []interface{} {
+	write := func(q *QueryInfo) ([]interface{}, error) {
 		values := make([]interface{}, 3)
 		values[0] = 4000
 		values[1] = 5000
 		values[2] = "bar"
-		return values
+		return values, nil
 	}
 
 	batch := session.NewBatch(LoggedBatch)
@@ -685,11 +688,11 @@ func TestBatchQueryInfo(t *testing.T) {
 		t.Fatalf("batch insert into batch_query_info failed, err '%v'", err)
 	}
 
-	read := func(q *QueryInfo) []interface{} {
+	read := func(q *QueryInfo) ([]interface{}, error) {
 		values := make([]interface{}, 2)
 		values[0] = 4000
 		values[1] = 5000
-		return values
+		return values, nil
 	}
 
 	qry := session.Bind("SELECT id, cluster, value FROM batch_query_info WHERE id = ? and cluster = ?", read)
