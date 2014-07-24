@@ -14,6 +14,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unicode"
 )
 
 var (
@@ -551,6 +552,167 @@ func TestScanCASWithNilArguments(t *testing.T) {
 	}
 }
 
+//TestStaticQueryInfo makes sure that the application can manually bind query parameters using the simplest possible static binding strategy
+func TestStaticQueryInfo(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+
+	if err := session.Query("CREATE TABLE static_query_info (id int, value text, PRIMARY KEY (id))").Exec(); err != nil {
+		t.Fatalf("failed to create table with error '%v'", err)
+	}
+
+	if err := session.Query("INSERT INTO static_query_info (id, value) VALUES (?, ?)", 113, "foo").Exec(); err != nil {
+		t.Fatalf("insert into static_query_info failed, err '%v'", err)
+	}
+
+	autobinder := func(q *QueryInfo) ([]interface{}, error) {
+		values := make([]interface{}, 1)
+		values[0] = 113
+		return values, nil
+	}
+
+	qry := session.Bind("SELECT id, value FROM static_query_info WHERE id = ?", autobinder)
+
+	if err := qry.Exec(); err != nil {
+		t.Fatalf("expose query info failed, error '%v'", err)
+	}
+
+	iter := qry.Iter()
+
+	var id int
+	var value string
+
+	iter.Scan(&id, &value)
+
+	if err := iter.Close(); err != nil {
+		t.Fatalf("query with exposed info failed, err '%v'", err)
+	}
+
+	if value != "foo" {
+		t.Fatalf("Expected value %s, but got %s", "foo", value)
+	}
+
+}
+
+type ClusteredKeyValue struct {
+	Id      int
+	Cluster int
+	Value   string
+}
+
+func (kv *ClusteredKeyValue) Bind(q *QueryInfo) ([]interface{}, error) {
+	values := make([]interface{}, len(q.Args))
+
+	for i, info := range q.Args {
+		fieldName := upcaseInitial(info.Name)
+		value := reflect.ValueOf(kv)
+		field := reflect.Indirect(value).FieldByName(fieldName)
+		values[i] = field.Addr().Interface()
+	}
+
+	return values, nil
+}
+
+func upcaseInitial(str string) string {
+	for i, v := range str {
+		return string(unicode.ToUpper(v)) + str[i+1:]
+	}
+	return ""
+}
+
+//TestBoundQueryInfo makes sure that the application can manually bind query parameters using the query meta data supplied at runtime
+func TestBoundQueryInfo(t *testing.T) {
+
+	session := createSession(t)
+	defer session.Close()
+
+	if err := session.Query("CREATE TABLE clustered_query_info (id int, cluster int, value text, PRIMARY KEY (id, cluster))").Exec(); err != nil {
+		t.Fatalf("failed to create table with error '%v'", err)
+	}
+
+	write := &ClusteredKeyValue{Id: 200, Cluster: 300, Value: "baz"}
+
+	insert := session.Bind("INSERT INTO clustered_query_info (id, cluster, value) VALUES (?, ?,?)", write.Bind)
+
+	if err := insert.Exec(); err != nil {
+		t.Fatalf("insert into clustered_query_info failed, err '%v'", err)
+	}
+
+	read := &ClusteredKeyValue{Id: 200, Cluster: 300}
+
+	qry := session.Bind("SELECT id, cluster, value FROM clustered_query_info WHERE id = ? and cluster = ?", read.Bind)
+
+	iter := qry.Iter()
+
+	var id, cluster int
+	var value string
+
+	iter.Scan(&id, &cluster, &value)
+
+	if err := iter.Close(); err != nil {
+		t.Fatalf("query with clustered_query_info info failed, err '%v'", err)
+	}
+
+	if value != "baz" {
+		t.Fatalf("Expected value %s, but got %s", "baz", value)
+	}
+
+}
+
+//TestBatchQueryInfo makes sure that the application can manually bind query parameters when executing in a batch
+func TestBatchQueryInfo(t *testing.T) {
+
+	if *flagProto == 1 {
+		t.Skip("atomic batches not supported. Please use Cassandra >= 2.0")
+	}
+
+	session := createSession(t)
+	defer session.Close()
+
+	if err := session.Query("CREATE TABLE batch_query_info (id int, cluster int, value text, PRIMARY KEY (id, cluster))").Exec(); err != nil {
+		t.Fatalf("failed to create table with error '%v'", err)
+	}
+
+	write := func(q *QueryInfo) ([]interface{}, error) {
+		values := make([]interface{}, 3)
+		values[0] = 4000
+		values[1] = 5000
+		values[2] = "bar"
+		return values, nil
+	}
+
+	batch := session.NewBatch(LoggedBatch)
+	batch.Bind("INSERT INTO batch_query_info (id, cluster, value) VALUES (?, ?,?)", write)
+
+	if err := session.ExecuteBatch(batch); err != nil {
+		t.Fatalf("batch insert into batch_query_info failed, err '%v'", err)
+	}
+
+	read := func(q *QueryInfo) ([]interface{}, error) {
+		values := make([]interface{}, 2)
+		values[0] = 4000
+		values[1] = 5000
+		return values, nil
+	}
+
+	qry := session.Bind("SELECT id, cluster, value FROM batch_query_info WHERE id = ? and cluster = ?", read)
+
+	iter := qry.Iter()
+
+	var id, cluster int
+	var value string
+
+	iter.Scan(&id, &cluster, &value)
+
+	if err := iter.Close(); err != nil {
+		t.Fatalf("query with batch_query_info info failed, err '%v'", err)
+	}
+
+	if value != "bar" {
+		t.Fatalf("Expected value %s, but got %s", "bar", value)
+	}
+}
+
 func injectInvalidPreparedStatement(t *testing.T, session *Session, table string) (string, *Conn) {
 	if err := session.Query(`CREATE TABLE ` + table + ` (
 			foo   varchar,
@@ -565,9 +727,9 @@ func injectInvalidPreparedStatement(t *testing.T, session *Session, table string
 	stmtsLRU.mu.Lock()
 	stmtsLRU.lru.Add(conn.addr+stmt, flight)
 	stmtsLRU.mu.Unlock()
-	flight.info = &queryInfo{
-		id: []byte{'f', 'o', 'o', 'b', 'a', 'r'},
-		args: []ColumnInfo{ColumnInfo{
+	flight.info = &QueryInfo{
+		Id: []byte{'f', 'o', 'o', 'b', 'a', 'r'},
+		Args: []ColumnInfo{ColumnInfo{
 			Keyspace: "gocql_test",
 			Table:    table,
 			Name:     "foo",
@@ -615,13 +777,13 @@ func TestQueryInfo(t *testing.T) {
 		t.Fatalf("Failed to execute query for preparing statement: %v", err)
 	}
 
-	if len(info.args) != 1 {
-		t.Fatalf("Was not expecting meta data for %d query arguments, but got %d\n", 1, len(info.args))
+	if len(info.Args) != 1 {
+		t.Fatalf("Was not expecting meta data for %d query arguments, but got %d\n", 1, len(info.Args))
 	}
 
 	if *flagProto > 1 {
-		if len(info.rval) != 2 {
-			t.Fatalf("Was not expecting meta data for %d result columns, but got %d\n", 2, len(info.rval))
+		if len(info.Rval) != 2 {
+			t.Fatalf("Was not expecting meta data for %d result columns, but got %d\n", 2, len(info.Rval))
 		}
 	}
 }

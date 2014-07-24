@@ -308,7 +308,7 @@ func (c *Conn) ping() error {
 	return err
 }
 
-func (c *Conn) prepareStatement(stmt string, trace Tracer) (*queryInfo, error) {
+func (c *Conn) prepareStatement(stmt string, trace Tracer) (*QueryInfo, error) {
 	stmtsLRU.mu.Lock()
 	if val, ok := stmtsLRU.lru.Get(c.addr + stmt); ok {
 		flight := val.(*inflightPrepare)
@@ -328,10 +328,10 @@ func (c *Conn) prepareStatement(stmt string, trace Tracer) (*queryInfo, error) {
 	} else {
 		switch x := resp.(type) {
 		case resultPreparedFrame:
-			flight.info = &queryInfo{
-				id:   x.PreparedId,
-				args: x.Arguments,
-				rval: x.ReturnValues,
+			flight.info = &QueryInfo{
+				Id:   x.PreparedId,
+				Args: x.Arguments,
+				Rval: x.ReturnValues,
 			}
 		case error:
 			flight.err = x
@@ -364,13 +364,25 @@ func (c *Conn) executeQuery(qry *Query) *Iter {
 		if err != nil {
 			return &Iter{err: err}
 		}
-		if len(qry.values) != len(info.args) {
+
+		var values []interface{}
+
+		if qry.binding == nil {
+			values = qry.values
+		} else {
+			values, err = qry.binding(info)
+			if err != nil {
+				return &Iter{err: err}
+			}
+		}
+
+		if len(values) != len(info.Args) {
 			return &Iter{err: ErrQueryArgLength}
 		}
-		op.Prepared = info.id
-		op.Values = make([][]byte, len(qry.values))
-		for i := 0; i < len(qry.values); i++ {
-			val, err := Marshal(info.args[i].TypeInfo, qry.values[i])
+		op.Prepared = info.Id
+		op.Values = make([][]byte, len(values))
+		for i := 0; i < len(values); i++ {
+			val, err := Marshal(info.Args[i].TypeInfo, values[i])
 			if err != nil {
 				return &Iter{err: err}
 			}
@@ -473,28 +485,38 @@ func (c *Conn) executeBatch(batch *Batch) error {
 
 	for i := 0; i < len(batch.Entries); i++ {
 		entry := &batch.Entries[i]
-		var info *queryInfo
-		if len(entry.Args) > 0 {
+		var info *QueryInfo
+		var args []interface{}
+		if len(entry.Args) > 0 || entry.binding != nil {
 			var err error
 			info, err = c.prepareStatement(entry.Stmt, nil)
 
-			if len(entry.Args) != len(info.args) {
+			if entry.binding == nil {
+				args = entry.Args
+			} else {
+				args, err = entry.binding(info)
+				if err != nil {
+					return err
+				}
+			}
+
+			if len(args) != len(info.Args) {
 				return ErrQueryArgLength
 			}
 
-			stmts[string(info.id)] = entry.Stmt
+			stmts[string(info.Id)] = entry.Stmt
 			if err != nil {
 				return err
 			}
 			f.writeByte(1)
-			f.writeShortBytes(info.id)
+			f.writeShortBytes(info.Id)
 		} else {
 			f.writeByte(0)
 			f.writeLongString(entry.Stmt)
 		}
-		f.writeShort(uint16(len(entry.Args)))
-		for j := 0; j < len(entry.Args); j++ {
-			val, err := Marshal(info.args[j].TypeInfo, entry.Args[j])
+		f.writeShort(uint16(len(args)))
+		for j := 0; j < len(args); j++ {
+			val, err := Marshal(info.Args[j].TypeInfo, args[j])
 			if err != nil {
 				return err
 			}
@@ -624,10 +646,11 @@ func (c *Conn) setKeepalive(d time.Duration) error {
 	return nil
 }
 
-type queryInfo struct {
-	id   []byte
-	args []ColumnInfo
-	rval []ColumnInfo
+// QueryInfo represents the meta data associated with a prepared CQL statement.
+type QueryInfo struct {
+	Id   []byte
+	Args []ColumnInfo
+	Rval []ColumnInfo
 }
 
 type callReq struct {
@@ -641,7 +664,7 @@ type callResp struct {
 }
 
 type inflightPrepare struct {
-	info *queryInfo
+	info *QueryInfo
 	err  error
 	wg   sync.WaitGroup
 }
