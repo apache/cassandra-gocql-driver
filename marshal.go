@@ -659,7 +659,7 @@ func marshalDouble(info *TypeInfo, value interface{}) ([]byte, error) {
 	case reflect.Float64:
 		return encBigInt(int64(math.Float64bits(rv.Float()))), nil
 	case reflect.Ptr:
-		return marshalFloat(info, rv.Elem().Interface())
+		return marshalDouble(info, rv.Elem().Interface())
 	}
 	return nil, marshalErrorf("can not marshal %T into %s", value, info)
 }
