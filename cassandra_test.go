@@ -872,3 +872,17 @@ func TestPreparedCacheEviction(t *testing.T) {
 		t.Error("expected delete statement to be cached, but statement was purged or not prepared.")
 	}
 }
+
+//TestMarshalFloat64Ptr tests to see that a pointer to a float64 is marshalled correctly.
+func TestMarshalFloat64Ptr(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+
+	if err := session.Query("CREATE TABLE float_test (id double, test double, primary key (id))").Exec(); err != nil {
+		t.Fatal("create table:", err)
+	}
+	testNum := float64(7500)
+	if err := session.Query(`INSERT INTO float_test (id,test) VALUES (?,?)`, float64(7500.00), &testNum).Exec(); err != nil {
+		t.Fatal("insert float64:", err)
+	}
+}
