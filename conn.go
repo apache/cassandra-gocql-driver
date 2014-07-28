@@ -490,6 +490,9 @@ func (c *Conn) executeBatch(batch *Batch) error {
 		if len(entry.Args) > 0 || entry.binding != nil {
 			var err error
 			info, err = c.prepareStatement(entry.Stmt, nil)
+			if err != nil {
+				return err
+			}
 
 			if entry.binding == nil {
 				args = entry.Args
@@ -505,9 +508,6 @@ func (c *Conn) executeBatch(batch *Batch) error {
 			}
 
 			stmts[string(info.Id)] = entry.Stmt
-			if err != nil {
-				return err
-			}
 			f.writeByte(1)
 			f.writeShortBytes(info.Id)
 		} else {
