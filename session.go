@@ -262,6 +262,12 @@ func (q *Query) RetryPolicy(r RetryPolicy) *Query {
 	return q
 }
 
+// Rebind resets the query arguments of a previous bound query
+func (q *Query) Rebind(v ...interface{}) *Query {
+	q.values = v
+	return q
+}
+
 // Exec executes the query without returning any rows.
 func (q *Query) Exec() error {
 	iter := q.Iter()

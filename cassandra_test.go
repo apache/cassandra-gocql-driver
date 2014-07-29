@@ -552,6 +552,44 @@ func TestScanCASWithNilArguments(t *testing.T) {
 	}
 }
 
+func TestRebindQueryInfo(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+
+	if err := session.Query("CREATE TABLE rebind_query (id int, value text, PRIMARY KEY (id))").Exec(); err != nil {
+		t.Fatalf("failed to create table with error '%v'", err)
+	}
+
+	if err := session.Query("INSERT INTO rebind_query (id, value) VALUES (?, ?)", 23, "quux").Exec(); err != nil {
+		t.Fatalf("insert into rebind_query failed, err '%v'", err)
+	}
+
+	if err := session.Query("INSERT INTO rebind_query (id, value) VALUES (?, ?)", 24, "w00t").Exec(); err != nil {
+		t.Fatalf("insert into rebind_query failed, err '%v'", err)
+	}
+
+	q := session.Query("SELECT value FROM rebind_query WHERE ID = ?", 23)
+
+	iter := q.Iter()
+	var value string
+	for iter.Scan(&value) {
+	}
+
+	if value != "quux" {
+		t.Fatalf("expected %v but got %v", "quux", value)
+	}
+
+	q.Rebind(24)
+	iter = q.Iter()
+
+	for iter.Scan(&value) {
+	}
+
+	if value != "w00t" {
+		t.Fatalf("expected %v but got %v", "quux", value)
+	}
+}
+
 //TestStaticQueryInfo makes sure that the application can manually bind query parameters using the simplest possible static binding strategy
 func TestStaticQueryInfo(t *testing.T) {
 	session := createSession(t)
