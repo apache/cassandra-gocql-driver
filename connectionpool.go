@@ -91,6 +91,8 @@ type ConnectionPool interface {
 	Size() int
 	HandleError(*Conn, error, bool)
 	Close()
+	AddHost(addr string)
+	RemoveHost(addr string)
 }
 
 //NewPoolFunc is the type used by ClusterConfig to create a pool of a specific type.
@@ -105,7 +107,12 @@ type SimplePool struct {
 	connPool map[string]*RoundRobin
 	conns    map[*Conn]struct{}
 	keyspace string
-	mu       sync.Mutex
+	// current hosts
+	hostMu sync.RWMutex
+	hosts  map[string]struct{}
+
+	// protects hostpool, connPoll, conns, quit
+	mu sync.Mutex
 
 	cFillingPool chan int
 
@@ -117,7 +124,7 @@ type SimplePool struct {
 //NewSimplePool is the function used by gocql to create the simple connection pool.
 //This is the default if no other pool type is specified.
 func NewSimplePool(cfg *ClusterConfig) ConnectionPool {
-	pool := SimplePool{
+	pool := &SimplePool{
 		cfg:          cfg,
 		hostPool:     NewRoundRobin(),
 		connPool:     make(map[string]*RoundRobin),
@@ -125,7 +132,13 @@ func NewSimplePool(cfg *ClusterConfig) ConnectionPool {
 		quitWait:     make(chan bool),
 		cFillingPool: make(chan int, 1),
 		keyspace:     cfg.Keyspace,
+		hosts:        make(map[string]struct{}),
 	}
+
+	for _, host := range cfg.Hosts {
+		pool.hosts[host] = struct{}{}
+	}
+
 	//Walk through connecting to hosts. As soon as one host connects
 	//defer the remaining connections to cluster.fillPool()
 	for i := 0; i < len(cfg.Hosts); i++ {
@@ -133,14 +146,15 @@ func NewSimplePool(cfg *ClusterConfig) ConnectionPool {
 		if strings.Index(addr, ":") < 0 {
 			addr = fmt.Sprintf("%s:%d", addr, cfg.DefaultPort)
 		}
+
 		if pool.connect(addr) == nil {
 			pool.cFillingPool <- 1
 			go pool.fillPool()
 			break
 		}
-
 	}
-	return &pool
+
+	return pool
 }
 
 func (c *SimplePool) connect(addr string) error {
@@ -154,14 +168,12 @@ func (c *SimplePool) connect(addr string) error {
 		Keepalive:     c.cfg.SocketKeepalive,
 	}
 
-	for {
-		conn, err := Connect(addr, cfg, c)
-		if err != nil {
-			log.Printf("failed to connect to %q: %v", addr, err)
-			return err
-		}
-		return c.addConn(conn)
+	conn, err := Connect(addr, cfg, c)
+	if err != nil {
+		log.Printf("failed to connect to %q: %v", addr, err)
+		return err
 	}
+	return c.addConn(conn)
 }
 
 func (c *SimplePool) addConn(conn *Conn) error {
@@ -171,6 +183,7 @@ func (c *SimplePool) addConn(conn *Conn) error {
 		conn.Close()
 		return nil
 	}
+
 	//Set the connection's keyspace if any before adding it to the pool
 	if c.keyspace != "" {
 		if err := conn.UseKeyspace(c.keyspace); err != nil {
@@ -179,14 +192,17 @@ func (c *SimplePool) addConn(conn *Conn) error {
 			return err
 		}
 	}
+
 	connPool := c.connPool[conn.Address()]
 	if connPool == nil {
 		connPool = NewRoundRobin()
 		c.connPool[conn.Address()] = connPool
 		c.hostPool.AddNode(connPool)
 	}
+
 	connPool.AddNode(conn)
 	c.conns[conn] = struct{}{}
+
 	return nil
 }
 
@@ -209,13 +225,17 @@ func (c *SimplePool) fillPool() {
 	if isClosed {
 		return
 	}
+
+	c.hostMu.RLock()
+
 	//Walk through list of defined hosts
-	for i := 0; i < len(c.cfg.Hosts); i++ {
-		addr := strings.TrimSpace(c.cfg.Hosts[i])
+	for host := range c.hosts {
+		addr := strings.TrimSpace(host)
 		if strings.Index(addr, ":") < 0 {
 			addr = fmt.Sprintf("%s:%d", addr, c.cfg.DefaultPort)
 		}
-		var numConns int = 1
+
+		numConns := 1
 		//See if the host already has connections in the pool
 		c.mu.Lock()
 		conns, ok := c.connPool[addr]
@@ -233,6 +253,7 @@ func (c *SimplePool) fillPool() {
 				continue
 			}
 		}
+
 		//This is reached if the host is responsive and needs more connections
 		//Create connections for host synchronously to mitigate flooding the host.
 		go func(a string, conns int) {
@@ -241,6 +262,8 @@ func (c *SimplePool) fillPool() {
 			}
 		}(addr, numConns)
 	}
+
+	c.hostMu.RUnlock()
 }
 
 // Should only be called if c.mu is locked
@@ -312,4 +335,36 @@ func (c *SimplePool) Close() {
 			c.removeConnLocked(conn)
 		}
 	})
+}
+
+func (c *SimplePool) AddHost(addr string) {
+	c.hostMu.Lock()
+	if _, ok := c.hosts[addr]; !ok {
+		c.hosts[addr] = struct{}{}
+		go c.fillPool()
+	}
+	c.hostMu.Unlock()
+}
+
+func (c *SimplePool) RemoveHost(addr string) {
+	c.hostMu.Lock()
+	if _, ok := c.hosts[addr]; !ok {
+		c.hostMu.Unlock()
+		return
+	}
+	delete(c.hosts, addr)
+	c.hostMu.Unlock()
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if _, ok := c.connPool[addr]; !ok {
+		return
+	}
+
+	for conn := range c.conns {
+		if conn.Address() == addr {
+			c.removeConnLocked(conn)
+		}
+	}
 }

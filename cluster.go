@@ -6,9 +6,10 @@ package gocql
 
 import (
 	"errors"
-	"github.com/golang/groupcache/lru"
 	"sync"
 	"time"
+
+	"github.com/golang/groupcache/lru"
 )
 
 //Package global reference to Prepared Statements LRU
@@ -27,6 +28,16 @@ func (p *preparedLRU) Max(max int) {
 		p.lru.RemoveOldest()
 	}
 	p.lru.MaxEntries = max
+}
+
+// To enable periodic node discovery enable DiscoverHosts in ClusterConfig
+type DiscoveryConfig struct {
+	// If not empty will filter all discoverred hosts to a single Data Centre (default: "")
+	DcFilter string
+	// If not empty will filter all discoverred hosts to a single Rack (default: "")
+	RackFilter string
+	// The interval to check for new hosts (default: 30s)
+	Sleep time.Duration
 }
 
 // ClusterConfig is a struct to configure the default cluster implementation
@@ -50,6 +61,7 @@ type ClusterConfig struct {
 	ConnPoolType     NewPoolFunc   // The function used to create the connection pool for the session (default: NewSimplePool)
 	DiscoverHosts    bool          // If set, gocql will attempt to automatically discover other members of the Cassandra cluster (default: false)
 	MaxPreparedStmts int           // Sets the maximum cache size for prepared statements globally for gocql (default: 1000)
+	Discovery        DiscoveryConfig
 }
 
 // NewCluster generates a new config for the default cluster implementation.
@@ -90,31 +102,19 @@ func (cfg *ClusterConfig) CreateSession() (*Session, error) {
 	stmtsLRU.mu.Unlock()
 
 	//See if there are any connections in the pool
-	if pool.Size() > 0 {
+	if pool.Size() > 0 || cfg.DiscoverHosts {
 		s := NewSession(pool, *cfg)
 		s.SetConsistency(cfg.Consistency)
 
 		if cfg.DiscoverHosts {
-			//Fill out cfg.Hosts
-			query := "SELECT peer FROM system.peers"
-			peers := s.Query(query).Iter()
-
-			var ip string
-			for peers.Scan(&ip) {
-				exists := false
-				for ii := 0; ii < len(cfg.Hosts); ii++ {
-					if cfg.Hosts[ii] == ip {
-						exists = true
-					}
-				}
-				if !exists {
-					cfg.Hosts = append(cfg.Hosts, ip)
-				}
+			hostSource := &ringDescriber{
+				session:    s,
+				dcFilter:   cfg.Discovery.DcFilter,
+				rackFilter: cfg.Discovery.RackFilter,
+				previous:   cfg.Hosts,
 			}
 
-			if err := peers.Close(); err != nil {
-				return s, ErrHostQueryFailed
-			}
+			go hostSource.run(cfg.Discovery.Sleep)
 		}
 
 		return s, nil
@@ -122,7 +122,6 @@ func (cfg *ClusterConfig) CreateSession() (*Session, error) {
 
 	pool.Close()
 	return nil, ErrNoConnectionsStarted
-
 }
 
 var (
