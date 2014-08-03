@@ -191,35 +191,37 @@ func TestConnClosing(t *testing.T) {
 	}
 }
 
-// func TestConnectHandler(t *testing.T) {
-// 	srv := NewTestServer(t)
-// 	defer srv.Stop()
-//
-// 	called := false
-//
-// 	cluster_conf := NewCluster(srv.Address)
-// 	cluster_conf.ConnectHandler = func(p ConnectionPool) {
-// 		called = true
-// 		if p.Size() <= 0 {
-// 			t.Errorf("No new connection detected in pool: %v", p)
-// 		}
-// 	}
-//
-// 	db, err := cluster_conf.CreateSession()
-// 	if err != nil {
-// 		t.Errorf("NewCluster: %v", err)
-// 	}
-//
-// 	// Run some query to make sure we connect
-// 	// before checking that handler fired off
-// 	if err := db.Query("void").Exec(); err != nil {
-// 		t.Error(err)
-// 	}
-//
-// 	if !called {
-// 		t.Errorf("Connect handler not called")
-// 	}
-// }
+func TestConnectHandler(t *testing.T) {
+	srv := NewTestServer(t)
+	defer srv.Stop()
+
+	called := false
+
+	cluster_conf := NewCluster(srv.Address)
+	cluster_conf.ConnectHandler = func(p ConnectionPool) {
+		called = true
+		if p.Size() <= 0 {
+			t.Errorf("No new connection detected in pool: %v", p)
+		}
+	}
+
+	db, err := cluster_conf.CreateSession()
+	if err != nil {
+		t.Errorf("NewCluster: %v", err)
+	}
+
+	// Run some query to make sure we connect
+	// before checking that handler fired off
+	if err := db.Query("void").Exec(); err != nil {
+		t.Error(err)
+	}
+
+	db.Close()
+
+	if !called {
+		t.Errorf("Connect handler not called")
+	}
+}
 
 func TestDisconnectHandler(t *testing.T) {
 	srv := NewTestServer(t)
