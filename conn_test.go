@@ -191,7 +191,7 @@ func TestConnClosing(t *testing.T) {
 	}
 }
 
-// func TestConnectHander(t *testing.T) {
+// func TestConnectHandler(t *testing.T) {
 // 	srv := NewTestServer(t)
 // 	defer srv.Stop()
 //
@@ -220,43 +220,43 @@ func TestConnClosing(t *testing.T) {
 // 		t.Errorf("Connect handler not called")
 // 	}
 // }
-//
-// func TestDisconnectHander(t *testing.T) {
-// 	srv := NewTestServer(t)
-// 	defer srv.Stop()
-//
-// 	called := false
-// 	called_ch := make(chan bool)
-//
-// 	cluster_conf := NewCluster(srv.Address)
-// 	cluster_conf.DisconnectHandler = func(p ConnectionPool) {
-// 		called_ch <- true
-// 	}
-//
-// 	db, err := cluster_conf.CreateSession()
-// 	if err != nil {
-// 		t.Errorf("NewCluster: %v", err)
-// 	}
-//
-// 	// Run some query to make sure we connect
-// 	if err := db.Query("void").Exec(); err != nil {
-// 		t.Error(err)
-// 	}
-//
-// 	// Run close to make sure we disconnect
-// 	db.Close()
-//
-// 	select {
-// 	case <-called_ch:
-// 		called = true
-// 	// Some reasonable timeout to ensure the async handler gets called
-// 	case <-time.After(2 * time.Second):
-// 	}
-//
-// 	if !called {
-// 		t.Errorf("Disconnect handler not called")
-// 	}
-// }
+
+func TestDisconnectHandler(t *testing.T) {
+	srv := NewTestServer(t)
+	defer srv.Stop()
+
+	called := false
+	called_ch := make(chan bool)
+
+	cluster_conf := NewCluster(srv.Address)
+	cluster_conf.DisconnectHandler = func(p ConnectionPool) {
+		called_ch <- true
+	}
+
+	db, err := cluster_conf.CreateSession()
+	if err != nil {
+		t.Errorf("NewCluster: %v", err)
+	}
+
+	// Run some query to make sure we connect
+	if err := db.Query("void").Exec(); err != nil {
+		t.Error(err)
+	}
+
+	// Run close to make sure we disconnect
+	db.Close()
+
+	select {
+	case <-called_ch:
+		called = true
+	// Some reasonable timeout to ensure the async handler gets called
+	case <-time.After(2 * time.Second):
+	}
+
+	if !called {
+		t.Errorf("Disconnect handler not called")
+	}
+}
 
 func NewTestServer(t *testing.T) *TestServer {
 	laddr, err := net.ResolveTCPAddr("tcp", "127.0.0.1:0")
