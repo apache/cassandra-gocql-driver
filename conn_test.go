@@ -226,10 +226,11 @@ func TestDisconnectHander(t *testing.T) {
 	defer srv.Stop()
 
 	called := false
+	called_ch := make(chan bool)
 
 	cluster_conf := NewCluster(srv.Address)
 	cluster_conf.DisconnectHandler = func(p ConnectionPool) {
-		called = true
+		called_ch <- true
 	}
 
 	db, err := cluster_conf.CreateSession()
@@ -242,12 +243,17 @@ func TestDisconnectHander(t *testing.T) {
 		t.Error(err)
 	}
 
-	// Run close to make sure we connect
+	// Run close to make sure we disconnect
 	db.Close()
 
-	// Calling Closed() should wait on the mutex to ensure we're done
-	// closing before checking called
-	if db.Closed() && !called {
+	select {
+	case <-called_ch:
+		called = true
+	// Some reasonable timeout to ensure the async handler gets called
+	case <-time.After(2 * time.Second):
+	}
+
+	if !called {
 		t.Errorf("Disconnect handler not called")
 	}
 }
