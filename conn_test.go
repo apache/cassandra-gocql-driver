@@ -215,6 +215,29 @@ func TestConnectHander(t *testing.T) {
 	}
 }
 
+func TestDisconnectHander(t *testing.T) {
+	srv := NewTestServer(t)
+	defer srv.Stop()
+
+	called := false
+
+	cluster_conf := NewCluster(srv.Address)
+	cluster_conf.DisconnectHandler = func(p ConnectionPool) {
+		called = true
+	}
+
+	sess, err := cluster_conf.CreateSession()
+	if err != nil {
+		t.Errorf("NewCluster: %v", err)
+	}
+
+	sess.Close()
+
+	if !called {
+		t.Errorf("Disconnect handler not called")
+	}
+}
+
 func NewTestServer(t *testing.T) *TestServer {
 	laddr, err := net.ResolveTCPAddr("tcp", "127.0.0.1:0")
 	if err != nil {
