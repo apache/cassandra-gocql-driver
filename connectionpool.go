@@ -256,15 +256,15 @@ func (c *SimplePool) fillPool() {
 func (c *SimplePool) removeConnLocked(conn *Conn) {
 	conn.Close()
 	connPool := c.connPool[conn.addr]
-	if connPool == nil {
-		return
+
+	if connPool != nil {
+		connPool.RemoveNode(conn)
+		if connPool.Size() == 0 {
+			c.hostPool.RemoveNode(connPool)
+			delete(c.connPool, conn.addr)
+		}
+		delete(c.conns, conn)
 	}
-	connPool.RemoveNode(conn)
-	if connPool.Size() == 0 {
-		c.hostPool.RemoveNode(connPool)
-		delete(c.connPool, conn.addr)
-	}
-	delete(c.conns, conn)
 
 	if c.disconnectHandler != nil {
 		go c.disconnectHandler(c)
