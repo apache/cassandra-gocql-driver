@@ -568,7 +568,8 @@ func TestRebindQueryInfo(t *testing.T) {
 		t.Fatalf("insert into rebind_query failed, err '%v'", err)
 	}
 
-	q := session.Query("SELECT value FROM rebind_query WHERE ID = ?", 23)
+	q := session.Query("SELECT value FROM rebind_query WHERE ID = ?")
+	q.Bind(23)
 
 	iter := q.Iter()
 	var value string
@@ -579,7 +580,7 @@ func TestRebindQueryInfo(t *testing.T) {
 		t.Fatalf("expected %v but got %v", "quux", value)
 	}
 
-	q.Rebind(24)
+	q.Bind(24)
 	iter = q.Iter()
 
 	for iter.Scan(&value) {

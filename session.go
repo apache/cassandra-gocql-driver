@@ -263,7 +263,7 @@ func (q *Query) RetryPolicy(r RetryPolicy) *Query {
 }
 
 // Rebind resets the query arguments of a previous bound query
-func (q *Query) Rebind(v ...interface{}) *Query {
+func (q *Query) Bind(v ...interface{}) *Query {
 	q.values = v
 	return q
 }
