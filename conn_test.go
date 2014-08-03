@@ -210,6 +210,12 @@ func TestConnectHander(t *testing.T) {
 		t.Errorf("NewCluster: %v", err)
 	}
 
+	// Run some query to make sure we connect
+	// before checking that handler fired off
+	if err := db.Query("void").Exec(); err != nil {
+		t.Error(err)
+	}
+
 	if !called {
 		t.Errorf("Connect handler not called")
 	}
