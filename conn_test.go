@@ -245,11 +245,9 @@ func TestDisconnectHander(t *testing.T) {
 	// Run close to make sure we connect
 	db.Close()
 
-	if err := db.Query("void").Exec(); err != ErrSessionClosed {
-		t.Errorf("expected %#v, got %#v", ErrSessionClosed, err)
-	}
-
-	if !called {
+	// Calling Closed() should wait on the mutex to ensure we're done
+	// closing before checking called
+	if db.Closed() && !called {
 		t.Errorf("Disconnect handler not called")
 	}
 }
