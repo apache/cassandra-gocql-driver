@@ -109,22 +109,26 @@ type SimplePool struct {
 
 	cFillingPool chan int
 
-	quit     bool
-	quitWait chan bool
-	quitOnce sync.Once
+	quit              bool
+	quitWait          chan bool
+	quitOnce          sync.Once
+	connectHandler    PoolHandler
+	disconnectHandler PoolHandler
 }
 
 //NewSimplePool is the function used by gocql to create the simple connection pool.
 //This is the default if no other pool type is specified.
 func NewSimplePool(cfg *ClusterConfig) ConnectionPool {
 	pool := SimplePool{
-		cfg:          cfg,
-		hostPool:     NewRoundRobin(),
-		connPool:     make(map[string]*RoundRobin),
-		conns:        make(map[*Conn]struct{}),
-		quitWait:     make(chan bool),
-		cFillingPool: make(chan int, 1),
-		keyspace:     cfg.Keyspace,
+		cfg:               cfg,
+		hostPool:          NewRoundRobin(),
+		connPool:          make(map[string]*RoundRobin),
+		conns:             make(map[*Conn]struct{}),
+		quitWait:          make(chan bool),
+		cFillingPool:      make(chan int, 1),
+		keyspace:          cfg.Keyspace,
+		connectHandler:    cfg.ConnectHandler,
+		disconnectHandler: cfg.DisconnectHandler,
 	}
 	//Walk through connecting to hosts. As soon as one host connects
 	//defer the remaining connections to cluster.fillPool()
@@ -187,6 +191,11 @@ func (c *SimplePool) addConn(conn *Conn) error {
 	}
 	connPool.AddNode(conn)
 	c.conns[conn] = struct{}{}
+
+	if c.connectHandler != nil {
+		go c.connectHandler(c)
+	}
+
 	return nil
 }
 
@@ -256,6 +265,10 @@ func (c *SimplePool) removeConnLocked(conn *Conn) {
 		delete(c.connPool, conn.addr)
 	}
 	delete(c.conns, conn)
+
+	if c.disconnectHandler != nil {
+		go c.disconnectHandler(c)
+	}
 }
 
 func (c *SimplePool) removeConn(conn *Conn) {
