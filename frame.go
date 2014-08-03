@@ -347,6 +347,7 @@ var consistencyCodes = []uint16{
 	EachQuorum:  0x0007,
 	Serial:      0x0008,
 	LocalSerial: 0x0009,
+	LocalOne:    0x000A,
 }
 
 type readyFrame struct{}
