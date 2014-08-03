@@ -463,6 +463,7 @@ const (
 	EachQuorum
 	Serial
 	LocalSerial
+	LocalOne
 )
 
 var ConsistencyNames = []string{
@@ -477,6 +478,7 @@ var ConsistencyNames = []string{
 	EachQuorum:  "eachquorum",
 	Serial:      "serial",
 	LocalSerial: "localserial",
+	LocalOne:    "localone",
 }
 
 func (c Consistency) String() string {
