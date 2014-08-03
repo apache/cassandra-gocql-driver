@@ -232,12 +232,18 @@ func TestDisconnectHander(t *testing.T) {
 		called = true
 	}
 
-	sess, err := cluster_conf.CreateSession()
+	db, err := cluster_conf.CreateSession()
 	if err != nil {
 		t.Errorf("NewCluster: %v", err)
 	}
 
-	sess.Close()
+	// Run some query to make sure we connect
+	if err := db.Query("void").Exec(); err != nil {
+		t.Error(err)
+	}
+
+	// Run close to make sure we connect
+	db.Close()
 
 	if !called {
 		t.Errorf("Disconnect handler not called")
