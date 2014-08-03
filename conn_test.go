@@ -205,7 +205,7 @@ func TestConnectHander(t *testing.T) {
 		}
 	}
 
-	_, err := cluster_conf.CreateSession()
+	db, err := cluster_conf.CreateSession()
 	if err != nil {
 		t.Errorf("NewCluster: %v", err)
 	}
