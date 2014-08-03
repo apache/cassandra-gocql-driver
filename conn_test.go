@@ -191,6 +191,30 @@ func TestConnClosing(t *testing.T) {
 	}
 }
 
+func TestConnectHander(t *testing.T) {
+	srv := NewTestServer(t)
+	defer srv.Stop()
+
+	called := false
+
+	cluster_conf := NewCluster(srv.Address)
+	cluster_conf.ConnectHandler = func(p ConnectionPool) {
+		called = true
+		if p.Size() <= 0 {
+			t.Errorf("No new connection detected in pool: %v", p)
+		}
+	}
+
+	_, err := cluster_conf.CreateSession()
+	if err != nil {
+		t.Errorf("NewCluster: %v", err)
+	}
+
+	if !called {
+		t.Errorf("Connect handler not called")
+	}
+}
+
 func NewTestServer(t *testing.T) *TestServer {
 	laddr, err := net.ResolveTCPAddr("tcp", "127.0.0.1:0")
 	if err != nil {
