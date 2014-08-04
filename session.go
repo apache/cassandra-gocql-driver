@@ -495,13 +495,13 @@ type Tracer interface {
 type traceWriter struct {
 	session *Session
 	w       io.Writer
-	mu      *sync.Mutex
+	mu      sync.Mutex
 }
 
 // NewTraceWriter returns a simple Tracer implementation that outputs
 // the event log in a textual format.
 func NewTraceWriter(session *Session, w io.Writer) Tracer {
-	return traceWriter{session: session, w: w, mu: &sync.Mutex{}}
+	return traceWriter{session: session, w: w}
 }
 
 func (t traceWriter) Trace(traceId []byte) {
