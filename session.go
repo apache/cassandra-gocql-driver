@@ -90,6 +90,21 @@ func (s *Session) Query(stmt string, values ...interface{}) *Query {
 	return qry
 }
 
+// Bind generates a new query object based on the query statement passed in.
+// The query is automatically prepared if it has not previously been executed.
+// The binding callback allows the application to define which query argument
+// values will be marshalled as part of the query execution.
+// During execution, the meta data of the prepared query will be routed to the
+// binding callback, which is responsible for producing the query argument values.
+func (s *Session) Bind(stmt string, b func(q *QueryInfo) ([]interface{}, error)) *Query {
+	s.mu.RLock()
+	qry := &Query{stmt: stmt, binding: b, cons: s.cons,
+		session: s, pageSize: s.pageSize, trace: s.trace,
+		prefetch: s.prefetch, rt: s.cfg.RetryPolicy}
+	s.mu.RUnlock()
+	return qry
+}
+
 // Close closes all connections. The session is unusable after this
 // operation.
 func (s *Session) Close() {
@@ -184,6 +199,7 @@ type Query struct {
 	trace     Tracer
 	session   *Session
 	rt        RetryPolicy
+	binding   func(q *QueryInfo) ([]interface{}, error)
 }
 
 // Consistency sets the consistency level for this query. If no consistency
@@ -395,6 +411,13 @@ func (b *Batch) Query(stmt string, args ...interface{}) {
 	b.Entries = append(b.Entries, BatchEntry{Stmt: stmt, Args: args})
 }
 
+// Bind adds the query to the batch operation and correlates it with a binding callback
+// that will be invoked when the batch is executed. The binding callback allows the application
+// to define which query argument values will be marshalled as part of the batch execution.
+func (b *Batch) Bind(stmt string, bind func(q *QueryInfo) ([]interface{}, error)) {
+	b.Entries = append(b.Entries, BatchEntry{Stmt: stmt, binding: bind})
+}
+
 // RetryPolicy sets the retry policy to use when executing the batch operation
 func (b *Batch) RetryPolicy(r RetryPolicy) *Batch {
 	b.rt = r
@@ -415,8 +438,9 @@ const (
 )
 
 type BatchEntry struct {
-	Stmt string
-	Args []interface{}
+	Stmt    string
+	Args    []interface{}
+	binding func(q *QueryInfo) ([]interface{}, error)
 }
 
 type Consistency int
@@ -432,6 +456,7 @@ const (
 	EachQuorum
 	Serial
 	LocalSerial
+	LocalOne
 )
 
 var ConsistencyNames = []string{
@@ -446,6 +471,7 @@ var ConsistencyNames = []string{
 	EachQuorum:  "eachquorum",
 	Serial:      "serial",
 	LocalSerial: "localserial",
+	LocalOne:    "localone",
 }
 
 func (c Consistency) String() string {
