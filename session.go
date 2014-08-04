@@ -503,10 +503,10 @@ type traceWriter struct {
 // NewTraceWriter returns a simple Tracer implementation that outputs
 // the event log in a textual format.
 func NewTraceWriter(session *Session, w io.Writer) Tracer {
-	return traceWriter{session: session, w: w}
+	return &traceWriter{session: session, w: w}
 }
 
-func (t traceWriter) Trace(traceId []byte) {
+func (t *traceWriter) Trace(traceId []byte) {
 	var (
 		coordinator string
 		duration    int

@@ -4,7 +4,6 @@ import (
 	"code.google.com/p/snappy-go/snappy"
 )
 
-
 type Compressor interface {
 	Name() string
 	Encode(data []byte) ([]byte, error)
