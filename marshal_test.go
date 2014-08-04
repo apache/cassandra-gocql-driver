@@ -41,6 +41,15 @@ var marshalTests = []struct {
 		CustomString("hello world"),
 	},
 	{
+		&TypeInfo{Type: TypeVarchar},
+		nil,
+		func() *string {
+			var p *string
+			p = nil
+			return p
+		}(),
+	},
+	{
 		&TypeInfo{Type: TypeBlob},
 		[]byte("hello\x00"),
 		[]byte("hello\x00"),
@@ -49,6 +58,14 @@ var marshalTests = []struct {
 		&TypeInfo{Type: TypeBlob},
 		[]byte(nil),
 		[]byte(nil),
+	},
+	{
+		&TypeInfo{Type: TypeBlob},
+		nil,
+		func() []byte {
+			var p []byte
+			return p
+		}(),
 	},
 	{
 		&TypeInfo{Type: TypeTimeUUID},
@@ -77,6 +94,15 @@ var marshalTests = []struct {
 		&TypeInfo{Type: TypeInt},
 		[]byte("\x7f\xff\xff\xff"),
 		int32(math.MaxInt32),
+	},
+	{
+		&TypeInfo{Type: TypeInt},
+		nil,
+		func() *int {
+			var p *int
+			p = nil
+			return p
+		}(),
 	},
 	{
 		&TypeInfo{Type: TypeBigInt},
