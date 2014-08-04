@@ -3,11 +3,13 @@ package gocql
 import (
 	"bytes"
 	"math"
+	"math/big"
 	"reflect"
-	"speter.net/go/exp/math/dec/inf"
 	"strings"
 	"testing"
 	"time"
+
+	"speter.net/go/exp/math/dec/inf"
 )
 
 var marshalTests = []struct {
@@ -66,7 +68,7 @@ var marshalTests = []struct {
 	{
 		&TypeInfo{Type: TypeInt},
 		[]byte("\x01\x02\x03\x04"),
-		16909060,
+		int(16909060),
 	},
 	{
 		&TypeInfo{Type: TypeInt},
@@ -240,10 +242,40 @@ var marshalTests = []struct {
 			strings.Repeat("X", 65535): strings.Repeat("Y", 65535),
 		},
 	},
+	{
+		&TypeInfo{Type: TypeVarint},
+		[]byte("\x00"),
+		0,
+	},
+	{
+		&TypeInfo{Type: TypeVarint},
+		[]byte("\x37\xE2\x3C\xEC"),
+		int32(937573612),
+	},
+	{
+		&TypeInfo{Type: TypeVarint},
+		[]byte("\x37\xE2\x3C\xEC"),
+		big.NewInt(937573612),
+	},
+	{
+		&TypeInfo{Type: TypeVarint},
+		[]byte("\xC0\x00\x00\x00\x00\x00\x00\x00"),
+		big.NewInt(-4611686018427387904),
+	},
+	{
+		&TypeInfo{Type: TypeVarint},
+		[]byte("\x08\x00\x00\x00\x00\x00\x00\x00\x00\x00"),
+		bigintize("37778931862957161709568"),
+	},
 }
 
 func decimalize(s string) *inf.Dec {
 	i, _ := new(inf.Dec).SetString(s)
+	return i
+}
+
+func bigintize(s string) *big.Int {
+	i, _ := new(big.Int).SetString(s, 10)
 	return i
 }
 
@@ -270,6 +302,91 @@ func TestUnmarshal(t *testing.T) {
 		}
 		if !reflect.DeepEqual(v.Elem().Interface(), test.Value) {
 			t.Errorf("marshalTest[%d]: expected %#v, got %#v.", i, test.Value, v.Elem().Interface())
+		}
+	}
+}
+
+func TestMarshalVarint(t *testing.T) {
+	varintTests := []struct {
+		Value       interface{}
+		Marshaled   []byte
+		Unmarshaled *big.Int
+	}{
+		{
+			Value:       int8(0),
+			Marshaled:   []byte("\x00"),
+			Unmarshaled: big.NewInt(0),
+		},
+		{
+			Value:       uint8(255),
+			Marshaled:   []byte("\x00\xFF"),
+			Unmarshaled: big.NewInt(255),
+		},
+		{
+			Value:       int8(-1),
+			Marshaled:   []byte("\xFF"),
+			Unmarshaled: big.NewInt(-1),
+		},
+		{
+			Value:       big.NewInt(math.MaxInt32),
+			Marshaled:   []byte("\x7F\xFF\xFF\xFF"),
+			Unmarshaled: big.NewInt(math.MaxInt32),
+		},
+		{
+			Value:       big.NewInt(int64(math.MaxInt32) + 1),
+			Marshaled:   []byte("\x00\x80\x00\x00\x00"),
+			Unmarshaled: big.NewInt(int64(math.MaxInt32) + 1),
+		},
+		{
+			Value:       big.NewInt(math.MinInt32),
+			Marshaled:   []byte("\x80\x00\x00\x00"),
+			Unmarshaled: big.NewInt(math.MinInt32),
+		},
+		{
+			Value:       big.NewInt(int64(math.MinInt32) - 1),
+			Marshaled:   []byte("\xFF\x7F\xFF\xFF\xFF"),
+			Unmarshaled: big.NewInt(int64(math.MinInt32) - 1),
+		},
+		{
+			Value:       math.MinInt64,
+			Marshaled:   []byte("\x80\x00\x00\x00\x00\x00\x00\x00"),
+			Unmarshaled: big.NewInt(math.MinInt64),
+		},
+		{
+			Value:       uint64(math.MaxInt64) + 1,
+			Marshaled:   []byte("\x00\x80\x00\x00\x00\x00\x00\x00\x00"),
+			Unmarshaled: bigintize("9223372036854775808"),
+		},
+		{
+			Value:       bigintize("2361183241434822606848"), // 2**71
+			Marshaled:   []byte("\x00\x80\x00\x00\x00\x00\x00\x00\x00\x00"),
+			Unmarshaled: bigintize("2361183241434822606848"),
+		},
+		{
+			Value:       bigintize("-9223372036854775809"), // -2**63 - 1
+			Marshaled:   []byte("\xFF\x7F\xFF\xFF\xFF\xFF\xFF\xFF\xFF"),
+			Unmarshaled: bigintize("-9223372036854775809"),
+		},
+	}
+
+	for i, test := range varintTests {
+		data, err := Marshal(&TypeInfo{Type: TypeVarint}, test.Value)
+		if err != nil {
+			t.Errorf("error marshaling varint: %v (test #%d)", err, i)
+		}
+
+		if !bytes.Equal(test.Marshaled, data) {
+			t.Errorf("marshaled varint mismatch: expected %v, got %v (test #%d)", test.Marshaled, data, i)
+		}
+
+		binder := new(big.Int)
+		err = Unmarshal(&TypeInfo{Type: TypeVarint}, test.Marshaled, binder)
+		if err != nil {
+			t.Errorf("error unmarshaling varint: %v (test #%d)", err, i)
+		}
+
+		if test.Unmarshaled.Cmp(binder) != 0 {
+			t.Errorf("unmarshaled varint mismatch: expected %v, got %v (test #%d)", test.Unmarshaled, binder, i)
 		}
 	}
 }
