@@ -5,8 +5,12 @@ go:
   - 1.3
   - tip
 
+before_script:
+  - go get code.google.com/p/go.tools/cmd/vet
+
 script:
   - bash integration.sh
+  - go vet .
 
 notifications:
   - email: false
