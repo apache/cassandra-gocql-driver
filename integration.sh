@@ -49,3 +49,43 @@ do
 	kill -9 $PID
 	rm $PID_FILE
 done
+
+for v in 2.1.0-rc5
+do
+	TARBALL=apache-cassandra-$v-bin.tar.gz
+	CASSANDRA_HOME=`pwd`/apache-cassandra-$v
+	PARENT_DIR=$(echo "$v" | sed 's/-rc[0-9]//')
+
+	curl -L -O $ARCHIVE_BASE_URL/$PARENT_DIR/$TARBALL
+	
+	if [ ! -f $CASSANDRA_HOME/bin/cassandra ]
+	then
+   		tar xzf $TARBALL
+	fi
+	
+	CASSANDRA_LOG_DIR=$CASSANDRA_HOME/logs
+	CASSANDRA_LOG=$CASSANDRA_LOG_DIR/system.log
+
+	mkdir -p $CASSANDRA_LOG_DIR
+	: >$CASSANDRA_LOG  # create an empty log file
+	
+	sed -i -e 's?/var?'`pwd`/v${v}'?' $CASSANDRA_HOME/conf/cassandra.yaml
+
+	echo "Booting Cassandra ${v}, waiting for CQL listener to start ...."
+
+	CASSANDRA_HOME=$CASSANDRA_HOME $CASSANDRA_HOME/bin/cassandra -p $PID_FILE &> $STARTUP_LOG
+
+	{ tail -n +1 -f $CASSANDRA_LOG & } | sed -n '/Starting listening for CQL clients/q'
+	
+	PID=$(<"$PID_FILE")
+
+	echo "Cassandra ${v} running (PID ${PID}), about to run test suite ...."
+
+	go test -v ./...
+
+	echo "Test suite passed against Cassandra ${v}, killing server instance (PID ${PID})"
+	
+	kill -9 $PID
+	rm $PID_FILE
+done
+
