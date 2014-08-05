@@ -262,6 +262,13 @@ func (q *Query) RetryPolicy(r RetryPolicy) *Query {
 	return q
 }
 
+// Bind sets query arguments of query. This can also be used to rebind new query arguments
+// to an existing query instance.
+func (q *Query) Bind(v ...interface{}) *Query {
+	q.values = v
+	return q
+}
+
 // Exec executes the query without returning any rows.
 func (q *Query) Exec() error {
 	iter := q.Iter()
@@ -503,10 +510,10 @@ type traceWriter struct {
 // NewTraceWriter returns a simple Tracer implementation that outputs
 // the event log in a textual format.
 func NewTraceWriter(session *Session, w io.Writer) Tracer {
-	return traceWriter{session: session, w: w}
+	return &traceWriter{session: session, w: w}
 }
 
-func (t traceWriter) Trace(traceId []byte) {
+func (t *traceWriter) Trace(traceId []byte) {
 	var (
 		coordinator string
 		duration    int

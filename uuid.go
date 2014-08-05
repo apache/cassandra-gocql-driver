@@ -150,7 +150,7 @@ func (u UUID) String() string {
 	const hexString = "0123456789abcdef"
 	r := make([]byte, 36)
 	for i, b := range u {
-                r[offsets[i]] = hexString[b>>4]
+		r[offsets[i]] = hexString[b>>4]
 		r[offsets[i]+1] = hexString[b&0xF]
 	}
 	r[8] = '-'
