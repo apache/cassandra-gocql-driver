@@ -91,8 +91,7 @@ type ConnectionPool interface {
 	Size() int
 	HandleError(*Conn, error, bool)
 	Close()
-	AddHost(addr string)
-	RemoveHost(addr string)
+	SetHosts(host []HostInfo)
 }
 
 //NewPoolFunc is the type used by ClusterConfig to create a pool of a specific type.
@@ -107,9 +106,10 @@ type SimplePool struct {
 	connPool map[string]*RoundRobin
 	conns    map[*Conn]struct{}
 	keyspace string
-	// current hosts
+
 	hostMu sync.RWMutex
-	hosts  map[string]struct{}
+	// this is the set of current hosts which the pool will attempt to connect to
+	hosts map[string]*HostInfo
 
 	// protects hostpool, connPoll, conns, quit
 	mu sync.Mutex
@@ -132,11 +132,13 @@ func NewSimplePool(cfg *ClusterConfig) ConnectionPool {
 		quitWait:     make(chan bool),
 		cFillingPool: make(chan int, 1),
 		keyspace:     cfg.Keyspace,
-		hosts:        make(map[string]struct{}),
+		hosts:        make(map[string]*HostInfo),
 	}
 
 	for _, host := range cfg.Hosts {
-		pool.hosts[host] = struct{}{}
+		// seed hosts have unknown topology
+		// TODO: Handle populating this during SetHosts
+		pool.hosts[host] = &HostInfo{Peer: host}
 	}
 
 	//Walk through connecting to hosts. As soon as one host connects
@@ -157,7 +159,7 @@ func NewSimplePool(cfg *ClusterConfig) ConnectionPool {
 	return pool
 }
 
-func (c *SimplePool) connect(addr string) error {
+func (c *SimplePool) newConn(addr string) (*Conn, error) {
 	cfg := ConnConfig{
 		ProtoVersion:  c.cfg.ProtoVersion,
 		CQLVersion:    c.cfg.CQLVersion,
@@ -170,10 +172,20 @@ func (c *SimplePool) connect(addr string) error {
 
 	conn, err := Connect(addr, cfg, c)
 	if err != nil {
-		log.Printf("failed to connect to %q: %v", addr, err)
-		return err
+		log.Printf("newConn: failed to connect to %q: %v", addr, err)
+		return nil, err
 	}
-	return c.addConn(conn)
+
+	return conn, nil
+}
+
+func (c *SimplePool) connect(addr string) error {
+	if conn, err := c.newConn(addr); err != nil {
+		log.Printf("connect: failed to connect to %q: %v", addr, err)
+		return err
+	} else {
+		return c.addConn(conn)
+	}
 }
 
 func (c *SimplePool) addConn(conn *Conn) error {
@@ -337,23 +349,39 @@ func (c *SimplePool) Close() {
 	})
 }
 
-func (c *SimplePool) AddHost(addr string) {
+func (c *SimplePool) SetHosts(hosts []HostInfo) {
 	c.hostMu.Lock()
-	if _, ok := c.hosts[addr]; !ok {
-		c.hosts[addr] = struct{}{}
-		go c.fillPool()
+	toRemove := make(map[string]struct{})
+	for k := range c.hosts {
+		toRemove[k] = struct{}{}
+	}
+
+	for _, host := range hosts {
+		host := host
+
+		delete(toRemove, host.Peer)
+		// we already have it
+		if _, ok := c.hosts[host.Peer]; ok {
+			// TODO: Check rack, dc, token range is consistent, trigger topology change
+			// update stored host
+			continue
+		}
+
+		c.hosts[host.Peer] = &host
+	}
+
+	// can we hold c.mu whilst iterating this loop?
+	for addr := range toRemove {
+		c.removeHostLocked(addr)
 	}
 	c.hostMu.Unlock()
 }
 
-func (c *SimplePool) RemoveHost(addr string) {
-	c.hostMu.Lock()
+func (c *SimplePool) removeHostLocked(addr string) {
 	if _, ok := c.hosts[addr]; !ok {
-		c.hostMu.Unlock()
 		return
 	}
 	delete(c.hosts, addr)
-	c.hostMu.Unlock()
 
 	c.mu.Lock()
 	defer c.mu.Unlock()

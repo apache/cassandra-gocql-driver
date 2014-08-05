@@ -111,7 +111,6 @@ func (cfg *ClusterConfig) CreateSession() (*Session, error) {
 				session:    s,
 				dcFilter:   cfg.Discovery.DcFilter,
 				rackFilter: cfg.Discovery.RackFilter,
-				previous:   cfg.Hosts,
 			}
 
 			go hostSource.run(cfg.Discovery.Sleep)
