@@ -48,9 +48,18 @@ func createKeyspace(cluster *ClusterConfig, keyspace string) error {
 	}
 	// Drop and re-create the keyspace once. Different tests should use their own
 	// individual tables, but can assume that the table does not exist before.
-	if err = session.Query(`DROP KEYSPACE IF EXISTS ` + keyspace).Exec(); err != nil {
+
+	var dropQuery string
+	if *flagProto == 1 {
+		dropQuery = `DROP KEYSPACE ` + keyspace
+	} else {
+		dropQuery = `DROP KEYSPACE IF EXISTS ` + keyspace
+	}
+
+	if err = session.Query(dropQuery).Exec(); err != nil {
 		return err
 	}
+
 	if err := session.Query(`CREATE KEYSPACE ` + keyspace + `
 			WITH replication = {
 				'class' : 'SimpleStrategy',
