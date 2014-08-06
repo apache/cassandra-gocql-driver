@@ -1,6 +1,7 @@
 package gocql
 
 import (
+	"log"
 	"net"
 	"time"
 )
@@ -36,6 +37,7 @@ func (r *ringDescriber) GetHosts() []HostInfo {
 	iter.Scan(&host.DataCenter, &host.Rack, &host.HostId, &host.Tokens)
 
 	if err := iter.Close(); err != nil {
+		log.Printf("GetHosts: unable to get local host info: %v\n", err)
 		return r.previous
 	}
 
@@ -60,6 +62,7 @@ func (r *ringDescriber) GetHosts() []HostInfo {
 	}
 
 	if err := iter.Close(); err != nil {
+		log.Printf("GetHosts: unable to get ring host info: %v\n", err)
 		return r.previous
 	}
 
