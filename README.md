@@ -4,8 +4,6 @@ gocql
 [![Build Status](https://travis-ci.org/gocql/gocql.png?branch=master)](https://travis-ci.org/gocql/gocql)
 [![GoDoc](http://godoc.org/github.com/gocql/gocql?status.png)](http://godoc.org/github.com/gocql/gocql)
 
-**Package Status:** Alpha 
-
 Package gocql implements a fast and robust Cassandra client for the
 Go programming language.
 
