@@ -159,7 +159,8 @@ func NewSimplePool(cfg *ClusterConfig) ConnectionPool {
 	return pool
 }
 
-func (c *SimplePool) newConn(addr string) (*Conn, error) {
+func (c *SimplePool) connect(addr string) error {
+
 	cfg := ConnConfig{
 		ProtoVersion:  c.cfg.ProtoVersion,
 		CQLVersion:    c.cfg.CQLVersion,
@@ -172,20 +173,11 @@ func (c *SimplePool) newConn(addr string) (*Conn, error) {
 
 	conn, err := Connect(addr, cfg, c)
 	if err != nil {
-		log.Printf("newConn: failed to connect to %q: %v", addr, err)
-		return nil, err
-	}
-
-	return conn, nil
-}
-
-func (c *SimplePool) connect(addr string) error {
-	if conn, err := c.newConn(addr); err != nil {
 		log.Printf("connect: failed to connect to %q: %v", addr, err)
 		return err
-	} else {
-		return c.addConn(conn)
 	}
+
+	return c.addConn(conn)
 }
 
 func (c *SimplePool) addConn(conn *Conn) error {
