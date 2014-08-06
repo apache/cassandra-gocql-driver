@@ -6,9 +6,10 @@ package gocql
 
 import (
 	"errors"
-	"github.com/golang/groupcache/lru"
 	"sync"
 	"time"
+
+	"github.com/golang/groupcache/lru"
 )
 
 //Package global reference to Prepared Statements LRU

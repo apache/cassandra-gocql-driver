@@ -7,6 +7,7 @@ package gocql
 import (
 	"bytes"
 	"flag"
+	"fmt"
 	"math"
 	"math/big"
 	"reflect"
@@ -28,7 +29,7 @@ var (
 
 var initOnce sync.Once
 
-func createSession(tb testing.TB) *Session {
+func createCluster() *ClusterConfig {
 	cluster := NewCluster(strings.Split(*flagCluster, ",")...)
 	cluster.ProtoVersion = *flagProto
 	cluster.CQLVersion = *flagCQL
@@ -37,25 +38,40 @@ func createSession(tb testing.TB) *Session {
 		Password: "cassandra",
 	}
 
-	initOnce.Do(func() {
-		session, err := cluster.CreateSession()
-		if err != nil {
-			tb.Fatal("createSession:", err)
-		}
-		// Drop and re-create the keyspace once. Different tests should use their own
-		// individual tables, but can assume that the table does not exist before.
-		if err := session.Query(`DROP KEYSPACE gocql_test`).Exec(); err != nil {
-			tb.Log("drop keyspace:", err)
-		}
-		if err := session.Query(`CREATE KEYSPACE gocql_test
+	return cluster
+}
+
+func createKeyspace(cluster *ClusterConfig, keyspace string) error {
+	session, err := cluster.CreateSession()
+	if err != nil {
+		return fmt.Errorf("createSession: %v", err)
+	}
+	// Drop and re-create the keyspace once. Different tests should use their own
+	// individual tables, but can assume that the table does not exist before.
+	if err = session.Query(`DROP KEYSPACE IF EXISTS ` + keyspace).Exec(); err != nil {
+		return err
+	}
+	if err := session.Query(`CREATE KEYSPACE ` + keyspace + `
 			WITH replication = {
 				'class' : 'SimpleStrategy',
 				'replication_factor' : 1
 			}`).Exec(); err != nil {
-			tb.Fatal("create keyspace:", err)
+		return err
+	}
+	session.Close()
+
+	return nil
+}
+
+func createSession(tb testing.TB) *Session {
+	cluster := createCluster()
+
+	initOnce.Do(func() {
+		if err := createKeyspace(cluster, "gocql_test"); err != nil {
+			tb.Fatalf("Error creating test keyspace gocql_test: %v", err)
 		}
-		session.Close()
 	})
+
 	cluster.Keyspace = "gocql_test"
 	session, err := cluster.CreateSession()
 	if err != nil {
@@ -890,19 +906,19 @@ func TestPreparedCacheEviction(t *testing.T) {
 	//Walk through all the configured hosts and test cache retention and eviction
 	var selFound, insFound, updFound, delFound, selEvict bool
 	for i := range session.cfg.Hosts {
-		_, ok := stmtsLRU.lru.Get(session.cfg.Hosts[i] + ":9042SELECT id,mod FROM prepcachetest WHERE id = 1")
+		_, ok := stmtsLRU.lru.Get(session.cfg.Hosts[i] + ":9042gocql_testSELECT id,mod FROM prepcachetest WHERE id = 1")
 		selFound = selFound || ok
 
-		_, ok = stmtsLRU.lru.Get(session.cfg.Hosts[i] + ":9042INSERT INTO prepcachetest (id,mod) VALUES (?, ?)")
+		_, ok = stmtsLRU.lru.Get(session.cfg.Hosts[i] + ":9042gocql_testINSERT INTO prepcachetest (id,mod) VALUES (?, ?)")
 		insFound = insFound || ok
 
-		_, ok = stmtsLRU.lru.Get(session.cfg.Hosts[i] + ":9042UPDATE prepcachetest SET mod = ? WHERE id = ?")
+		_, ok = stmtsLRU.lru.Get(session.cfg.Hosts[i] + ":9042gocql_testUPDATE prepcachetest SET mod = ? WHERE id = ?")
 		updFound = updFound || ok
 
-		_, ok = stmtsLRU.lru.Get(session.cfg.Hosts[i] + ":9042DELETE FROM prepcachetest WHERE id = ?")
+		_, ok = stmtsLRU.lru.Get(session.cfg.Hosts[i] + ":9042gocql_testDELETE FROM prepcachetest WHERE id = ?")
 		delFound = delFound || ok
 
-		_, ok = stmtsLRU.lru.Get(session.cfg.Hosts[i] + ":9042SELECT id,mod FROM prepcachetest WHERE id = 0")
+		_, ok = stmtsLRU.lru.Get(session.cfg.Hosts[i] + ":9042gocql_testSELECT id,mod FROM prepcachetest WHERE id = 0")
 		selEvict = selEvict || !ok
 
 	}
@@ -920,6 +936,57 @@ func TestPreparedCacheEviction(t *testing.T) {
 	}
 	if !delFound {
 		t.Error("expected delete statement to be cached, but statement was purged or not prepared.")
+	}
+}
+
+func TestPreparedCacheKey(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+
+	cluster := createCluster()
+
+	if err := createKeyspace(cluster, "gocql_test2"); err != nil {
+		t.Fatalf("Error creating test keyspace gocql_test2: %v", err)
+	}
+
+	cluster.Keyspace = "gocql_test2"
+
+	session2, err := cluster.CreateSession()
+	if err != nil {
+		t.Fatal("create session:", err)
+	}
+
+	if err = session.Query("CREATE TABLE test (id varchar primary key, field varchar)").Exec(); err != nil {
+		t.Fatal("create table", err)
+	}
+
+	if err = session2.Query("CREATE TABLE test (id varchar primary key, field varchar)").Exec(); err != nil {
+		t.Fatal("create table", err)
+	}
+
+	if err = session.Query(`INSERT INTO test (id, field) VALUES (?, ?)`, "key", "one").Exec(); err != nil {
+		t.Fatal("insert:", err)
+	}
+
+	if err = session2.Query(`INSERT INTO test (id, field) VALUES (?, ?)`, "key", "two").Exec(); err != nil {
+		t.Fatal("insert:", err)
+	}
+
+	var field string
+	if err = session.Query("SELECT field from test where id = ?", "key").Scan(&field); err != nil {
+		t.Fatal("select:", err)
+	}
+
+	if field != "one" {
+		t.Errorf("Expected one, got %s", field)
+	}
+
+	if err = session2.Query("SELECT field from test where id = ?", "key").Scan(&field); err != nil {
+		t.Fatal("select:", err)
+	}
+
+	if field != "two" {
+		t.Errorf("Expected two, got %s", field)
 	}
 }
 
