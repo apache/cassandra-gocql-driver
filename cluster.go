@@ -102,7 +102,7 @@ func (cfg *ClusterConfig) CreateSession() (*Session, error) {
 	stmtsLRU.mu.Unlock()
 
 	//See if there are any connections in the pool
-	if pool.Size() > 0 || cfg.DiscoverHosts {
+	if pool.Size() > 0 {
 		s := NewSession(pool, *cfg)
 		s.SetConsistency(cfg.Consistency)
 
