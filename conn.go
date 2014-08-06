@@ -66,11 +66,12 @@ type Conn struct {
 	calls []callReq
 	nwait int32
 
-	pool       ConnectionPool
-	compressor Compressor
-	auth       Authenticator
-	addr       string
-	version    uint8
+	pool            ConnectionPool
+	compressor      Compressor
+	auth            Authenticator
+	addr            string
+	version         uint8
+	currentKeyspace string
 
 	closedMu sync.RWMutex
 	isClosed bool
@@ -310,7 +311,10 @@ func (c *Conn) ping() error {
 
 func (c *Conn) prepareStatement(stmt string, trace Tracer) (*QueryInfo, error) {
 	stmtsLRU.mu.Lock()
-	if val, ok := stmtsLRU.lru.Get(c.addr + stmt); ok {
+
+	stmtCacheKey := c.addr + c.currentKeyspace + stmt
+
+	if val, ok := stmtsLRU.lru.Get(stmtCacheKey); ok {
 		flight := val.(*inflightPrepare)
 		stmtsLRU.mu.Unlock()
 		flight.wg.Wait()
@@ -319,7 +323,7 @@ func (c *Conn) prepareStatement(stmt string, trace Tracer) (*QueryInfo, error) {
 
 	flight := new(inflightPrepare)
 	flight.wg.Add(1)
-	stmtsLRU.lru.Add(c.addr+stmt, flight)
+	stmtsLRU.lru.Add(stmtCacheKey, flight)
 	stmtsLRU.mu.Unlock()
 
 	resp, err := c.exec(&prepareFrame{Stmt: stmt}, trace)
@@ -344,7 +348,7 @@ func (c *Conn) prepareStatement(stmt string, trace Tracer) (*QueryInfo, error) {
 
 	if err != nil {
 		stmtsLRU.mu.Lock()
-		stmtsLRU.lru.Remove(c.addr + stmt)
+		stmtsLRU.lru.Remove(stmtCacheKey)
 		stmtsLRU.mu.Unlock()
 	}
 
@@ -413,8 +417,9 @@ func (c *Conn) executeQuery(qry *Query) *Iter {
 		return &Iter{}
 	case RequestErrUnprepared:
 		stmtsLRU.mu.Lock()
-		if _, ok := stmtsLRU.lru.Get(c.addr + qry.stmt); ok {
-			stmtsLRU.lru.Remove(c.addr + qry.stmt)
+		stmtCacheKey := c.addr + c.currentKeyspace + qry.stmt
+		if _, ok := stmtsLRU.lru.Get(stmtCacheKey); ok {
+			stmtsLRU.lru.Remove(stmtCacheKey)
 			stmtsLRU.mu.Unlock()
 			return c.executeQuery(qry)
 		}
@@ -469,6 +474,9 @@ func (c *Conn) UseKeyspace(keyspace string) error {
 	default:
 		return NewErrProtocol("Unknown type in response to USE: %s", x)
 	}
+
+	c.currentKeyspace = keyspace
+
 	return nil
 }
 
@@ -536,7 +544,7 @@ func (c *Conn) executeBatch(batch *Batch) error {
 		stmt, found := stmts[string(x.StatementId)]
 		if found {
 			stmtsLRU.mu.Lock()
-			stmtsLRU.lru.Remove(c.addr + stmt)
+			stmtsLRU.lru.Remove(c.addr + c.currentKeyspace + stmt)
 			stmtsLRU.mu.Unlock()
 		}
 		if found {

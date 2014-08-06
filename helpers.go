@@ -5,10 +5,12 @@
 package gocql
 
 import (
+	"math/big"
 	"reflect"
-	"speter.net/go/exp/math/dec/inf"
 	"strings"
 	"time"
+
+	"speter.net/go/exp/math/dec/inf"
 )
 
 type RowData struct {
@@ -48,6 +50,8 @@ func goType(t *TypeInfo) reflect.Type {
 		return reflect.SliceOf(goType(t.Elem))
 	case TypeMap:
 		return reflect.MapOf(goType(t.Key), goType(t.Elem))
+	case TypeVarint:
+		return reflect.TypeOf(*new(*big.Int))
 	default:
 		return nil
 	}
