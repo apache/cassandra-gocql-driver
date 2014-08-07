@@ -22,12 +22,12 @@ type ringDescriber struct {
 	session    *Session
 }
 
-func (r *ringDescriber) GetHosts() []HostInfo {
+func (r *ringDescriber) GetHosts() ([]HostInfo, error) {
 	// we need conn to be the same because we need to query system.peers and system.local
 	// on the same node to get the whole cluster
 	conn := r.session.Pool.Pick(nil)
 	if conn == nil {
-		return r.previous
+		return r.previous, nil
 	}
 
 	query := r.session.Query("SELECT data_center, rack, host_id, tokens FROM system.local")
@@ -37,8 +37,7 @@ func (r *ringDescriber) GetHosts() []HostInfo {
 	iter.Scan(&host.DataCenter, &host.Rack, &host.HostId, &host.Tokens)
 
 	if err := iter.Close(); err != nil {
-		log.Printf("GetHosts: unable to get local host info: %v\n", err)
-		return r.previous
+		return nil, err
 	}
 
 	addr, _, err := net.SplitHostPort(conn.Address())
@@ -62,13 +61,12 @@ func (r *ringDescriber) GetHosts() []HostInfo {
 	}
 
 	if err := iter.Close(); err != nil {
-		log.Printf("GetHosts: unable to get ring host info: %v\n", err)
-		return r.previous
+		return nil, err
 	}
 
 	r.previous = hosts
 
-	return hosts
+	return hosts, nil
 }
 
 func (r *ringDescriber) matchFilter(host *HostInfo) bool {
@@ -97,7 +95,12 @@ func (h *ringDescriber) run(sleep time.Duration) {
 		// attempt to reconnect to the cluster otherwise we would never find
 		// downed hosts again, could possibly have an optimisation to only
 		// try to add new hosts if GetHosts didnt error and the hosts didnt change.
-		h.session.Pool.SetHosts(h.GetHosts())
+		hosts, err := h.GetHosts()
+		if err != nil {
+			log.Println("RingDescriber: unable to get ring topology:", err)
+		} else {
+			h.session.Pool.SetHosts(hosts)
+		}
 
 		time.Sleep(sleep)
 	}
