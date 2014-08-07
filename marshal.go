@@ -229,117 +229,6 @@ func encInt(x int32) []byte {
 	return []byte{byte(x >> 24), byte(x >> 16), byte(x >> 8), byte(x)}
 }
 
-func unmarshalInt(info *TypeInfo, data []byte, value interface{}) error {
-	switch v := value.(type) {
-	case Unmarshaler:
-		return v.UnmarshalCQL(info, data)
-	case *int:
-		*v = int(decInt(data))
-		return nil
-	case *uint:
-		x := decInt(data)
-		if x < 0 {
-			return unmarshalErrorf("unmarshal int: value %d out of range", x)
-		}
-		*v = uint(x)
-		return nil
-	case *int64:
-		*v = int64(decInt(data))
-		return nil
-	case *uint64:
-		x := decInt(data)
-		if x < 0 {
-			return unmarshalErrorf("unmarshal int: value %d out of range", x)
-		}
-		*v = uint64(x)
-		return nil
-	case *int32:
-		*v = decInt(data)
-		return nil
-	case *uint32:
-		x := decInt(data)
-		if x < 0 {
-			return unmarshalErrorf("unmarshal int: value %d out of range", x)
-		}
-		*v = uint32(x)
-		return nil
-	case *int16:
-		x := decInt(data)
-		if x < math.MinInt16 || x > math.MaxInt16 {
-			return unmarshalErrorf("unmarshal int: value %d out of range", x)
-		}
-		*v = int16(x)
-		return nil
-	case *uint16:
-		x := decInt(data)
-		if x < 0 || x > math.MaxUint16 {
-			return unmarshalErrorf("unmarshal int: value %d out of range", x)
-		}
-		*v = uint16(x)
-		return nil
-	case *int8:
-		x := decInt(data)
-		if x < math.MinInt8 || x > math.MaxInt8 {
-			return unmarshalErrorf("unmarshal int: value %d out of range", x)
-		}
-		*v = int8(x)
-		return nil
-	case *uint8:
-		x := decInt(data)
-		if x < 0 || x > math.MaxUint8 {
-			return unmarshalErrorf("unmarshal int: value %d out of range", x)
-		}
-		*v = uint8(x)
-		return nil
-	}
-	rv := reflect.ValueOf(value)
-	if rv.Kind() != reflect.Ptr {
-		return unmarshalErrorf("can not unmarshal into non-pointer %T", value)
-	}
-	rv = rv.Elem()
-	switch rv.Type().Kind() {
-	case reflect.Int, reflect.Int64, reflect.Int32:
-		rv.SetInt(int64(decInt(data)))
-		return nil
-	case reflect.Int16:
-		x := decInt(data)
-		if x < math.MinInt16 || x > math.MaxInt16 {
-			return unmarshalErrorf("unmarshal int: value %d out of range", x)
-		}
-		rv.SetInt(int64(x))
-		return nil
-	case reflect.Int8:
-		x := decInt(data)
-		if x < math.MinInt8 || x > math.MaxInt8 {
-			return unmarshalErrorf("unmarshal int: value %d out of range", x)
-		}
-		rv.SetInt(int64(x))
-		return nil
-	case reflect.Uint, reflect.Uint64, reflect.Uint32:
-		x := decInt(data)
-		if x < 0 {
-			return unmarshalErrorf("unmarshal int: value %d out of range", x)
-		}
-		rv.SetUint(uint64(x))
-		return nil
-	case reflect.Uint16:
-		x := decInt(data)
-		if x < 0 || x > math.MaxUint16 {
-			return unmarshalErrorf("unmarshal int: value %d out of range", x)
-		}
-		rv.SetUint(uint64(x))
-		return nil
-	case reflect.Uint8:
-		x := decInt(data)
-		if x < 0 || x > math.MaxUint8 {
-			return unmarshalErrorf("unmarshal int: value %d out of range", x)
-		}
-		rv.SetUint(uint64(x))
-		return nil
-	}
-	return unmarshalErrorf("can not unmarshal %s into %T", info, value)
-}
-
 func decInt(x []byte) int32 {
 	if len(x) != 4 {
 		return 0
@@ -401,74 +290,71 @@ func encBigInt(x int64) []byte {
 }
 
 func unmarshalBigInt(info *TypeInfo, data []byte, value interface{}) error {
+	return unmarshalIntlike(info, decBigInt(data), data, value)
+}
+
+func unmarshalInt(info *TypeInfo, data []byte, value interface{}) error {
+	return unmarshalIntlike(info, int64(decInt(data)), data, value)
+}
+
+func unmarshalIntlike(info *TypeInfo, int64Val int64, data []byte, value interface{}) error {
 	switch v := value.(type) {
-	case Unmarshaler:
-		return v.UnmarshalCQL(info, data)
 	case *int:
-		x := decBigInt(data)
-		if ^uint(0) == math.MaxUint32 && (x < math.MinInt32 || x > math.MaxInt32) {
-			return unmarshalErrorf("unmarshal int: value %d out of range", x)
+		if ^uint(0) == math.MaxUint32 && (int64Val < math.MinInt32 || int64Val > math.MaxInt32) {
+			return unmarshalErrorf("unmarshal int: value %d out of range for %T", int64Val, *v)
 		}
-		*v = int(x)
+		*v = int(int64Val)
 		return nil
 	case *uint:
-		x := decBigInt(data)
-		if x < 0 || (^uint(0) == math.MaxUint32 && x > math.MaxUint32) {
-			return unmarshalErrorf("unmarshal int: value %d out of range", x)
+		if int64Val < 0 || (^uint(0) == math.MaxUint32 && int64Val > math.MaxUint32) {
+			return unmarshalErrorf("unmarshal int: value %d out of range for %T", int64Val, *v)
 		}
-		*v = uint(x)
+		*v = uint(int64Val)
 		return nil
 	case *int64:
-		*v = decBigInt(data)
+		*v = int64Val
 		return nil
 	case *uint64:
-		x := decBigInt(data)
-		if x < 0 {
-			return unmarshalErrorf("unmarshal int: value %d out of range", x)
+		if int64Val < 0 {
+			return unmarshalErrorf("unmarshal int: value %d out of range for %T", int64Val, *v)
 		}
-		*v = uint64(x)
+		*v = uint64(int64Val)
 		return nil
 	case *int32:
-		x := decBigInt(data)
-		if x < math.MinInt32 || x > math.MaxInt32 {
-			return unmarshalErrorf("unmarshal int: value %d out of range", x)
+		if int64Val < math.MinInt32 || int64Val > math.MaxInt32 {
+			return unmarshalErrorf("unmarshal int: value %d out of range for %T", int64Val, *v)
 		}
-		*v = int32(x)
+		*v = int32(int64Val)
 		return nil
 	case *uint32:
-		x := decBigInt(data)
-		if x < 0 || x > math.MaxUint32 {
-			return unmarshalErrorf("unmarshal int: value %d out of range", x)
+		if int64Val < 0 || int64Val > math.MaxUint32 {
+			return unmarshalErrorf("unmarshal int: value %d out of range for %T", int64Val, *v)
 		}
-		*v = uint32(x)
+		*v = uint32(int64Val)
 		return nil
 	case *int16:
-		x := decBigInt(data)
-		if x < math.MinInt16 || x > math.MaxInt16 {
-			return unmarshalErrorf("unmarshal int: value %d out of range", x)
+		if int64Val < math.MinInt16 || int64Val > math.MaxInt16 {
+			return unmarshalErrorf("unmarshal int: value %d out of range for %T", int64Val, *v)
 		}
-		*v = int16(x)
+		*v = int16(int64Val)
 		return nil
 	case *uint16:
-		x := decBigInt(data)
-		if x < 0 || x > math.MaxUint16 {
-			return unmarshalErrorf("unmarshal int: value %d out of range", x)
+		if int64Val < 0 || int64Val > math.MaxUint16 {
+			return unmarshalErrorf("unmarshal int: value %d out of range for %T", int64Val, *v)
 		}
-		*v = uint16(x)
+		*v = uint16(int64Val)
 		return nil
 	case *int8:
-		x := decBigInt(data)
-		if x < math.MinInt8 || x > math.MaxInt8 {
-			return unmarshalErrorf("unmarshal int: value %d out of range", x)
+		if int64Val < math.MinInt8 || int64Val > math.MaxInt8 {
+			return unmarshalErrorf("unmarshal int: value %d out of range for %T", int64Val, *v)
 		}
-		*v = int8(x)
+		*v = int8(int64Val)
 		return nil
 	case *uint8:
-		x := decBigInt(data)
-		if x < 0 || x > math.MaxUint8 {
-			return unmarshalErrorf("unmarshal int: value %d out of range", x)
+		if int64Val < 0 || int64Val > math.MaxUint8 {
+			return unmarshalErrorf("unmarshal int: value %d out of range for %T", int64Val, *v)
 		}
-		*v = uint8(x)
+		*v = uint8(int64Val)
 		return nil
 	}
 	rv := reflect.ValueOf(value)
@@ -478,70 +364,61 @@ func unmarshalBigInt(info *TypeInfo, data []byte, value interface{}) error {
 	rv = rv.Elem()
 	switch rv.Type().Kind() {
 	case reflect.Int:
-		x := decBigInt(data)
-		if ^uint(0) == math.MaxUint32 && (x < math.MinInt32 || x > math.MaxInt32) {
-			return unmarshalErrorf("unmarshal int: value %d out of range", x)
+		if ^uint(0) == math.MaxUint32 && (int64Val < math.MinInt32 || int64Val > math.MaxInt32) {
+			return unmarshalErrorf("unmarshal int: value %d out of range", int64Val)
 		}
-		rv.SetInt(x)
+		rv.SetInt(int64Val)
 		return nil
 	case reflect.Int64:
-		rv.SetInt(decBigInt(data))
+		rv.SetInt(int64Val)
 		return nil
 	case reflect.Int32:
-		x := decBigInt(data)
-		if x < math.MinInt32 || x > math.MaxInt32 {
-			return unmarshalErrorf("unmarshal int: value %d out of range", x)
+		if int64Val < math.MinInt32 || int64Val > math.MaxInt32 {
+			return unmarshalErrorf("unmarshal int: value %d out of range", int64Val)
 		}
-		rv.SetInt(x)
+		rv.SetInt(int64Val)
 		return nil
 	case reflect.Int16:
-		x := decBigInt(data)
-		if x < math.MinInt16 || x > math.MaxInt16 {
-			return unmarshalErrorf("unmarshal int: value %d out of range", x)
+		if int64Val < math.MinInt16 || int64Val > math.MaxInt16 {
+			return unmarshalErrorf("unmarshal int: value %d out of range", int64Val)
 		}
-		rv.SetInt(x)
+		rv.SetInt(int64Val)
 		return nil
 	case reflect.Int8:
-		x := decBigInt(data)
-		if x < math.MinInt8 || x > math.MaxInt8 {
-			return unmarshalErrorf("unmarshal int: value %d out of range", x)
+		if int64Val < math.MinInt8 || int64Val > math.MaxInt8 {
+			return unmarshalErrorf("unmarshal int: value %d out of range", int64Val)
 		}
-		rv.SetInt(x)
+		rv.SetInt(int64Val)
 		return nil
 	case reflect.Uint:
-		x := decBigInt(data)
-		if x < 0 || (^uint(0) == math.MaxUint32 && x > math.MaxUint32) {
-			return unmarshalErrorf("unmarshal int: value %d out of range", x)
+		if int64Val < 0 || (^uint(0) == math.MaxUint32 && int64Val > math.MaxUint32) {
+			return unmarshalErrorf("unmarshal int: value %d out of range", int64Val)
 		}
-		rv.SetUint(uint64(x))
+		rv.SetUint(uint64(int64Val))
 		return nil
 	case reflect.Uint64:
-		x := decBigInt(data)
-		if x < 0 {
-			return unmarshalErrorf("unmarshal int: value %d out of range", x)
+		if int64Val < 0 {
+			return unmarshalErrorf("unmarshal int: value %d out of range", int64Val)
 		}
-		rv.SetUint(uint64(x))
+		rv.SetUint(uint64(int64Val))
 		return nil
 	case reflect.Uint32:
-		x := decBigInt(data)
-		if x < 0 || x > math.MaxUint32 {
-			return unmarshalErrorf("unmarshal int: value %d out of range", x)
+		if int64Val < 0 || int64Val > math.MaxUint32 {
+			return unmarshalErrorf("unmarshal int: value %d out of range", int64Val)
 		}
-		rv.SetUint(uint64(x))
+		rv.SetUint(uint64(int64Val))
 		return nil
 	case reflect.Uint16:
-		x := decBigInt(data)
-		if x < 0 || x > math.MaxUint16 {
-			return unmarshalErrorf("unmarshal int: value %d out of range", x)
+		if int64Val < 0 || int64Val > math.MaxUint16 {
+			return unmarshalErrorf("unmarshal int: value %d out of range", int64Val)
 		}
-		rv.SetUint(uint64(x))
+		rv.SetUint(uint64(int64Val))
 		return nil
 	case reflect.Uint8:
-		x := decBigInt(data)
-		if x < 0 || x > math.MaxUint8 {
-			return unmarshalErrorf("unmarshal int: value %d out of range", x)
+		if int64Val < 0 || int64Val > math.MaxUint8 {
+			return unmarshalErrorf("unmarshal int: value %d out of range", int64Val)
 		}
-		rv.SetUint(uint64(x))
+		rv.SetUint(uint64(int64Val))
 		return nil
 	}
 	return unmarshalErrorf("can not unmarshal %s into %T", info, value)
