@@ -7,14 +7,17 @@ package gocql
 import (
 	"bytes"
 	"flag"
+	"math"
+	"math/big"
 	"reflect"
-	"speter.net/go/exp/math/dec/inf"
 	"strconv"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 	"unicode"
+
+	"speter.net/go/exp/math/dec/inf"
 )
 
 var (
@@ -351,16 +354,23 @@ func TestSliceMap(t *testing.T) {
 			testbigint     bigint,
 			testblob       blob,
 			testbool       boolean,
-			testfloat	   float,
-			testdouble	   double,
+			testfloat      float,
+			testdouble     double,
 			testint        int,
 			testdecimal    decimal,
 			testset        set<int>,
-			testmap        map<varchar, varchar>
+			testmap        map<varchar, varchar>,
+			testvarint     varint
 		)`).Exec(); err != nil {
 		t.Fatal("create table:", err)
 	}
 	m := make(map[string]interface{})
+
+	bigInt := new(big.Int)
+	if _, ok := bigInt.SetString("830169365738487321165427203929228", 10); !ok {
+		t.Fatal("Failed setting bigint by string")
+	}
+
 	m["testuuid"] = TimeUUID()
 	m["testvarchar"] = "Test VarChar"
 	m["testbigint"] = time.Now().Unix()
@@ -373,9 +383,10 @@ func TestSliceMap(t *testing.T) {
 	m["testdecimal"] = inf.NewDec(100, 0)
 	m["testset"] = []int{1, 2, 3, 4, 5, 6, 7, 8, 9}
 	m["testmap"] = map[string]string{"field1": "val1", "field2": "val2", "field3": "val3"}
+	m["testvarint"] = bigInt
 	sliceMap := []map[string]interface{}{m}
-	if err := session.Query(`INSERT INTO slice_map_table (testuuid, testtimestamp, testvarchar, testbigint, testblob, testbool, testfloat, testdouble, testint, testdecimal, testset, testmap) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		m["testuuid"], m["testtimestamp"], m["testvarchar"], m["testbigint"], m["testblob"], m["testbool"], m["testfloat"], m["testdouble"], m["testint"], m["testdecimal"], m["testset"], m["testmap"]).Exec(); err != nil {
+	if err := session.Query(`INSERT INTO slice_map_table (testuuid, testtimestamp, testvarchar, testbigint, testblob, testbool, testfloat, testdouble, testint, testdecimal, testset, testmap, testvarint) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		m["testuuid"], m["testtimestamp"], m["testvarchar"], m["testbigint"], m["testblob"], m["testbool"], m["testfloat"], m["testdouble"], m["testint"], m["testdecimal"], m["testset"], m["testmap"], m["testvarint"]).Exec(); err != nil {
 		t.Fatal("insert:", err)
 	}
 	if returned, retErr := session.Query(`SELECT * FROM slice_map_table`).Iter().SliceMap(); retErr != nil {
@@ -420,6 +431,12 @@ func TestSliceMap(t *testing.T) {
 		}
 		if !reflect.DeepEqual(sliceMap[0]["testmap"], returned[0]["testmap"]) {
 			t.Fatal("returned testmap did not match")
+		}
+
+		expectedBigInt := sliceMap[0]["testvarint"].(*big.Int)
+		returnedBigInt := returned[0]["testvarint"].(*big.Int)
+		if expectedBigInt.Cmp(returnedBigInt) != 0 {
+			t.Fatal("returned testvarint did not match")
 		}
 	}
 
@@ -923,5 +940,91 @@ func TestMarshalFloat64Ptr(t *testing.T) {
 	testNum := float64(7500)
 	if err := session.Query(`INSERT INTO float_test (id,test) VALUES (?,?)`, float64(7500.00), &testNum).Exec(); err != nil {
 		t.Fatal("insert float64:", err)
+	}
+}
+
+func TestVarint(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+
+	if err := session.Query("CREATE TABLE varint_test (id varchar, test varint, test2 varint, primary key (id))").Exec(); err != nil {
+		t.Fatal("create table:", err)
+	}
+
+	if err := session.Query(`INSERT INTO varint_test (id, test) VALUES (?, ?)`, "id", 0).Exec(); err != nil {
+		t.Fatalf("insert varint: %v", err)
+	}
+
+	var result int
+	if err := session.Query("SELECT test FROM varint_test").Scan(&result); err != nil {
+		t.Fatalf("select from varint_test failed: %v", err)
+	}
+
+	if result != 0 {
+		t.Errorf("Expected 0, was %d", result)
+	}
+
+	if err := session.Query(`INSERT INTO varint_test (id, test) VALUES (?, ?)`, "id", -1).Exec(); err != nil {
+		t.Fatalf("insert varint: %v", err)
+	}
+
+	if err := session.Query("SELECT test FROM varint_test").Scan(&result); err != nil {
+		t.Fatalf("select from varint_test failed: %v", err)
+	}
+
+	if result != -1 {
+		t.Errorf("Expected -1, was %d", result)
+	}
+
+	if err := session.Query(`INSERT INTO varint_test (id, test) VALUES (?, ?)`, "id", int64(math.MaxInt32)+1).Exec(); err != nil {
+		t.Fatalf("insert varint: %v", err)
+	}
+
+	var result64 int64
+	if err := session.Query("SELECT test FROM varint_test").Scan(&result64); err != nil {
+		t.Fatalf("select from varint_test failed: %v", err)
+	}
+
+	if result64 != int64(math.MaxInt32)+1 {
+		t.Errorf("Expected %d, was %d", int64(math.MaxInt32)+1, result64)
+	}
+
+	biggie := new(big.Int)
+	biggie.SetString("36893488147419103232", 10) // > 2**64
+	if err := session.Query(`INSERT INTO varint_test (id, test) VALUES (?, ?)`, "id", biggie).Exec(); err != nil {
+		t.Fatalf("insert varint: %v", err)
+	}
+
+	resultBig := new(big.Int)
+	if err := session.Query("SELECT test FROM varint_test").Scan(resultBig); err != nil {
+		t.Fatalf("select from varint_test failed: %v", err)
+	}
+
+	if resultBig.String() != biggie.String() {
+		t.Errorf("Expected %s, was %s", biggie.String(), resultBig.String())
+	}
+
+	err := session.Query("SELECT test FROM varint_test").Scan(&result64)
+	if err == nil || strings.Index(err.Error(), "out of range") == -1 {
+		t.Errorf("expected our of range error since value is too big for int64")
+	}
+
+	// value not set in cassandra, leave bind variable empty
+	resultBig = new(big.Int)
+	if err := session.Query("SELECT test2 FROM varint_test").Scan(resultBig); err != nil {
+		t.Fatalf("select from varint_test failed: %v", err)
+	}
+
+	if resultBig.Int64() != 0 {
+		t.Errorf("Expected %s, was %s", biggie.String(), resultBig.String())
+	}
+
+	// can use double pointer to explicitly detect value is not set in cassandra
+	if err := session.Query("SELECT test2 FROM varint_test").Scan(&resultBig); err != nil {
+		t.Fatalf("select from varint_test failed: %v", err)
+	}
+
+	if resultBig != nil {
+		t.Errorf("Expected %v, was %v", nil, *resultBig)
 	}
 }

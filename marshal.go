@@ -6,12 +6,14 @@ package gocql
 
 import (
 	"bytes"
+	"encoding/binary"
 	"fmt"
 	"math"
 	"math/big"
 	"reflect"
-	"speter.net/go/exp/math/dec/inf"
 	"time"
+
+	"speter.net/go/exp/math/dec/inf"
 )
 
 var (
@@ -59,6 +61,8 @@ func Marshal(info *TypeInfo, value interface{}) ([]byte, error) {
 		return marshalMap(info, value)
 	case TypeUUID, TypeTimeUUID:
 		return marshalUUID(info, value)
+	case TypeVarint:
+		return marshalVarint(info, value)
 	}
 	// TODO(tux21b): add the remaining types
 	return nil, fmt.Errorf("can not marshal %T into %s", value, info)
@@ -80,6 +84,8 @@ func Unmarshal(info *TypeInfo, data []byte, value interface{}) error {
 		return unmarshalInt(info, data, value)
 	case TypeBigInt, TypeCounter:
 		return unmarshalBigInt(info, data, value)
+	case TypeVarint:
+		return unmarshalVarint(info, data, value)
 	case TypeFloat:
 		return unmarshalFloat(info, data, value)
 	case TypeDouble:
@@ -266,6 +272,8 @@ func marshalBigInt(info *TypeInfo, value interface{}) ([]byte, error) {
 		return encBigInt(int64(v)), nil
 	case uint8:
 		return encBigInt(int64(v)), nil
+	case *big.Int:
+		return encBigInt2C(v), nil
 	}
 	rv := reflect.ValueOf(value)
 	switch rv.Type().Kind() {
@@ -289,12 +297,85 @@ func encBigInt(x int64) []byte {
 		byte(x >> 24), byte(x >> 16), byte(x >> 8), byte(x)}
 }
 
+func bytesToInt64(data []byte) (ret int64) {
+	for i := range data {
+		ret |= int64(data[i]) << (8 * uint(len(data)-i-1))
+	}
+	return ret
+}
+
 func unmarshalBigInt(info *TypeInfo, data []byte, value interface{}) error {
 	return unmarshalIntlike(info, decBigInt(data), data, value)
 }
 
 func unmarshalInt(info *TypeInfo, data []byte, value interface{}) error {
 	return unmarshalIntlike(info, int64(decInt(data)), data, value)
+}
+
+func unmarshalVarint(info *TypeInfo, data []byte, value interface{}) error {
+	switch value.(type) {
+	case *big.Int, **big.Int:
+		return unmarshalIntlike(info, 0, data, value)
+	}
+
+	if len(data) > 8 {
+		return unmarshalErrorf("unmarshal int: varint value %v out of range for %T (use big.Int)", data, value)
+	}
+
+	int64Val := bytesToInt64(data)
+	if len(data) < 8 && data[0]&0x80 > 0 {
+		int64Val -= (1 << uint(len(data)*8))
+	}
+	return unmarshalIntlike(info, int64Val, data, value)
+}
+
+func marshalVarint(info *TypeInfo, value interface{}) ([]byte, error) {
+	var (
+		retBytes []byte
+		err      error
+	)
+
+	switch v := value.(type) {
+	case uint64:
+		if v > uint64(math.MaxInt64) {
+			retBytes = make([]byte, 9)
+			binary.BigEndian.PutUint64(retBytes[1:], v)
+		} else {
+			retBytes = make([]byte, 8)
+			binary.BigEndian.PutUint64(retBytes, v)
+		}
+	default:
+		retBytes, err = marshalBigInt(info, value)
+	}
+
+	if err == nil {
+		// trim down to most significant byte
+		i := 0
+		for ; i < len(retBytes)-1; i++ {
+			b0 := retBytes[i]
+			if b0 != 0 && b0 != 0xFF {
+				break
+			}
+
+			b1 := retBytes[i+1]
+			if b0 == 0 && b1 != 0 {
+				if b1&0x80 == 0 {
+					i++
+				}
+				break
+			}
+
+			if b0 == 0xFF && b1 != 0xFF {
+				if b1&0x80 > 0 {
+					i++
+				}
+				break
+			}
+		}
+		retBytes = retBytes[i:]
+	}
+
+	return retBytes, err
 }
 
 func unmarshalIntlike(info *TypeInfo, int64Val int64, data []byte, value interface{}) error {
@@ -356,12 +437,24 @@ func unmarshalIntlike(info *TypeInfo, int64Val int64, data []byte, value interfa
 		}
 		*v = uint8(int64Val)
 		return nil
+	case *big.Int:
+		decBigInt2C(data, v)
+		return nil
+	case **big.Int:
+		if len(data) == 0 {
+			*v = nil
+		} else {
+			*v = decBigInt2C(data, nil)
+		}
+		return nil
 	}
+
 	rv := reflect.ValueOf(value)
 	if rv.Kind() != reflect.Ptr {
 		return unmarshalErrorf("can not unmarshal into non-pointer %T", value)
 	}
 	rv = rv.Elem()
+
 	switch rv.Type().Kind() {
 	case reflect.Int:
 		if ^uint(0) == math.MaxUint32 && (int64Val < math.MinInt32 || int64Val > math.MaxInt32) {
@@ -592,7 +685,7 @@ func unmarshalDecimal(info *TypeInfo, data []byte, value interface{}) error {
 	case **inf.Dec:
 		if len(data) > 4 {
 			scale := decInt(data[0:4])
-			unscaled := decBigInt2C(data[4:])
+			unscaled := decBigInt2C(data[4:], nil)
 			*v = inf.NewDecBig(unscaled, inf.Scale(scale))
 			return nil
 		} else if len(data) == 0 {
@@ -608,8 +701,11 @@ func unmarshalDecimal(info *TypeInfo, data []byte, value interface{}) error {
 // decBigInt2C sets the value of n to the big-endian two's complement
 // value stored in the given data. If data[0]&80 != 0, the number
 // is negative. If data is empty, the result will be 0.
-func decBigInt2C(data []byte) *big.Int {
-	n := new(big.Int).SetBytes(data)
+func decBigInt2C(data []byte, n *big.Int) *big.Int {
+	if n == nil {
+		n = new(big.Int)
+	}
+	n.SetBytes(data)
 	if len(data) > 0 && data[0]&0x80 > 0 {
 		n.Sub(n, new(big.Int).Lsh(bigOne, uint(len(data))*8))
 	}
@@ -1044,6 +1140,8 @@ func (t Type) String() string {
 		return "map"
 	case TypeSet:
 		return "set"
+	case TypeVarint:
+		return "varint"
 	default:
 		return "unknown"
 	}
