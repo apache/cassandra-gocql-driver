@@ -8,14 +8,13 @@ function run_tests() {
 
 	ccm status
 
-	if [[ $v == 1.2.* ]]; then
+	if [[ $version == 1.2.* ]]; then
 		go test -v ./... -proto 1
 	else
 		go test -v ./...
 	fi
 
-	ccm stop --not-gently test
-	ccm remove test
+	ccm clear
 }
 
 run_tests $1
