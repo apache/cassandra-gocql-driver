@@ -9,8 +9,10 @@ function run_tests() {
 	ccm status
 
 	if [[ $version == 1.2.* ]]; then
+		echo "running protocol 1 test suite"
 		go test -v ./... -proto 1
 	else
+		echo "running protocol 2 test suite"
 		go test -v ./...
 	fi
 
