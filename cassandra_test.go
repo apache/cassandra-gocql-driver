@@ -7,20 +7,23 @@ package gocql
 import (
 	"bytes"
 	"flag"
+	"fmt"
 	"reflect"
-	"speter.net/go/exp/math/dec/inf"
 	"strconv"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 	"unicode"
+
+	"speter.net/go/exp/math/dec/inf"
 )
 
 var (
 	flagCluster = flag.String("cluster", "127.0.0.1", "a comma-separated list of host:port tuples")
 	flagProto   = flag.Int("proto", 2, "protcol version")
 	flagCQL     = flag.String("cql", "3.0.0", "CQL version")
+	flagRF      = flag.Int("rf", 1, "replication factor for test keyspace")
 )
 
 var initOnce sync.Once
@@ -33,6 +36,8 @@ func createSession(tb testing.TB) *Session {
 		Username: "cassandra",
 		Password: "cassandra",
 	}
+	cluster.Timeout = 2 * time.Second
+	cluster.Consistency = Quorum
 
 	initOnce.Do(func() {
 		session, err := cluster.CreateSession()
@@ -44,11 +49,11 @@ func createSession(tb testing.TB) *Session {
 		if err := session.Query(`DROP KEYSPACE gocql_test`).Exec(); err != nil {
 			tb.Log("drop keyspace:", err)
 		}
-		if err := session.Query(`CREATE KEYSPACE gocql_test
+		if err := session.Query(fmt.Sprintf(`CREATE KEYSPACE gocql_test
 			WITH replication = {
 				'class' : 'SimpleStrategy',
-				'replication_factor' : 1
-			}`).Exec(); err != nil {
+				'replication_factor' : %d
+			}`, *flagRF)).Exec(); err != nil {
 			tb.Fatal("create keyspace:", err)
 		}
 		session.Close()
