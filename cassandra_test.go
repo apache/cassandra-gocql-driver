@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"flag"
 	"fmt"
+	"log"
 	"reflect"
 	"strconv"
 	"strings"
@@ -20,16 +21,24 @@ import (
 )
 
 var (
-	flagCluster = flag.String("cluster", "127.0.0.1", "a comma-separated list of host:port tuples")
-	flagProto   = flag.Int("proto", 2, "protcol version")
-	flagCQL     = flag.String("cql", "3.0.0", "CQL version")
-	flagRF      = flag.Int("rf", 1, "replication factor for test keyspace")
+	flagCluster  = flag.String("cluster", "127.0.0.1", "a comma-separated list of host:port tuples")
+	flagProto    = flag.Int("proto", 2, "protcol version")
+	flagCQL      = flag.String("cql", "3.0.0", "CQL version")
+	flagRF       = flag.Int("rf", 1, "replication factor for test keyspace")
+	clusterSize  = 1
+	clusterHosts []string
 )
+
+func init() {
+	clusterHosts = strings.Split(*flagCluster, ",")
+	clusterSize = len(clusterHosts)
+	log.SetFlags(log.Lshortfile | log.LstdFlags)
+}
 
 var initOnce sync.Once
 
 func createSession(tb testing.TB) *Session {
-	cluster := NewCluster(strings.Split(*flagCluster, ",")...)
+	cluster := NewCluster(clusterHosts...)
 	cluster.ProtoVersion = *flagProto
 	cluster.CQLVersion = *flagCQL
 	cluster.Authenticator = PasswordAuthenticator{
@@ -53,9 +62,10 @@ func createSession(tb testing.TB) *Session {
 			WITH replication = {
 				'class' : 'SimpleStrategy',
 				'replication_factor' : %d
-			}`, *flagRF)).Exec(); err != nil {
+			}`, *flagRF)).Consistency(All).Exec(); err != nil {
 			tb.Fatal("create keyspace:", err)
 		}
+		tb.Log("Created keyspace")
 		session.Close()
 	})
 	cluster.Keyspace = "gocql_test"
@@ -91,7 +101,7 @@ func TestUseStatementError(t *testing.T) {
 
 //TestInvalidKeyspace checks that an invalid keyspace will return promptly and without a flood of connections
 func TestInvalidKeyspace(t *testing.T) {
-	cluster := NewCluster(strings.Split(*flagCluster, ",")...)
+	cluster := NewCluster(clusterHosts...)
 	cluster.ProtoVersion = *flagProto
 	cluster.CQLVersion = *flagCQL
 	cluster.Keyspace = "invalidKeyspace"
