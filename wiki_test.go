@@ -58,7 +58,7 @@ func (w *WikiTest) CreateSchema() {
 	if err := w.session.Query(`DROP TABLE wiki_page`).Exec(); err != nil && err.Error() != "unconfigured columnfamily wiki_page" {
 		w.tb.Fatal("CreateSchema:", err)
 	}
-	if err := w.session.Query(`CREATE TABLE wiki_page (
+	if err := createTable(w.session, `CREATE TABLE wiki_page (
 			title       varchar,
 			revid       timeuuid,
 			body        varchar,
@@ -69,7 +69,7 @@ func (w *WikiTest) CreateSchema() {
 			tags        set<varchar>,
 			attachments map<varchar, blob>,
 			PRIMARY KEY (title, revid)
-		)`).Exec(); err != nil {
+		)`); err != nil {
 		w.tb.Fatal("CreateSchema:", err)
 	}
 }
