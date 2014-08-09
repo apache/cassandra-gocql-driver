@@ -41,12 +41,9 @@ func createSession(tb testing.TB) *Session {
 	cluster := NewCluster(clusterHosts...)
 	cluster.ProtoVersion = *flagProto
 	cluster.CQLVersion = *flagCQL
-	cluster.Authenticator = PasswordAuthenticator{
-		Username: "cassandra",
-		Password: "cassandra",
-	}
-	cluster.Timeout = 2 * time.Second
+	cluster.Timeout = 5 * time.Second
 	cluster.Consistency = Quorum
+	cluster.RetryPolicy.NumRetries = 2
 
 	initOnce.Do(func() {
 		session, err := cluster.CreateSession()
