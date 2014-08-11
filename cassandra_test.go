@@ -30,6 +30,7 @@ var (
 )
 
 func init() {
+	flag.Parse()
 	clusterHosts = strings.Split(*flagCluster, ",")
 	clusterSize = len(clusterHosts)
 	log.SetFlags(log.Lshortfile | log.LstdFlags)
