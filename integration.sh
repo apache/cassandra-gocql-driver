@@ -2,50 +2,20 @@
 
 set -e
 
-PID_FILE=cassandra.pid
-STARTUP_LOG=startup.log
-ARCHIVE_BASE_URL=http://archive.apache.org/dist/cassandra
+function run_tests() {
+	local version=$1
+	ccm create test -v $version -n 3 -s -d --vnodes
+	ccm status
+	ccm updateconf 'concurrent_reads: 8' 'concurrent_writes: 32' 'rpc_server_type: sync' 'rpc_min_threads: 2' 'rpc_max_threads: 8' 'write_request_timeout_in_ms: 5000' 'read_request_timeout_in_ms: 5000'
 
-for v in 1.2.18 2.0.9
-do
-	TARBALL=apache-cassandra-$v-bin.tar.gz
-	CASSANDRA_DIR=apache-cassandra-$v
-
-	curl -L -O $ARCHIVE_BASE_URL/$v/$TARBALL
-	
-	if [ ! -f $CASSANDRA_DIR/bin/cassandra ]
-	then
-   		tar xzf $TARBALL
-	fi
-	
-	CASSANDRA_LOG_DIR=`pwd`/v${v}/log/cassandra
-	CASSANDRA_LOG=$CASSANDRA_LOG_DIR/system.log
-
-	mkdir -p $CASSANDRA_LOG_DIR
-	: >$CASSANDRA_LOG  # create an empty log file
-	
-	sed -i -e 's?/var?'`pwd`/v${v}'?' $CASSANDRA_DIR/conf/cassandra.yaml
-	sed -i -e 's?/var?'`pwd`/v${v}'?' $CASSANDRA_DIR/conf/log4j-server.properties
-
-	echo "Booting Cassandra ${v}, waiting for CQL listener to start ...."
-
-	$CASSANDRA_DIR/bin/cassandra -p $PID_FILE &> $STARTUP_LOG
-
-	{ tail -n +1 -f $CASSANDRA_LOG & } | sed -n '/Starting listening for CQL clients/q'
-	
-	PID=$(<"$PID_FILE")
-
-	echo "Cassandra ${v} running (PID ${PID}), about to run test suite ...."
-
-	if [[ $v == 1.2.* ]]
-		then
-		go test -v ./... -proto 1
-	else
-		go test -v ./...
+	local proto=2
+	if [[ $version == 1.2.* ]]; then
+		proto=1
 	fi
 
-	echo "Test suite passed against Cassandra ${v}, killing server instance (PID ${PID})"
-	
-	kill -9 $PID
-	rm $PID_FILE
-done
+	go test -v -proto=$proto -rf=3 -cluster=$(ccm liveset) ./...
+
+	ccm clear
+}
+
+run_tests $1
