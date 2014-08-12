@@ -56,7 +56,7 @@ func createSession(tb testing.TB) *Session {
 	cluster.CQLVersion = *flagCQL
 	cluster.Timeout = 5 * time.Second
 	cluster.Consistency = Quorum
-	cluster.RetryPolicy.NumRetries = 2
+	cluster.RetryPolicy.NumRetries = 10
 
 	initOnce.Do(func() {
 		session, err := cluster.CreateSession()
