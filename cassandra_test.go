@@ -88,6 +88,7 @@ func createSession(tb testing.TB) *Session {
 
 func TestRingDiscovery(t *testing.T) {
 	cluster := NewCluster("127.0.0.1")
+	cluster.DiscoverHosts = true
 	session, err := cluster.CreateSession()
 	if err != nil {
 		t.Errorf("got error connecting to the cluster %v", err)
