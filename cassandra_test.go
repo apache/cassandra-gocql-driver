@@ -27,7 +27,7 @@ var (
 	flagProto    = flag.Int("proto", 2, "protcol version")
 	flagCQL      = flag.String("cql", "3.0.0", "CQL version")
 	flagRF       = flag.Int("rf", 1, "replication factor for test keyspace")
-	clusterSize  = 1
+	clusterSize  = flag.Int("clusterSize", 1, "the expected size of the cluster")
 	clusterHosts []string
 )
 
@@ -35,7 +35,6 @@ func init() {
 
 	flag.Parse()
 	clusterHosts = strings.Split(*flagCluster, ",")
-	clusterSize = len(clusterHosts)
 	log.SetFlags(log.Lshortfile | log.LstdFlags)
 }
 
@@ -43,7 +42,7 @@ var initOnce sync.Once
 
 func createTable(s *Session, table string) error {
 	err := s.Query(table).Consistency(All).Exec()
-	if clusterSize > 1 {
+	if *clusterSize > 1 {
 		// wait for table definition to propogate
 		time.Sleep(250 * time.Millisecond)
 	}
@@ -85,6 +84,20 @@ func createSession(tb testing.TB) *Session {
 	}
 
 	return session
+}
+
+func TestRingDiscovery(t *testing.T) {
+	cluster := NewCluster("127.0.0.1")
+	session, err := cluster.CreateSession()
+	if err != nil {
+		t.Errorf("got error connecting to the cluster %v", err)
+	}
+
+	if *clusterSize != session.Pool.Size() {
+		t.Fatalf("Expected a cluster size of %d, but actual size was %d", *clusterSize, session.Pool.Size())
+	}
+
+	session.Close()
 }
 
 func TestEmptyHosts(t *testing.T) {
