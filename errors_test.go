@@ -8,11 +8,11 @@ func TestErrorsParse(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 
-	if err := session.Query(`CREATE TABLE errors_parse (id int primary key)`).Exec(); err != nil {
+	if err := createTable(session, `CREATE TABLE errors_parse (id int primary key)`); err != nil {
 		t.Fatal("create:", err)
 	}
 
-	if err := session.Query(`CREATE TABLE errors_parse (id int primary key)`).Exec(); err == nil {
+	if err := createTable(session, `CREATE TABLE errors_parse (id int primary key)`); err == nil {
 		t.Fatal("Should have gotten already exists error from cassandra server.")
 	} else {
 		switch e := err.(type) {

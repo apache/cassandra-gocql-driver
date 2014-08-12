@@ -9,6 +9,8 @@ import (
 	"flag"
 	"math"
 	"math/big"
+	"fmt"
+	"log"
 	"reflect"
 	"strconv"
 	"strings"
@@ -21,21 +23,39 @@ import (
 )
 
 var (
-	flagCluster = flag.String("cluster", "127.0.0.1", "a comma-separated list of host:port tuples")
-	flagProto   = flag.Int("proto", 2, "protcol version")
-	flagCQL     = flag.String("cql", "3.0.0", "CQL version")
+	flagCluster  = flag.String("cluster", "127.0.0.1", "a comma-separated list of host:port tuples")
+	flagProto    = flag.Int("proto", 2, "protcol version")
+	flagCQL      = flag.String("cql", "3.0.0", "CQL version")
+	flagRF       = flag.Int("rf", 1, "replication factor for test keyspace")
+	clusterSize  = 1
+	clusterHosts []string
 )
+func init() {
+
+	flag.Parse()
+	clusterHosts = strings.Split(*flagCluster, ",")
+	clusterSize = len(clusterHosts)
+	log.SetFlags(log.Lshortfile | log.LstdFlags)
+}
 
 var initOnce sync.Once
 
+func createTable(s *Session, table string) error {
+	err := s.Query(table).Consistency(All).Exec()
+	if clusterSize > 1 {
+		// wait for table definition to propogate
+		time.Sleep(250 * time.Millisecond)
+	}
+	return err
+}
+
 func createSession(tb testing.TB) *Session {
-	cluster := NewCluster(strings.Split(*flagCluster, ",")...)
+	cluster := NewCluster(clusterHosts...)
 	cluster.ProtoVersion = *flagProto
 	cluster.CQLVersion = *flagCQL
-	cluster.Authenticator = PasswordAuthenticator{
-		Username: "cassandra",
-		Password: "cassandra",
-	}
+	cluster.Timeout = 5 * time.Second
+	cluster.Consistency = Quorum
+	cluster.RetryPolicy.NumRetries = 2
 
 	initOnce.Do(func() {
 		session, err := cluster.CreateSession()
@@ -47,13 +67,14 @@ func createSession(tb testing.TB) *Session {
 		if err := session.Query(`DROP KEYSPACE gocql_test`).Exec(); err != nil {
 			tb.Log("drop keyspace:", err)
 		}
-		if err := session.Query(`CREATE KEYSPACE gocql_test
+		if err := session.Query(fmt.Sprintf(`CREATE KEYSPACE gocql_test
 			WITH replication = {
 				'class' : 'SimpleStrategy',
-				'replication_factor' : 1
-			}`).Exec(); err != nil {
+				'replication_factor' : %d
+			}`, *flagRF)).Consistency(All).Exec(); err != nil {
 			tb.Fatal("create keyspace:", err)
 		}
+		tb.Log("Created keyspace")
 		session.Close()
 	})
 	cluster.Keyspace = "gocql_test"
@@ -89,7 +110,7 @@ func TestUseStatementError(t *testing.T) {
 
 //TestInvalidKeyspace checks that an invalid keyspace will return promptly and without a flood of connections
 func TestInvalidKeyspace(t *testing.T) {
-	cluster := NewCluster(strings.Split(*flagCluster, ",")...)
+	cluster := NewCluster(clusterHosts...)
 	cluster.ProtoVersion = *flagProto
 	cluster.CQLVersion = *flagCQL
 	cluster.Keyspace = "invalidKeyspace"
@@ -108,7 +129,7 @@ func TestTracing(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 
-	if err := session.Query(`CREATE TABLE trace (id int primary key)`).Exec(); err != nil {
+	if err := createTable(session, `CREATE TABLE trace (id int primary key)`); err != nil {
 		t.Fatal("create:", err)
 	}
 
@@ -140,7 +161,7 @@ func TestPaging(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 
-	if err := session.Query("CREATE TABLE paging (id int primary key)").Exec(); err != nil {
+	if err := createTable(session, "CREATE TABLE paging (id int primary key)"); err != nil {
 		t.Fatal("create table:", err)
 	}
 	for i := 0; i < 100; i++ {
@@ -171,11 +192,11 @@ func TestCAS(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 
-	if err := session.Query(`CREATE TABLE cas_table (
+	if err := createTable(session, `CREATE TABLE cas_table (
 			title   varchar,
 			revid   timeuuid,
 			PRIMARY KEY (title, revid)
-		)`).Exec(); err != nil {
+		)`); err != nil {
 		t.Fatal("create:", err)
 	}
 
@@ -210,7 +231,7 @@ func TestBatch(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 
-	if err := session.Query(`CREATE TABLE batch_table (id int primary key)`).Exec(); err != nil {
+	if err := createTable(session, `CREATE TABLE batch_table (id int primary key)`); err != nil {
 		t.Fatal("create table:", err)
 	}
 
@@ -239,7 +260,7 @@ func TestBatchLimit(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 
-	if err := session.Query(`CREATE TABLE batch_table2 (id int primary key)`).Exec(); err != nil {
+	if err := createTable(session, `CREATE TABLE batch_table2 (id int primary key)`); err != nil {
 		t.Fatal("create table:", err)
 	}
 
@@ -262,7 +283,7 @@ func TestTooManyQueryArgs(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 
-	if err := session.Query(`CREATE TABLE too_many_query_args (id int primary key, value int)`).Exec(); err != nil {
+	if err := createTable(session, `CREATE TABLE too_many_query_args (id int primary key, value int)`); err != nil {
 		t.Fatal("create table:", err)
 	}
 
@@ -299,7 +320,7 @@ func TestNotEnoughQueryArgs(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 
-	if err := session.Query(`CREATE TABLE not_enough_query_args (id int, cluster int, value int, primary key (id, cluster))`).Exec(); err != nil {
+	if err := createTable(session, `CREATE TABLE not_enough_query_args (id int, cluster int, value int, primary key (id, cluster))`); err != nil {
 		t.Fatal("create table:", err)
 	}
 
@@ -347,7 +368,7 @@ func TestCreateSessionTimeout(t *testing.T) {
 func TestSliceMap(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
-	if err := session.Query(`CREATE TABLE slice_map_table (
+	if err := createTable(session, `CREATE TABLE slice_map_table (
 			testuuid       timeuuid PRIMARY KEY,
 			testtimestamp  timestamp,
 			testvarchar    varchar,
@@ -361,7 +382,7 @@ func TestSliceMap(t *testing.T) {
 			testset        set<int>,
 			testmap        map<varchar, varchar>,
 			testvarint     varint
-		)`).Exec(); err != nil {
+		)`); err != nil {
 		t.Fatal("create table:", err)
 	}
 	m := make(map[string]interface{})
@@ -493,11 +514,11 @@ func TestScanWithNilArguments(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 
-	if err := session.Query(`CREATE TABLE scan_with_nil_arguments (
+	if err := createTable(session, `CREATE TABLE scan_with_nil_arguments (
 			foo   varchar,
 			bar   int,
 			PRIMARY KEY (foo, bar)
-	)`).Exec(); err != nil {
+	)`); err != nil {
 		t.Fatal("create:", err)
 	}
 	for i := 1; i <= 20; i++ {
@@ -529,11 +550,11 @@ func TestScanCASWithNilArguments(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 
-	if err := session.Query(`CREATE TABLE scan_cas_with_nil_arguments (
+	if err := createTable(session, `CREATE TABLE scan_cas_with_nil_arguments (
 		foo   varchar,
 		bar   varchar,
 		PRIMARY KEY (foo, bar)
-	)`).Exec(); err != nil {
+	)`); err != nil {
 		t.Fatal("create:", err)
 	}
 
@@ -573,7 +594,7 @@ func TestRebindQueryInfo(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 
-	if err := session.Query("CREATE TABLE rebind_query (id int, value text, PRIMARY KEY (id))").Exec(); err != nil {
+	if err := createTable(session, "CREATE TABLE rebind_query (id int, value text, PRIMARY KEY (id))"); err != nil {
 		t.Fatalf("failed to create table with error '%v'", err)
 	}
 
@@ -613,7 +634,7 @@ func TestStaticQueryInfo(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 
-	if err := session.Query("CREATE TABLE static_query_info (id int, value text, PRIMARY KEY (id))").Exec(); err != nil {
+	if err := createTable(session, "CREATE TABLE static_query_info (id int, value text, PRIMARY KEY (id))"); err != nil {
 		t.Fatalf("failed to create table with error '%v'", err)
 	}
 
@@ -682,7 +703,7 @@ func TestBoundQueryInfo(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 
-	if err := session.Query("CREATE TABLE clustered_query_info (id int, cluster int, value text, PRIMARY KEY (id, cluster))").Exec(); err != nil {
+	if err := createTable(session, "CREATE TABLE clustered_query_info (id int, cluster int, value text, PRIMARY KEY (id, cluster))"); err != nil {
 		t.Fatalf("failed to create table with error '%v'", err)
 	}
 
@@ -725,7 +746,7 @@ func TestBatchQueryInfo(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 
-	if err := session.Query("CREATE TABLE batch_query_info (id int, cluster int, value text, PRIMARY KEY (id, cluster))").Exec(); err != nil {
+	if err := createTable(session, "CREATE TABLE batch_query_info (id int, cluster int, value text, PRIMARY KEY (id, cluster))"); err != nil {
 		t.Fatalf("failed to create table with error '%v'", err)
 	}
 
@@ -770,11 +791,11 @@ func TestBatchQueryInfo(t *testing.T) {
 }
 
 func injectInvalidPreparedStatement(t *testing.T, session *Session, table string) (string, *Conn) {
-	if err := session.Query(`CREATE TABLE ` + table + ` (
+	if err := createTable(session, `CREATE TABLE `+table+` (
 			foo   varchar,
 			bar   int,
 			PRIMARY KEY (foo, bar)
-	)`).Exec(); err != nil {
+	)`); err != nil {
 		t.Fatal("create:", err)
 	}
 	stmt := "INSERT INTO " + table + " (foo, bar) VALUES (?, 7)"
@@ -852,7 +873,7 @@ func TestPreparedCacheEviction(t *testing.T) {
 	stmtsLRU.Max(4)
 	stmtsLRU.mu.Unlock()
 
-	if err := session.Query("CREATE TABLE prepcachetest (id int,mod int,PRIMARY KEY (id))").Exec(); err != nil {
+	if err := createTable(session, "CREATE TABLE prepcachetest (id int,mod int,PRIMARY KEY (id))"); err != nil {
 		t.Fatalf("failed to create table with error '%v'", err)
 	}
 	//Fill the table
@@ -934,7 +955,7 @@ func TestMarshalFloat64Ptr(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 
-	if err := session.Query("CREATE TABLE float_test (id double, test double, primary key (id))").Exec(); err != nil {
+	if err := createTable(session, "CREATE TABLE float_test (id double, test double, primary key (id))"); err != nil {
 		t.Fatal("create table:", err)
 	}
 	testNum := float64(7500)
