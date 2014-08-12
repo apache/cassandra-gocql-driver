@@ -11,7 +11,15 @@ Project Website: http://gocql.github.io/<br>
 API documentation: http://godoc.org/github.com/gocql/gocql<br>
 Discussions: https://groups.google.com/forum/#!forum/gocql
 
-Supported Versions: Cassandra 1.2, 2.0, 2.1; Go 1.2, 1.3
+Supported Versions
+------------------
+
+The following matrix shows the versions of Go and Cassandra that are tested with the integration test suite as part of the CI build:
+
+Go/Cassandra | 1.2.18 | 2.0.9 | 2.1.0-RC5
+-------------| -------| ------| ---------
+1.2  | yes | yes | partial
+1.3  | yes | yes | partial
 
 Installation
 ------------
