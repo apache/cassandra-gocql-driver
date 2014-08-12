@@ -7,10 +7,10 @@ package gocql
 import (
 	"bytes"
 	"flag"
-	"math"
-	"math/big"
 	"fmt"
 	"log"
+	"math"
+	"math/big"
 	"reflect"
 	"strconv"
 	"strings"
@@ -30,6 +30,7 @@ var (
 	clusterSize  = 1
 	clusterHosts []string
 )
+
 func init() {
 
 	flag.Parse()
@@ -968,8 +969,8 @@ func TestVarint(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 
-	if err := session.Query("CREATE TABLE varint_test (id varchar, test varint, test2 varint, primary key (id))").Exec(); err != nil {
-		t.Fatal("create table:", err)
+	if err := createTable(session, "CREATE TABLE varint_test (id varchar, test varint, test2 varint, primary key (id))"); err != nil {
+		t.Fatalf("failed to create table with error '%v'", err)
 	}
 
 	if err := session.Query(`INSERT INTO varint_test (id, test) VALUES (?, ?)`, "id", 0).Exec(); err != nil {
