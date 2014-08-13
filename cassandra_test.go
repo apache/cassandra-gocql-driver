@@ -27,6 +27,7 @@ var (
 	flagProto    = flag.Int("proto", 2, "protcol version")
 	flagCQL      = flag.String("cql", "3.0.0", "CQL version")
 	flagRF       = flag.Int("rf", 1, "replication factor for test keyspace")
+	flagRetry    = flag.Int("retries", 5, "number of times to retry queries")
 	clusterSize  = 1
 	clusterHosts []string
 )
@@ -56,7 +57,7 @@ func createSession(tb testing.TB) *Session {
 	cluster.CQLVersion = *flagCQL
 	cluster.Timeout = 5 * time.Second
 	cluster.Consistency = Quorum
-	cluster.RetryPolicy.NumRetries = 2
+	cluster.RetryPolicy.NumRetries = *flagRetry
 
 	initOnce.Do(func() {
 		session, err := cluster.CreateSession()
@@ -817,6 +818,28 @@ func injectInvalidPreparedStatement(t *testing.T, session *Session, table string
 		}},
 	}
 	return stmt, conn
+}
+
+func TestMissingSchemaPrepare(t *testing.T) {
+	s := createSession(t)
+	conn := s.Pool.Pick(nil)
+	defer s.Close()
+
+	insertQry := &Query{stmt: "INSERT INTO invalidschemaprep (val) VALUES (?)", values: []interface{}{5}, cons: s.cons,
+		session: s, pageSize: s.pageSize, trace: s.trace,
+		prefetch: s.prefetch, rt: s.cfg.RetryPolicy}
+
+	if err := conn.executeQuery(insertQry).err; err == nil {
+		t.Fatal("expected error, but got nil.")
+	}
+
+	if err := createTable(s, "CREATE TABLE invalidschemaprep (val int, PRIMARY KEY (val))"); err != nil {
+		t.Fatal("create table:", err)
+	}
+
+	if err := conn.executeQuery(insertQry).err; err != nil {
+		t.Fatal(err) // unconfigured columnfamily
+	}
 }
 
 func TestReprepareStatement(t *testing.T) {
