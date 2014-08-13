@@ -338,6 +338,7 @@ func (c *Conn) prepareStatement(stmt string, trace Tracer) (*QueryInfo, error) {
 		default:
 			flight.err = NewErrProtocol("Unknown type in response to prepare frame: %s", x)
 		}
+		err = flight.err
 	}
 
 	flight.wg.Done()
