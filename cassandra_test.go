@@ -819,6 +819,29 @@ func injectInvalidPreparedStatement(t *testing.T, session *Session, table string
 	return stmt, conn
 }
 
+func TestMissingSchemaPrepare(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+
+	insertQry := "INSERT INTO invalidschemaprep (val) VALUES (?)"
+
+	for i := 0; i < session.Pool.Size(); i++ {
+		if err := session.Query(insertQry, 5).Exec(); err == nil {
+			t.Fatal("expected error, but got nil.")
+		}
+	}
+
+	if err := createTable(session, "CREATE TABLE invalidschemaprep (val int, PRIMARY KEY (val))"); err != nil {
+		t.Fatal("create table:", err)
+	}
+
+	for i := 0; i < session.Pool.Size(); i++ {
+		if err := session.Query(insertQry, 5).Exec(); err != nil {
+			t.Fatal(err) // unconfigured columnfamily
+		}
+	}
+}
+
 func TestReprepareStatement(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
