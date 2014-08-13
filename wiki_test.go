@@ -70,7 +70,7 @@ func (w *WikiTest) CreateSchema() {
 			attachments map<varchar, blob>,
 			PRIMARY KEY (title, revid)
 		)`)
-	if clusterSize > 1 {
+	if *clusterSize > 1 {
 		// wait for table definition to propogate
 		time.Sleep(250 * time.Millisecond)
 	}
