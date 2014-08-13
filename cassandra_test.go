@@ -27,6 +27,7 @@ var (
 	flagProto    = flag.Int("proto", 2, "protcol version")
 	flagCQL      = flag.String("cql", "3.0.0", "CQL version")
 	flagRF       = flag.Int("rf", 1, "replication factor for test keyspace")
+	flagRetry    = flag.Int("retries", 5, "number of times to retry queries")
 	clusterSize  = 1
 	clusterHosts []string
 )
@@ -56,7 +57,7 @@ func createSession(tb testing.TB) *Session {
 	cluster.CQLVersion = *flagCQL
 	cluster.Timeout = 5 * time.Second
 	cluster.Consistency = Quorum
-	cluster.RetryPolicy.NumRetries = 10
+	cluster.RetryPolicy.NumRetries = *flagRetry
 
 	initOnce.Do(func() {
 		session, err := cluster.CreateSession()
