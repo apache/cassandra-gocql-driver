@@ -28,7 +28,7 @@ var (
 	flagCQL      = flag.String("cql", "3.0.0", "CQL version")
 	flagRF       = flag.Int("rf", 1, "replication factor for test keyspace")
 	flagRetry    = flag.Int("retries", 5, "number of times to retry queries")
-	clusterSize  = 1
+	clusterSize  = *flag.Int("clusterSize", 1, "the expected size of the cluster")
 	clusterHosts []string
 )
 
