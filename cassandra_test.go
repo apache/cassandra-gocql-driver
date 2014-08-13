@@ -820,25 +820,24 @@ func injectInvalidPreparedStatement(t *testing.T, session *Session, table string
 }
 
 func TestMissingSchemaPrepare(t *testing.T) {
-	session := createSession(t)
-	defer session.Close()
+	s := createSession(t)
+	conn := s.Pool.Pick(nil)
+	defer s.Close()
 
-	insertQry := "INSERT INTO invalidschemaprep (val) VALUES (?)"
+	insertQry := &Query{stmt: "INSERT INTO invalidschemaprep (val) VALUES (?)", values: []interface{}{5}, cons: s.cons,
+		session: s, pageSize: s.pageSize, trace: s.trace,
+		prefetch: s.prefetch, rt: s.cfg.RetryPolicy}
 
-	for i := 0; i < session.Pool.Size(); i++ {
-		if err := session.Query(insertQry, 5).Exec(); err == nil {
-			t.Fatal("expected error, but got nil.")
-		}
+	if err := conn.executeQuery(insertQry).err; err == nil {
+		t.Fatal("expected error, but got nil.")
 	}
 
-	if err := createTable(session, "CREATE TABLE invalidschemaprep (val int, PRIMARY KEY (val))"); err != nil {
+	if err := createTable(s, "CREATE TABLE invalidschemaprep (val int, PRIMARY KEY (val))"); err != nil {
 		t.Fatal("create table:", err)
 	}
 
-	for i := 0; i < session.Pool.Size(); i++ {
-		if err := session.Query(insertQry, 5).Exec(); err != nil {
-			t.Fatal(err) // unconfigured columnfamily
-		}
+	if err := conn.executeQuery(insertQry).err; err != nil {
+		t.Fatal(err) // unconfigured columnfamily
 	}
 }
 
