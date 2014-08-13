@@ -99,7 +99,7 @@ func createSession(tb testing.TB) *Session {
 }
 
 func TestRingDiscovery(t *testing.T) {
-	cluster := NewCluster("127.0.0.1")
+	cluster := NewCluster(clusterHosts[0])
 	cluster.DiscoverHosts = true
 	session, err := cluster.CreateSession()
 	if err != nil {
