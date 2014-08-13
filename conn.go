@@ -338,10 +338,10 @@ func (c *Conn) prepareStatement(stmt string, trace Tracer) (*QueryInfo, error) {
 		default:
 			flight.err = NewErrProtocol("Unknown type in response to prepare frame: %s", x)
 		}
+		err = flight.err
 	}
 
 	flight.wg.Done()
-
 	if err != nil {
 		stmtsLRU.mu.Lock()
 		stmtsLRU.lru.Remove(c.addr + stmt)
