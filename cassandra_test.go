@@ -124,17 +124,6 @@ func TestRingDiscovery(t *testing.T) {
 		time.Sleep(*flagAutoWait)
 	}
 
-	pool, ok := session.Pool.(*SimplePool)
-	if ok {
-		pooledPeers := make([]string, len(pool.hosts))
-		i := 0
-		for peer, _ := range pool.hosts {
-			pooledPeers[i] = peer
-			i++
-		}
-		fmt.Printf("(Simple) Pooled peers: %+v\n", pooledPeers)
-	}
-
 	size := len(session.Pool.(*SimplePool).connPool)
 
 	if *clusterSize != size {
