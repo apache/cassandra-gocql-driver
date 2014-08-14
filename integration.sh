@@ -16,7 +16,7 @@ function run_tests() {
 		proto=1
 	fi
 
-	go test -v -proto=$proto -rf=3 -cluster=$(ccm liveset) -clusterSize=$clusterSize -autowait=5000 ./...
+	go test -v -proto=$proto -rf=3 -cluster=$(ccm liveset) -clusterSize=$clusterSize -autowait=5000ms ./...
 
 	ccm clear
 }
