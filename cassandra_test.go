@@ -422,6 +422,7 @@ func TestSliceMap(t *testing.T) {
 			testdouble     double,
 			testint        int,
 			testdecimal    decimal,
+			testlist       list<text>,
 			testset        set<int>,
 			testmap        map<varchar, varchar>,
 			testvarint     varint
@@ -445,12 +446,13 @@ func TestSliceMap(t *testing.T) {
 	m["testdouble"] = float64(4.815162342)
 	m["testint"] = 2343
 	m["testdecimal"] = inf.NewDec(100, 0)
+	m["testlist"] = []string{"quux", "foo", "bar", "baz", "quux"}
 	m["testset"] = []int{1, 2, 3, 4, 5, 6, 7, 8, 9}
 	m["testmap"] = map[string]string{"field1": "val1", "field2": "val2", "field3": "val3"}
 	m["testvarint"] = bigInt
 	sliceMap := []map[string]interface{}{m}
-	if err := session.Query(`INSERT INTO slice_map_table (testuuid, testtimestamp, testvarchar, testbigint, testblob, testbool, testfloat, testdouble, testint, testdecimal, testset, testmap, testvarint) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		m["testuuid"], m["testtimestamp"], m["testvarchar"], m["testbigint"], m["testblob"], m["testbool"], m["testfloat"], m["testdouble"], m["testint"], m["testdecimal"], m["testset"], m["testmap"], m["testvarint"]).Exec(); err != nil {
+	if err := session.Query(`INSERT INTO slice_map_table (testuuid, testtimestamp, testvarchar, testbigint, testblob, testbool, testfloat, testdouble, testint, testdecimal, testlist, testset, testmap, testvarint) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		m["testuuid"], m["testtimestamp"], m["testvarchar"], m["testbigint"], m["testblob"], m["testbool"], m["testfloat"], m["testdouble"], m["testint"], m["testdecimal"], m["testlist"], m["testset"], m["testmap"], m["testvarint"]).Exec(); err != nil {
 		t.Fatal("insert:", err)
 	}
 	if returned, retErr := session.Query(`SELECT * FROM slice_map_table`).Iter().SliceMap(); retErr != nil {
@@ -489,6 +491,9 @@ func TestSliceMap(t *testing.T) {
 
 		if expectedDecimal.Cmp(returnedDecimal) != 0 {
 			t.Fatal("returned testdecimal did not match")
+		}
+		if !reflect.DeepEqual(sliceMap[0]["testlist"], returned[0]["testlist"]) {
+			t.Fatal("returned testlist did not match")
 		}
 		if !reflect.DeepEqual(sliceMap[0]["testset"], returned[0]["testset"]) {
 			t.Fatal("returned testset did not match")
@@ -544,6 +549,9 @@ func TestSliceMap(t *testing.T) {
 		t.Fatal("returned testdecimal did not match")
 	}
 
+	if !reflect.DeepEqual(sliceMap[0]["testlist"], testMap["testlist"]) {
+		t.Fatal("returned testlist did not match")
+	}
 	if !reflect.DeepEqual(sliceMap[0]["testset"], testMap["testset"]) {
 		t.Fatal("returned testset did not match")
 	}
