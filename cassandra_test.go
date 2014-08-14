@@ -29,7 +29,7 @@ var (
 	flagRF       = flag.Int("rf", 1, "replication factor for test keyspace")
 	clusterSize  = flag.Int("clusterSize", 1, "the expected size of the cluster")
 	flagRetry    = flag.Int("retries", 5, "number of times to retry queries")
-	flagAutoWait = flag.Duration("autowait", 1000, "milliseconds to wait for autodiscovery to fill the hosts poll")
+	flagAutoWait = flag.Duration("autowait", 1000*time.Millisecond, "time to wait for autodiscovery to fill the hosts poll")
 	clusterHosts []string
 )
 
