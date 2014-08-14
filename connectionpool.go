@@ -343,7 +343,15 @@ func (c *SimplePool) Close() {
 
 func (c *SimplePool) SetHosts(hosts []HostInfo) {
 
-	fmt.Printf("Setting hosts: %+v\n", hosts)
+	if len(hosts) == 0 {
+		return
+	}
+
+	peers := make([]string, len(hosts))
+	for i, host := range hosts {
+		peers[i] = host.Peer
+	}
+	fmt.Printf("Setting peers: %+v\n", peers)
 
 	c.hostMu.Lock()
 	toRemove := make(map[string]struct{})
