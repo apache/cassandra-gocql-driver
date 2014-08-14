@@ -378,6 +378,14 @@ func (c *SimplePool) SetHosts(hosts []HostInfo) {
 		c.removeHostLocked(addr)
 	}
 	c.hostMu.Unlock()
+
+	pooledPeers := make([]string, len(c.hosts))
+	i := 0
+	for peer, _ := range c.hosts {
+		pooledPeers[i] = peer
+		i++
+	}
+	fmt.Printf("Pooled peers: %+v\n", pooledPeers)
 }
 
 func (c *SimplePool) removeHostLocked(addr string) {
