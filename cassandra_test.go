@@ -106,6 +106,7 @@ func TestRingDiscovery(t *testing.T) {
 
 	cluster := NewCluster(clusterHosts[0])
 	cluster.DiscoverHosts = true
+	cluster.Discovery = DiscoveryConfig{Sleep: 1 * time.Second}
 	session, err := cluster.CreateSession()
 	if err != nil {
 		t.Errorf("got error connecting to the cluster %v", err)
