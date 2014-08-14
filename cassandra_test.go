@@ -100,6 +100,10 @@ func createSession(tb testing.TB) *Session {
 }
 
 func TestRingDiscovery(t *testing.T) {
+	if *flagProto == 1 {
+		t.Skip("ring autodiscovery not supported. Please use Cassandra >= 2.0")
+	}
+
 	cluster := NewCluster(clusterHosts[0])
 	cluster.DiscoverHosts = true
 	session, err := cluster.CreateSession()
