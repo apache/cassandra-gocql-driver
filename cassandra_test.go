@@ -113,7 +113,7 @@ func TestRingDiscovery(t *testing.T) {
 
 	if *clusterSize > 1 {
 		// wait for autodiscovery to update the pool with the list of known hosts
-		time.Sleep(*flagAutoWait * time.Millisecond)
+		time.Sleep(*flagAutoWait)
 	}
 
 	if *clusterSize != session.Pool.Size() {
