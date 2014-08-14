@@ -379,6 +379,8 @@ func (c *SimplePool) SetHosts(hosts []HostInfo) {
 	}
 	c.hostMu.Unlock()
 
+	c.fillPool()
+
 	pooledPeers := make([]string, len(c.hosts))
 	i := 0
 	for peer, _ := range c.hosts {
