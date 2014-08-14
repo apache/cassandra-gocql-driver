@@ -101,13 +101,19 @@ func createSession(tb testing.TB) *Session {
 }
 
 func TestRingDiscovery(t *testing.T) {
-	if *flagProto == 1 {
-		t.Skip("ring autodiscovery not supported. Please use Cassandra >= 2.0")
-	}
+	// if *flagProto == 1 {
+	// 	t.Skip("ring autodiscovery not supported. Please use Cassandra >= 2.0")
+	// }
 
 	cluster := NewCluster(clusterHosts[0])
+	cluster.ProtoVersion = *flagProto
+	cluster.CQLVersion = *flagCQL
+	cluster.Timeout = 5 * time.Second
+	cluster.Consistency = Quorum
+	cluster.RetryPolicy.NumRetries = *flagRetry
 	cluster.DiscoverHosts = true
 	cluster.Discovery = DiscoveryConfig{Sleep: *flagAutoFreq}
+
 	session, err := cluster.CreateSession()
 	if err != nil {
 		t.Errorf("got error connecting to the cluster %v", err)
