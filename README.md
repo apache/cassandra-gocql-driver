@@ -43,6 +43,7 @@ Features
   * Round robin distribution of queries to different connections on a host
   * Each connection can execute up to 128 concurrent queries
   * Optional automatic discovery of nodes
+  * Optional support for periodic node discovery via system.peers
 * Iteration over paged results with configurable page size
 * Optional frame compression (using snappy)
 * Automatic query preparation
