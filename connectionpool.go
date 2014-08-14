@@ -342,6 +342,9 @@ func (c *SimplePool) Close() {
 }
 
 func (c *SimplePool) SetHosts(hosts []HostInfo) {
+
+	fmt.Printf("Setting hosts: %+v\n", hosts)
+
 	c.hostMu.Lock()
 	toRemove := make(map[string]struct{})
 	for k := range c.hosts {
