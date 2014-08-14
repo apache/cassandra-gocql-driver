@@ -106,6 +106,11 @@ func TestRingDiscovery(t *testing.T) {
 		t.Errorf("got error connecting to the cluster %v", err)
 	}
 
+	if *clusterSize > 1 {
+		// wait for autodiscovery to update the pool with the list of known hosts
+		time.Sleep(500 * time.Millisecond)
+	}
+
 	if *clusterSize != session.Pool.Size() {
 		t.Fatalf("Expected a cluster size of %d, but actual size was %d", *clusterSize, session.Pool.Size())
 	}
