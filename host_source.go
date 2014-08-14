@@ -70,9 +70,6 @@ func (r *ringDescriber) GetHosts() ([]HostInfo, error) {
 }
 
 func (r *ringDescriber) matchFilter(host *HostInfo) bool {
-	if r.dcFilter == "" && r.rackFilter == "" {
-		return true
-	}
 
 	if r.dcFilter != "" && r.dcFilter != host.DataCenter {
 		return false
