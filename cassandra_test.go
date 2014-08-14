@@ -27,8 +27,9 @@ var (
 	flagProto    = flag.Int("proto", 2, "protcol version")
 	flagCQL      = flag.String("cql", "3.0.0", "CQL version")
 	flagRF       = flag.Int("rf", 1, "replication factor for test keyspace")
+	clusterSize  = flag.Int("clusterSize", 1, "the expected size of the cluster")
 	flagRetry    = flag.Int("retries", 5, "number of times to retry queries")
-	clusterSize  = 1
+	flagAutoWait = flag.Duration("autowait", 1000*time.Millisecond, "time to wait for autodiscovery to fill the hosts poll")
 	clusterHosts []string
 )
 
@@ -36,7 +37,6 @@ func init() {
 
 	flag.Parse()
 	clusterHosts = strings.Split(*flagCluster, ",")
-	clusterSize = len(clusterHosts)
 	log.SetFlags(log.Lshortfile | log.LstdFlags)
 }
 
@@ -44,7 +44,7 @@ var initOnce sync.Once
 
 func createTable(s *Session, table string) error {
 	err := s.Query(table).Consistency(All).Exec()
-	if clusterSize > 1 {
+	if *clusterSize > 1 {
 		// wait for table definition to propogate
 		time.Sleep(250 * time.Millisecond)
 	}
@@ -97,6 +97,36 @@ func createSession(tb testing.TB) *Session {
 	}
 
 	return session
+}
+
+//TestRingDiscovery makes sure that you can autodiscover other cluster members when you seed a cluster config with just one node
+func TestRingDiscovery(t *testing.T) {
+
+	cluster := NewCluster(clusterHosts[0])
+	cluster.ProtoVersion = *flagProto
+	cluster.CQLVersion = *flagCQL
+	cluster.Timeout = 5 * time.Second
+	cluster.Consistency = Quorum
+	cluster.RetryPolicy.NumRetries = *flagRetry
+	cluster.DiscoverHosts = true
+
+	session, err := cluster.CreateSession()
+	if err != nil {
+		t.Errorf("got error connecting to the cluster %v", err)
+	}
+
+	if *clusterSize > 1 {
+		// wait for autodiscovery to update the pool with the list of known hosts
+		time.Sleep(*flagAutoWait)
+	}
+
+	size := len(session.Pool.(*SimplePool).connPool)
+
+	if *clusterSize != size {
+		t.Fatalf("Expected a cluster size of %d, but actual size was %d", *clusterSize, size)
+	}
+
+	session.Close()
 }
 
 func TestEmptyHosts(t *testing.T) {
