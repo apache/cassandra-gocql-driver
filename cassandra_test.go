@@ -30,7 +30,7 @@ var (
 	clusterSize  = flag.Int("clusterSize", 1, "the expected size of the cluster")
 	flagRetry    = flag.Int("retries", 5, "number of times to retry queries")
 	flagAutoWait = flag.Duration("autowait", 1000*time.Millisecond, "time to wait for autodiscovery to fill the hosts poll")
-	flagAutoFreq = flag.Duration("autofreq", 1000*time.Millisecond, "frequency for autodiscovery to discover new hosts")
+	//flagAutoFreq = flag.Duration("autofreq", 1000*time.Millisecond, "frequency for autodiscovery to discover new hosts")
 	clusterHosts []string
 )
 
@@ -112,7 +112,7 @@ func TestRingDiscovery(t *testing.T) {
 	cluster.Consistency = Quorum
 	cluster.RetryPolicy.NumRetries = *flagRetry
 	cluster.DiscoverHosts = true
-	cluster.Discovery = DiscoveryConfig{Sleep: *flagAutoFreq}
+	//cluster.Discovery = DiscoveryConfig{Sleep: *flagAutoFreq}
 
 	session, err := cluster.CreateSession()
 	if err != nil {
