@@ -135,8 +135,10 @@ func TestRingDiscovery(t *testing.T) {
 		fmt.Printf("(Simple) Pooled peers: %+v\n", pooledPeers)
 	}
 
-	if *clusterSize != session.Pool.Size() {
-		t.Fatalf("Expected a cluster size of %d, but actual size was %d", *clusterSize, session.Pool.Size())
+	size := len(session.Pool.(*SimplePool).connPool)
+
+	if *clusterSize != size {
+		t.Fatalf("Expected a cluster size of %d, but actual size was %d", *clusterSize, size)
 	}
 
 	session.Close()
