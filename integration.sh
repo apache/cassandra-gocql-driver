@@ -3,7 +3,7 @@
 set -e
 
 function run_tests() {
-	local clusterSize=3
+	local clusterSize=4
 	local version=$1
 
 	ccm create test -v binary:$version -n $clusterSize -d --vnodes
