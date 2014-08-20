@@ -12,10 +12,6 @@ import (
 	"github.com/golang/groupcache/lru"
 )
 
-const (
-	defaultPort = 9042
-)
-
 //Package global reference to Prepared Statements LRU
 var stmtsLRU preparedLRU
 
@@ -75,7 +71,7 @@ func NewCluster(hosts ...string) *ClusterConfig {
 		CQLVersion:       "3.0.0",
 		ProtoVersion:     2,
 		Timeout:          600 * time.Millisecond,
-		Port:             defaultPort,
+		Port:             9042,
 		NumConns:         2,
 		NumStreams:       128,
 		Consistency:      Quorum,
