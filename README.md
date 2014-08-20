@@ -86,6 +86,11 @@ Example
 -------
 
 ```go
+/* Before you execute the program, Launch `cqlsh` and execute:
+create keyspace example with replication = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };
+create table example.tweet(timeline text, id UUID, text text, PRIMARY KEY(id));
+create index on example.tweet(timeline);
+*/
 package main
 
 import (
@@ -112,7 +117,9 @@ func main() {
 	var id gocql.UUID
 	var text string
 
-	// select a single tweet
+	/* Search for a specific set of records whose 'timeline' column matches
+	 * the value 'me'. The secondary index that we created earlier will be
+	 * used for optimizing the search */
 	if err := session.Query(`SELECT id, text FROM tweet WHERE timeline = ? LIMIT 1`,
 		"me").Consistency(gocql.One).Scan(&id, &text); err != nil {
 		log.Fatal(err)
