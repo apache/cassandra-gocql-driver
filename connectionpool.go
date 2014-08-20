@@ -30,7 +30,7 @@ Example of Single Connection Pool:
 	func NewSingleConnection(cfg *ClusterConfig) ConnectionPool {
 		addr := strings.TrimSpace(cfg.Hosts[0])
 		if strings.Index(addr, ":") < 0 {
-			addr = fmt.Sprintf("%s:%d", addr, cfg.DefaultPort)
+			addr = fmt.Sprintf("%s:%d", addr, cfg.Port)
 		}
 		connCfg := ConnConfig{
 			ProtoVersion:  cfg.ProtoVersion,
@@ -146,7 +146,7 @@ func NewSimplePool(cfg *ClusterConfig) ConnectionPool {
 	for i := 0; i < len(cfg.Hosts); i++ {
 		addr := strings.TrimSpace(cfg.Hosts[i])
 		if strings.Index(addr, ":") < 0 {
-			addr = fmt.Sprintf("%s:%d", addr, cfg.DefaultPort)
+			addr = fmt.Sprintf("%s:%d", addr, cfg.Port)
 		}
 
 		if pool.connect(addr) == nil {
@@ -236,7 +236,7 @@ func (c *SimplePool) fillPool() {
 	for host := range c.hosts {
 		addr := strings.TrimSpace(host)
 		if strings.Index(addr, ":") < 0 {
-			addr = fmt.Sprintf("%s:%d", addr, c.cfg.DefaultPort)
+			addr = fmt.Sprintf("%s:%d", addr, c.cfg.Port)
 		}
 
 		numConns := 1

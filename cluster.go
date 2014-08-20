@@ -49,7 +49,7 @@ type ClusterConfig struct {
 	CQLVersion       string        // CQL version (default: 3.0.0)
 	ProtoVersion     int           // version of the native protocol (default: 2)
 	Timeout          time.Duration // connection timeout (default: 600ms)
-	DefaultPort      int           // default port (default: 9042)
+	Port             int           // port (default: 9042)
 	Keyspace         string        // initial keyspace (optional)
 	NumConns         int           // number of connections per host (default: 2)
 	NumStreams       int           // number of streams per connection (default: 128)
@@ -71,7 +71,7 @@ func NewCluster(hosts ...string) *ClusterConfig {
 		CQLVersion:       "3.0.0",
 		ProtoVersion:     2,
 		Timeout:          600 * time.Millisecond,
-		DefaultPort:      9042,
+		Port:             9042,
 		NumConns:         2,
 		NumStreams:       128,
 		Consistency:      Quorum,
