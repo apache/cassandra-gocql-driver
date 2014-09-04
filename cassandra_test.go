@@ -1169,3 +1169,20 @@ func TestVarint(t *testing.T) {
 		t.Errorf("Expected %v, was %v", nil, *resultBig)
 	}
 }
+
+//TestQueryStats confirms that the stats are returning valid data. Accuracy may be questionable.
+func TestQueryStats(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+	qry := session.Query("SELECT * FROM system.peers")
+	if err := qry.Exec(); err != nil {
+		t.Fatalf("query failed. %v", err)
+	} else {
+		if qry.Attempts() < 1 {
+			t.Fatal("expected at least 1 attempt, but got 0")
+		}
+		if qry.Latency() <= 0 {
+			t.Fatalf("expected latency to be greater than 0, but got %v instead.", qry.Latency())
+		}
+	}
+}

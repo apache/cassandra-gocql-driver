@@ -134,7 +134,9 @@ func (s *Session) executeQuery(qry *Query) *Iter {
 	}
 
 	var iter *Iter
-	for count := 0; count <= qry.rt.NumRetries; count++ {
+	qry.attempts = 0
+	qry.totalLatency = 0
+	for qry.attempts <= qry.rt.NumRetries {
 		conn := s.Pool.Pick(qry)
 
 		//Assign the error unavailable to the iterator
@@ -143,7 +145,11 @@ func (s *Session) executeQuery(qry *Query) *Iter {
 			break
 		}
 
+		t := time.Now()
 		iter = conn.executeQuery(qry)
+		qry.totalLatency += time.Now().Sub(t).Nanoseconds()
+		qry.attempts++
+
 		//Exit for loop if the query was successful
 		if iter.err == nil {
 			break
@@ -190,16 +196,31 @@ func (s *Session) ExecuteBatch(batch *Batch) error {
 
 // Query represents a CQL statement that can be executed.
 type Query struct {
-	stmt      string
-	values    []interface{}
-	cons      Consistency
-	pageSize  int
-	pageState []byte
-	prefetch  float64
-	trace     Tracer
-	session   *Session
-	rt        RetryPolicy
-	binding   func(q *QueryInfo) ([]interface{}, error)
+	stmt         string
+	values       []interface{}
+	cons         Consistency
+	pageSize     int
+	pageState    []byte
+	prefetch     float64
+	trace        Tracer
+	session      *Session
+	rt           RetryPolicy
+	binding      func(q *QueryInfo) ([]interface{}, error)
+	attempts     int
+	totalLatency int64
+}
+
+//Attempts returns the number of times the query was executed.
+func (q *Query) Attempts() int {
+	return q.attempts
+}
+
+//Latency returns the average amount of nanoseconds per attempt of the query.
+func (q *Query) Latency() int64 {
+	if q.attempts > 0 {
+		return q.totalLatency / int64(q.attempts)
+	}
+	return 0
 }
 
 // Consistency sets the consistency level for this query. If no consistency
