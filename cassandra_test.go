@@ -1189,6 +1189,9 @@ func TestQueryStats(t *testing.T) {
 
 //TestBatchStats confirms that the stats are returning valid data. Accuracy may be questionable.
 func TestBatchStats(t *testing.T) {
+	if *flagProto == 1 {
+		t.Skip("atomic batches not supported. Please use Cassandra >= 2.0")
+	}
 	session := createSession(t)
 	defer session.Close()
 
