@@ -134,7 +134,9 @@ func (s *Session) executeQuery(qry *Query) *Iter {
 	}
 
 	var iter *Iter
-	for count := 0; count <= qry.rt.NumRetries; count++ {
+	qry.attempts = 0
+	qry.totalLatency = 0
+	for qry.attempts <= qry.rt.NumRetries {
 		conn := s.Pool.Pick(qry)
 
 		//Assign the error unavailable to the iterator
@@ -143,7 +145,11 @@ func (s *Session) executeQuery(qry *Query) *Iter {
 			break
 		}
 
+		t := time.Now()
 		iter = conn.executeQuery(qry)
+		qry.totalLatency += time.Now().Sub(t).Nanoseconds()
+		qry.attempts++
+
 		//Exit for loop if the query was successful
 		if iter.err == nil {
 			break
@@ -169,7 +175,9 @@ func (s *Session) ExecuteBatch(batch *Batch) error {
 	}
 
 	var err error
-	for count := 0; count <= batch.rt.NumRetries; count++ {
+	batch.attempts = 0
+	batch.totalLatency = 0
+	for batch.attempts <= batch.rt.NumRetries {
 		conn := s.Pool.Pick(nil)
 
 		//Assign the error unavailable and break loop
@@ -177,8 +185,10 @@ func (s *Session) ExecuteBatch(batch *Batch) error {
 			err = ErrNoConnections
 			break
 		}
-
+		t := time.Now()
 		err = conn.executeBatch(batch)
+		batch.totalLatency += time.Now().Sub(t).Nanoseconds()
+		batch.attempts++
 		//Exit loop if operation executed correctly
 		if err == nil {
 			return nil
@@ -190,16 +200,31 @@ func (s *Session) ExecuteBatch(batch *Batch) error {
 
 // Query represents a CQL statement that can be executed.
 type Query struct {
-	stmt      string
-	values    []interface{}
-	cons      Consistency
-	pageSize  int
-	pageState []byte
-	prefetch  float64
-	trace     Tracer
-	session   *Session
-	rt        RetryPolicy
-	binding   func(q *QueryInfo) ([]interface{}, error)
+	stmt         string
+	values       []interface{}
+	cons         Consistency
+	pageSize     int
+	pageState    []byte
+	prefetch     float64
+	trace        Tracer
+	session      *Session
+	rt           RetryPolicy
+	binding      func(q *QueryInfo) ([]interface{}, error)
+	attempts     int
+	totalLatency int64
+}
+
+//Attempts returns the number of times the query was executed.
+func (q *Query) Attempts() int {
+	return q.attempts
+}
+
+//Latency returns the average amount of nanoseconds per attempt of the query.
+func (q *Query) Latency() int64 {
+	if q.attempts > 0 {
+		return q.totalLatency / int64(q.attempts)
+	}
+	return 0
 }
 
 // Consistency sets the consistency level for this query. If no consistency
@@ -397,10 +422,12 @@ func (n *nextIter) fetch() *Iter {
 }
 
 type Batch struct {
-	Type    BatchType
-	Entries []BatchEntry
-	Cons    Consistency
-	rt      RetryPolicy
+	Type         BatchType
+	Entries      []BatchEntry
+	Cons         Consistency
+	rt           RetryPolicy
+	attempts     int
+	totalLatency int64
 }
 
 // NewBatch creates a new batch operation without defaults from the cluster
@@ -411,6 +438,19 @@ func NewBatch(typ BatchType) *Batch {
 // NewBatch creates a new batch operation using defaults defined in the cluster
 func (s *Session) NewBatch(typ BatchType) *Batch {
 	return &Batch{Type: typ, rt: s.cfg.RetryPolicy}
+}
+
+// Attempts returns the number of attempts made to execute the batch.
+func (b *Batch) Attempts() int {
+	return b.attempts
+}
+
+//Latency returns the average number of nanoseconds to execute a single attempt of the batch.
+func (b *Batch) Latency() int64 {
+	if b.attempts > 0 {
+		return b.totalLatency / int64(b.attempts)
+	}
+	return 0
 }
 
 // Query adds the query to the batch operation

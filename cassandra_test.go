@@ -1169,3 +1169,48 @@ func TestVarint(t *testing.T) {
 		t.Errorf("Expected %v, was %v", nil, *resultBig)
 	}
 }
+
+//TestQueryStats confirms that the stats are returning valid data. Accuracy may be questionable.
+func TestQueryStats(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+	qry := session.Query("SELECT * FROM system.peers")
+	if err := qry.Exec(); err != nil {
+		t.Fatalf("query failed. %v", err)
+	} else {
+		if qry.Attempts() < 1 {
+			t.Fatal("expected at least 1 attempt, but got 0")
+		}
+		if qry.Latency() <= 0 {
+			t.Fatalf("expected latency to be greater than 0, but got %v instead.", qry.Latency())
+		}
+	}
+}
+
+//TestBatchStats confirms that the stats are returning valid data. Accuracy may be questionable.
+func TestBatchStats(t *testing.T) {
+	if *flagProto == 1 {
+		t.Skip("atomic batches not supported. Please use Cassandra >= 2.0")
+	}
+	session := createSession(t)
+	defer session.Close()
+
+	if err := createTable(session, "CREATE TABLE batchStats (id int, PRIMARY KEY (id))"); err != nil {
+		t.Fatalf("failed to create table with error '%v'", err)
+	}
+
+	b := session.NewBatch(LoggedBatch)
+	b.Query("INSERT INTO batchStats (id) VALUES (?)", 1)
+	b.Query("INSERT INTO batchStats (id) VALUES (?)", 2)
+
+	if err := session.ExecuteBatch(b); err != nil {
+		t.Fatalf("query failed. %v", err)
+	} else {
+		if b.Attempts() < 1 {
+			t.Fatal("expected at least 1 attempt, but got 0")
+		}
+		if b.Latency() <= 0 {
+			t.Fatalf("expected latency to be greater than 0, but got %v instead.", b.Latency())
+		}
+	}
+}
