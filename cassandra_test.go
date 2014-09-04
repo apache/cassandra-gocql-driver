@@ -1186,3 +1186,28 @@ func TestQueryStats(t *testing.T) {
 		}
 	}
 }
+
+//TestBatchStats confirms that the stats are returning valid data. Accuracy may be questionable.
+func TestBatchStats(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+
+	if err := createTable(session, "CREATE TABLE batchStats (id int, PRIMARY KEY (id))"); err != nil {
+		t.Fatalf("failed to create table with error '%v'", err)
+	}
+
+	b := session.NewBatch(LoggedBatch)
+	b.Query("INSERT INTO batchStats (id) VALUES (?)", 1)
+	b.Query("INSERT INTO batchStats (id) VALUES (?)", 2)
+
+	if err := session.ExecuteBatch(b); err != nil {
+		t.Fatalf("query failed. %v", err)
+	} else {
+		if b.Attempts() < 1 {
+			t.Fatal("expected at least 1 attempt, but got 0")
+		}
+		if b.Latency() <= 0 {
+			t.Fatalf("expected latency to be greater than 0, but got %v instead.", b.Latency())
+		}
+	}
+}

@@ -175,7 +175,9 @@ func (s *Session) ExecuteBatch(batch *Batch) error {
 	}
 
 	var err error
-	for count := 0; count <= batch.rt.NumRetries; count++ {
+	batch.attempts = 0
+	batch.totalLatency = 0
+	for batch.attempts <= batch.rt.NumRetries {
 		conn := s.Pool.Pick(nil)
 
 		//Assign the error unavailable and break loop
@@ -183,8 +185,10 @@ func (s *Session) ExecuteBatch(batch *Batch) error {
 			err = ErrNoConnections
 			break
 		}
-
+		t := time.Now()
 		err = conn.executeBatch(batch)
+		batch.totalLatency += time.Now().Sub(t).Nanoseconds()
+		batch.attempts++
 		//Exit loop if operation executed correctly
 		if err == nil {
 			return nil
@@ -418,10 +422,12 @@ func (n *nextIter) fetch() *Iter {
 }
 
 type Batch struct {
-	Type    BatchType
-	Entries []BatchEntry
-	Cons    Consistency
-	rt      RetryPolicy
+	Type         BatchType
+	Entries      []BatchEntry
+	Cons         Consistency
+	rt           RetryPolicy
+	attempts     int
+	totalLatency int64
 }
 
 // NewBatch creates a new batch operation without defaults from the cluster
@@ -432,6 +438,19 @@ func NewBatch(typ BatchType) *Batch {
 // NewBatch creates a new batch operation using defaults defined in the cluster
 func (s *Session) NewBatch(typ BatchType) *Batch {
 	return &Batch{Type: typ, rt: s.cfg.RetryPolicy}
+}
+
+// Attempts returns the number of attempts made to execute the batch.
+func (b *Batch) Attempts() int {
+	return b.attempts
+}
+
+//Latency returns the average number of nanoseconds to execute a single attempt of the batch.
+func (b *Batch) Latency() int64 {
+	if b.attempts > 0 {
+		return b.totalLatency / int64(b.attempts)
+	}
+	return 0
 }
 
 // Query adds the query to the batch operation
