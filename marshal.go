@@ -35,6 +35,10 @@ type Unmarshaler interface {
 // Marshal returns the CQL encoding of the value for the Cassandra
 // internal type described by the info parameter.
 func Marshal(info *TypeInfo, value interface{}) ([]byte, error) {
+	if value == nil {
+		return nil, nil
+	}
+
 	if v, ok := value.(Marshaler); ok {
 		return v.MarshalCQL(info)
 	}
