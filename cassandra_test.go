@@ -1214,3 +1214,25 @@ func TestBatchStats(t *testing.T) {
 		}
 	}
 }
+
+//TestNilInQuery tests to see that a nil value passed to a query is handled by Cassandra
+//TODO validate the nil value by reading back the nil. Need to fix Unmarshalling.
+func TestNilInQuery(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+
+	if err := createTable(session, "CREATE TABLE testNilInsert (id int, count int, PRIMARY KEY (id))"); err != nil {
+		t.Fatalf("failed to create table with error '%v'", err)
+	}
+	if err := session.Query("INSERT INTO testNilInsert (id,count) VALUES (?,?)", 1, nil).Exec(); err != nil {
+		t.Fatalf("failed to insert with err: %v", err)
+	}
+
+	var id int
+
+	if err := session.Query("SELECT id FROM testNilInsert").Scan(&id); err != nil {
+		t.Fatalf("failed to select with err: %v", err)
+	} else if id != 1 {
+		t.Fatalf("expected id to be 1, got %v", id)
+	}
+}
