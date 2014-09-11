@@ -132,6 +132,10 @@ func TestRingDiscovery(t *testing.T) {
 // Ensures that nodes are discovered when using a Network aware consistency.
 func TestRingDiscoveryNetworkTopology(t *testing.T) {
 
+	if *clusterSize <= 1 {
+		t.Skip("Skipping discovery based tests with single node cluster")
+	}
+
 	cluster := NewCluster(clusterHosts[0])
 	cluster.ProtoVersion = *flagProto
 	cluster.CQLVersion = *flagCQL
