@@ -30,7 +30,7 @@ func (r *ringDescriber) GetHosts() ([]HostInfo, error) {
 		return r.previous, nil
 	}
 
-	query := r.session.Query("SELECT data_center, rack, host_id, tokens FROM system.local")
+	query := r.session.Query("SELECT data_center, rack, host_id, tokens FROM system.local").Consistency(One)
 	iter := conn.executeQuery(query)
 
 	host := &HostInfo{}
@@ -51,7 +51,7 @@ func (r *ringDescriber) GetHosts() ([]HostInfo, error) {
 
 	hosts := []HostInfo{*host}
 
-	query = r.session.Query("SELECT peer, data_center, rack, host_id, tokens FROM system.peers")
+	query = r.session.Query("SELECT peer, data_center, rack, host_id, tokens FROM system.peers").Consistency(One)
 	iter = conn.executeQuery(query)
 
 	for iter.Scan(&host.Peer, &host.DataCenter, &host.Rack, &host.HostId, &host.Tokens) {
