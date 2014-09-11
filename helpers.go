@@ -26,7 +26,7 @@ func (t *TypeInfo) New() interface{} {
 
 func goType(t *TypeInfo) reflect.Type {
 	switch t.Type {
-	case TypeVarchar, TypeAscii:
+	case TypeVarchar, TypeAscii, TypeInet:
 		return reflect.TypeOf(*new(string))
 	case TypeBigInt, TypeCounter:
 		return reflect.TypeOf(*new(int64))
