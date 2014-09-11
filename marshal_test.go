@@ -297,6 +297,16 @@ func TestMarshal(t *testing.T) {
 	}
 }
 
+func TestMarshalNil(t *testing.T) {
+	data, err := Marshal(&TypeInfo{Type: TypeInt}, nil)
+	if err != nil {
+		t.Errorf("failed to marshal nil with err: %v", err)
+	}
+	if data != nil {
+		t.Errorf("expected nil, got %v", data)
+	}
+}
+
 func TestUnmarshal(t *testing.T) {
 	for i, test := range marshalTests {
 		v := reflect.New(reflect.TypeOf(test.Value))

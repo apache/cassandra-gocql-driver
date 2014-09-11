@@ -27,8 +27,9 @@ var (
 	flagProto    = flag.Int("proto", 2, "protcol version")
 	flagCQL      = flag.String("cql", "3.0.0", "CQL version")
 	flagRF       = flag.Int("rf", 1, "replication factor for test keyspace")
+	clusterSize  = flag.Int("clusterSize", 1, "the expected size of the cluster")
 	flagRetry    = flag.Int("retries", 5, "number of times to retry queries")
-	clusterSize  = *flag.Int("clusterSize", 1, "the expected size of the cluster")
+	flagAutoWait = flag.Duration("autowait", 1000*time.Millisecond, "time to wait for autodiscovery to fill the hosts poll")
 	clusterHosts []string
 )
 
@@ -36,7 +37,6 @@ func init() {
 
 	flag.Parse()
 	clusterHosts = strings.Split(*flagCluster, ",")
-	clusterSize = len(clusterHosts)
 	log.SetFlags(log.Lshortfile | log.LstdFlags)
 }
 
@@ -44,14 +44,14 @@ var initOnce sync.Once
 
 func createTable(s *Session, table string) error {
 	err := s.Query(table).Consistency(All).Exec()
-	if clusterSize > 1 {
+	if *clusterSize > 1 {
 		// wait for table definition to propogate
 		time.Sleep(250 * time.Millisecond)
 	}
 	return err
 }
 
-func createSession(tb testing.TB) *Session {
+func createCluster() *ClusterConfig {
 	cluster := NewCluster(clusterHosts...)
 	cluster.ProtoVersion = *flagProto
 	cluster.CQLVersion = *flagCQL
@@ -59,26 +59,37 @@ func createSession(tb testing.TB) *Session {
 	cluster.Consistency = Quorum
 	cluster.RetryPolicy.NumRetries = *flagRetry
 
+	return cluster
+}
+
+func createKeyspace(tb testing.TB, cluster *ClusterConfig, keyspace string) {
+	session, err := cluster.CreateSession()
+	if err != nil {
+		tb.Fatal("createSession:", err)
+	}
+	if err = session.Query(`DROP KEYSPACE ` + keyspace).Exec(); err != nil {
+		tb.Log("drop keyspace:", err)
+	}
+	if err := session.Query(fmt.Sprintf(`CREATE KEYSPACE %s
+	WITH replication = {
+		'class' : 'SimpleStrategy',
+		'replication_factor' : %d
+	}`, keyspace, *flagRF)).Consistency(All).Exec(); err != nil {
+		tb.Fatalf("error creating keyspace %s: %v", keyspace, err)
+	}
+	tb.Logf("Created keyspace %s", keyspace)
+	session.Close()
+}
+
+func createSession(tb testing.TB) *Session {
+	cluster := createCluster()
+
+	// Drop and re-create the keyspace once. Different tests should use their own
+	// individual tables, but can assume that the table does not exist before.
 	initOnce.Do(func() {
-		session, err := cluster.CreateSession()
-		if err != nil {
-			tb.Fatal("createSession:", err)
-		}
-		// Drop and re-create the keyspace once. Different tests should use their own
-		// individual tables, but can assume that the table does not exist before.
-		if err := session.Query(`DROP KEYSPACE gocql_test`).Exec(); err != nil {
-			tb.Log("drop keyspace:", err)
-		}
-		if err := session.Query(fmt.Sprintf(`CREATE KEYSPACE gocql_test
-			WITH replication = {
-				'class' : 'SimpleStrategy',
-				'replication_factor' : %d
-			}`, *flagRF)).Consistency(All).Exec(); err != nil {
-			tb.Fatal("create keyspace:", err)
-		}
-		tb.Log("Created keyspace")
-		session.Close()
+		createKeyspace(tb, cluster, "gocql_test")
 	})
+
 	cluster.Keyspace = "gocql_test"
 	session, err := cluster.CreateSession()
 	if err != nil {
@@ -86,6 +97,36 @@ func createSession(tb testing.TB) *Session {
 	}
 
 	return session
+}
+
+//TestRingDiscovery makes sure that you can autodiscover other cluster members when you seed a cluster config with just one node
+func TestRingDiscovery(t *testing.T) {
+
+	cluster := NewCluster(clusterHosts[0])
+	cluster.ProtoVersion = *flagProto
+	cluster.CQLVersion = *flagCQL
+	cluster.Timeout = 5 * time.Second
+	cluster.Consistency = Quorum
+	cluster.RetryPolicy.NumRetries = *flagRetry
+	cluster.DiscoverHosts = true
+
+	session, err := cluster.CreateSession()
+	if err != nil {
+		t.Errorf("got error connecting to the cluster %v", err)
+	}
+
+	if *clusterSize > 1 {
+		// wait for autodiscovery to update the pool with the list of known hosts
+		time.Sleep(*flagAutoWait)
+	}
+
+	size := len(session.Pool.(*SimplePool).connPool)
+
+	if *clusterSize != size {
+		t.Fatalf("Expected a cluster size of %d, but actual size was %d", *clusterSize, size)
+	}
+
+	session.Close()
 }
 
 func TestEmptyHosts(t *testing.T) {
@@ -381,6 +422,7 @@ func TestSliceMap(t *testing.T) {
 			testdouble     double,
 			testint        int,
 			testdecimal    decimal,
+			testlist       list<text>,
 			testset        set<int>,
 			testmap        map<varchar, varchar>,
 			testvarint     varint
@@ -404,12 +446,13 @@ func TestSliceMap(t *testing.T) {
 	m["testdouble"] = float64(4.815162342)
 	m["testint"] = 2343
 	m["testdecimal"] = inf.NewDec(100, 0)
+	m["testlist"] = []string{"quux", "foo", "bar", "baz", "quux"}
 	m["testset"] = []int{1, 2, 3, 4, 5, 6, 7, 8, 9}
 	m["testmap"] = map[string]string{"field1": "val1", "field2": "val2", "field3": "val3"}
 	m["testvarint"] = bigInt
 	sliceMap := []map[string]interface{}{m}
-	if err := session.Query(`INSERT INTO slice_map_table (testuuid, testtimestamp, testvarchar, testbigint, testblob, testbool, testfloat, testdouble, testint, testdecimal, testset, testmap, testvarint) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		m["testuuid"], m["testtimestamp"], m["testvarchar"], m["testbigint"], m["testblob"], m["testbool"], m["testfloat"], m["testdouble"], m["testint"], m["testdecimal"], m["testset"], m["testmap"], m["testvarint"]).Exec(); err != nil {
+	if err := session.Query(`INSERT INTO slice_map_table (testuuid, testtimestamp, testvarchar, testbigint, testblob, testbool, testfloat, testdouble, testint, testdecimal, testlist, testset, testmap, testvarint) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		m["testuuid"], m["testtimestamp"], m["testvarchar"], m["testbigint"], m["testblob"], m["testbool"], m["testfloat"], m["testdouble"], m["testint"], m["testdecimal"], m["testlist"], m["testset"], m["testmap"], m["testvarint"]).Exec(); err != nil {
 		t.Fatal("insert:", err)
 	}
 	if returned, retErr := session.Query(`SELECT * FROM slice_map_table`).Iter().SliceMap(); retErr != nil {
@@ -448,6 +491,9 @@ func TestSliceMap(t *testing.T) {
 
 		if expectedDecimal.Cmp(returnedDecimal) != 0 {
 			t.Fatal("returned testdecimal did not match")
+		}
+		if !reflect.DeepEqual(sliceMap[0]["testlist"], returned[0]["testlist"]) {
+			t.Fatal("returned testlist did not match")
 		}
 		if !reflect.DeepEqual(sliceMap[0]["testset"], returned[0]["testset"]) {
 			t.Fatal("returned testset did not match")
@@ -503,6 +549,9 @@ func TestSliceMap(t *testing.T) {
 		t.Fatal("returned testdecimal did not match")
 	}
 
+	if !reflect.DeepEqual(sliceMap[0]["testlist"], testMap["testlist"]) {
+		t.Fatal("returned testlist did not match")
+	}
 	if !reflect.DeepEqual(sliceMap[0]["testset"], testMap["testset"]) {
 		t.Fatal("returned testset did not match")
 	}
@@ -941,19 +990,19 @@ func TestPreparedCacheEviction(t *testing.T) {
 	//Walk through all the configured hosts and test cache retention and eviction
 	var selFound, insFound, updFound, delFound, selEvict bool
 	for i := range session.cfg.Hosts {
-		_, ok := stmtsLRU.lru.Get(session.cfg.Hosts[i] + ":9042SELECT id,mod FROM prepcachetest WHERE id = 1")
+		_, ok := stmtsLRU.lru.Get(session.cfg.Hosts[i] + ":9042gocql_testSELECT id,mod FROM prepcachetest WHERE id = 1")
 		selFound = selFound || ok
 
-		_, ok = stmtsLRU.lru.Get(session.cfg.Hosts[i] + ":9042INSERT INTO prepcachetest (id,mod) VALUES (?, ?)")
+		_, ok = stmtsLRU.lru.Get(session.cfg.Hosts[i] + ":9042gocql_testINSERT INTO prepcachetest (id,mod) VALUES (?, ?)")
 		insFound = insFound || ok
 
-		_, ok = stmtsLRU.lru.Get(session.cfg.Hosts[i] + ":9042UPDATE prepcachetest SET mod = ? WHERE id = ?")
+		_, ok = stmtsLRU.lru.Get(session.cfg.Hosts[i] + ":9042gocql_testUPDATE prepcachetest SET mod = ? WHERE id = ?")
 		updFound = updFound || ok
 
-		_, ok = stmtsLRU.lru.Get(session.cfg.Hosts[i] + ":9042DELETE FROM prepcachetest WHERE id = ?")
+		_, ok = stmtsLRU.lru.Get(session.cfg.Hosts[i] + ":9042gocql_testDELETE FROM prepcachetest WHERE id = ?")
 		delFound = delFound || ok
 
-		_, ok = stmtsLRU.lru.Get(session.cfg.Hosts[i] + ":9042SELECT id,mod FROM prepcachetest WHERE id = 0")
+		_, ok = stmtsLRU.lru.Get(session.cfg.Hosts[i] + ":9042gocql_testSELECT id,mod FROM prepcachetest WHERE id = 0")
 		selEvict = selEvict || !ok
 
 	}
@@ -971,6 +1020,53 @@ func TestPreparedCacheEviction(t *testing.T) {
 	}
 	if !delFound {
 		t.Error("expected delete statement to be cached, but statement was purged or not prepared.")
+	}
+}
+
+func TestPreparedCacheKey(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+
+	// create a second keyspace
+	cluster2 := createCluster()
+	createKeyspace(t, cluster2, "gocql_test2")
+	cluster2.Keyspace = "gocql_test2"
+	session2, err := cluster2.CreateSession()
+	if err != nil {
+		t.Fatal("create session:", err)
+	}
+	defer session2.Close()
+
+	// both keyspaces have a table named "test_stmt_cache_key"
+	if err := createTable(session, "CREATE TABLE test_stmt_cache_key (id varchar primary key, field varchar)"); err != nil {
+		t.Fatal("create table:", err)
+	}
+	if err := createTable(session2, "CREATE TABLE test_stmt_cache_key (id varchar primary key, field varchar)"); err != nil {
+		t.Fatal("create table:", err)
+	}
+
+	// both tables have a single row with the same partition key but different column value
+	if err = session.Query(`INSERT INTO test_stmt_cache_key (id, field) VALUES (?, ?)`, "key", "one").Exec(); err != nil {
+		t.Fatal("insert:", err)
+	}
+	if err = session2.Query(`INSERT INTO test_stmt_cache_key (id, field) VALUES (?, ?)`, "key", "two").Exec(); err != nil {
+		t.Fatal("insert:", err)
+	}
+
+	// should be able to see different values in each keyspace
+	var value string
+	if err = session.Query("SELECT field FROM test_stmt_cache_key WHERE id = ?", "key").Scan(&value); err != nil {
+		t.Fatal("select:", err)
+	}
+	if value != "one" {
+		t.Errorf("Expected one, got %s", value)
+	}
+
+	if err = session2.Query("SELECT field FROM test_stmt_cache_key WHERE id = ?", "key").Scan(&value); err != nil {
+		t.Fatal("select:", err)
+	}
+	if value != "two" {
+		t.Errorf("Expected two, got %s", value)
 	}
 }
 
@@ -1051,7 +1147,7 @@ func TestVarint(t *testing.T) {
 
 	err := session.Query("SELECT test FROM varint_test").Scan(&result64)
 	if err == nil || strings.Index(err.Error(), "out of range") == -1 {
-		t.Errorf("expected our of range error since value is too big for int64")
+		t.Errorf("expected out of range error since value is too big for int64")
 	}
 
 	// value not set in cassandra, leave bind variable empty
@@ -1071,5 +1167,72 @@ func TestVarint(t *testing.T) {
 
 	if resultBig != nil {
 		t.Errorf("Expected %v, was %v", nil, *resultBig)
+	}
+}
+
+//TestQueryStats confirms that the stats are returning valid data. Accuracy may be questionable.
+func TestQueryStats(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+	qry := session.Query("SELECT * FROM system.peers")
+	if err := qry.Exec(); err != nil {
+		t.Fatalf("query failed. %v", err)
+	} else {
+		if qry.Attempts() < 1 {
+			t.Fatal("expected at least 1 attempt, but got 0")
+		}
+		if qry.Latency() <= 0 {
+			t.Fatalf("expected latency to be greater than 0, but got %v instead.", qry.Latency())
+		}
+	}
+}
+
+//TestBatchStats confirms that the stats are returning valid data. Accuracy may be questionable.
+func TestBatchStats(t *testing.T) {
+	if *flagProto == 1 {
+		t.Skip("atomic batches not supported. Please use Cassandra >= 2.0")
+	}
+	session := createSession(t)
+	defer session.Close()
+
+	if err := createTable(session, "CREATE TABLE batchStats (id int, PRIMARY KEY (id))"); err != nil {
+		t.Fatalf("failed to create table with error '%v'", err)
+	}
+
+	b := session.NewBatch(LoggedBatch)
+	b.Query("INSERT INTO batchStats (id) VALUES (?)", 1)
+	b.Query("INSERT INTO batchStats (id) VALUES (?)", 2)
+
+	if err := session.ExecuteBatch(b); err != nil {
+		t.Fatalf("query failed. %v", err)
+	} else {
+		if b.Attempts() < 1 {
+			t.Fatal("expected at least 1 attempt, but got 0")
+		}
+		if b.Latency() <= 0 {
+			t.Fatalf("expected latency to be greater than 0, but got %v instead.", b.Latency())
+		}
+	}
+}
+
+//TestNilInQuery tests to see that a nil value passed to a query is handled by Cassandra
+//TODO validate the nil value by reading back the nil. Need to fix Unmarshalling.
+func TestNilInQuery(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+
+	if err := createTable(session, "CREATE TABLE testNilInsert (id int, count int, PRIMARY KEY (id))"); err != nil {
+		t.Fatalf("failed to create table with error '%v'", err)
+	}
+	if err := session.Query("INSERT INTO testNilInsert (id,count) VALUES (?,?)", 1, nil).Exec(); err != nil {
+		t.Fatalf("failed to insert with err: %v", err)
+	}
+
+	var id int
+
+	if err := session.Query("SELECT id FROM testNilInsert").Scan(&id); err != nil {
+		t.Fatalf("failed to select with err: %v", err)
+	} else if id != 1 {
+		t.Fatalf("expected id to be 1, got %v", id)
 	}
 }

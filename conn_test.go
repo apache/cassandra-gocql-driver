@@ -86,13 +86,17 @@ func TestQueryRetry(t *testing.T) {
 		t.Fatal("no timeout")
 	}()
 	rt := RetryPolicy{NumRetries: 1}
-
-	if err := db.Query("kill").RetryPolicy(rt).Exec(); err == nil {
+	qry := db.Query("kill").RetryPolicy(rt)
+	if err := qry.Exec(); err == nil {
 		t.Fatal("expected error")
 	}
-	//Minus 1 from the nKillReq variable since there is the initial query attempt
-	if srv.nKillReq-1 != uint64(rt.NumRetries) {
-		t.Fatalf("failed to retry the query %v time(s). Query executed %v times", rt.NumRetries, srv.nKillReq-1)
+	requests := srv.nKillReq
+	if requests != uint64(qry.Attempts()) {
+		t.Fatalf("expected requests %v to match query attemps %v", requests, qry.Attempts())
+	}
+	//Minus 1 from the requests variable since there is the initial query attempt
+	if requests-1 != uint64(rt.NumRetries) {
+		t.Fatalf("failed to retry the query %v time(s). Query executed %v times", rt.NumRetries, requests-1)
 	}
 }
 
