@@ -130,6 +130,40 @@ func TestRingDiscovery(t *testing.T) {
 	session.Close()
 }
 
+// Ensures that nodes are discovered when using a Network aware consistency.
+func TestRingDiscoveryNetworkTopology(t *testing.T) {
+
+	if *clusterSize <= 1 {
+		t.Skip("Skipping discovery based tests with single node cluster")
+	}
+
+	cluster := NewCluster(clusterHosts[0])
+	cluster.ProtoVersion = *flagProto
+	cluster.CQLVersion = *flagCQL
+	cluster.Timeout = 5 * time.Second
+	cluster.Consistency = LocalQuorum
+	cluster.RetryPolicy.NumRetries = *flagRetry
+	cluster.DiscoverHosts = true
+
+	session, err := cluster.CreateSession()
+	if err != nil {
+		t.Errorf("got error connecting to the cluster %v", err)
+	}
+
+	if *clusterSize > 1 {
+		// wait for autodiscovery to update the pool with the list of known hosts
+		time.Sleep(*flagAutoWait)
+	}
+
+	size := len(session.Pool.(*SimplePool).connPool)
+
+	if *clusterSize != size {
+		t.Fatalf("Expected a cluster size of %d, but actual size was %d", *clusterSize, size)
+	}
+
+	session.Close()
+}
+
 func TestEmptyHosts(t *testing.T) {
 	cluster := NewCluster()
 	if session, err := cluster.CreateSession(); err == nil {
