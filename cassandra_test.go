@@ -11,6 +11,7 @@ import (
 	"log"
 	"math"
 	"math/big"
+	"net"
 	"reflect"
 	"strconv"
 	"strings"
@@ -425,7 +426,8 @@ func TestSliceMap(t *testing.T) {
 			testlist       list<text>,
 			testset        set<int>,
 			testmap        map<varchar, varchar>,
-			testvarint     varint
+			testvarint     varint,
+			testinet			 inet
 		)`); err != nil {
 		t.Fatal("create table:", err)
 	}
@@ -450,9 +452,10 @@ func TestSliceMap(t *testing.T) {
 	m["testset"] = []int{1, 2, 3, 4, 5, 6, 7, 8, 9}
 	m["testmap"] = map[string]string{"field1": "val1", "field2": "val2", "field3": "val3"}
 	m["testvarint"] = bigInt
+	m["testinet"] = "213.212.2.19"
 	sliceMap := []map[string]interface{}{m}
-	if err := session.Query(`INSERT INTO slice_map_table (testuuid, testtimestamp, testvarchar, testbigint, testblob, testbool, testfloat, testdouble, testint, testdecimal, testlist, testset, testmap, testvarint) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		m["testuuid"], m["testtimestamp"], m["testvarchar"], m["testbigint"], m["testblob"], m["testbool"], m["testfloat"], m["testdouble"], m["testint"], m["testdecimal"], m["testlist"], m["testset"], m["testmap"], m["testvarint"]).Exec(); err != nil {
+	if err := session.Query(`INSERT INTO slice_map_table (testuuid, testtimestamp, testvarchar, testbigint, testblob, testbool, testfloat, testdouble, testint, testdecimal, testlist, testset, testmap, testvarint, testinet) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		m["testuuid"], m["testtimestamp"], m["testvarchar"], m["testbigint"], m["testblob"], m["testbool"], m["testfloat"], m["testdouble"], m["testint"], m["testdecimal"], m["testlist"], m["testset"], m["testmap"], m["testvarint"], m["testinet"]).Exec(); err != nil {
 		t.Fatal("insert:", err)
 	}
 	if returned, retErr := session.Query(`SELECT * FROM slice_map_table`).Iter().SliceMap(); retErr != nil {
@@ -507,6 +510,10 @@ func TestSliceMap(t *testing.T) {
 		if expectedBigInt.Cmp(returnedBigInt) != 0 {
 			t.Fatal("returned testvarint did not match")
 		}
+
+		if sliceMap[0]["testinet"] != returned[0]["testinet"] {
+			t.Fatal("returned testinet did not match")
+		}
 	}
 
 	// Test for MapScan()
@@ -538,8 +545,8 @@ func TestSliceMap(t *testing.T) {
 	if sliceMap[0]["testdouble"] != testMap["testdouble"] {
 		t.Fatal("returned testdouble did not match")
 	}
-	if sliceMap[0]["testint"] != testMap["testint"] {
-		t.Fatal("returned testint did not match")
+	if sliceMap[0]["testinet"] != testMap["testinet"] {
+		t.Fatal("returned testinet did not match")
 	}
 
 	expectedDecimal := sliceMap[0]["testdecimal"].(*inf.Dec)
@@ -558,7 +565,9 @@ func TestSliceMap(t *testing.T) {
 	if !reflect.DeepEqual(sliceMap[0]["testmap"], testMap["testmap"]) {
 		t.Fatal("returned testmap did not match")
 	}
-
+	if sliceMap[0]["testint"] != testMap["testint"] {
+		t.Fatal("returned testint did not match")
+	}
 }
 
 func TestScanWithNilArguments(t *testing.T) {
@@ -1082,6 +1091,58 @@ func TestMarshalFloat64Ptr(t *testing.T) {
 	if err := session.Query(`INSERT INTO float_test (id,test) VALUES (?,?)`, float64(7500.00), &testNum).Exec(); err != nil {
 		t.Fatal("insert float64:", err)
 	}
+}
+
+//TestMarshalInet tests to see that a pointer to a float64 is marshalled correctly.
+func TestMarshalInet(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+
+	if err := createTable(session, "CREATE TABLE inet_test (ip inet, name text, primary key (ip))"); err != nil {
+		t.Fatal("create table:", err)
+	}
+	stringIp := "123.34.45.56"
+	if err := session.Query(`INSERT INTO inet_test (ip,name) VALUES (?,?)`, stringIp, "Test IP 1").Exec(); err != nil {
+		t.Fatal("insert string inet:", err)
+	}
+	var stringResult string
+	if err := session.Query("SELECT ip FROM inet_test").Scan(&stringResult); err != nil {
+		t.Fatalf("select for string from inet_test 1 failed: %v", err)
+	}
+	if stringResult != stringIp {
+		t.Errorf("Expected %s, was %s", stringIp, stringResult)
+	}
+
+	var ipResult net.IP
+	if err := session.Query("SELECT ip FROM inet_test").Scan(&ipResult); err != nil {
+		t.Fatalf("select for net.IP from inet_test 1 failed: %v", err)
+	}
+	if ipResult.String() != stringIp {
+		t.Errorf("Expected %s, was %s", stringIp, ipResult.String())
+	}
+
+	if err := session.Query(`DELETE FROM inet_test WHERE ip = ?`, stringIp).Exec(); err != nil {
+		t.Fatal("delete inet table:", err)
+	}
+
+	netIp := net.ParseIP("222.43.54.65")
+	if err := session.Query(`INSERT INTO inet_test (ip,name) VALUES (?,?)`, netIp, "Test IP 2").Exec(); err != nil {
+		t.Fatal("insert netIp inet:", err)
+	}
+
+	if err := session.Query("SELECT ip FROM inet_test").Scan(&stringResult); err != nil {
+		t.Fatalf("select for string from inet_test 2 failed: %v", err)
+	}
+	if stringResult != netIp.String() {
+		t.Errorf("Expected %s, was %s", netIp.String(), stringResult)
+	}
+	if err := session.Query("SELECT ip FROM inet_test").Scan(&ipResult); err != nil {
+		t.Fatalf("select for net.IP from inet_test 2 failed: %v", err)
+	}
+	if ipResult.String() != netIp.String() {
+		t.Errorf("Expected %s, was %s", netIp.String(), ipResult.String())
+	}
+
 }
 
 func TestVarint(t *testing.T) {
