@@ -29,8 +29,8 @@ var (
 	flagCQL      = flag.String("cql", "3.0.0", "CQL version")
 	flagRF       = flag.Int("rf", 1, "replication factor for test keyspace")
 	clusterSize  = flag.Int("clusterSize", 1, "the expected size of the cluster")
-	flagDCSize	 = flag.Int("localNodes", 1, "the number of 'dc local' nodes in the cluster")
-	flagDC		 = flag.String("localDC", "dc1", "the name of the local datacenter")
+	flagDCSize   = flag.Int("localNodes", 1, "the number of 'dc local' nodes in the cluster")
+	flagDC       = flag.String("localDC", "dc1", "the name of the local datacenter")
 	flagRetry    = flag.Int("retries", 5, "number of times to retry queries")
 	flagAutoWait = flag.Duration("autowait", 1000*time.Millisecond, "time to wait for autodiscovery to fill the hosts poll")
 	clusterHosts []string
