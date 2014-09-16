@@ -29,6 +29,8 @@ var (
 	flagCQL      = flag.String("cql", "3.0.0", "CQL version")
 	flagRF       = flag.Int("rf", 1, "replication factor for test keyspace")
 	clusterSize  = flag.Int("clusterSize", 1, "the expected size of the cluster")
+	flagDCSize   = flag.Int("localNodes", 1, "the number of 'dc local' nodes in the cluster")
+	flagDC       = flag.String("localDC", "dc1", "the name of the local datacenter")
 	flagRetry    = flag.Int("retries", 5, "number of times to retry queries")
 	flagAutoWait = flag.Duration("autowait", 1000*time.Millisecond, "time to wait for autodiscovery to fill the hosts poll")
 	clusterHosts []string
@@ -125,6 +127,37 @@ func TestRingDiscovery(t *testing.T) {
 
 	if *clusterSize != size {
 		t.Fatalf("Expected a cluster size of %d, but actual size was %d", *clusterSize, size)
+	}
+
+	session.Close()
+}
+
+//TestRingDiscovery makes sure that you can autodiscover other cluster members when you seed a cluster config with just one node
+func TestLocalRingDiscovery(t *testing.T) {
+
+	cluster := NewCluster(clusterHosts[0])
+	cluster.ProtoVersion = *flagProto
+	cluster.CQLVersion = *flagCQL
+	cluster.Timeout = 5 * time.Second
+	cluster.Consistency = Quorum
+	cluster.DiscoverHosts = true
+
+	cluster.Discovery = DiscoveryConfig{DcFilter: *flagDC}
+
+	session, err := cluster.CreateSession()
+	if err != nil {
+		t.Errorf("got error connecting to the cluster %v", err)
+	}
+
+	if *clusterSize > 1 {
+		// wait for autodiscovery to update the pool with the list of known hosts
+		time.Sleep(*flagAutoWait)
+	}
+
+	size := len(session.Pool.(*SimplePool).connPool)
+
+	if *flagDCSize != size {
+		t.Fatalf("Expected a local cluster size of %d, but actual size was %d", *flagDCSize, size)
 	}
 
 	session.Close()
