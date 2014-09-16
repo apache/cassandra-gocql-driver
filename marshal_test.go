@@ -275,22 +275,22 @@ var marshalTests = []struct {
 	},
 	{
 		&TypeInfo{Type: TypeInet},
-		[]byte("\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xFF\xFF\x7F\x00\x00\x01"),
-		net.ParseIP("127.0.0.1"),
+		[]byte("\x7F\x00\x00\x01"),
+		net.ParseIP("127.0.0.1").To4(),
 	},
 	{
 		&TypeInfo{Type: TypeInet},
-		[]byte("\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xFF\xFF\xFF\xFF\xFF\xFF"),
-		net.ParseIP("255.255.255.255"),
+		[]byte("\xFF\xFF\xFF\xFF"),
+		net.ParseIP("255.255.255.255").To4(),
 	},
 	{
 		&TypeInfo{Type: TypeInet},
-		[]byte("\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xFF\xFF\x7F\x00\x00\x01"),
+		[]byte("\x7F\x00\x00\x01"),
 		"127.0.0.1",
 	},
 	{
 		&TypeInfo{Type: TypeInet},
-		[]byte("\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xFF\xFF\xFF\xFF\xFF\xFF"),
+		[]byte("\xFF\xFF\xFF\xFF"),
 		"255.255.255.255",
 	},
 	{
