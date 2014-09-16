@@ -284,7 +284,7 @@ func TestCAS(t *testing.T) {
 	if applied, err := session.Query(`DELETE FROM cas_table WHERE title = ? and revid = ? IF last_modified = ?`,
 		title, revid, modified).ScanCAS(&modifiedCAS); err != nil {
 		t.Fatal("delete:", err)
-	} else if applied {
+	} else if !applied {
 		t.Fatal("delete should have been applied")
 	}
 }
