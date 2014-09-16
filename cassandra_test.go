@@ -281,6 +281,11 @@ func TestCAS(t *testing.T) {
 		t.Fatalf("Was expecting modified CAS to be %v; but was one second later", modifiedCAS.UTC())
 	}
 
+	if _, err := session.Query(`DELETE FROM cas_table WHERE title = ? and revid = ? IF last_modified = ?`,
+		title, revid, tenSecondsLater).ScanCAS(); err.Error() != "count mismatch" {
+		t.Fatalf("delete: was expecting count mismatch error but got %s", err)
+	}
+
 	if applied, err := session.Query(`DELETE FROM cas_table WHERE title = ? and revid = ? IF last_modified = ?`,
 		title, revid, modified).ScanCAS(&modifiedCAS); err != nil {
 		t.Fatal("delete:", err)
