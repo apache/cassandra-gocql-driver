@@ -136,7 +136,7 @@ func (s *Session) executeQuery(qry *Query) *Iter {
 	var iter *Iter
 	qry.attempts = 0
 	qry.totalLatency = 0
-	for qry.attempts <= qry.rt.NumRetries {
+	for {
 		conn := s.Pool.Pick(qry)
 
 		//Assign the error unavailable to the iterator
@@ -152,6 +152,10 @@ func (s *Session) executeQuery(qry *Query) *Iter {
 
 		//Exit for loop if the query was successful
 		if iter.err == nil {
+			break
+		}
+
+		if qry.rt == nil || !qry.rt.Attempt(qry) {
 			break
 		}
 	}
@@ -177,7 +181,7 @@ func (s *Session) ExecuteBatch(batch *Batch) error {
 	var err error
 	batch.attempts = 0
 	batch.totalLatency = 0
-	for batch.attempts <= batch.rt.NumRetries {
+	for {
 		conn := s.Pool.Pick(nil)
 
 		//Assign the error unavailable and break loop
@@ -192,6 +196,10 @@ func (s *Session) ExecuteBatch(batch *Batch) error {
 		//Exit loop if operation executed correctly
 		if err == nil {
 			return nil
+		}
+
+		if batch.rt == nil || !batch.rt.Attempt(batch) {
+			break
 		}
 	}
 
