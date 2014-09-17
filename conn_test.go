@@ -85,7 +85,8 @@ func TestQueryRetry(t *testing.T) {
 		<-time.After(5 * time.Second)
 		t.Fatal("no timeout")
 	}()
-	rt := RetryPolicy{NumRetries: 1}
+	rt := &SimpleRetryPolicy{NumRetries: 1}
+
 	qry := db.Query("kill").RetryPolicy(rt)
 	if err := qry.Exec(); err == nil {
 		t.Fatal("expected error")

@@ -58,7 +58,9 @@ func createCluster() *ClusterConfig {
 	cluster.CQLVersion = *flagCQL
 	cluster.Timeout = 5 * time.Second
 	cluster.Consistency = Quorum
-	cluster.RetryPolicy.NumRetries = *flagRetry
+	if *flagRetry > 0 {
+		cluster.RetryPolicy = &SimpleRetryPolicy{NumRetries: *flagRetry}
+	}
 
 	return cluster
 }
@@ -108,7 +110,9 @@ func TestRingDiscovery(t *testing.T) {
 	cluster.CQLVersion = *flagCQL
 	cluster.Timeout = 5 * time.Second
 	cluster.Consistency = Quorum
-	cluster.RetryPolicy.NumRetries = *flagRetry
+	if *flagRetry > 0 {
+		cluster.RetryPolicy = &SimpleRetryPolicy{NumRetries: *flagRetry}
+	}
 	cluster.DiscoverHosts = true
 
 	session, err := cluster.CreateSession()
