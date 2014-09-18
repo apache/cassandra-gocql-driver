@@ -169,6 +169,7 @@ func (c *SimplePool) connect(addr string) error {
 		Compressor:    c.cfg.Compressor,
 		Authenticator: c.cfg.Authenticator,
 		Keepalive:     c.cfg.SocketKeepalive,
+		SslOpts:       c.cfg.SslOpts,
 	}
 
 	conn, err := Connect(addr, cfg, c)
