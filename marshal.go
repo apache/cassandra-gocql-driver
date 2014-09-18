@@ -1044,15 +1044,24 @@ func unmarshalTimeUUID(info *TypeInfo, data []byte, value interface{}) error {
 }
 
 func marshalInet(info *TypeInfo, value interface{}) ([]byte, error) {
+	// we return either the 4 or 16 byte representation of an
+	// ip address here otherwise the db value will be prefixed
+	// with the remaining byte values e.g. ::ffff:127.0.0.1 and not 127.0.0.1
 	switch val := value.(type) {
 	case net.IP:
-		return val, nil
-	case []byte:
-		return val, nil
+		t := val.To4()
+		if t == nil {
+			return val.To16(), nil
+		}
+		return t, nil
 	case string:
 		b := net.ParseIP(val)
 		if b != nil {
-			return b[:], nil
+			t := b.To4()
+			if t == nil {
+				return b.To16(), nil
+			}
+			return t, nil
 		}
 		return nil, marshalErrorf("cannot marshal. invalid ip string %s", val)
 	}
@@ -1064,7 +1073,12 @@ func unmarshalInet(info *TypeInfo, data []byte, value interface{}) error {
 	case Unmarshaler:
 		return v.UnmarshalCQL(info, data)
 	case *net.IP:
-		*v = net.IP(data)
+		ip := net.IP(data)
+		if v4 := ip.To4(); v4 != nil {
+			*v = v4
+			return nil
+		}
+		*v = ip
 		return nil
 	case *string:
 		if len(data) == 0 {
@@ -1072,6 +1086,10 @@ func unmarshalInet(info *TypeInfo, data []byte, value interface{}) error {
 			return nil
 		}
 		ip := net.IP(data)
+		if v4 := ip.To4(); v4 != nil {
+			*v = v4.String()
+			return nil
+		}
 		*v = ip.String()
 		return nil
 	}

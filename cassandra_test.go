@@ -58,7 +58,9 @@ func createCluster() *ClusterConfig {
 	cluster.CQLVersion = *flagCQL
 	cluster.Timeout = 5 * time.Second
 	cluster.Consistency = Quorum
-	cluster.RetryPolicy.NumRetries = *flagRetry
+	if *flagRetry > 0 {
+		cluster.RetryPolicy = &SimpleRetryPolicy{NumRetries: *flagRetry}
+	}
 
 	return cluster
 }
@@ -108,7 +110,9 @@ func TestRingDiscovery(t *testing.T) {
 	cluster.CQLVersion = *flagCQL
 	cluster.Timeout = 5 * time.Second
 	cluster.Consistency = Quorum
-	cluster.RetryPolicy.NumRetries = *flagRetry
+	if *flagRetry > 0 {
+		cluster.RetryPolicy = &SimpleRetryPolicy{NumRetries: *flagRetry}
+	}
 	cluster.DiscoverHosts = true
 
 	session, err := cluster.CreateSession()
@@ -237,33 +241,60 @@ func TestCAS(t *testing.T) {
 	defer session.Close()
 
 	if err := createTable(session, `CREATE TABLE cas_table (
-			title   varchar,
-			revid   timeuuid,
+			title         varchar,
+			revid   	  timeuuid,
+			last_modified timestamp,
 			PRIMARY KEY (title, revid)
 		)`); err != nil {
 		t.Fatal("create:", err)
 	}
 
-	title, revid := "baz", TimeUUID()
+	title, revid, modified := "baz", TimeUUID(), time.Now()
 	var titleCAS string
 	var revidCAS UUID
+	var modifiedCAS time.Time
 
-	if applied, err := session.Query(`INSERT INTO cas_table (title, revid)
-		VALUES (?, ?) IF NOT EXISTS`,
-		title, revid).ScanCAS(&titleCAS, &revidCAS); err != nil {
+	if applied, err := session.Query(`INSERT INTO cas_table (title, revid, last_modified)
+		VALUES (?, ?, ?) IF NOT EXISTS`,
+		title, revid, modified).ScanCAS(&titleCAS, &revidCAS, &modifiedCAS); err != nil {
 		t.Fatal("insert:", err)
 	} else if !applied {
 		t.Fatal("insert should have been applied")
 	}
 
-	if applied, err := session.Query(`INSERT INTO cas_table (title, revid)
-		VALUES (?, ?) IF NOT EXISTS`,
-		title, revid).ScanCAS(&titleCAS, &revidCAS); err != nil {
+	if applied, err := session.Query(`INSERT INTO cas_table (title, revid, last_modified)
+		VALUES (?, ?, ?) IF NOT EXISTS`,
+		title, revid, modified).ScanCAS(&titleCAS, &revidCAS, &modifiedCAS); err != nil {
 		t.Fatal("insert:", err)
 	} else if applied {
 		t.Fatal("insert should not have been applied")
 	} else if title != titleCAS || revid != revidCAS {
-		t.Fatalf("expected %s/%v but got %s/%v", title, revid, titleCAS, revidCAS)
+		t.Fatalf("expected %s/%v/%v but got %s/%v/%v", title, revid, modified, titleCAS, revidCAS, modifiedCAS)
+	}
+
+	tenSecondsLater := modified.Add(10 * time.Second)
+
+	if applied, err := session.Query(`DELETE FROM cas_table WHERE title = ? and revid = ? IF last_modified = ?`,
+		title, revid, tenSecondsLater).ScanCAS(&modifiedCAS); err != nil {
+		t.Fatal("delete:", err)
+	} else if applied {
+		t.Fatal("delete should have not been applied")
+	}
+
+	if modifiedCAS.Unix() != tenSecondsLater.Add(-10*time.Second).Unix() {
+		t.Fatalf("Was expecting modified CAS to be %v; but was one second later", modifiedCAS.UTC())
+	}
+
+	if _, err := session.Query(`DELETE FROM cas_table WHERE title = ? and revid = ? IF last_modified = ?`,
+		title, revid, tenSecondsLater).ScanCAS(); err.Error() != "count mismatch" {
+		t.Fatalf("delete: was expecting count mismatch error but got %s", err)
+	}
+
+	if applied, err := session.Query(`DELETE FROM cas_table WHERE title = ? and revid = ? IF last_modified = ?`,
+		title, revid, modified).ScanCAS(&modifiedCAS); err != nil {
+		t.Fatal("delete:", err)
+	} else if !applied {
+		t.Fatal("delete should have been applied")
 	}
 }
 
