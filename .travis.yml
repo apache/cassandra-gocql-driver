@@ -1,7 +1,7 @@
 language: go
 
 env:
-  - CASS=1.2.18
+  - CASS=1.2.19
   - CASS=2.0.10
   - CASS=2.1.0
 
