@@ -24,5 +24,4 @@ function run_tests() {
 
 	ccm clear
 }
-
 run_tests $1
