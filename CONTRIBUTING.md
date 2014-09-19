@@ -16,6 +16,7 @@ The following is a check list of requirements that need to be satisfied in order
 * The motivation behind the patch is clearly defined in the pull request summary
 * Your name and email have been added to the `AUTHORS` file (for copyright purposes)
 * The patch will merge cleanly
+* The test coverage does not fall below the critical threshold (currently 64%) 
 * The merge commit passes the regression test suite on Travis
 * `go fmt` has been applied to the submitted code
 * Functional changes (i.e. new features or changed behavior) are appropriately documented, either as a godoc or in the README (non-functional changes such as bug fixes may not require documentation)
