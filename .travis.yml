@@ -20,6 +20,7 @@ install:
   - pushd ccm
   - sudo ./setup.py install
   - popd
+  - go get .
 
 script:
   - bash integration.sh $CASS
