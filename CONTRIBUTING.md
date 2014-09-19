@@ -58,8 +58,8 @@ There are some long term plans for gocql that have to be taken into account when
 
 Currently, the officiallly supported versions of the Cassandra server include:
 
-* 2.0.6
-* 2.0.7
+* 1.2.18
+* 2.0.9
 
 Chances are that gocql will work with many other versions. If you would like us to support a particular version of Cassandra, please start a conversation about what version you'd like us to consider. We are more likely to accept a new version if you help out by extending the regression suite to cover the new version to be supported.
 
