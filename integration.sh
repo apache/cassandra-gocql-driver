@@ -20,8 +20,8 @@ function run_tests() {
 		proto=1
 	fi
 
-	go test -v -proto=$proto -rf=3 -cluster=$(ccm liveset) -clusterSize=$clusterSize -autowait=2000ms ./... > results
-	
+	go test -cover -v -proto=$proto -rf=3 -cluster=$(ccm liveset) -clusterSize=$clusterSize -autowait=2000ms ./... > results
+
 	cat results
 	cover=`cat results | grep coverage: | grep -o "[0-9]\{1,3\}" | head -n 1`
 	if [[ $cover -lt "68" ]]; then
