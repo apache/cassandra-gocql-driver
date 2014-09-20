@@ -353,6 +353,28 @@ func (q *Query) ScanCAS(dest ...interface{}) (applied bool, err error) {
 	return applied, iter.Close()
 }
 
+// MapScanCAS executes a lightweight transaction (i.e. an UPDATE or INSERT
+// statement containing an IF clause). If the transaction fails because
+// the existing values did not match, the previos values will be stored
+// in dest.
+func (q *Query) MapScanCAS(dest map[string]interface{}) (applied bool, err error) {
+	iter := q.Iter()
+	if iter.err != nil {
+		return false, iter.err
+	}
+	if len(iter.rows) == 0 {
+		return false, ErrNotFound
+	}
+	if len(iter.Columns()) > 1 {
+		iter.MapScan(dest)
+		applied = dest["[applied]"].(bool)
+		delete(dest, "[applied]")
+	} else {
+		iter.Scan(&applied)
+	}
+	return applied, iter.Close()
+}
+
 // Iter represents an iterator that can be used to iterate over all rows that
 // were returned by a query. The iterator might send additional queries to the
 // database during the iteration if paging was enabled.
