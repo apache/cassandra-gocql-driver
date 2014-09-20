@@ -16,6 +16,7 @@ The following is a check list of requirements that need to be satisfied in order
 * The motivation behind the patch is clearly defined in the pull request summary
 * Your name and email have been added to the `AUTHORS` file (for copyright purposes)
 * The patch will merge cleanly
+* The test coverage does not fall below the critical threshold (currently 64%) 
 * The merge commit passes the regression test suite on Travis
 * `go fmt` has been applied to the submitted code
 * Functional changes (i.e. new features or changed behavior) are appropriately documented, either as a godoc or in the README (non-functional changes such as bug fixes may not require documentation)
@@ -57,8 +58,8 @@ There are some long term plans for gocql that have to be taken into account when
 
 Currently, the officiallly supported versions of the Cassandra server include:
 
-* 2.0.6
-* 2.0.7
+* 1.2.18
+* 2.0.9
 
 Chances are that gocql will work with many other versions. If you would like us to support a particular version of Cassandra, please start a conversation about what version you'd like us to consider. We are more likely to accept a new version if you help out by extending the regression suite to cover the new version to be supported.
 
