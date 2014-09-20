@@ -24,14 +24,15 @@ import (
 )
 
 var (
-	flagCluster  = flag.String("cluster", "127.0.0.1", "a comma-separated list of host:port tuples")
-	flagProto    = flag.Int("proto", 2, "protcol version")
-	flagCQL      = flag.String("cql", "3.0.0", "CQL version")
-	flagRF       = flag.Int("rf", 1, "replication factor for test keyspace")
-	clusterSize  = flag.Int("clusterSize", 1, "the expected size of the cluster")
-	flagRetry    = flag.Int("retries", 5, "number of times to retry queries")
-	flagAutoWait = flag.Duration("autowait", 1000*time.Millisecond, "time to wait for autodiscovery to fill the hosts poll")
-	clusterHosts []string
+	flagCluster    = flag.String("cluster", "127.0.0.1", "a comma-separated list of host:port tuples")
+	flagProto      = flag.Int("proto", 2, "protcol version")
+	flagCQL        = flag.String("cql", "3.0.0", "CQL version")
+	flagRF         = flag.Int("rf", 1, "replication factor for test keyspace")
+	clusterSize    = flag.Int("clusterSize", 1, "the expected size of the cluster")
+	flagRetry      = flag.Int("retries", 5, "number of times to retry queries")
+	flagAutoWait   = flag.Duration("autowait", 1000*time.Millisecond, "time to wait for autodiscovery to fill the hosts poll")
+	flagRunSslTest = flag.Bool("runssl", false, "Set to true to run ssl test")
+	clusterHosts   []string
 )
 
 func init() {
@@ -52,7 +53,7 @@ func createTable(s *Session, table string) error {
 	return err
 }
 
-func createCluster() *ClusterConfig {
+var createCluster = func() *ClusterConfig {
 	cluster := NewCluster(clusterHosts...)
 	cluster.ProtoVersion = *flagProto
 	cluster.CQLVersion = *flagCQL
