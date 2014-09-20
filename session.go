@@ -365,13 +365,10 @@ func (q *Query) MapScanCAS(dest map[string]interface{}) (applied bool, err error
 	if len(iter.rows) == 0 {
 		return false, ErrNotFound
 	}
-	if len(iter.Columns()) > 1 {
-		iter.MapScan(dest)
-		applied = dest["[applied]"].(bool)
-		delete(dest, "[applied]")
-	} else {
-		iter.Scan(&applied)
-	}
+	iter.MapScan(dest)
+	applied = dest["[applied]"].(bool)
+	delete(dest, "[applied]")
+
 	return applied, iter.Close()
 }
 
