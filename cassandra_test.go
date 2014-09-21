@@ -298,6 +298,48 @@ func TestCAS(t *testing.T) {
 	}
 }
 
+func TestMapScanCAS(t *testing.T) {
+	if *flagProto == 1 {
+		t.Skip("lightweight transactions not supported. Please use Cassandra >= 2.0")
+	}
+
+	session := createSession(t)
+	defer session.Close()
+
+	if err := createTable(session, `CREATE TABLE cas_table2 (
+			title         varchar,
+			revid   	  timeuuid,
+			last_modified timestamp,
+			deleted boolean,
+			PRIMARY KEY (title, revid)
+		)`); err != nil {
+		t.Fatal("create:", err)
+	}
+
+	title, revid, modified, deleted := "baz", TimeUUID(), time.Now(), false
+	mapCAS := map[string]interface{}{}
+
+	if applied, err := session.Query(`INSERT INTO cas_table2 (title, revid, last_modified, deleted)
+		VALUES (?, ?, ?, ?) IF NOT EXISTS`,
+		title, revid, modified, deleted).MapScanCAS(mapCAS); err != nil {
+		t.Fatal("insert:", err)
+	} else if !applied {
+		t.Fatal("insert should have been applied")
+	}
+
+	mapCAS = map[string]interface{}{}
+	if applied, err := session.Query(`INSERT INTO cas_table2 (title, revid, last_modified, deleted)
+		VALUES (?, ?, ?, ?) IF NOT EXISTS`,
+		title, revid, modified, deleted).MapScanCAS(mapCAS); err != nil {
+		t.Fatal("insert:", err)
+	} else if applied {
+		t.Fatal("insert should not have been applied")
+	} else if title != mapCAS["title"] || revid != mapCAS["revid"] || deleted != mapCAS["deleted"] {
+		t.Fatalf("expected %s/%v/%v/%v but got %s/%v/%v%v", title, revid, modified, false, mapCAS["title"], mapCAS["revid"], mapCAS["last_modified"], mapCAS["deleted"])
+	}
+
+}
+
 func TestBatch(t *testing.T) {
 	if *flagProto == 1 {
 		t.Skip("atomic batches not supported. Please use Cassandra >= 2.0")

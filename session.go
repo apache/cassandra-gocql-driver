@@ -322,11 +322,8 @@ func (q *Query) Iter() *Iter {
 // were selected, ErrNotFound is returned.
 func (q *Query) Scan(dest ...interface{}) error {
 	iter := q.Iter()
-	if iter.err != nil {
-		return iter.err
-	}
-	if len(iter.rows) == 0 {
-		return ErrNotFound
+	if err := iter.checkErrAndNotFound(); err != nil {
+		return err
 	}
 	iter.Scan(dest...)
 	return iter.Close()
@@ -338,11 +335,8 @@ func (q *Query) Scan(dest ...interface{}) error {
 // in dest.
 func (q *Query) ScanCAS(dest ...interface{}) (applied bool, err error) {
 	iter := q.Iter()
-	if iter.err != nil {
-		return false, iter.err
-	}
-	if len(iter.rows) == 0 {
-		return false, ErrNotFound
+	if err := iter.checkErrAndNotFound(); err != nil {
+		return false, err
 	}
 	if len(iter.Columns()) > 1 {
 		dest = append([]interface{}{&applied}, dest...)
@@ -350,6 +344,26 @@ func (q *Query) ScanCAS(dest ...interface{}) (applied bool, err error) {
 	} else {
 		iter.Scan(&applied)
 	}
+	return applied, iter.Close()
+}
+
+// MapScanCAS executes a lightweight transaction (i.e. an UPDATE or INSERT
+// statement containing an IF clause). If the transaction fails because
+// the existing values did not match, the previos values will be stored
+// in dest map.
+//
+// As for INSERT .. IF NOT EXISTS, previous values will be returned as if
+// SELECT * FROM. So using ScanCAS with INSERT is inherently prone to
+// column mismatching. MapScanCAS is added to capture them safely.
+func (q *Query) MapScanCAS(dest map[string]interface{}) (applied bool, err error) {
+	iter := q.Iter()
+	if err := iter.checkErrAndNotFound(); err != nil {
+		return false, err
+	}
+	iter.MapScan(dest)
+	applied = dest["[applied]"].(bool)
+	delete(dest, "[applied]")
+
 	return applied, iter.Close()
 }
 
@@ -413,6 +427,16 @@ func (iter *Iter) Scan(dest ...interface{}) bool {
 // the query or the iteration.
 func (iter *Iter) Close() error {
 	return iter.err
+}
+
+// checkErrAndNotFound handle error and NotFound in one method.
+func (iter *Iter) checkErrAndNotFound() error {
+	if iter.err != nil {
+		return iter.err
+	} else if len(iter.rows) == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 type nextIter struct {
