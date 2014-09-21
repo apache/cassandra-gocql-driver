@@ -350,7 +350,11 @@ func (q *Query) ScanCAS(dest ...interface{}) (applied bool, err error) {
 // MapScanCAS executes a lightweight transaction (i.e. an UPDATE or INSERT
 // statement containing an IF clause). If the transaction fails because
 // the existing values did not match, the previos values will be stored
-// in dest.
+// in dest map.
+//
+// As for INSERT .. IF NOT EXISTS, previous values will be returned as if
+// SELECT * FROM. So using ScanCAS with INSERT is inherently prone to
+// column mismatching. MapScanCAS is added to capture them safely.
 func (q *Query) MapScanCAS(dest map[string]interface{}) (applied bool, err error) {
 	iter := q.Iter()
 	if err := iter.checkErrAndNotFound(); err != nil {
