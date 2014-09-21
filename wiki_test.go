@@ -25,9 +25,9 @@ func init() {
 var createSslCluster = func() *ClusterConfig {
 	cluster := cf()
 	cluster.SslOpts = &SslOptions{
-		CertPath:               "resources/conf/pki/gocql.crt",
-		KeyPath:                "resources/conf/pki/gocql.key",
-		CaPath:                 "resources/conf/pki/ca.crt",
+		CertPath:               "testdata/pki/gocql.crt",
+		KeyPath:                "testdata/pki/gocql.key",
+		CaPath:                 "testdata/pki/ca.crt",
 		EnableHostVerification: false,
 	}
 	return cluster

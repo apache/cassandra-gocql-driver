@@ -639,11 +639,11 @@ server_encryption_options:
 # enable or disable client/server encryption.
 client_encryption_options:
     enabled: true
-    keystore: resources/conf/pki/.keystore
+    keystore: testdata/pki/.keystore
     keystore_password: cassandra
     require_client_auth: true
     # Set trustore and truststore_password if require_client_auth is true
-    truststore: resources/conf/pki/.truststore
+    truststore: testdata/pki/.truststore
     truststore_password: cassandra
     # More advanced defaults below:
     # protocol: TLS

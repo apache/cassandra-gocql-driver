@@ -30,8 +30,9 @@ function run_tests() {
 	fi
 	ccm clear
 
-    cp -f resources/conf/cassandra.yaml ~/.ccm/repository/$version/conf/
-    ###### updateconf is necessary here so the yaml file gets loaded
+	#cannot do this due to https://github.com/pcmanus/ccm/issues/171
+	#ccm updateconf -y testdata/cassandra.yaml
+	cp -f testdata/cassandra.yaml ~/.ccm/repository/$version/conf/
 	ccm updateconf
     ccm start
     ccm status
