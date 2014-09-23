@@ -50,8 +50,11 @@ func (p PasswordAuthenticator) Success(data []byte) error {
 type SslOptions struct {
 	CertPath               string
 	KeyPath                string
-	CaPath                 string
-	EnableHostVerification bool //most of the time people will want to not verify host they are connecting to
+	CaPath                 string //optional depending on server config
+	// If you want to verify the hostname and server cert (like a wildcard for cass cluster) then you should turn this on
+	// This option is basically the inverse of InSecureSkipVerify
+	// See InSecureSkipVerify in http://golang.org/pkg/crypto/tls/ for more info
+	EnableHostVerification bool
 }
 
 type ConnConfig struct {
@@ -95,11 +98,18 @@ func Connect(addr string, cfg ConnConfig, pool ConnectionPool) (*Conn, error) {
 		err  error
 		conn net.Conn
 	)
+
 	if cfg.SslOpts != nil {
-		pem, err := ioutil.ReadFile(cfg.SslOpts.CaPath)
 		certPool := x509.NewCertPool()
-		if !certPool.AppendCertsFromPEM(pem) {
-			return nil, errors.New("Failed parsing or appending certs")
+		//ca cert is optional
+		if cfg.SslOpts.CaPath != "" {
+			pem, err := ioutil.ReadFile(cfg.SslOpts.CaPath)
+			if err != nil {
+				return nil, err
+			}
+			if !certPool.AppendCertsFromPEM(pem) {
+				return nil, errors.New("Failed parsing or appending certs")
+			}
 		}
 		mycert, err := tls.LoadX509KeyPair(cfg.SslOpts.CertPath, cfg.SslOpts.KeyPath)
 		if err != nil {
