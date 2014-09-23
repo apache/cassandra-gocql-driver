@@ -482,6 +482,64 @@ func TestCreateSessionTimeout(t *testing.T) {
 	}
 }
 
+type FullName struct {
+	FirstName string
+	LastName  string
+}
+
+func (n FullName) MarshalCQL(info *TypeInfo) ([]byte, error) {
+	return []byte(n.FirstName + " " + n.LastName), nil
+}
+func (n *FullName) UnmarshalCQL(info *TypeInfo, data []byte) error {
+	t := strings.SplitN(string(data), " ", 2)
+	n.FirstName, n.LastName = t[0], t[1]
+	return nil
+}
+
+func TestMapScanWithRefMap(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+	if err := createTable(session, `CREATE TABLE scan_map_ref_table (
+			testtext       text PRIMARY KEY,
+			testfullname   text,
+			testint        int,
+		)`); err != nil {
+		t.Fatal("create table:", err)
+	}
+	m := make(map[string]interface{})
+	m["testtext"] = "testtext"
+	m["testfullname"] = FullName{"John", "Doe"}
+	m["testint"] = 100
+
+	if err := session.Query(`INSERT INTO scan_map_ref_table (testtext, testfullname, testint) values (?,?,?)`, m["testtext"], m["testfullname"], m["testint"]).Exec(); err != nil {
+		t.Fatal("insert:", err)
+	}
+
+	var testText string
+	var testFullName FullName
+	ret := map[string]interface{}{
+		"testtext":     &testText,
+		"testfullname": &testFullName,
+		// testint is not set here.
+	}
+	iter := session.Query(`SELECT * FROM scan_map_ref_table`).Iter()
+	if ok := iter.MapScan(ret); !ok {
+		t.Fatal("select:", iter.Close())
+	} else {
+		if ret["testtext"] != "testtext" {
+			t.Fatal("returned testtext did not match")
+		}
+		f := ret["testfullname"].(FullName)
+		if f.FirstName != "John" || f.LastName != "Doe" {
+			t.Fatal("returned testfullname did not match")
+		}
+		if ret["testint"] != 100 {
+			t.Fatal("returned testinit did not match")
+		}
+	}
+
+}
+
 func TestSliceMap(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()

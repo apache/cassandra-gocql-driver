@@ -160,6 +160,12 @@ func (iter *Iter) MapScan(m map[string]interface{}) bool {
 	// Not checking for the error because we just did
 	rowData, _ := iter.RowData()
 
+	for i, col := range rowData.Columns {
+		if dest, ok := m[col]; ok {
+			rowData.Values[i] = dest
+		}
+	}
+
 	if iter.Scan(rowData.Values...) {
 		rowData.rowMap(m)
 		return true
