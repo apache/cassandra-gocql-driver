@@ -12,6 +12,7 @@ The goal of the gocql project is to provide a stable and robust CQL driver for G
 
 The following is a check list of requirements that need to be satisfied in order for us to merge your patch:
 
+* You should raise a pull request to gocql/gocql on Github
 * The pull request has a title that clearly summarizes the purpose of the patch
 * The motivation behind the patch is clearly defined in the pull request summary
 * Your name and email have been added to the `AUTHORS` file (for copyright purposes)
@@ -21,11 +22,15 @@ The following is a check list of requirements that need to be satisfied in order
 * `go fmt` has been applied to the submitted code
 * Functional changes (i.e. new features or changed behavior) are appropriately documented, either as a godoc or in the README (non-functional changes such as bug fixes may not require documentation)
 
+If there are any requirements that can't be reasonably satifisfied, please state this either on the pull request or as part of discussion on the mailing list. Where appropriate, the core team may apply discretion and make an exception to these requirements.
+
 ## Beyond The Checklist
 
 In addition to stating the hard requirements, there are a bunch of things that we consider when assessing changes to the library. These soft requirements are helpful pointers of how to get a patch landed quicker and with less fuss.
 
 ### General QA Approach
+
+The gocql team needs to consider the ongoing maintainability of the library at all times. Patches that look like they will introduce maintenance issues for the team will not be accepted.
 
 Your patch will get merged quicker if you have decent test cases that provide test coverage for the new behavior you wish to introduce.
 
