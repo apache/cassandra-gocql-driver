@@ -24,18 +24,15 @@ function run_tests() {
 
 	cat results
 	cover=`cat results | grep coverage: | grep -o "[0-9]\{1,3\}" | head -n 1`
-	if [[ $cover -lt "60" ]]; then
-		echo "--- FAIL: expected coverage of at least 64 %, but coverage was $cover %"
+	if [[ $cover -lt "63" ]]; then
+		echo "--- FAIL: expected coverage of at least 63 %, but coverage was $cover %"
 		exit 1
 	fi
 	ccm clear
 
-	#cannot do this due to https://github.com/pcmanus/ccm/issues/171
-	#ccm updateconf -y testdata/cassandra.yaml
-	cp -f testdata/cassandra.yaml ~/.ccm/repository/$version/conf/
-	ccm updateconf
+	ccm updateconf 'client_encryption_options.enabled: true' 'client_encryption_options.keystore: testdata/pki/.keystore' 'client_encryption_options.keystore_password: cassandra' 'client_encryption_options.require_client_auth: true' 'client_encryption_options.truststore: testdata/pki/.truststore' 'client_encryption_options.truststore_password: cassandra'
     ccm start
     ccm status
-    go test -v -run Wiki -runssl -proto=$proto -rf=3 -cluster=$(ccm liveset) -clusterSize=$clusterSize -autowait=2000ms ./...
+    go test -cover -v -run Wiki -runssl -proto=$proto -rf=3 -cluster=$(ccm liveset) -clusterSize=$clusterSize -autowait=2000ms ./...
 }
 run_tests $1

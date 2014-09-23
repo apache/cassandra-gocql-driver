@@ -99,13 +99,12 @@ func Connect(addr string, cfg ConnConfig, pool ConnectionPool) (*Conn, error) {
 		pem, err := ioutil.ReadFile(cfg.SslOpts.CaPath)
 		certPool := x509.NewCertPool()
 		if !certPool.AppendCertsFromPEM(pem) {
-			panic("Failed parsing or appending certs")
+			return nil, errors.New("Failed parsing or appending certs")
 		}
 		mycert, err := tls.LoadX509KeyPair(cfg.SslOpts.CertPath, cfg.SslOpts.KeyPath)
 		if err != nil {
-			panic(err)
+			return nil, err
 		}
-
 		config := tls.Config{
 			Certificates: []tls.Certificate{mycert},
 			RootCAs:      certPool,
