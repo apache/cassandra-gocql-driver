@@ -45,6 +45,7 @@ Features
   * Optional automatic discovery of nodes
   * Optional support for periodic node discovery via system.peers
 * Iteration over paged results with configurable page size
+* Support for TLS/SSL
 * Optional frame compression (using snappy)
 * Automatic query preparation
 * Support for query tracing
