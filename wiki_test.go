@@ -13,26 +13,6 @@ import (
 	"time"
 )
 
-var cf func() *ClusterConfig
-
-func init() {
-	if true == *flagRunSslTest {
-		cf = createCluster
-		createCluster = createSslCluster
-	}
-}
-
-var createSslCluster = func() *ClusterConfig {
-	cluster := cf()
-	cluster.SslOpts = &SslOptions{
-		CertPath:               "testdata/pki/gocql.crt",
-		KeyPath:                "testdata/pki/gocql.key",
-		CaPath:                 "testdata/pki/ca.crt",
-		EnableHostVerification: false,
-	}
-	return cluster
-}
-
 type WikiPage struct {
 	Title       string
 	RevId       UUID
