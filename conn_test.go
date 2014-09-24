@@ -12,6 +12,9 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+	"crypto/tls"
+	"crypto/x509"
+	"io/ioutil"
 )
 
 type TestServer struct {
@@ -34,6 +37,31 @@ func TestSimple(t *testing.T) {
 	if err := db.Query("void").Exec(); err != nil {
 		t.Error(err)
 	}
+}
+
+func TestSSLSimple(t *testing.T) {
+	srv := NewSSLTestServer(t)
+	defer srv.Stop()
+
+	db, err := createTestSslCluster(srv.Address).CreateSession()
+	if err != nil {
+		t.Errorf("NewCluster: %v", err)
+	}
+
+	if err := db.Query("void").Exec(); err != nil {
+		t.Error(err)
+	}
+}
+
+func createTestSslCluster(hosts string) *ClusterConfig {
+	cluster := NewCluster(hosts)
+	cluster.SslOpts = &SslOptions{
+		CertPath:               "testdata/pki/gocql.crt",
+		KeyPath:                "testdata/pki/gocql.key",
+		CaPath:                 "testdata/pki/ca.crt",
+		EnableHostVerification: false,
+	}
+	return cluster
 }
 
 func TestClosed(t *testing.T) {
@@ -203,6 +231,29 @@ func NewTestServer(t *testing.T) *TestServer {
 		t.Fatal(err)
 	}
 	listen, err := net.ListenTCP("tcp", laddr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := &TestServer{Address: listen.Addr().String(), listen: listen, t: t}
+	go srv.serve()
+	return srv
+}
+
+func NewSSLTestServer(t *testing.T) *TestServer {
+	pem, err := ioutil.ReadFile("testdata/pki/ca.crt")
+	certPool := x509.NewCertPool()
+	if !certPool.AppendCertsFromPEM(pem) {
+		t.Errorf("Failed parsing or appending certs")
+	}
+	mycert, err := tls.LoadX509KeyPair("testdata/pki/cassandra.crt", "testdata/pki/cassandra.key")
+	if err != nil {
+		t.Errorf("could not load cert")
+	}
+	config := &tls.Config{
+		Certificates: []tls.Certificate{mycert},
+		RootCAs:      certPool,
+	}
+	listen, err := tls.Listen("tcp", "127.0.0.1:0", config)
 	if err != nil {
 		t.Fatal(err)
 	}

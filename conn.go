@@ -6,8 +6,11 @@ package gocql
 
 import (
 	"bufio"
+	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"net"
 	"sync"
 	"sync/atomic"
@@ -44,6 +47,16 @@ func (p PasswordAuthenticator) Success(data []byte) error {
 	return nil
 }
 
+type SslOptions struct {
+	CertPath               string
+	KeyPath                string
+	CaPath                 string //optional depending on server config
+	// If you want to verify the hostname and server cert (like a wildcard for cass cluster) then you should turn this on
+	// This option is basically the inverse of InSecureSkipVerify
+	// See InSecureSkipVerify in http://golang.org/pkg/crypto/tls/ for more info
+	EnableHostVerification bool
+}
+
 type ConnConfig struct {
 	ProtoVersion  int
 	CQLVersion    string
@@ -52,6 +65,7 @@ type ConnConfig struct {
 	Compressor    Compressor
 	Authenticator Authenticator
 	Keepalive     time.Duration
+	SslOpts       *SslOptions
 }
 
 // Conn is a single connection to a Cassandra node. It can be used to execute
@@ -80,8 +94,36 @@ type Conn struct {
 // Connect establishes a connection to a Cassandra node.
 // You must also call the Serve method before you can execute any queries.
 func Connect(addr string, cfg ConnConfig, pool ConnectionPool) (*Conn, error) {
-	conn, err := net.DialTimeout("tcp", addr, cfg.Timeout)
-	if err != nil {
+	var (
+		err  error
+		conn net.Conn
+	)
+
+	if cfg.SslOpts != nil {
+		certPool := x509.NewCertPool()
+		//ca cert is optional
+		if cfg.SslOpts.CaPath != "" {
+			pem, err := ioutil.ReadFile(cfg.SslOpts.CaPath)
+			if err != nil {
+				return nil, err
+			}
+			if !certPool.AppendCertsFromPEM(pem) {
+				return nil, errors.New("Failed parsing or appending certs")
+			}
+		}
+		mycert, err := tls.LoadX509KeyPair(cfg.SslOpts.CertPath, cfg.SslOpts.KeyPath)
+		if err != nil {
+			return nil, err
+		}
+		config := tls.Config{
+			Certificates: []tls.Certificate{mycert},
+			RootCAs:      certPool,
+		}
+		config.InsecureSkipVerify = !cfg.SslOpts.EnableHostVerification
+		if conn, err = tls.Dial("tcp", addr, &config); err != nil {
+			return nil, err
+		}
+	} else if conn, err = net.DialTimeout("tcp", addr, cfg.Timeout); err != nil {
 		return nil, err
 	}
 

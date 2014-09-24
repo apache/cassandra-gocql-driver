@@ -23,7 +23,7 @@ install:
   - go get .
 
 script:
-  - bash integration.sh $CASS
+  - bash -x integration.sh $CASS
   - go vet .
 
 notifications:

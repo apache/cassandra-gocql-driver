@@ -19,26 +19,37 @@ import (
 	"testing"
 	"time"
 	"unicode"
-
 	"speter.net/go/exp/math/dec/inf"
 )
 
 var (
-	flagCluster  = flag.String("cluster", "127.0.0.1", "a comma-separated list of host:port tuples")
-	flagProto    = flag.Int("proto", 2, "protcol version")
-	flagCQL      = flag.String("cql", "3.0.0", "CQL version")
-	flagRF       = flag.Int("rf", 1, "replication factor for test keyspace")
-	clusterSize  = flag.Int("clusterSize", 1, "the expected size of the cluster")
-	flagRetry    = flag.Int("retries", 5, "number of times to retry queries")
-	flagAutoWait = flag.Duration("autowait", 1000*time.Millisecond, "time to wait for autodiscovery to fill the hosts poll")
-	clusterHosts []string
+	flagCluster    = flag.String("cluster", "127.0.0.1", "a comma-separated list of host:port tuples")
+	flagProto      = flag.Int("proto", 2, "protcol version")
+	flagCQL        = flag.String("cql", "3.0.0", "CQL version")
+	flagRF         = flag.Int("rf", 1, "replication factor for test keyspace")
+	clusterSize    = flag.Int("clusterSize", 1, "the expected size of the cluster")
+	flagRetry      = flag.Int("retries", 5, "number of times to retry queries")
+	flagAutoWait   = flag.Duration("autowait", 1000*time.Millisecond, "time to wait for autodiscovery to fill the hosts poll")
+	flagRunSslTest = flag.Bool("runssl", false, "Set to true to run ssl test")
+	clusterHosts   []string
 )
 
 func init() {
-
 	flag.Parse()
 	clusterHosts = strings.Split(*flagCluster, ",")
 	log.SetFlags(log.Lshortfile | log.LstdFlags)
+}
+
+func addSslOptions(cluster *ClusterConfig) *ClusterConfig {
+	if *flagRunSslTest {
+		cluster.SslOpts = &SslOptions{
+			CertPath:               "testdata/pki/gocql.crt",
+			KeyPath:                "testdata/pki/gocql.key",
+			CaPath:                 "testdata/pki/ca.crt",
+			EnableHostVerification: false,
+		}
+	}
+	return cluster
 }
 
 var initOnce sync.Once
@@ -61,7 +72,7 @@ func createCluster() *ClusterConfig {
 	if *flagRetry > 0 {
 		cluster.RetryPolicy = &SimpleRetryPolicy{NumRetries: *flagRetry}
 	}
-
+	cluster = addSslOptions(cluster)
 	return cluster
 }
 
@@ -114,7 +125,7 @@ func TestRingDiscovery(t *testing.T) {
 		cluster.RetryPolicy = &SimpleRetryPolicy{NumRetries: *flagRetry}
 	}
 	cluster.DiscoverHosts = true
-
+	cluster = addSslOptions(cluster)
 	session, err := cluster.CreateSession()
 	if err != nil {
 		t.Errorf("got error connecting to the cluster %v", err)
@@ -136,6 +147,7 @@ func TestRingDiscovery(t *testing.T) {
 
 func TestEmptyHosts(t *testing.T) {
 	cluster := NewCluster()
+	cluster = addSslOptions(cluster)
 	if session, err := cluster.CreateSession(); err == nil {
 		session.Close()
 		t.Error("expected err, got nil")
@@ -162,6 +174,7 @@ func TestInvalidKeyspace(t *testing.T) {
 	cluster.ProtoVersion = *flagProto
 	cluster.CQLVersion = *flagCQL
 	cluster.Keyspace = "invalidKeyspace"
+	cluster = addSslOptions(cluster)
 	session, err := cluster.CreateSession()
 	if err != nil {
 		if err != ErrNoConnectionsStarted {
@@ -472,6 +485,7 @@ func TestCreateSessionTimeout(t *testing.T) {
 		t.Fatal("no startup timeout")
 	}()
 	c := NewCluster("127.0.0.1:1")
+	c = addSslOptions(c)
 	_, err := c.CreateSession()
 
 	if err == nil {
