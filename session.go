@@ -331,7 +331,7 @@ func (q *Query) Scan(dest ...interface{}) error {
 
 // ScanCAS executes a lightweight transaction (i.e. an UPDATE or INSERT
 // statement containing an IF clause). If the transaction fails because
-// the existing values did not match, the previos values will be stored
+// the existing values did not match, the previous values will be stored
 // in dest.
 func (q *Query) ScanCAS(dest ...interface{}) (applied bool, err error) {
 	iter := q.Iter()
@@ -349,7 +349,7 @@ func (q *Query) ScanCAS(dest ...interface{}) (applied bool, err error) {
 
 // MapScanCAS executes a lightweight transaction (i.e. an UPDATE or INSERT
 // statement containing an IF clause). If the transaction fails because
-// the existing values did not match, the previos values will be stored
+// the existing values did not match, the previous values will be stored
 // in dest map.
 //
 // As for INSERT .. IF NOT EXISTS, previous values will be returned as if
