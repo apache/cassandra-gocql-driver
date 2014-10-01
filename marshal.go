@@ -752,7 +752,7 @@ func marshalTimestamp(info *TypeInfo, value interface{}) ([]byte, error) {
 	case int64:
 		return encBigInt(v), nil
 	case time.Time:
-		x := v.In(time.UTC).UnixNano() / int64(time.Millisecond)
+		x := v.UnixNano() / int64(1000000)
 		return encBigInt(x), nil
 	}
 	rv := reflect.ValueOf(value)
@@ -773,6 +773,9 @@ func unmarshalTimestamp(info *TypeInfo, data []byte, value interface{}) error {
 		*v = decBigInt(data)
 		return nil
 	case *time.Time:
+		if len(data) == 0 {
+			return nil
+		}
 		x := decBigInt(data)
 		sec := x / 1000
 		nsec := (x - sec*1000) * 1000000
