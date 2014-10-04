@@ -19,6 +19,7 @@ import (
 	"testing"
 	"time"
 	"unicode"
+
 	"speter.net/go/exp/math/dec/inf"
 )
 
@@ -1440,5 +1441,29 @@ func TestNilInQuery(t *testing.T) {
 		t.Fatalf("failed to select with err: %v", err)
 	} else if id != 1 {
 		t.Fatalf("expected id to be 1, got %v", id)
+	}
+}
+
+// Don't initialize time.Time bind variable if cassandra timestamp column is empty
+func TestEmptyTimestamp(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+
+	if err := createTable(session, "CREATE TABLE test_empty_timestamp (id int, time timestamp, num int, PRIMARY KEY (id))"); err != nil {
+		t.Fatalf("failed to create table with error '%v'", err)
+	}
+
+	if err := session.Query("INSERT INTO test_empty_timestamp (id, num) VALUES (?,?)", 1, 561).Exec(); err != nil {
+		t.Fatalf("failed to insert with err: %v", err)
+	}
+
+	var timeVal time.Time
+
+	if err := session.Query("SELECT time FROM test_empty_timestamp where id = ?", 1).Scan(&timeVal); err != nil {
+		t.Fatalf("failed to select with err: %v", err)
+	}
+
+	if !timeVal.IsZero() {
+		t.Errorf("time.Time bind variable should still be empty (was %s)", timeVal)
 	}
 }
