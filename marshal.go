@@ -79,6 +79,10 @@ func Marshal(info *TypeInfo, value interface{}) ([]byte, error) {
 // describes the Cassandra internal data type and stores the result in the
 // value pointed by value.
 func Unmarshal(info *TypeInfo, data []byte, value interface{}) error {
+	if isNullableValue(value) {
+		return unmarshalNullable(info, data, value)
+	}
+
 	if v, ok := value.(Unmarshaler); ok {
 		return v.UnmarshalCQL(info, data)
 	}
@@ -114,6 +118,29 @@ func Unmarshal(info *TypeInfo, data []byte, value interface{}) error {
 	}
 	// TODO(tux21b): add the remaining types
 	return fmt.Errorf("can not unmarshal %s into %T", info, value)
+}
+
+func isNullableValue(value interface{}) bool {
+	v := reflect.ValueOf(value)
+	return v.Kind() == reflect.Ptr && v.Type().Elem().Kind() == reflect.Ptr
+}
+
+func isNullValue(info *TypeInfo, data []byte) bool {
+	return len(data) > 0
+}
+
+func unmarshalNullable(info *TypeInfo, data []byte, value interface{}) error {
+	subValue := reflect.ValueOf(value).Elem()
+
+	if isNullValue(info, data) {
+		newValue := reflect.New(subValue.Type().Elem())
+		subValue.Set(newValue)
+		return Unmarshal(info, data, subValue.Interface())
+	} else {
+		nilValue := reflect.Zero(subValue.Type())
+		subValue.Set(nilValue)
+		return nil
+	}
 }
 
 func marshalVarchar(info *TypeInfo, value interface{}) ([]byte, error) {
