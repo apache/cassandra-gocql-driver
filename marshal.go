@@ -126,20 +126,20 @@ func isNullableValue(value interface{}) bool {
 }
 
 func isNullValue(info *TypeInfo, data []byte) bool {
-	return len(data) > 0
+	return len(data) <= 0
 }
 
 func unmarshalNullable(info *TypeInfo, data []byte, value interface{}) error {
 	subValue := reflect.ValueOf(value).Elem()
 
 	if isNullValue(info, data) {
-		newValue := reflect.New(subValue.Type().Elem())
-		subValue.Set(newValue)
-		return Unmarshal(info, data, subValue.Interface())
-	} else {
 		nilValue := reflect.Zero(subValue.Type())
 		subValue.Set(nilValue)
 		return nil
+	} else {
+		newValue := reflect.New(subValue.Type().Elem())
+		subValue.Set(newValue)
+		return Unmarshal(info, data, subValue.Interface())
 	}
 }
 
