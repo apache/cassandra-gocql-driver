@@ -154,6 +154,7 @@ Other Projects
 --------------
 
 * [gocqldriver](https://github.com/tux21b/gocqldriver) is the predecessor of gocql based on Go's "database/sql" package. This project isn't maintained anymore, because Cassandra wasn't a good fit for the traditional "database/sql" API. Use this package instead.
+* [migrate](https://github.com/mattes/migrate) is a migration handling tool written in Go with Cassandra support.
 
 License
 -------
