@@ -8,6 +8,7 @@ package gocql
 //exposes the correct functions for the retry policy logic to evaluate correctly.
 type RetryableQuery interface {
 	Attempts() int
+	GetConsistency() Consistency
 }
 
 // RetryPolicy interace is used by gocql to determine if a query can be attempted
