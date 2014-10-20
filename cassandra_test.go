@@ -11,6 +11,7 @@ import (
 	"log"
 	"math"
 	"math/big"
+	"net"
 	"reflect"
 	"strconv"
 	"strings"
@@ -23,21 +24,33 @@ import (
 )
 
 var (
-	flagCluster  = flag.String("cluster", "127.0.0.1", "a comma-separated list of host:port tuples")
-	flagProto    = flag.Int("proto", 2, "protcol version")
-	flagCQL      = flag.String("cql", "3.0.0", "CQL version")
-	flagRF       = flag.Int("rf", 1, "replication factor for test keyspace")
-	clusterSize  = flag.Int("clusterSize", 1, "the expected size of the cluster")
-	flagRetry    = flag.Int("retries", 5, "number of times to retry queries")
-	flagAutoWait = flag.Duration("autowait", 1000*time.Millisecond, "time to wait for autodiscovery to fill the hosts poll")
-	clusterHosts []string
+	flagCluster    = flag.String("cluster", "127.0.0.1", "a comma-separated list of host:port tuples")
+	flagProto      = flag.Int("proto", 2, "protcol version")
+	flagCQL        = flag.String("cql", "3.0.0", "CQL version")
+	flagRF         = flag.Int("rf", 1, "replication factor for test keyspace")
+	clusterSize    = flag.Int("clusterSize", 1, "the expected size of the cluster")
+	flagRetry      = flag.Int("retries", 5, "number of times to retry queries")
+	flagAutoWait   = flag.Duration("autowait", 1000*time.Millisecond, "time to wait for autodiscovery to fill the hosts poll")
+	flagRunSslTest = flag.Bool("runssl", false, "Set to true to run ssl test")
+	clusterHosts   []string
 )
 
 func init() {
-
 	flag.Parse()
 	clusterHosts = strings.Split(*flagCluster, ",")
 	log.SetFlags(log.Lshortfile | log.LstdFlags)
+}
+
+func addSslOptions(cluster *ClusterConfig) *ClusterConfig {
+	if *flagRunSslTest {
+		cluster.SslOpts = &SslOptions{
+			CertPath:               "testdata/pki/gocql.crt",
+			KeyPath:                "testdata/pki/gocql.key",
+			CaPath:                 "testdata/pki/ca.crt",
+			EnableHostVerification: false,
+		}
+	}
+	return cluster
 }
 
 var initOnce sync.Once
@@ -57,8 +70,10 @@ func createCluster() *ClusterConfig {
 	cluster.CQLVersion = *flagCQL
 	cluster.Timeout = 5 * time.Second
 	cluster.Consistency = Quorum
-	cluster.RetryPolicy.NumRetries = *flagRetry
-
+	if *flagRetry > 0 {
+		cluster.RetryPolicy = &SimpleRetryPolicy{NumRetries: *flagRetry}
+	}
+	cluster = addSslOptions(cluster)
 	return cluster
 }
 
@@ -107,9 +122,11 @@ func TestRingDiscovery(t *testing.T) {
 	cluster.CQLVersion = *flagCQL
 	cluster.Timeout = 5 * time.Second
 	cluster.Consistency = Quorum
-	cluster.RetryPolicy.NumRetries = *flagRetry
+	if *flagRetry > 0 {
+		cluster.RetryPolicy = &SimpleRetryPolicy{NumRetries: *flagRetry}
+	}
 	cluster.DiscoverHosts = true
-
+	cluster = addSslOptions(cluster)
 	session, err := cluster.CreateSession()
 	if err != nil {
 		t.Errorf("got error connecting to the cluster %v", err)
@@ -131,6 +148,7 @@ func TestRingDiscovery(t *testing.T) {
 
 func TestEmptyHosts(t *testing.T) {
 	cluster := NewCluster()
+	cluster = addSslOptions(cluster)
 	if session, err := cluster.CreateSession(); err == nil {
 		session.Close()
 		t.Error("expected err, got nil")
@@ -157,6 +175,7 @@ func TestInvalidKeyspace(t *testing.T) {
 	cluster.ProtoVersion = *flagProto
 	cluster.CQLVersion = *flagCQL
 	cluster.Keyspace = "invalidKeyspace"
+	cluster = addSslOptions(cluster)
 	session, err := cluster.CreateSession()
 	if err != nil {
 		if err != ErrNoConnectionsStarted {
@@ -236,34 +255,103 @@ func TestCAS(t *testing.T) {
 	defer session.Close()
 
 	if err := createTable(session, `CREATE TABLE cas_table (
-			title   varchar,
-			revid   timeuuid,
+			title         varchar,
+			revid   	  timeuuid,
+			last_modified timestamp,
 			PRIMARY KEY (title, revid)
 		)`); err != nil {
 		t.Fatal("create:", err)
 	}
 
-	title, revid := "baz", TimeUUID()
+	title, revid, modified := "baz", TimeUUID(), time.Now()
 	var titleCAS string
 	var revidCAS UUID
+	var modifiedCAS time.Time
 
-	if applied, err := session.Query(`INSERT INTO cas_table (title, revid)
-		VALUES (?, ?) IF NOT EXISTS`,
-		title, revid).ScanCAS(&titleCAS, &revidCAS); err != nil {
+	if applied, err := session.Query(`INSERT INTO cas_table (title, revid, last_modified)
+		VALUES (?, ?, ?) IF NOT EXISTS`,
+		title, revid, modified).ScanCAS(&titleCAS, &revidCAS, &modifiedCAS); err != nil {
 		t.Fatal("insert:", err)
 	} else if !applied {
 		t.Fatal("insert should have been applied")
 	}
 
-	if applied, err := session.Query(`INSERT INTO cas_table (title, revid)
-		VALUES (?, ?) IF NOT EXISTS`,
-		title, revid).ScanCAS(&titleCAS, &revidCAS); err != nil {
+	if applied, err := session.Query(`INSERT INTO cas_table (title, revid, last_modified)
+		VALUES (?, ?, ?) IF NOT EXISTS`,
+		title, revid, modified).ScanCAS(&titleCAS, &revidCAS, &modifiedCAS); err != nil {
 		t.Fatal("insert:", err)
 	} else if applied {
 		t.Fatal("insert should not have been applied")
 	} else if title != titleCAS || revid != revidCAS {
-		t.Fatalf("expected %s/%v but got %s/%v", title, revid, titleCAS, revidCAS)
+		t.Fatalf("expected %s/%v/%v but got %s/%v/%v", title, revid, modified, titleCAS, revidCAS, modifiedCAS)
 	}
+
+	tenSecondsLater := modified.Add(10 * time.Second)
+
+	if applied, err := session.Query(`DELETE FROM cas_table WHERE title = ? and revid = ? IF last_modified = ?`,
+		title, revid, tenSecondsLater).ScanCAS(&modifiedCAS); err != nil {
+		t.Fatal("delete:", err)
+	} else if applied {
+		t.Fatal("delete should have not been applied")
+	}
+
+	if modifiedCAS.Unix() != tenSecondsLater.Add(-10*time.Second).Unix() {
+		t.Fatalf("Was expecting modified CAS to be %v; but was one second later", modifiedCAS.UTC())
+	}
+
+	if _, err := session.Query(`DELETE FROM cas_table WHERE title = ? and revid = ? IF last_modified = ?`,
+		title, revid, tenSecondsLater).ScanCAS(); err.Error() != "count mismatch" {
+		t.Fatalf("delete: was expecting count mismatch error but got %s", err)
+	}
+
+	if applied, err := session.Query(`DELETE FROM cas_table WHERE title = ? and revid = ? IF last_modified = ?`,
+		title, revid, modified).ScanCAS(&modifiedCAS); err != nil {
+		t.Fatal("delete:", err)
+	} else if !applied {
+		t.Fatal("delete should have been applied")
+	}
+}
+
+func TestMapScanCAS(t *testing.T) {
+	if *flagProto == 1 {
+		t.Skip("lightweight transactions not supported. Please use Cassandra >= 2.0")
+	}
+
+	session := createSession(t)
+	defer session.Close()
+
+	if err := createTable(session, `CREATE TABLE cas_table2 (
+			title         varchar,
+			revid   	  timeuuid,
+			last_modified timestamp,
+			deleted boolean,
+			PRIMARY KEY (title, revid)
+		)`); err != nil {
+		t.Fatal("create:", err)
+	}
+
+	title, revid, modified, deleted := "baz", TimeUUID(), time.Now(), false
+	mapCAS := map[string]interface{}{}
+
+	if applied, err := session.Query(`INSERT INTO cas_table2 (title, revid, last_modified, deleted)
+		VALUES (?, ?, ?, ?) IF NOT EXISTS`,
+		title, revid, modified, deleted).MapScanCAS(mapCAS); err != nil {
+		t.Fatal("insert:", err)
+	} else if !applied {
+		t.Fatal("insert should have been applied")
+	}
+
+	mapCAS = map[string]interface{}{}
+	if applied, err := session.Query(`INSERT INTO cas_table2 (title, revid, last_modified, deleted)
+		VALUES (?, ?, ?, ?) IF NOT EXISTS`,
+		title, revid, modified, deleted).MapScanCAS(mapCAS); err != nil {
+		t.Fatal("insert:", err)
+	} else if applied {
+		t.Fatal("insert should not have been applied")
+	} else if title != mapCAS["title"] || revid != mapCAS["revid"] || deleted != mapCAS["deleted"] {
+		t.Fatalf("expected %s/%v/%v/%v but got %s/%v/%v%v", title, revid, modified, false, mapCAS["title"], mapCAS["revid"], mapCAS["last_modified"], mapCAS["deleted"])
+	}
+
 }
 
 func TestBatch(t *testing.T) {
@@ -398,6 +486,7 @@ func TestCreateSessionTimeout(t *testing.T) {
 		t.Fatal("no startup timeout")
 	}()
 	c := NewCluster("127.0.0.1:1")
+	c = addSslOptions(c)
 	_, err := c.CreateSession()
 
 	if err == nil {
@@ -406,6 +495,64 @@ func TestCreateSessionTimeout(t *testing.T) {
 	if err != ErrNoConnectionsStarted {
 		t.Fatalf("expected ErrNoConnectionsStarted, but received %v", err)
 	}
+}
+
+type FullName struct {
+	FirstName string
+	LastName  string
+}
+
+func (n FullName) MarshalCQL(info *TypeInfo) ([]byte, error) {
+	return []byte(n.FirstName + " " + n.LastName), nil
+}
+func (n *FullName) UnmarshalCQL(info *TypeInfo, data []byte) error {
+	t := strings.SplitN(string(data), " ", 2)
+	n.FirstName, n.LastName = t[0], t[1]
+	return nil
+}
+
+func TestMapScanWithRefMap(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+	if err := createTable(session, `CREATE TABLE scan_map_ref_table (
+			testtext       text PRIMARY KEY,
+			testfullname   text,
+			testint        int,
+		)`); err != nil {
+		t.Fatal("create table:", err)
+	}
+	m := make(map[string]interface{})
+	m["testtext"] = "testtext"
+	m["testfullname"] = FullName{"John", "Doe"}
+	m["testint"] = 100
+
+	if err := session.Query(`INSERT INTO scan_map_ref_table (testtext, testfullname, testint) values (?,?,?)`, m["testtext"], m["testfullname"], m["testint"]).Exec(); err != nil {
+		t.Fatal("insert:", err)
+	}
+
+	var testText string
+	var testFullName FullName
+	ret := map[string]interface{}{
+		"testtext":     &testText,
+		"testfullname": &testFullName,
+		// testint is not set here.
+	}
+	iter := session.Query(`SELECT * FROM scan_map_ref_table`).Iter()
+	if ok := iter.MapScan(ret); !ok {
+		t.Fatal("select:", iter.Close())
+	} else {
+		if ret["testtext"] != "testtext" {
+			t.Fatal("returned testtext did not match")
+		}
+		f := ret["testfullname"].(FullName)
+		if f.FirstName != "John" || f.LastName != "Doe" {
+			t.Fatal("returned testfullname did not match")
+		}
+		if ret["testint"] != 100 {
+			t.Fatal("returned testinit did not match")
+		}
+	}
+
 }
 
 func TestSliceMap(t *testing.T) {
@@ -425,7 +572,8 @@ func TestSliceMap(t *testing.T) {
 			testlist       list<text>,
 			testset        set<int>,
 			testmap        map<varchar, varchar>,
-			testvarint     varint
+			testvarint     varint,
+			testinet			 inet
 		)`); err != nil {
 		t.Fatal("create table:", err)
 	}
@@ -450,9 +598,10 @@ func TestSliceMap(t *testing.T) {
 	m["testset"] = []int{1, 2, 3, 4, 5, 6, 7, 8, 9}
 	m["testmap"] = map[string]string{"field1": "val1", "field2": "val2", "field3": "val3"}
 	m["testvarint"] = bigInt
+	m["testinet"] = "213.212.2.19"
 	sliceMap := []map[string]interface{}{m}
-	if err := session.Query(`INSERT INTO slice_map_table (testuuid, testtimestamp, testvarchar, testbigint, testblob, testbool, testfloat, testdouble, testint, testdecimal, testlist, testset, testmap, testvarint) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		m["testuuid"], m["testtimestamp"], m["testvarchar"], m["testbigint"], m["testblob"], m["testbool"], m["testfloat"], m["testdouble"], m["testint"], m["testdecimal"], m["testlist"], m["testset"], m["testmap"], m["testvarint"]).Exec(); err != nil {
+	if err := session.Query(`INSERT INTO slice_map_table (testuuid, testtimestamp, testvarchar, testbigint, testblob, testbool, testfloat, testdouble, testint, testdecimal, testlist, testset, testmap, testvarint, testinet) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		m["testuuid"], m["testtimestamp"], m["testvarchar"], m["testbigint"], m["testblob"], m["testbool"], m["testfloat"], m["testdouble"], m["testint"], m["testdecimal"], m["testlist"], m["testset"], m["testmap"], m["testvarint"], m["testinet"]).Exec(); err != nil {
 		t.Fatal("insert:", err)
 	}
 	if returned, retErr := session.Query(`SELECT * FROM slice_map_table`).Iter().SliceMap(); retErr != nil {
@@ -507,6 +656,10 @@ func TestSliceMap(t *testing.T) {
 		if expectedBigInt.Cmp(returnedBigInt) != 0 {
 			t.Fatal("returned testvarint did not match")
 		}
+
+		if sliceMap[0]["testinet"] != returned[0]["testinet"] {
+			t.Fatal("returned testinet did not match")
+		}
 	}
 
 	// Test for MapScan()
@@ -538,8 +691,8 @@ func TestSliceMap(t *testing.T) {
 	if sliceMap[0]["testdouble"] != testMap["testdouble"] {
 		t.Fatal("returned testdouble did not match")
 	}
-	if sliceMap[0]["testint"] != testMap["testint"] {
-		t.Fatal("returned testint did not match")
+	if sliceMap[0]["testinet"] != testMap["testinet"] {
+		t.Fatal("returned testinet did not match")
 	}
 
 	expectedDecimal := sliceMap[0]["testdecimal"].(*inf.Dec)
@@ -558,7 +711,9 @@ func TestSliceMap(t *testing.T) {
 	if !reflect.DeepEqual(sliceMap[0]["testmap"], testMap["testmap"]) {
 		t.Fatal("returned testmap did not match")
 	}
-
+	if sliceMap[0]["testint"] != testMap["testint"] {
+		t.Fatal("returned testint did not match")
+	}
 }
 
 func TestScanWithNilArguments(t *testing.T) {
@@ -1084,6 +1239,58 @@ func TestMarshalFloat64Ptr(t *testing.T) {
 	}
 }
 
+//TestMarshalInet tests to see that a pointer to a float64 is marshalled correctly.
+func TestMarshalInet(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+
+	if err := createTable(session, "CREATE TABLE inet_test (ip inet, name text, primary key (ip))"); err != nil {
+		t.Fatal("create table:", err)
+	}
+	stringIp := "123.34.45.56"
+	if err := session.Query(`INSERT INTO inet_test (ip,name) VALUES (?,?)`, stringIp, "Test IP 1").Exec(); err != nil {
+		t.Fatal("insert string inet:", err)
+	}
+	var stringResult string
+	if err := session.Query("SELECT ip FROM inet_test").Scan(&stringResult); err != nil {
+		t.Fatalf("select for string from inet_test 1 failed: %v", err)
+	}
+	if stringResult != stringIp {
+		t.Errorf("Expected %s, was %s", stringIp, stringResult)
+	}
+
+	var ipResult net.IP
+	if err := session.Query("SELECT ip FROM inet_test").Scan(&ipResult); err != nil {
+		t.Fatalf("select for net.IP from inet_test 1 failed: %v", err)
+	}
+	if ipResult.String() != stringIp {
+		t.Errorf("Expected %s, was %s", stringIp, ipResult.String())
+	}
+
+	if err := session.Query(`DELETE FROM inet_test WHERE ip = ?`, stringIp).Exec(); err != nil {
+		t.Fatal("delete inet table:", err)
+	}
+
+	netIp := net.ParseIP("222.43.54.65")
+	if err := session.Query(`INSERT INTO inet_test (ip,name) VALUES (?,?)`, netIp, "Test IP 2").Exec(); err != nil {
+		t.Fatal("insert netIp inet:", err)
+	}
+
+	if err := session.Query("SELECT ip FROM inet_test").Scan(&stringResult); err != nil {
+		t.Fatalf("select for string from inet_test 2 failed: %v", err)
+	}
+	if stringResult != netIp.String() {
+		t.Errorf("Expected %s, was %s", netIp.String(), stringResult)
+	}
+	if err := session.Query("SELECT ip FROM inet_test").Scan(&ipResult); err != nil {
+		t.Fatalf("select for net.IP from inet_test 2 failed: %v", err)
+	}
+	if ipResult.String() != netIp.String() {
+		t.Errorf("Expected %s, was %s", netIp.String(), ipResult.String())
+	}
+
+}
+
 func TestVarint(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
@@ -1167,5 +1374,96 @@ func TestVarint(t *testing.T) {
 
 	if resultBig != nil {
 		t.Errorf("Expected %v, was %v", nil, *resultBig)
+	}
+}
+
+//TestQueryStats confirms that the stats are returning valid data. Accuracy may be questionable.
+func TestQueryStats(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+	qry := session.Query("SELECT * FROM system.peers")
+	if err := qry.Exec(); err != nil {
+		t.Fatalf("query failed. %v", err)
+	} else {
+		if qry.Attempts() < 1 {
+			t.Fatal("expected at least 1 attempt, but got 0")
+		}
+		if qry.Latency() <= 0 {
+			t.Fatalf("expected latency to be greater than 0, but got %v instead.", qry.Latency())
+		}
+	}
+}
+
+//TestBatchStats confirms that the stats are returning valid data. Accuracy may be questionable.
+func TestBatchStats(t *testing.T) {
+	if *flagProto == 1 {
+		t.Skip("atomic batches not supported. Please use Cassandra >= 2.0")
+	}
+	session := createSession(t)
+	defer session.Close()
+
+	if err := createTable(session, "CREATE TABLE batchStats (id int, PRIMARY KEY (id))"); err != nil {
+		t.Fatalf("failed to create table with error '%v'", err)
+	}
+
+	b := session.NewBatch(LoggedBatch)
+	b.Query("INSERT INTO batchStats (id) VALUES (?)", 1)
+	b.Query("INSERT INTO batchStats (id) VALUES (?)", 2)
+
+	if err := session.ExecuteBatch(b); err != nil {
+		t.Fatalf("query failed. %v", err)
+	} else {
+		if b.Attempts() < 1 {
+			t.Fatal("expected at least 1 attempt, but got 0")
+		}
+		if b.Latency() <= 0 {
+			t.Fatalf("expected latency to be greater than 0, but got %v instead.", b.Latency())
+		}
+	}
+}
+
+//TestNilInQuery tests to see that a nil value passed to a query is handled by Cassandra
+//TODO validate the nil value by reading back the nil. Need to fix Unmarshalling.
+func TestNilInQuery(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+
+	if err := createTable(session, "CREATE TABLE testNilInsert (id int, count int, PRIMARY KEY (id))"); err != nil {
+		t.Fatalf("failed to create table with error '%v'", err)
+	}
+	if err := session.Query("INSERT INTO testNilInsert (id,count) VALUES (?,?)", 1, nil).Exec(); err != nil {
+		t.Fatalf("failed to insert with err: %v", err)
+	}
+
+	var id int
+
+	if err := session.Query("SELECT id FROM testNilInsert").Scan(&id); err != nil {
+		t.Fatalf("failed to select with err: %v", err)
+	} else if id != 1 {
+		t.Fatalf("expected id to be 1, got %v", id)
+	}
+}
+
+// Don't initialize time.Time bind variable if cassandra timestamp column is empty
+func TestEmptyTimestamp(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+
+	if err := createTable(session, "CREATE TABLE test_empty_timestamp (id int, time timestamp, num int, PRIMARY KEY (id))"); err != nil {
+		t.Fatalf("failed to create table with error '%v'", err)
+	}
+
+	if err := session.Query("INSERT INTO test_empty_timestamp (id, num) VALUES (?,?)", 1, 561).Exec(); err != nil {
+		t.Fatalf("failed to insert with err: %v", err)
+	}
+
+	var timeVal time.Time
+
+	if err := session.Query("SELECT time FROM test_empty_timestamp where id = ?", 1).Scan(&timeVal); err != nil {
+		t.Fatalf("failed to select with err: %v", err)
+	}
+
+	if !timeVal.IsZero() {
+		t.Errorf("time.Time bind variable should still be empty (was %s)", timeVal)
 	}
 }

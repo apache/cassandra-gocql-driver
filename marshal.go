@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"math"
 	"math/big"
+	"net"
 	"reflect"
 	"time"
 
@@ -35,6 +36,10 @@ type Unmarshaler interface {
 // Marshal returns the CQL encoding of the value for the Cassandra
 // internal type described by the info parameter.
 func Marshal(info *TypeInfo, value interface{}) ([]byte, error) {
+	if value == nil {
+		return nil, nil
+	}
+
 	if v, ok := value.(Marshaler); ok {
 		return v.MarshalCQL(info)
 	}
@@ -63,6 +68,8 @@ func Marshal(info *TypeInfo, value interface{}) ([]byte, error) {
 		return marshalUUID(info, value)
 	case TypeVarint:
 		return marshalVarint(info, value)
+	case TypeInet:
+		return marshalInet(info, value)
 	}
 	// TODO(tux21b): add the remaining types
 	return nil, fmt.Errorf("can not marshal %T into %s", value, info)
@@ -745,7 +752,7 @@ func marshalTimestamp(info *TypeInfo, value interface{}) ([]byte, error) {
 	case int64:
 		return encBigInt(v), nil
 	case time.Time:
-		x := v.In(time.UTC).UnixNano() / int64(time.Millisecond)
+		x := v.UnixNano() / int64(1000000)
 		return encBigInt(x), nil
 	}
 	rv := reflect.ValueOf(value)
@@ -766,6 +773,9 @@ func unmarshalTimestamp(info *TypeInfo, data []byte, value interface{}) error {
 		*v = decBigInt(data)
 		return nil
 	case *time.Time:
+		if len(data) == 0 {
+			return nil
+		}
 		x := decBigInt(data)
 		sec := x / 1000
 		nsec := (x - sec*1000) * 1000000
@@ -1036,22 +1046,57 @@ func unmarshalTimeUUID(info *TypeInfo, data []byte, value interface{}) error {
 	}
 }
 
+func marshalInet(info *TypeInfo, value interface{}) ([]byte, error) {
+	// we return either the 4 or 16 byte representation of an
+	// ip address here otherwise the db value will be prefixed
+	// with the remaining byte values e.g. ::ffff:127.0.0.1 and not 127.0.0.1
+	switch val := value.(type) {
+	case net.IP:
+		t := val.To4()
+		if t == nil {
+			return val.To16(), nil
+		}
+		return t, nil
+	case string:
+		b := net.ParseIP(val)
+		if b != nil {
+			t := b.To4()
+			if t == nil {
+				return b.To16(), nil
+			}
+			return t, nil
+		}
+		return nil, marshalErrorf("cannot marshal. invalid ip string %s", val)
+	}
+	return nil, marshalErrorf("cannot marshal %T into %s", value, info)
+}
+
 func unmarshalInet(info *TypeInfo, data []byte, value interface{}) error {
 	switch v := value.(type) {
 	case Unmarshaler:
 		return v.UnmarshalCQL(info, data)
+	case *net.IP:
+		ip := net.IP(data)
+		if v4 := ip.To4(); v4 != nil {
+			*v = v4
+			return nil
+		}
+		*v = ip
+		return nil
 	case *string:
 		if len(data) == 0 {
 			*v = ""
 			return nil
 		}
-		if len(data) == 4 {
-			*v = fmt.Sprintf("%d.%d.%d.%d", data[0], data[1], data[2], data[3])
+		ip := net.IP(data)
+		if v4 := ip.To4(); v4 != nil {
+			*v = v4.String()
 			return nil
 		}
-		// TODO: support IPv6
+		*v = ip.String()
+		return nil
 	}
-	return unmarshalErrorf("can not unmarshal %s into %T", info, value)
+	return unmarshalErrorf("cannot unmarshal %s into %T", info, value)
 }
 
 // TypeInfo describes a Cassandra specific data type.

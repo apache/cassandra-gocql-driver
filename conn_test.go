@@ -12,6 +12,9 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+	"crypto/tls"
+	"crypto/x509"
+	"io/ioutil"
 )
 
 type TestServer struct {
@@ -34,6 +37,31 @@ func TestSimple(t *testing.T) {
 	if err := db.Query("void").Exec(); err != nil {
 		t.Error(err)
 	}
+}
+
+func TestSSLSimple(t *testing.T) {
+	srv := NewSSLTestServer(t)
+	defer srv.Stop()
+
+	db, err := createTestSslCluster(srv.Address).CreateSession()
+	if err != nil {
+		t.Errorf("NewCluster: %v", err)
+	}
+
+	if err := db.Query("void").Exec(); err != nil {
+		t.Error(err)
+	}
+}
+
+func createTestSslCluster(hosts string) *ClusterConfig {
+	cluster := NewCluster(hosts)
+	cluster.SslOpts = &SslOptions{
+		CertPath:               "testdata/pki/gocql.crt",
+		KeyPath:                "testdata/pki/gocql.key",
+		CaPath:                 "testdata/pki/ca.crt",
+		EnableHostVerification: false,
+	}
+	return cluster
 }
 
 func TestClosed(t *testing.T) {
@@ -85,14 +113,19 @@ func TestQueryRetry(t *testing.T) {
 		<-time.After(5 * time.Second)
 		t.Fatal("no timeout")
 	}()
-	rt := RetryPolicy{NumRetries: 1}
+	rt := &SimpleRetryPolicy{NumRetries: 1}
 
-	if err := db.Query("kill").RetryPolicy(rt).Exec(); err == nil {
+	qry := db.Query("kill").RetryPolicy(rt)
+	if err := qry.Exec(); err == nil {
 		t.Fatal("expected error")
 	}
-	//Minus 1 from the nKillReq variable since there is the initial query attempt
-	if srv.nKillReq-1 != uint64(rt.NumRetries) {
-		t.Fatalf("failed to retry the query %v time(s). Query executed %v times", rt.NumRetries, srv.nKillReq-1)
+	requests := srv.nKillReq
+	if requests != uint64(qry.Attempts()) {
+		t.Fatalf("expected requests %v to match query attemps %v", requests, qry.Attempts())
+	}
+	//Minus 1 from the requests variable since there is the initial query attempt
+	if requests-1 != uint64(rt.NumRetries) {
+		t.Fatalf("failed to retry the query %v time(s). Query executed %v times", rt.NumRetries, requests-1)
 	}
 }
 
@@ -198,6 +231,29 @@ func NewTestServer(t *testing.T) *TestServer {
 		t.Fatal(err)
 	}
 	listen, err := net.ListenTCP("tcp", laddr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := &TestServer{Address: listen.Addr().String(), listen: listen, t: t}
+	go srv.serve()
+	return srv
+}
+
+func NewSSLTestServer(t *testing.T) *TestServer {
+	pem, err := ioutil.ReadFile("testdata/pki/ca.crt")
+	certPool := x509.NewCertPool()
+	if !certPool.AppendCertsFromPEM(pem) {
+		t.Errorf("Failed parsing or appending certs")
+	}
+	mycert, err := tls.LoadX509KeyPair("testdata/pki/cassandra.crt", "testdata/pki/cassandra.key")
+	if err != nil {
+		t.Errorf("could not load cert")
+	}
+	config := &tls.Config{
+		Certificates: []tls.Certificate{mycert},
+		RootCAs:      certPool,
+	}
+	listen, err := tls.Listen("tcp", "127.0.0.1:0", config)
 	if err != nil {
 		t.Fatal(err)
 	}

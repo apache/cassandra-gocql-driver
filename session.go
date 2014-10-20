@@ -134,7 +134,9 @@ func (s *Session) executeQuery(qry *Query) *Iter {
 	}
 
 	var iter *Iter
-	for count := 0; count <= qry.rt.NumRetries; count++ {
+	qry.attempts = 0
+	qry.totalLatency = 0
+	for {
 		conn := s.Pool.Pick(qry)
 
 		//Assign the error unavailable to the iterator
@@ -143,9 +145,17 @@ func (s *Session) executeQuery(qry *Query) *Iter {
 			break
 		}
 
+		t := time.Now()
 		iter = conn.executeQuery(qry)
+		qry.totalLatency += time.Now().Sub(t).Nanoseconds()
+		qry.attempts++
+
 		//Exit for loop if the query was successful
 		if iter.err == nil {
+			break
+		}
+
+		if qry.rt == nil || !qry.rt.Attempt(qry) {
 			break
 		}
 	}
@@ -169,7 +179,9 @@ func (s *Session) ExecuteBatch(batch *Batch) error {
 	}
 
 	var err error
-	for count := 0; count <= batch.rt.NumRetries; count++ {
+	batch.attempts = 0
+	batch.totalLatency = 0
+	for {
 		conn := s.Pool.Pick(nil)
 
 		//Assign the error unavailable and break loop
@@ -177,11 +189,17 @@ func (s *Session) ExecuteBatch(batch *Batch) error {
 			err = ErrNoConnections
 			break
 		}
-
+		t := time.Now()
 		err = conn.executeBatch(batch)
+		batch.totalLatency += time.Now().Sub(t).Nanoseconds()
+		batch.attempts++
 		//Exit loop if operation executed correctly
 		if err == nil {
 			return nil
+		}
+
+		if batch.rt == nil || !batch.rt.Attempt(batch) {
+			break
 		}
 	}
 
@@ -190,16 +208,31 @@ func (s *Session) ExecuteBatch(batch *Batch) error {
 
 // Query represents a CQL statement that can be executed.
 type Query struct {
-	stmt      string
-	values    []interface{}
-	cons      Consistency
-	pageSize  int
-	pageState []byte
-	prefetch  float64
-	trace     Tracer
-	session   *Session
-	rt        RetryPolicy
-	binding   func(q *QueryInfo) ([]interface{}, error)
+	stmt         string
+	values       []interface{}
+	cons         Consistency
+	pageSize     int
+	pageState    []byte
+	prefetch     float64
+	trace        Tracer
+	session      *Session
+	rt           RetryPolicy
+	binding      func(q *QueryInfo) ([]interface{}, error)
+	attempts     int
+	totalLatency int64
+}
+
+//Attempts returns the number of times the query was executed.
+func (q *Query) Attempts() int {
+	return q.attempts
+}
+
+//Latency returns the average amount of nanoseconds per attempt of the query.
+func (q *Query) Latency() int64 {
+	if q.attempts > 0 {
+		return q.totalLatency / int64(q.attempts)
+	}
+	return 0
 }
 
 // Consistency sets the consistency level for this query. If no consistency
@@ -208,6 +241,12 @@ type Query struct {
 func (q *Query) Consistency(c Consistency) *Query {
 	q.cons = c
 	return q
+}
+
+// GetConsistency returns the currently configured consistency level for
+// the query.
+func (q *Query) GetConsistency() Consistency {
+	return q.cons
 }
 
 // Trace enables tracing of this query. Look at the documentation of the
@@ -289,11 +328,8 @@ func (q *Query) Iter() *Iter {
 // were selected, ErrNotFound is returned.
 func (q *Query) Scan(dest ...interface{}) error {
 	iter := q.Iter()
-	if iter.err != nil {
-		return iter.err
-	}
-	if len(iter.rows) == 0 {
-		return ErrNotFound
+	if err := iter.checkErrAndNotFound(); err != nil {
+		return err
 	}
 	iter.Scan(dest...)
 	return iter.Close()
@@ -301,15 +337,12 @@ func (q *Query) Scan(dest ...interface{}) error {
 
 // ScanCAS executes a lightweight transaction (i.e. an UPDATE or INSERT
 // statement containing an IF clause). If the transaction fails because
-// the existing values did not match, the previos values will be stored
+// the existing values did not match, the previous values will be stored
 // in dest.
 func (q *Query) ScanCAS(dest ...interface{}) (applied bool, err error) {
 	iter := q.Iter()
-	if iter.err != nil {
-		return false, iter.err
-	}
-	if len(iter.rows) == 0 {
-		return false, ErrNotFound
+	if err := iter.checkErrAndNotFound(); err != nil {
+		return false, err
 	}
 	if len(iter.Columns()) > 1 {
 		dest = append([]interface{}{&applied}, dest...)
@@ -317,6 +350,26 @@ func (q *Query) ScanCAS(dest ...interface{}) (applied bool, err error) {
 	} else {
 		iter.Scan(&applied)
 	}
+	return applied, iter.Close()
+}
+
+// MapScanCAS executes a lightweight transaction (i.e. an UPDATE or INSERT
+// statement containing an IF clause). If the transaction fails because
+// the existing values did not match, the previous values will be stored
+// in dest map.
+//
+// As for INSERT .. IF NOT EXISTS, previous values will be returned as if
+// SELECT * FROM. So using ScanCAS with INSERT is inherently prone to
+// column mismatching. MapScanCAS is added to capture them safely.
+func (q *Query) MapScanCAS(dest map[string]interface{}) (applied bool, err error) {
+	iter := q.Iter()
+	if err := iter.checkErrAndNotFound(); err != nil {
+		return false, err
+	}
+	iter.MapScan(dest)
+	applied = dest["[applied]"].(bool)
+	delete(dest, "[applied]")
+
 	return applied, iter.Close()
 }
 
@@ -382,6 +435,16 @@ func (iter *Iter) Close() error {
 	return iter.err
 }
 
+// checkErrAndNotFound handle error and NotFound in one method.
+func (iter *Iter) checkErrAndNotFound() error {
+	if iter.err != nil {
+		return iter.err
+	} else if len(iter.rows) == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 type nextIter struct {
 	qry  Query
 	pos  int
@@ -397,10 +460,12 @@ func (n *nextIter) fetch() *Iter {
 }
 
 type Batch struct {
-	Type    BatchType
-	Entries []BatchEntry
-	Cons    Consistency
-	rt      RetryPolicy
+	Type         BatchType
+	Entries      []BatchEntry
+	Cons         Consistency
+	rt           RetryPolicy
+	attempts     int
+	totalLatency int64
 }
 
 // NewBatch creates a new batch operation without defaults from the cluster
@@ -411,6 +476,25 @@ func NewBatch(typ BatchType) *Batch {
 // NewBatch creates a new batch operation using defaults defined in the cluster
 func (s *Session) NewBatch(typ BatchType) *Batch {
 	return &Batch{Type: typ, rt: s.cfg.RetryPolicy}
+}
+
+// Attempts returns the number of attempts made to execute the batch.
+func (b *Batch) Attempts() int {
+	return b.attempts
+}
+
+//Latency returns the average number of nanoseconds to execute a single attempt of the batch.
+func (b *Batch) Latency() int64 {
+	if b.attempts > 0 {
+		return b.totalLatency / int64(b.attempts)
+	}
+	return 0
+}
+
+// GetConsistency returns the currently configured consistency level for the batch
+// operation.
+func (b *Batch) GetConsistency() Consistency {
+	return b.Cons
 }
 
 // Query adds the query to the batch operation

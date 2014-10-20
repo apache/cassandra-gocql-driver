@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"math"
 	"math/big"
+	"net"
 	"reflect"
 	"strings"
 	"testing"
@@ -272,6 +273,46 @@ var marshalTests = []struct {
 		[]byte("f\x1e\xfd\xf2\xe3\xb1\x9f|\x04_\x15"),
 		bigintize("123456789123456789123456789"), // From the datastax/python-driver test suite
 	},
+	{
+		&TypeInfo{Type: TypeInet},
+		[]byte("\x7F\x00\x00\x01"),
+		net.ParseIP("127.0.0.1").To4(),
+	},
+	{
+		&TypeInfo{Type: TypeInet},
+		[]byte("\xFF\xFF\xFF\xFF"),
+		net.ParseIP("255.255.255.255").To4(),
+	},
+	{
+		&TypeInfo{Type: TypeInet},
+		[]byte("\x7F\x00\x00\x01"),
+		"127.0.0.1",
+	},
+	{
+		&TypeInfo{Type: TypeInet},
+		[]byte("\xFF\xFF\xFF\xFF"),
+		"255.255.255.255",
+	},
+	{
+		&TypeInfo{Type: TypeInet},
+		[]byte("\x21\xDA\x00\xd3\x00\x00\x2f\x3b\x02\xaa\x00\xff\xfe\x28\x9c\x5a"),
+		"21da:d3:0:2f3b:2aa:ff:fe28:9c5a",
+	},
+	{
+		&TypeInfo{Type: TypeInet},
+		[]byte("\xfe\x80\x00\x00\x00\x00\x00\x00\x02\x02\xb3\xff\xfe\x1e\x83\x29"),
+		"fe80::202:b3ff:fe1e:8329",
+	},
+	{
+		&TypeInfo{Type: TypeInet},
+		[]byte("\x21\xDA\x00\xd3\x00\x00\x2f\x3b\x02\xaa\x00\xff\xfe\x28\x9c\x5a"),
+		net.ParseIP("21da:d3:0:2f3b:2aa:ff:fe28:9c5a"),
+	},
+	{
+		&TypeInfo{Type: TypeInet},
+		[]byte("\xfe\x80\x00\x00\x00\x00\x00\x00\x02\x02\xb3\xff\xfe\x1e\x83\x29"),
+		net.ParseIP("fe80::202:b3ff:fe1e:8329"),
+	},
 }
 
 func decimalize(s string) *inf.Dec {
@@ -294,6 +335,16 @@ func TestMarshal(t *testing.T) {
 		if !bytes.Equal(data, test.Data) {
 			t.Errorf("marshalTest[%d]: expected %q, got %q.", i, test.Data, data)
 		}
+	}
+}
+
+func TestMarshalNil(t *testing.T) {
+	data, err := Marshal(&TypeInfo{Type: TypeInt}, nil)
+	if err != nil {
+		t.Errorf("failed to marshal nil with err: %v", err)
+	}
+	if data != nil {
+		t.Errorf("expected nil, got %v", data)
 	}
 }
 
