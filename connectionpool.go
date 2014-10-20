@@ -263,7 +263,7 @@ func (c *SimplePool) fillPool() {
 		//Create connections for host synchronously to mitigate flooding the host.
 		go func(a string, conns int) {
 			for ; conns < c.cfg.NumConns; conns++ {
-				c.connect(addr)
+				c.connect(a)
 			}
 		}(addr, numConns)
 	}
