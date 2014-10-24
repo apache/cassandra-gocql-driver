@@ -169,6 +169,7 @@ func (c *SimplePool) connect(addr string) error {
 		Compressor:    c.cfg.Compressor,
 		Authenticator: c.cfg.Authenticator,
 		Keepalive:     c.cfg.SocketKeepalive,
+		SslOpts:       c.cfg.SslOpts,
 	}
 
 	conn, err := Connect(addr, cfg, c)
@@ -262,7 +263,7 @@ func (c *SimplePool) fillPool() {
 		//Create connections for host synchronously to mitigate flooding the host.
 		go func(a string, conns int) {
 			for ; conns < c.cfg.NumConns; conns++ {
-				c.connect(addr)
+				c.connect(a)
 			}
 		}(addr, numConns)
 	}

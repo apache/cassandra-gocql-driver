@@ -62,6 +62,7 @@ type ClusterConfig struct {
 	DiscoverHosts    bool          // If set, gocql will attempt to automatically discover other members of the Cassandra cluster (default: false)
 	MaxPreparedStmts int           // Sets the maximum cache size for prepared statements globally for gocql (default: 1000)
 	Discovery        DiscoveryConfig
+	SslOpts          *SslOptions
 }
 
 // NewCluster generates a new config for the default cluster implementation.

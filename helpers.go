@@ -107,7 +107,14 @@ func getApacheCassandraType(class string) Type {
 
 func (r *RowData) rowMap(m map[string]interface{}) {
 	for i, column := range r.Columns {
-		m[column] = dereference(r.Values[i])
+		val := dereference(r.Values[i])
+		if valVal := reflect.ValueOf(val); valVal.Kind() == reflect.Slice {
+			valCopy := reflect.MakeSlice(valVal.Type(), valVal.Len(), valVal.Cap())
+			reflect.Copy(valCopy, valVal)
+			m[column] = valCopy.Interface()
+		} else {
+			m[column] = val
+		}
 	}
 }
 
@@ -159,6 +166,12 @@ func (iter *Iter) MapScan(m map[string]interface{}) bool {
 
 	// Not checking for the error because we just did
 	rowData, _ := iter.RowData()
+
+	for i, col := range rowData.Columns {
+		if dest, ok := m[col]; ok {
+			rowData.Values[i] = dest
+		}
+	}
 
 	if iter.Scan(rowData.Values...) {
 		rowData.rowMap(m)
