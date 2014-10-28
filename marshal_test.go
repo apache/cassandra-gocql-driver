@@ -362,6 +362,31 @@ func TestUnmarshal(t *testing.T) {
 	}
 }
 
+func TestUnmarshalNil(t *testing.T) {
+	dataType := &TypeInfo{Type: TypeVarchar}
+	data := []byte("mystr")
+
+	var value *string
+
+	if err := Unmarshal(dataType, data, &value); nil == err {
+		if *value != string(data) {
+			t.Errorf(`invalid value for pointer (expected value "%v", but got: "%v")`, data, value)
+		}
+	} else {
+		t.Errorf("failed unmarchal to pointer: %v", err)
+	}
+
+	nilData := []byte{}
+	if err := Unmarshal(dataType, nilData, &value); nil == err {
+		if value != nil {
+			t.Errorf(`invalid value for pointer (expected value "%v", but got: "%v")`, data, value)
+		}
+	} else {
+		t.Errorf("failed unmarchal to pointer: %v", err)
+	}
+
+}
+
 func TestMarshalVarint(t *testing.T) {
 	varintTests := []struct {
 		Value       interface{}
