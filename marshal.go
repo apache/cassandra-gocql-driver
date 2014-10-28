@@ -134,6 +134,9 @@ func marshalVarchar(info *TypeInfo, value interface{}) ([]byte, error) {
 	case k == reflect.Slice && t.Elem().Kind() == reflect.Uint8:
 		return rv.Bytes(), nil
 	case k == reflect.Ptr:
+		if rv.IsNil() {
+			return nil, nil
+		}
 		return marshalVarchar(info, rv.Elem().Interface())
 	}
 	return nil, marshalErrorf("can not marshal %T into %s", value, info)
@@ -233,6 +236,9 @@ func marshalInt(info *TypeInfo, value interface{}) ([]byte, error) {
 		}
 		return encInt(int32(v)), nil
 	case reflect.Ptr:
+		if rv.IsNil() {
+			return nil, nil
+		}
 		return marshalInt(info, rv.Elem().Interface())
 	}
 	return nil, marshalErrorf("can not marshal %T into %s", value, info)
@@ -294,6 +300,9 @@ func marshalBigInt(info *TypeInfo, value interface{}) ([]byte, error) {
 		}
 		return encBigInt(int64(v)), nil
 	case reflect.Ptr:
+		if rv.IsNil() {
+			return nil, nil
+		}
 		return marshalBigInt(info, rv.Elem().Interface())
 	}
 	return nil, marshalErrorf("can not marshal %T into %s", value, info)
@@ -546,6 +555,9 @@ func marshalBool(info *TypeInfo, value interface{}) ([]byte, error) {
 	case reflect.Bool:
 		return encBool(rv.Bool()), nil
 	case reflect.Ptr:
+		if rv.IsNil() {
+			return nil, nil
+		}
 		return marshalBool(info, rv.Elem().Interface())
 	}
 	return nil, marshalErrorf("can not marshal %T into %s", value, info)
@@ -598,6 +610,9 @@ func marshalFloat(info *TypeInfo, value interface{}) ([]byte, error) {
 	case reflect.Float32:
 		return encInt(int32(math.Float32bits(float32(rv.Float())))), nil
 	case reflect.Ptr:
+		if rv.IsNil() {
+			return nil, nil
+		}
 		return marshalFloat(info, rv.Elem().Interface())
 	}
 	return nil, marshalErrorf("can not marshal %T into %s", value, info)
@@ -636,6 +651,9 @@ func marshalDouble(info *TypeInfo, value interface{}) ([]byte, error) {
 	case reflect.Float64:
 		return encBigInt(int64(math.Float64bits(rv.Float()))), nil
 	case reflect.Ptr:
+		if rv.IsNil() {
+			return nil, nil
+		}
 		return marshalDouble(info, rv.Elem().Interface())
 	}
 	return nil, marshalErrorf("can not marshal %T into %s", value, info)
@@ -760,6 +778,9 @@ func marshalTimestamp(info *TypeInfo, value interface{}) ([]byte, error) {
 	case reflect.Int64:
 		return encBigInt(rv.Int()), nil
 	case reflect.Ptr:
+		if rv.IsNil() {
+			return nil, nil
+		}
 		return marshalTimestamp(info, rv.Elem().Interface())
 	}
 	return nil, marshalErrorf("can not marshal %T into %s", value, info)
