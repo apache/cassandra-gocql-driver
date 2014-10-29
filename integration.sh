@@ -15,7 +15,8 @@ function run_tests() {
 	ccm start -v
 	ccm status
 	ccm node1 nodetool status
-	ccm node1 showlog
+	ccm node1 showlog > n1_status.log
+	cat n1_status.log
 
 	local proto=2
 	if [[ $version == 1.2.* ]]; then
