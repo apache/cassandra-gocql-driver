@@ -28,6 +28,7 @@ install:
   - go get .
 
 script:
+  - set -e
   - go test -v -tags unit
   - bash -x integration.sh $CASS
   - go vet .
