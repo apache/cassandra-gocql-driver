@@ -16,7 +16,6 @@ before_install:
   - sudo apt-get update
 
 install:
-  - cat /proc/sys/kernel/threads-max
   - sudo apt-get install -y libjna-java python-pip
   - sudo pip install cql PyYAML six
   - go get code.google.com/p/go.tools/cmd/vet
