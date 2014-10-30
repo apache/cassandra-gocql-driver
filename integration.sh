@@ -16,15 +16,20 @@ function run_tests() {
 	ccm status
 	ccm node1 nodetool status
 	
-	# ccm node1 showlog > n1_status.log
-	# cat n1_status.log
-
 	local proto=2
 	if [[ $version == 1.2.* ]]; then
 		proto=1
 	fi
 
-	go test -timeout 3m -tags integration -cover -v -runssl -proto=$proto -rf=3 -cluster=$(ccm liveset) -clusterSize=$clusterSize -autowait=2000ms ./... | tee results.txt
+	go test -timeout 3m -tags integration -cover -v -runssl -proto=$proto -rf=3 -cluster=$(ccm liveset) -clusterSize=$clusterSize -autowait=2000ms ./... | tee results.txt || {
+		echo "--- FAIL: ccm status follows:"
+		ccm status
+		ccm node1 nodetool status
+		ccm node1 showlog > status.log
+		cat status.log
+		echo "--- FAIL: Received a non-zero exit code from the go test execution, please investigate this"
+		exit 1
+	}
 
 	cover=`cat results.txt | grep coverage: | grep -o "[0-9]\{1,3\}" | head -n 1`
 	if [[ $cover -lt "60" ]]; then
