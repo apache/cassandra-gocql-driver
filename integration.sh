@@ -15,6 +15,7 @@ function run_tests() {
 	ccm start -v
 	ccm status
 	ccm node1 nodetool status
+	ps -eo pcpu,pid,user,args | sort -k 1 -r | head -10
 	
 	local proto=2
 	if [[ $version == 1.2.* ]]; then
