@@ -35,7 +35,7 @@ function run_tests() {
 
 	cover=`cat results.txt | grep coverage: | grep -o "[0-9]\{1,3\}" | head -n 1`
 
-	if [[ $cover -lt "60" ]]; then
+	if [[ $cover -lt "55" ]]; then
 		echo "--- FAIL: expected coverage of at least 60 %, but coverage was $cover %"
 		exit 1
 	fi
