@@ -1,5 +1,8 @@
 language: go
 
+matrix:
+  fast_finish: true
+
 env:
   - CASS=1.2.19
   - CASS=2.0.11
@@ -24,6 +27,8 @@ install:
   - go get .
 
 script:
+  - set -e
+  - go test -v -tags unit
   - bash -x integration.sh $CASS
   - go vet .
 
