@@ -28,8 +28,8 @@ function run_tests() {
 
 	cat results
 	cover=`cat results | grep coverage: | grep -o "[0-9]\{1,3\}" | head -n 1`
-	if [[ $cover -lt "64" ]]; then
-		echo "--- FAIL: expected coverage of at least 64 %, but coverage was $cover %"
+	if [[ $cover -lt "60" ]]; then
+		echo "--- FAIL: expected coverage of at least 60 %, but coverage was $cover %"
 		exit 1
 	fi
 	ccm clear
