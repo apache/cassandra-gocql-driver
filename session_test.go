@@ -1,3 +1,5 @@
+// +build all integration
+
 package gocql
 
 import (

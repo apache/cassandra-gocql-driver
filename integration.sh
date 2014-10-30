@@ -15,15 +15,16 @@ function run_tests() {
 	ccm start -v
 	ccm status
 	ccm node1 nodetool status
-	ccm node1 showlog > n1_status.log
-	cat n1_status.log
+	
+	# ccm node1 showlog > n1_status.log
+	# cat n1_status.log
 
 	local proto=2
 	if [[ $version == 1.2.* ]]; then
 		proto=1
 	fi
 
-	go test -cover -v -runssl -proto=$proto -rf=3 -cluster=$(ccm liveset) -clusterSize=$clusterSize -autowait=2000ms ./... > results
+	go test -tags integration -cover -v -runssl -proto=$proto -rf=3 -cluster=$(ccm liveset) -clusterSize=$clusterSize -autowait=2000ms ./... > results
 
 	cat results
 	cover=`cat results | grep coverage: | grep -o "[0-9]\{1,3\}" | head -n 1`
