@@ -16,10 +16,10 @@ Supported Versions
 
 The following matrix shows the versions of Go and Cassandra that are tested with the integration test suite as part of the CI build:
 
-Go/Cassandra | 1.2.18 | 2.0.9 | 2.1.0-RC5
+Go/Cassandra | 1.2.19 | 2.0.11 | 2.1.1
 -------------| -------| ------| ---------
-1.2  | yes | yes | partial
-1.3  | yes | yes | partial
+1.2  | yes | yes | yes
+1.3  | yes | yes | yes
 
 Installation
 ------------
@@ -149,6 +149,16 @@ There are various ways to bind application level data structures to CQL statemen
 * The `Bind()` API provides a client app with a low level mechanism to introspect query meta data and extract appropriate field values from application level data structures.
 * Building on top of the gocql driver, [cqlr](https://github.com/relops/cqlr) adds the ability to auto-bind a CQL iterator to a struct or to bind a struct to an INSERT statement.
 * Another external project that layers on top of gocql is [cqlc](http://relops.com/cqlc) which generates gocql compliant code from your Cassandra schema so that you can write type safe CQL statements in Go with a natural query syntax.
+
+Ecosphere
+---------
+
+The following community maintained tools are known to integrate with gocql:
+
+* [migrate](https://github.com/mattes/migrate) is a migration handling tool written in Go with Cassandra support.
+* [negronicql](https://github.com/mikebthun/negronicql) is gocql middleware for Negroni.
+* [cqlr](https://github.com/relops/cqlr) adds the ability to auto-bind a CQL iterator to a struct or to bind a struct to an INSERT statement.
+* [cqlc](http://relops.com/cqlc) which generates gocql compliant code from your Cassandra schema so that you can write type safe CQL statements in Go with a natural query syntax.
 
 Other Projects
 --------------

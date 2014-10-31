@@ -48,9 +48,9 @@ func (p PasswordAuthenticator) Success(data []byte) error {
 }
 
 type SslOptions struct {
-	CertPath               string
-	KeyPath                string
-	CaPath                 string //optional depending on server config
+	CertPath string
+	KeyPath  string
+	CaPath   string //optional depending on server config
 	// If you want to verify the hostname and server cert (like a wildcard for cass cluster) then you should turn this on
 	// This option is basically the inverse of InSecureSkipVerify
 	// See InSecureSkipVerify in http://golang.org/pkg/crypto/tls/ for more info
@@ -503,6 +503,10 @@ func (c *Conn) Close() {
 
 func (c *Conn) Address() string {
 	return c.addr
+}
+
+func (c *Conn) AvailableStreams() int {
+	return len(c.uniq)
 }
 
 func (c *Conn) UseKeyspace(keyspace string) error {

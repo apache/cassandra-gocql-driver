@@ -1,11 +1,10 @@
-// Copyright (c) 2012 The gocql Authors. All rights reserved.
-// Use of this source code is governed by a BSD-style
-// license that can be found in the LICENSE file.
+// +build all unit
 
 package gocql
 
 import (
 	"bytes"
+	"strings"
 	"testing"
 	"time"
 )
@@ -24,6 +23,7 @@ var testsUUID = []struct {
 	version int
 }{
 	{"b4f00409-cef8-4822-802c-deb20704c365", VariantIETF, 4},
+	{"B4F00409-CEF8-4822-802C-DEB20704C365", VariantIETF, 4}, //Use capital letters
 	{"f81d4fae-7dec-11d0-a765-00a0c91e6bf6", VariantIETF, 1},
 	{"00000000-7dec-11d0-a765-00a0c91e6bf6", VariantIETF, 1},
 	{"3051a8d7-aea7-1801-e0bf-bc539dd60cf3", VariantFuture, 1},
@@ -45,7 +45,7 @@ func TestPredefinedUUID(t *testing.T) {
 			continue
 		}
 
-		if str := uuid.String(); str != testsUUID[i].input {
+		if str := uuid.String(); str != strings.ToLower(testsUUID[i].input) {
 			t.Errorf("String #%d: expected %q got %q", i, testsUUID[i].input, str)
 			continue
 		}
@@ -64,7 +64,7 @@ func TestPredefinedUUID(t *testing.T) {
 		if err != nil {
 			t.Errorf("MarshalJSON #%d: %v", i, err)
 		}
-		expectedJson := `"` + testsUUID[i].input + `"`
+		expectedJson := `"` + strings.ToLower(testsUUID[i].input) + `"`
 		if string(json) != expectedJson {
 			t.Errorf("MarshalJSON #%d: expected %v got %v", i, expectedJson, string(json))
 		}
@@ -80,6 +80,25 @@ func TestPredefinedUUID(t *testing.T) {
 	}
 }
 
+func TestInvalidUUIDCharacter(t *testing.T) {
+	_, err := ParseUUID("z4f00409-cef8-4822-802c-deb20704c365")
+	if err == nil || !strings.Contains(err.Error(), "invalid UUID") {
+		t.Fatalf("expected invalid UUID error, got '%v' ", err)
+	}
+}
+
+func TestInvalidUUIDLength(t *testing.T) {
+	_, err := ParseUUID("4f00")
+	if err == nil || !strings.Contains(err.Error(), "invalid UUID") {
+		t.Fatalf("expected invalid UUID error, got '%v' ", err)
+	}
+
+	_, err = UUIDFromBytes(TimeUUID().Bytes()[:15])
+	if err == nil || err.Error() != "UUIDs must be exactly 16 bytes long" {
+		t.Fatalf("expected error '%v', got '%v'", "UUIDs must be exactly 16 bytes long", err)
+	}
+}
+
 func TestRandomUUID(t *testing.T) {
 	for i := 0; i < 20; i++ {
 		uuid, err := RandomUUID()
@@ -92,6 +111,25 @@ func TestRandomUUID(t *testing.T) {
 		if version := uuid.Version(); version != 4 {
 			t.Errorf("wrong version. expected %d got %d", 4, version)
 		}
+	}
+}
+
+func TestRandomUUIDInvalidAPICalls(t *testing.T) {
+	uuid, err := RandomUUID()
+	if err != nil {
+		t.Fatalf("unexpected error %v", err)
+	}
+
+	if node := uuid.Node(); node != nil {
+		t.Fatalf("expected nil, got %v", node)
+	}
+
+	if stamp := uuid.Timestamp(); stamp != 0 {
+		t.Fatalf("expceted 0, got %v", stamp)
+	}
+	zeroT := time.Time{}
+	if to := uuid.Time(); to != zeroT {
+		t.Fatalf("expected %v, got %v", zeroT, to)
 	}
 }
 

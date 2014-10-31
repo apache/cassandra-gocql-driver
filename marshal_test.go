@@ -1,3 +1,5 @@
+// +build all unit
+
 package gocql
 
 import (

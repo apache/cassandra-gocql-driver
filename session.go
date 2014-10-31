@@ -243,6 +243,12 @@ func (q *Query) Consistency(c Consistency) *Query {
 	return q
 }
 
+// GetConsistency returns the currently configured consistency level for
+// the query.
+func (q *Query) GetConsistency() Consistency {
+	return q.cons
+}
+
 // Trace enables tracing of this query. Look at the documentation of the
 // Tracer interface to learn more about tracing.
 func (q *Query) Trace(trace Tracer) *Query {
@@ -483,6 +489,12 @@ func (b *Batch) Latency() int64 {
 		return b.totalLatency / int64(b.attempts)
 	}
 	return 0
+}
+
+// GetConsistency returns the currently configured consistency level for the batch
+// operation.
+func (b *Batch) GetConsistency() Consistency {
+	return b.Cons
 }
 
 // Query adds the query to the batch operation
