@@ -79,13 +79,14 @@ func Marshal(info *TypeInfo, value interface{}) ([]byte, error) {
 // describes the Cassandra internal data type and stores the result in the
 // value pointed by value.
 func Unmarshal(info *TypeInfo, data []byte, value interface{}) error {
+	if v, ok := value.(Unmarshaler); ok {
+		return v.UnmarshalCQL(info, data)
+	}
+
 	if isNullableValue(value) {
 		return unmarshalNullable(info, data, value)
 	}
 
-	if v, ok := value.(Unmarshaler); ok {
-		return v.UnmarshalCQL(info, data)
-	}
 	switch info.Type {
 	case TypeVarchar, TypeAscii, TypeBlob:
 		return unmarshalVarchar(info, data, value)
