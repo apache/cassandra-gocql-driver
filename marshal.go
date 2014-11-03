@@ -348,7 +348,7 @@ func unmarshalInt(info *TypeInfo, data []byte, value interface{}) error {
 
 func unmarshalVarint(info *TypeInfo, data []byte, value interface{}) error {
 	switch value.(type) {
-	case *big.Int, **big.Int:
+	case *big.Int:
 		return unmarshalIntlike(info, 0, data, value)
 	}
 
@@ -473,13 +473,6 @@ func unmarshalIntlike(info *TypeInfo, int64Val int64, data []byte, value interfa
 		return nil
 	case *big.Int:
 		decBigInt2C(data, v)
-		return nil
-	case **big.Int:
-		if len(data) == 0 {
-			*v = nil
-		} else {
-			*v = decBigInt2C(data, nil)
-		}
 		return nil
 	}
 
@@ -716,14 +709,12 @@ func unmarshalDecimal(info *TypeInfo, data []byte, value interface{}) error {
 	switch v := value.(type) {
 	case Unmarshaler:
 		return v.UnmarshalCQL(info, data)
-	case **inf.Dec:
+	case *inf.Dec:
 		if len(data) > 4 {
 			scale := decInt(data[0:4])
 			unscaled := decBigInt2C(data[4:], nil)
-			*v = inf.NewDecBig(unscaled, inf.Scale(scale))
-			return nil
-		} else if len(data) == 0 {
-			*v = nil
+			newValue := reflect.ValueOf(inf.NewDecBig(unscaled, inf.Scale(scale)))
+			reflect.ValueOf(value).Elem().Set(newValue.Elem())
 			return nil
 		} else {
 			return unmarshalErrorf("can not unmarshal %s into %T", info, value)
