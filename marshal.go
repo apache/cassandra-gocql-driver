@@ -36,13 +36,15 @@ type Unmarshaler interface {
 // Marshal returns the CQL encoding of the value for the Cassandra
 // internal type described by the info parameter.
 func Marshal(info *TypeInfo, value interface{}) ([]byte, error) {
-	if value == nil {
-		return nil, nil
-	}
 
 	if v, ok := value.(Marshaler); ok {
 		return v.MarshalCQL(info)
 	}
+
+	if isNullValue(info, value) {
+		return nil, nil
+	}
+
 	switch info.Type {
 	case TypeVarchar, TypeAscii, TypeBlob:
 		return marshalVarchar(info, value)
@@ -126,14 +128,19 @@ func isNullableValue(value interface{}) bool {
 	return v.Kind() == reflect.Ptr && v.Type().Elem().Kind() == reflect.Ptr
 }
 
-func isNullValue(info *TypeInfo, data []byte) bool {
+func isNullData(info *TypeInfo, data []byte) bool {
 	return len(data) <= 0
+}
+
+func isNullValue(info *TypeInfo, value interface{}) bool {
+	valueRef := reflect.ValueOf(value)
+	return value == nil || (valueRef.Kind() == reflect.Ptr && valueRef.IsNil())
 }
 
 func unmarshalNullable(info *TypeInfo, data []byte, value interface{}) error {
 	valueRef := reflect.ValueOf(value)
 
-	if isNullValue(info, data) {
+	if isNullData(info, data) {
 		nilValue := reflect.Zero(valueRef.Type().Elem())
 		valueRef.Elem().Set(nilValue)
 		return nil

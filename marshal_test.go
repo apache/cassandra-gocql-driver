@@ -315,6 +315,38 @@ var marshalTests = []struct {
 		[]byte("\xfe\x80\x00\x00\x00\x00\x00\x00\x02\x02\xb3\xff\xfe\x1e\x83\x29"),
 		net.ParseIP("fe80::202:b3ff:fe1e:8329"),
 	},
+	{
+		&TypeInfo{Type: TypeVarchar},
+		[]byte("nullable string"),
+		func() *string {
+			value := "nullable string"
+			return &value
+		}(),
+	},
+	{
+		&TypeInfo{Type: TypeVarchar},
+		[]byte{},
+		func() *string {
+			var value *string = nil
+			return value
+		}(),
+	},
+	{
+		&TypeInfo{Type: TypeInt},
+		[]byte("\x7f\xff\xff\xff"),
+		func() *int {
+			var value int = math.MaxInt32
+			return &value
+		}(),
+	},
+	{
+		&TypeInfo{Type: TypeInt},
+		[]byte(nil),
+		func() *int {
+			var value *int = nil
+			return value
+		}(),
+	},
 }
 
 func decimalize(s string) *inf.Dec {
@@ -340,16 +372,6 @@ func TestMarshal(t *testing.T) {
 	}
 }
 
-func TestMarshalNil(t *testing.T) {
-	data, err := Marshal(&TypeInfo{Type: TypeInt}, nil)
-	if err != nil {
-		t.Errorf("failed to marshal nil with err: %v", err)
-	}
-	if data != nil {
-		t.Errorf("expected nil, got %v", data)
-	}
-}
-
 func TestUnmarshal(t *testing.T) {
 	for i, test := range marshalTests {
 		v := reflect.New(reflect.TypeOf(test.Value))
@@ -362,31 +384,6 @@ func TestUnmarshal(t *testing.T) {
 			t.Errorf("marshalTest[%d]: expected %#v, got %#v.", i, test.Value, v.Elem().Interface())
 		}
 	}
-}
-
-func TestUnmarshalNil(t *testing.T) {
-	dataType := &TypeInfo{Type: TypeVarchar}
-	data := []byte("mystr")
-
-	var value *string
-
-	if err := Unmarshal(dataType, data, &value); nil == err {
-		if *value != string(data) {
-			t.Errorf(`invalid value for pointer (expected value "%v", but got: "%v")`, data, value)
-		}
-	} else {
-		t.Errorf("failed unmarchal to pointer: %v", err)
-	}
-
-	nilData := []byte{}
-	if err := Unmarshal(dataType, nilData, &value); nil == err {
-		if value != nil {
-			t.Errorf(`invalid value for pointer (expected value "%v", but got: "%v")`, data, value)
-		}
-	} else {
-		t.Errorf("failed unmarchal to pointer: %v", err)
-	}
-
 }
 
 func TestMarshalVarint(t *testing.T) {
