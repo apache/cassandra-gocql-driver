@@ -315,6 +315,7 @@ var marshalTests = []struct {
 		[]byte("\xfe\x80\x00\x00\x00\x00\x00\x00\x02\x02\xb3\xff\xfe\x1e\x83\x29"),
 		net.ParseIP("fe80::202:b3ff:fe1e:8329"),
 	},
+	// Test pointer values
 	{
 		&TypeInfo{Type: TypeVarchar},
 		[]byte("nullable string"),
@@ -326,10 +327,7 @@ var marshalTests = []struct {
 	{
 		&TypeInfo{Type: TypeVarchar},
 		[]byte{},
-		func() *string {
-			var value *string = nil
-			return value
-		}(),
+		(*string)(nil),
 	},
 	{
 		&TypeInfo{Type: TypeInt},
@@ -342,10 +340,122 @@ var marshalTests = []struct {
 	{
 		&TypeInfo{Type: TypeInt},
 		[]byte(nil),
-		func() *int {
-			var value *int = nil
-			return value
+		(*int)(nil),
+	},
+	{
+		&TypeInfo{Type: TypeTimeUUID},
+		[]byte{0x3d, 0xcd, 0x98, 0x0, 0xf3, 0xd9, 0x11, 0xbf, 0x86, 0xd4, 0xb8, 0xe8, 0x56, 0x2c, 0xc, 0xd0},
+		&UUID{0x3d, 0xcd, 0x98, 0x0, 0xf3, 0xd9, 0x11, 0xbf, 0x86, 0xd4, 0xb8, 0xe8, 0x56, 0x2c, 0xc, 0xd0},
+	},
+	{
+		&TypeInfo{Type: TypeTimeUUID},
+		[]byte{},
+		(*UUID)(nil),
+	},
+	{
+		&TypeInfo{Type: TypeTimestamp},
+		[]byte("\x00\x00\x01\x40\x77\x16\xe1\xb8"),
+		func() *time.Time {
+			t := time.Date(2013, time.August, 13, 9, 52, 3, 0, time.UTC)
+			return &t
 		}(),
+	},
+	{
+		&TypeInfo{Type: TypeTimestamp},
+		[]byte(nil),
+		(*time.Time)(nil),
+	},
+	{
+		&TypeInfo{Type: TypeBoolean},
+		[]byte("\x00"),
+		func() *bool {
+			b := false
+			return &b
+		}(),
+	},
+	{
+		&TypeInfo{Type: TypeBoolean},
+		[]byte("\x01"),
+		func() *bool {
+			b := true
+			return &b
+		}(),
+	},
+	{
+		&TypeInfo{Type: TypeBoolean},
+		[]byte(nil),
+		(*bool)(nil),
+	},
+	{
+		&TypeInfo{Type: TypeFloat},
+		[]byte("\x40\x49\x0f\xdb"),
+		func() *float32 {
+			f := float32(3.14159265)
+			return &f
+		}(),
+	},
+	{
+		&TypeInfo{Type: TypeFloat},
+		[]byte(nil),
+		(*float32)(nil),
+	},
+	{
+		&TypeInfo{Type: TypeDouble},
+		[]byte("\x40\x09\x21\xfb\x53\xc8\xd4\xf1"),
+		func() *float64 {
+			d := float64(3.14159265)
+			return &d
+		}(),
+	},
+	{
+		&TypeInfo{Type: TypeDouble},
+		[]byte(nil),
+		(*float64)(nil),
+	},
+	{
+		&TypeInfo{Type: TypeInet},
+		[]byte("\x7F\x00\x00\x01"),
+		func() *net.IP {
+			ip := net.ParseIP("127.0.0.1").To4()
+			return &ip
+		}(),
+	},
+	{
+		&TypeInfo{Type: TypeInet},
+		[]byte(nil),
+		(*net.IP)(nil),
+	},
+	{
+		&TypeInfo{Type: TypeList, Elem: &TypeInfo{Type: TypeInt}},
+		[]byte("\x00\x02\x00\x04\x00\x00\x00\x01\x00\x04\x00\x00\x00\x02"),
+		func() *[]int {
+			l := []int{1, 2}
+			return &l
+		}(),
+	},
+	{
+		&TypeInfo{Type: TypeList, Elem: &TypeInfo{Type: TypeInt}},
+		[]byte(nil),
+		(*[]int)(nil),
+	},
+	{
+		&TypeInfo{Type: TypeMap,
+			Key:  &TypeInfo{Type: TypeVarchar},
+			Elem: &TypeInfo{Type: TypeInt},
+		},
+		[]byte("\x00\x01\x00\x03foo\x00\x04\x00\x00\x00\x01"),
+		func() *map[string]int {
+			m := map[string]int{"foo": 1}
+			return &m
+		}(),
+	},
+	{
+		&TypeInfo{Type: TypeMap,
+			Key:  &TypeInfo{Type: TypeVarchar},
+			Elem: &TypeInfo{Type: TypeInt},
+		},
+		[]byte(nil),
+		(*map[string]int)(nil),
 	},
 }
 
