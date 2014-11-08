@@ -14,7 +14,7 @@ import (
 	"reflect"
 	"time"
 
-	"speter.net/go/exp/math/dec/inf"
+	"github.com/gocql/gocql/Godeps/_workspace/src/speter.net/go/exp/math/dec/inf"
 )
 
 var (
