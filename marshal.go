@@ -90,6 +90,10 @@ func Unmarshal(info *TypeInfo, data []byte, value interface{}) error {
 	if v, ok := value.(Unmarshaler); ok {
 		return v.UnmarshalCQL(info, data)
 	}
+	if isNullableValue(value) {
+		return unmarshalNullable(info, data, value)
+	}
+
 	switch info.Type {
 	case TypeVarchar, TypeAscii, TypeBlob:
 		return unmarshalVarchar(info, data, value)
@@ -122,6 +126,29 @@ func Unmarshal(info *TypeInfo, data []byte, value interface{}) error {
 	}
 	// TODO(tux21b): add the remaining types
 	return fmt.Errorf("can not unmarshal %s into %T", info, value)
+}
+
+func isNullableValue(value interface{}) bool {
+	v := reflect.ValueOf(value)
+	return v.Kind() == reflect.Ptr && v.Type().Elem().Kind() == reflect.Ptr
+}
+
+func isNullData(info *TypeInfo, data []byte) bool {
+	return len(data) == 0
+}
+
+func unmarshalNullable(info *TypeInfo, data []byte, value interface{}) error {
+	valueRef := reflect.ValueOf(value)
+
+	if isNullData(info, data) {
+		nilValue := reflect.Zero(valueRef.Type().Elem())
+		valueRef.Elem().Set(nilValue)
+		return nil
+	} else {
+		newValue := reflect.New(valueRef.Type().Elem().Elem())
+		valueRef.Elem().Set(newValue)
+		return Unmarshal(info, data, newValue.Interface())
+	}
 }
 
 func marshalVarchar(info *TypeInfo, value interface{}) ([]byte, error) {
@@ -323,7 +350,7 @@ func unmarshalInt(info *TypeInfo, data []byte, value interface{}) error {
 
 func unmarshalVarint(info *TypeInfo, data []byte, value interface{}) error {
 	switch value.(type) {
-	case *big.Int, **big.Int:
+	case *big.Int:
 		return unmarshalIntlike(info, 0, data, value)
 	}
 
@@ -448,13 +475,6 @@ func unmarshalIntlike(info *TypeInfo, int64Val int64, data []byte, value interfa
 		return nil
 	case *big.Int:
 		decBigInt2C(data, v)
-		return nil
-	case **big.Int:
-		if len(data) == 0 {
-			*v = nil
-		} else {
-			*v = decBigInt2C(data, nil)
-		}
 		return nil
 	}
 
@@ -680,18 +700,12 @@ func unmarshalDecimal(info *TypeInfo, data []byte, value interface{}) error {
 	switch v := value.(type) {
 	case Unmarshaler:
 		return v.UnmarshalCQL(info, data)
-	case **inf.Dec:
-		if len(data) > 4 {
-			scale := decInt(data[0:4])
-			unscaled := decBigInt2C(data[4:], nil)
-			*v = inf.NewDecBig(unscaled, inf.Scale(scale))
-			return nil
-		} else if len(data) == 0 {
-			*v = nil
-			return nil
-		} else {
-			return unmarshalErrorf("can not unmarshal %s into %T", info, value)
-		}
+	case *inf.Dec:
+		scale := decInt(data[0:4])
+		unscaled := decBigInt2C(data[4:], nil)
+		newValue := reflect.ValueOf(inf.NewDecBig(unscaled, inf.Scale(scale)))
+		reflect.ValueOf(value).Elem().Set(newValue.Elem())
+		return nil
 	}
 	return unmarshalErrorf("can not unmarshal %s into %T", info, value)
 }
