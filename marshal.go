@@ -40,6 +40,14 @@ func Marshal(info *TypeInfo, value interface{}) ([]byte, error) {
 		return nil, nil
 	}
 
+	if valueRef := reflect.ValueOf(value); valueRef.Kind() == reflect.Ptr {
+		if valueRef.IsNil() {
+			return nil, nil
+		} else {
+			return Marshal(info, valueRef.Elem().Interface())
+		}
+	}
+
 	if v, ok := value.(Marshaler); ok {
 		return v.MarshalCQL(info)
 	}
@@ -133,8 +141,6 @@ func marshalVarchar(info *TypeInfo, value interface{}) ([]byte, error) {
 		return []byte(rv.String()), nil
 	case k == reflect.Slice && t.Elem().Kind() == reflect.Uint8:
 		return rv.Bytes(), nil
-	case k == reflect.Ptr:
-		return marshalVarchar(info, rv.Elem().Interface())
 	}
 	return nil, marshalErrorf("can not marshal %T into %s", value, info)
 }
@@ -232,8 +238,6 @@ func marshalInt(info *TypeInfo, value interface{}) ([]byte, error) {
 			return nil, marshalErrorf("marshal int: value %d out of range", v)
 		}
 		return encInt(int32(v)), nil
-	case reflect.Ptr:
-		return marshalInt(info, rv.Elem().Interface())
 	}
 	return nil, marshalErrorf("can not marshal %T into %s", value, info)
 }
@@ -279,8 +283,8 @@ func marshalBigInt(info *TypeInfo, value interface{}) ([]byte, error) {
 		return encBigInt(int64(v)), nil
 	case uint8:
 		return encBigInt(int64(v)), nil
-	case *big.Int:
-		return encBigInt2C(v), nil
+	case big.Int:
+		return encBigInt2C(&v), nil
 	}
 	rv := reflect.ValueOf(value)
 	switch rv.Type().Kind() {
@@ -293,8 +297,6 @@ func marshalBigInt(info *TypeInfo, value interface{}) ([]byte, error) {
 			return nil, marshalErrorf("marshal bigint: value %d out of range", v)
 		}
 		return encBigInt(int64(v)), nil
-	case reflect.Ptr:
-		return marshalBigInt(info, rv.Elem().Interface())
 	}
 	return nil, marshalErrorf("can not marshal %T into %s", value, info)
 }
@@ -545,8 +547,6 @@ func marshalBool(info *TypeInfo, value interface{}) ([]byte, error) {
 	switch rv.Type().Kind() {
 	case reflect.Bool:
 		return encBool(rv.Bool()), nil
-	case reflect.Ptr:
-		return marshalBool(info, rv.Elem().Interface())
 	}
 	return nil, marshalErrorf("can not marshal %T into %s", value, info)
 }
@@ -597,8 +597,6 @@ func marshalFloat(info *TypeInfo, value interface{}) ([]byte, error) {
 	switch rv.Type().Kind() {
 	case reflect.Float32:
 		return encInt(int32(math.Float32bits(float32(rv.Float())))), nil
-	case reflect.Ptr:
-		return marshalFloat(info, rv.Elem().Interface())
 	}
 	return nil, marshalErrorf("can not marshal %T into %s", value, info)
 }
@@ -635,8 +633,6 @@ func marshalDouble(info *TypeInfo, value interface{}) ([]byte, error) {
 	switch rv.Type().Kind() {
 	case reflect.Float64:
 		return encBigInt(int64(math.Float64bits(rv.Float()))), nil
-	case reflect.Ptr:
-		return marshalDouble(info, rv.Elem().Interface())
 	}
 	return nil, marshalErrorf("can not marshal %T into %s", value, info)
 }
@@ -666,12 +662,7 @@ func marshalDecimal(info *TypeInfo, value interface{}) ([]byte, error) {
 	switch v := value.(type) {
 	case Marshaler:
 		return v.MarshalCQL(info)
-	case *inf.Dec:
-
-		if v == nil {
-			return nil, nil
-		}
-
+	case inf.Dec:
 		unscaled := encBigInt2C(v.UnscaledBig())
 		if unscaled == nil {
 			return nil, marshalErrorf("can not marshal %T into %s", value, info)
@@ -759,8 +750,6 @@ func marshalTimestamp(info *TypeInfo, value interface{}) ([]byte, error) {
 	switch rv.Type().Kind() {
 	case reflect.Int64:
 		return encBigInt(rv.Int()), nil
-	case reflect.Ptr:
-		return marshalTimestamp(info, rv.Elem().Interface())
 	}
 	return nil, marshalErrorf("can not marshal %T into %s", value, info)
 }
