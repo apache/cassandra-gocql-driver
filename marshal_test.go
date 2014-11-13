@@ -315,13 +315,6 @@ var marshalTests = []struct {
 		[]byte("\xfe\x80\x00\x00\x00\x00\x00\x00\x02\x02\xb3\xff\xfe\x1e\x83\x29"),
 		net.ParseIP("fe80::202:b3ff:fe1e:8329"),
 	},
-}
-
-var marshalNilTests = []struct {
-	Info  *TypeInfo
-	Data  []byte
-	Value interface{}
-}{
 	{
 		&TypeInfo{Type: TypeInt},
 		[]byte(nil),
@@ -493,29 +486,22 @@ func TestMarshal(t *testing.T) {
 	}
 }
 
-func TestMarshalNil(t *testing.T) {
-	for i, test := range marshalNilTests {
-		data, err := Marshal(test.Info, test.Value)
-		if err != nil {
-			t.Errorf("marshalNilTest[%d]: %v", i, err)
-			continue
-		}
-		if !bytes.Equal(data, test.Data) {
-			t.Errorf("marshalNilTest[%d]: expected %q, got %q.(%#v)", i, test.Data, data, test.Value)
-		}
-	}
-}
-
 func TestUnmarshal(t *testing.T) {
 	for i, test := range marshalTests {
-		v := reflect.New(reflect.TypeOf(test.Value))
-		err := Unmarshal(test.Info, test.Data, v.Interface())
-		if err != nil {
-			t.Errorf("marshalTest[%d]: %v", i, err)
-			continue
-		}
-		if !reflect.DeepEqual(v.Elem().Interface(), test.Value) {
-			t.Errorf("marshalTest[%d]: expected %#v, got %#v.", i, test.Value, v.Elem().Interface())
+		if test.Value != nil {
+			v := reflect.New(reflect.TypeOf(test.Value))
+			err := Unmarshal(test.Info, test.Data, v.Interface())
+			if err != nil {
+				t.Errorf("unmarshalTest[%d]: %v", i, err)
+				continue
+			}
+			if !reflect.DeepEqual(v.Elem().Interface(), test.Value) {
+				t.Errorf("unmarshalTest[%d]: expected %#v, got %#v.", i, test.Value, v.Elem().Interface())
+			}
+		} else {
+			if err := Unmarshal(test.Info, test.Data, test.Value); nil == err {
+				t.Errorf("unmarshalTest[%d]: %#v not return error.", i, test.Value)
+			}
 		}
 	}
 }
