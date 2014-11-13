@@ -703,8 +703,7 @@ func unmarshalDecimal(info *TypeInfo, data []byte, value interface{}) error {
 	case *inf.Dec:
 		scale := decInt(data[0:4])
 		unscaled := decBigInt2C(data[4:], nil)
-		newValue := reflect.ValueOf(inf.NewDecBig(unscaled, inf.Scale(scale)))
-		reflect.ValueOf(value).Elem().Set(newValue.Elem())
+		*v = *inf.NewDecBig(unscaled, inf.Scale(scale))
 		return nil
 	}
 	return unmarshalErrorf("can not unmarshal %s into %T", info, value)
