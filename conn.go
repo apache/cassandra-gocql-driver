@@ -12,7 +12,6 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -99,12 +98,6 @@ func Connect(addr string, cfg ConnConfig, pool ConnectionPool) (*Conn, error) {
 		err  error
 		conn net.Conn
 	)
-
-	address := addr[:strings.LastIndex(addr, ":")]
-	port := addr[strings.LastIndex(addr, ":")+1:]
-	if strings.Count(address, ":") > 1 && strings.Index(address, "[") < 0 {
-		addr = fmt.Sprintf("[%s]:%s", address, port)
-	}
 
 	if cfg.SslOpts != nil {
 		certPool := x509.NewCertPool()

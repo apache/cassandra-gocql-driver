@@ -3,7 +3,6 @@ package gocql
 import (
 	"log"
 	"net"
-	"strings"
 	"time"
 )
 
@@ -57,9 +56,6 @@ func (r *ringDescriber) GetHosts() ([]HostInfo, error) {
 
 	for iter.Scan(&host.Peer, &host.DataCenter, &host.Rack, &host.HostId, &host.Tokens) {
 		if r.matchFilter(host) {
-			if strings.Count(host.Peer, ":") > 1 {
-				host.Peer = "[" + host.Peer + "]"
-			}
 			hosts = append(hosts, *host)
 		}
 	}
