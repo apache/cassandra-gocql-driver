@@ -461,6 +461,19 @@ var marshalTests = []struct {
 		[]byte(nil),
 		(*map[string]int)(nil),
 	},
+	{
+		&TypeInfo{Type: TypeVarchar},
+		[]byte("HELLO WORLD"),
+		func() *CustomString {
+			customString := CustomString("hello world")
+			return &customString
+		}(),
+	},
+	{
+		&TypeInfo{Type: TypeVarchar},
+		[]byte(nil),
+		(*CustomString)(nil),
+	},
 }
 
 func decimalize(s string) *inf.Dec {
@@ -596,6 +609,7 @@ type CustomString string
 func (c CustomString) MarshalCQL(info *TypeInfo) ([]byte, error) {
 	return []byte(strings.ToUpper(string(c))), nil
 }
+
 func (c *CustomString) UnmarshalCQL(info *TypeInfo, data []byte) error {
 	*c = CustomString(strings.ToLower(string(data)))
 	return nil
