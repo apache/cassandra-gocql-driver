@@ -2,9 +2,6 @@ package gocql
 
 import (
 	"log"
-	"net"
-	"strconv"
-	"strings"
 	"sync"
 	"time"
 )
@@ -29,10 +26,8 @@ Example of Single Connection Pool:
 	}
 
 	func NewSingleConnection(cfg *ClusterConfig) ConnectionPool {
-		addr := strings.TrimSpace(cfg.Hosts[0])
-		if strings.Index(addr, ":") < 0 {
-			addr = fmt.Sprintf("%s:%d", addr, cfg.Port)
-		}
+		addr := JoinHostPort(cfg.Hosts[0], cfg.Port)
+
 		connCfg := ConnConfig{
 			ProtoVersion:  cfg.ProtoVersion,
 			CQLVersion:    cfg.CQLVersion,
@@ -145,10 +140,7 @@ func NewSimplePool(cfg *ClusterConfig) ConnectionPool {
 	//Walk through connecting to hosts. As soon as one host connects
 	//defer the remaining connections to cluster.fillPool()
 	for i := 0; i < len(cfg.Hosts); i++ {
-		addr := strings.TrimSpace(cfg.Hosts[i])
-		if _, _, err := net.SplitHostPort(addr); err != nil {
-			addr = net.JoinHostPort(addr, strconv.Itoa(cfg.Port))
-		}
+		addr := JoinHostPort(cfg.Hosts[i], cfg.Port)
 
 		if pool.connect(addr) == nil {
 			pool.cFillingPool <- 1
@@ -236,10 +228,7 @@ func (c *SimplePool) fillPool() {
 
 	//Walk through list of defined hosts
 	for host := range c.hosts {
-		addr := strings.TrimSpace(host)
-		if _, _, err := net.SplitHostPort(addr); err != nil {
-			addr = net.JoinHostPort(addr, strconv.Itoa(c.cfg.Port))
-		}
+		addr := JoinHostPort(host, c.cfg.Port)
 
 		numConns := 1
 		//See if the host already has connections in the pool
