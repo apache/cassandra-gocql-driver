@@ -1,8 +1,9 @@
 package gocql
 
 import (
-	"fmt"
 	"log"
+	"net"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -145,8 +146,8 @@ func NewSimplePool(cfg *ClusterConfig) ConnectionPool {
 	//defer the remaining connections to cluster.fillPool()
 	for i := 0; i < len(cfg.Hosts); i++ {
 		addr := strings.TrimSpace(cfg.Hosts[i])
-		if strings.Index(addr, ":") < 0 {
-			addr = fmt.Sprintf("%s:%d", addr, cfg.Port)
+		if _, _, err := net.SplitHostPort(addr); err != nil {
+			addr = net.JoinHostPort(addr, strconv.Itoa(cfg.Port))
 		}
 
 		if pool.connect(addr) == nil {
@@ -236,8 +237,8 @@ func (c *SimplePool) fillPool() {
 	//Walk through list of defined hosts
 	for host := range c.hosts {
 		addr := strings.TrimSpace(host)
-		if strings.Index(addr, ":") < 0 {
-			addr = fmt.Sprintf("%s:%d", addr, c.cfg.Port)
+		if _, _, err := net.SplitHostPort(addr); err != nil {
+			addr = net.JoinHostPort(addr, strconv.Itoa(c.cfg.Port))
 		}
 
 		numConns := 1
