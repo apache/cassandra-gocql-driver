@@ -40,6 +40,10 @@ func Marshal(info *TypeInfo, value interface{}) ([]byte, error) {
 		return nil, nil
 	}
 
+	if v, ok := value.(Marshaler); ok {
+		return v.MarshalCQL(info)
+	}
+
 	if valueRef := reflect.ValueOf(value); valueRef.Kind() == reflect.Ptr {
 		if valueRef.IsNil() {
 			return nil, nil
@@ -48,9 +52,6 @@ func Marshal(info *TypeInfo, value interface{}) ([]byte, error) {
 		}
 	}
 
-	if v, ok := value.(Marshaler); ok {
-		return v.MarshalCQL(info)
-	}
 	switch info.Type {
 	case TypeVarchar, TypeAscii, TypeBlob:
 		return marshalVarchar(info, value)
