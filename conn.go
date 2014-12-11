@@ -132,11 +132,7 @@ func Connect(addr string, cfg ConnConfig, pool ConnectionPool) (*Conn, error) {
 			RootCAs:      certPool,
 		}
 		config.InsecureSkipVerify = !cfg.SslOpts.EnableHostVerification
-		dialer := net.Dialer{
-        	Timeout: cfg.Timeout,
-        	KeepAlive: cfg.Keepalive,
-        }
-		if conn, err = tls.DialWithDialer(dialer, "tcp", addr, &config); err != nil {
+		if conn, err = tls.DialWithDialer(&net.Dialer{Timeout: cfg.Timeout}, "tcp", addr, &config); err != nil {
 			return nil, err
 		}
 	} else if conn, err = net.DialTimeout("tcp", addr, cfg.Timeout); err != nil {
