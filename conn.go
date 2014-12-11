@@ -257,17 +257,16 @@ func (c *Conn) serve() {
 func (c *Conn) recv() (frame, error) {
 	resp := make(frame, headerSize, headerSize+512)
 	c.conn.SetReadDeadline(time.Now().Add(c.timeout))
-	n, last, pinged := 0, 0, false
+	n, pinged := 0, false
 	for n < len(resp) {
 		nn, err := c.r.Read(resp[n:])
 		n += nn
 		if err != nil {
 			if nerr, ok := err.(net.Error); ok && nerr.Temporary() {
-				if n > last {
+				if nn > 0 {
 					// we hit the deadline but we made progress.
 					// simply extend the deadline
 					c.conn.SetReadDeadline(time.Now().Add(c.timeout))
-					last = n
 				} else if n == 0 && !pinged {
 					c.conn.SetReadDeadline(time.Now().Add(c.timeout))
 					if atomic.LoadInt32(&c.nwait) > 0 {
@@ -291,10 +290,39 @@ func (c *Conn) recv() (frame, error) {
 	return resp, nil
 }
 
+func (c *Conn) send(req []byte) (error) {
+	c.conn.SetWriteDeadline(time.Now().Add(c.timeout))
+	n, pinged := 0, false
+	for n < len(req) {
+		nn, err := c.conn.Write(req)
+		n += nn
+		if err != nil {
+			if nerr, ok := err.(net.Error); ok && nerr.Temporary() {
+				if nn > 0 {
+					// we hit the deadline but we made progress.
+					// simply extend the deadline
+					c.conn.SetWriteDeadline(time.Now().Add(c.timeout))
+				} else if n == 0 && !pinged {
+					c.conn.SetWriteDeadline(time.Now().Add(c.timeout))
+					if atomic.LoadInt32(&c.nwait) > 0 {
+						go c.ping()
+						pinged = true
+					}
+				} else {
+					return err
+				}
+			} else {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 func (c *Conn) execSimple(op operation) (interface{}, error) {
 	f, err := op.encodeFrame(c.version, nil)
 	f.setLength(len(f) - headerSize)
-	if _, err := c.conn.Write([]byte(f)); err != nil {
+	if err := c.send([]byte(f)); err != nil {
 		c.Close()
 		return nil, err
 	}
@@ -329,7 +357,7 @@ func (c *Conn) exec(op operation, trace Tracer) (interface{}, error) {
 	atomic.AddInt32(&c.nwait, 1)
 	atomic.StoreInt32(&call.active, 1)
 
-	if _, err := c.conn.Write(req); err != nil {
+	if err := c.send([]byte(req)); err != nil {
 		c.uniq <- id
 		c.Close()
 		return nil, err
