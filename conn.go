@@ -17,6 +17,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"github.com/felixge/tcpkeepalive"
 )
 
 const defaultFrameSize = 4096
@@ -76,7 +77,7 @@ type ConnConfig struct {
 	NumStreams    int
 	Compressor    Compressor
 	Authenticator Authenticator
-	Keepalive     time.Duration
+	KeepaliveCfg  *KeepaliveConfig
 	SslOpts       *SslOptions
 }
 
@@ -158,8 +159,8 @@ func Connect(addr string, cfg ConnConfig, pool ConnectionPool) (*Conn, error) {
 		auth:       cfg.Authenticator,
 	}
 
-	if cfg.Keepalive > 0 {
-		c.setKeepalive(cfg.Keepalive)
+	if cfg.KeepaliveCfg != nil {
+		c.setKeepalive(*cfg.KeepaliveCfg)
 	}
 
 	for i := 0; i < cap(c.uniq); i++ {
@@ -700,14 +701,22 @@ func (c *Conn) decodeFrame(f frame, trace Tracer) (rval interface{}, err error) 
 	}
 }
 
-func (c *Conn) setKeepalive(d time.Duration) error {
-	if tc, ok := c.conn.(*net.TCPConn); ok {
-		err := tc.SetKeepAlivePeriod(d)
-		if err != nil {
-			return err
-		}
-
-		return tc.SetKeepAlive(true)
+func (c *Conn) setKeepalive(kaCfg KeepaliveConfig) error {
+	kaConn, err := tcpkeepalive.EnableKeepAlive(c.conn)
+	if err != nil {
+		return err
+	}
+	err = kaConn.SetKeepAliveIdle(kaCfg.Idle)
+	if err != nil {
+		return err
+	}
+	err = kaConn.SetKeepAliveCount(kaCfg.Count)
+	if err != nil {
+		return err
+	}
+	err = kaConn.SetKeepAliveInterval(kaCfg.Interval)
+	if err != nil {
+		return err
 	}
 
 	return nil

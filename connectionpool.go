@@ -35,7 +35,7 @@ Example of Single Connection Pool:
 			NumStreams:    cfg.NumStreams,
 			Compressor:    cfg.Compressor,
 			Authenticator: cfg.Authenticator,
-			Keepalive:     cfg.SocketKeepalive,
+			KeepaliveCfg:  cfg.Keepalive
 		}
 		pool := SingleConnection{cfg:cfg}
 		pool.conn = Connect(addr,connCfg,pool)
@@ -51,7 +51,7 @@ Example of Single Connection Pool:
 				NumStreams:    cfg.NumStreams,
 				Compressor:    cfg.Compressor,
 				Authenticator: cfg.Authenticator,
-				Keepalive:     cfg.SocketKeepalive,
+				KeepaliveCfg:  cfg.Keepalive,
 			}
 			s.conn = Connect(conn.Address(),connCfg,s)
 		}
@@ -161,7 +161,7 @@ func (c *SimplePool) connect(addr string) error {
 		NumStreams:    c.cfg.NumStreams,
 		Compressor:    c.cfg.Compressor,
 		Authenticator: c.cfg.Authenticator,
-		Keepalive:     c.cfg.SocketKeepalive,
+		KeepaliveCfg:  c.cfg.Keepalive,
 		SslOpts:       c.cfg.SslOpts,
 	}
 
