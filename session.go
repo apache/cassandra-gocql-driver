@@ -11,7 +11,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"unicode"
 )
 
 // Session is the interface used by users to interact with the database.
@@ -220,6 +219,7 @@ type Query struct {
 	binding      func(q *QueryInfo) ([]interface{}, error)
 	attempts     int
 	totalLatency int64
+	prepared     bool
 }
 
 //Attempts returns the number of times the query was executed.
@@ -256,6 +256,12 @@ func (q *Query) Trace(trace Tracer) *Query {
 	return q
 }
 
+// Prepare marks the query as a prepared statement
+func (q *Query) Prepare() *Query {
+	q.prepared = true
+	return q
+}
+
 // PageSize will tell the iterator to fetch the result in pages of size n.
 // This is useful for iterating over large result sets, but setting the
 // page size to low might decrease the performance. This feature is only
@@ -263,28 +269,6 @@ func (q *Query) Trace(trace Tracer) *Query {
 func (q *Query) PageSize(n int) *Query {
 	q.pageSize = n
 	return q
-}
-
-func (q *Query) shouldPrepare() bool {
-
-	stmt := strings.TrimLeftFunc(strings.TrimRightFunc(q.stmt, func(r rune) bool {
-		return unicode.IsSpace(r) || r == ';'
-	}), unicode.IsSpace)
-
-	var stmtType string
-	if n := strings.IndexFunc(stmt, unicode.IsSpace); n >= 0 {
-		stmtType = strings.ToLower(stmt[:n])
-	}
-	if stmtType == "begin" {
-		if n := strings.LastIndexFunc(stmt, unicode.IsSpace); n >= 0 {
-			stmtType = strings.ToLower(stmt[n+1:])
-		}
-	}
-	switch stmtType {
-	case "select", "insert", "update", "delete", "batch":
-		return true
-	}
-	return false
 }
 
 // SetPrefetch sets the default threshold for pre-fetching new pages. If
