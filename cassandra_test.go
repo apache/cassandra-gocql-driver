@@ -605,66 +605,28 @@ func TestSliceMap(t *testing.T) {
 	if returned, retErr := session.Query(`SELECT * FROM slice_map_table`).Iter().SliceMap(); retErr != nil {
 		t.Fatal("select:", retErr)
 	} else {
-		if sliceMap[0]["testuuid"] != returned[0]["testuuid"] {
-			t.Fatal("returned testuuid did not match")
-		}
-		if sliceMap[0]["testtimestamp"] != returned[0]["testtimestamp"] {
-			t.Fatalf("returned testtimestamp did not match: %v %v", sliceMap[0]["testtimestamp"], returned[0]["testtimestamp"])
-		}
-		if sliceMap[0]["testvarchar"] != returned[0]["testvarchar"] {
-			t.Fatal("returned testvarchar did not match")
-		}
-		if sliceMap[0]["testbigint"] != returned[0]["testbigint"] {
-			t.Fatal("returned testbigint did not match")
-		}
-		if !reflect.DeepEqual(sliceMap[0]["testblob"], returned[0]["testblob"]) {
-			t.Fatal("returned testblob did not match")
-		}
-		if sliceMap[0]["testbool"] != returned[0]["testbool"] {
-			t.Fatal("returned testbool did not match")
-		}
-		if sliceMap[0]["testfloat"] != returned[0]["testfloat"] {
-			t.Fatal("returned testfloat did not match")
-		}
-		if sliceMap[0]["testdouble"] != returned[0]["testdouble"] {
-			t.Fatal("returned testdouble did not match")
-		}
-		if sliceMap[0]["testint"] != returned[0]["testint"] {
-			t.Fatal("returned testint did not match")
-		}
-
-		expectedDecimal := sliceMap[0]["testdecimal"].(*inf.Dec)
-		returnedDecimal := returned[0]["testdecimal"].(*inf.Dec)
-
-		if expectedDecimal.Cmp(returnedDecimal) != 0 {
-			t.Fatal("returned testdecimal did not match")
-		}
-		if !reflect.DeepEqual(sliceMap[0]["testlist"], returned[0]["testlist"]) {
-			t.Fatal("returned testlist did not match")
-		}
-		if !reflect.DeepEqual(sliceMap[0]["testset"], returned[0]["testset"]) {
-			t.Fatal("returned testset did not match")
-		}
-		if !reflect.DeepEqual(sliceMap[0]["testmap"], returned[0]["testmap"]) {
-			t.Fatal("returned testmap did not match")
-		}
-
-		expectedBigInt := sliceMap[0]["testvarint"].(*big.Int)
-		returnedBigInt := returned[0]["testvarint"].(*big.Int)
-		if expectedBigInt.Cmp(returnedBigInt) != 0 {
-			t.Fatal("returned testvarint did not match")
-		}
-
-		if sliceMap[0]["testinet"] != returned[0]["testinet"] {
-			t.Fatal("returned testinet did not match")
-		}
+		matchSliceMap(t, sliceMap, returned[0])
 	}
 
-	// Test for MapScan()
-	testMap := make(map[string]interface{})
-	if !session.Query(`SELECT * FROM slice_map_table`).Iter().MapScan(testMap) {
-		t.Fatal("MapScan failed to work with one row")
+	// Test for Iter.MapScan()
+	{
+		testMap := make(map[string]interface{})
+		if !session.Query(`SELECT * FROM slice_map_table`).Iter().MapScan(testMap) {
+			t.Fatal("MapScan failed to work with one row")
+		}
+		matchSliceMap(t, sliceMap, testMap)
 	}
+
+	// Test for Query.MapScan()
+	{
+		testMap := make(map[string]interface{})
+		if session.Query(`SELECT * FROM slice_map_table`).MapScan(testMap) != nil {
+			t.Fatal("MapScan failed to work with one row")
+		}
+		matchSliceMap(t, sliceMap, testMap)
+	}
+}
+func matchSliceMap(t *testing.T, sliceMap []map[string]interface{}, testMap map[string]interface{}) {
 	if sliceMap[0]["testuuid"] != testMap["testuuid"] {
 		t.Fatal("returned testuuid did not match")
 	}
