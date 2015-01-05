@@ -323,6 +323,18 @@ func (q *Query) Iter() *Iter {
 	return q.session.executeQuery(q)
 }
 
+// MapScan executes the query, copies the columns of the first selected
+// row into the map pointed at by m and discards the rest. If no rows
+// were selected, ErrNotFound is returned.
+func (q *Query) MapScan(m map[string]interface{}) error {
+	iter := q.Iter()
+	if err := iter.checkErrAndNotFound(); err != nil {
+		return err
+	}
+	iter.MapScan(m)
+	return iter.Close()
+}
+
 // Scan executes the query, copies the columns of the first selected
 // row into the values pointed at by dest and discards the rest. If no rows
 // were selected, ErrNotFound is returned.
