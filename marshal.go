@@ -853,10 +853,8 @@ func unmarshalList(info *TypeInfo, data []byte, value interface{}) error {
 			if rv.Len() != n {
 				return unmarshalErrorf("unmarshal list: array with wrong size")
 			}
-		} else if rv.Cap() < n {
-			rv.Set(reflect.MakeSlice(t, n, n))
 		} else {
-			rv.SetLen(n)
+			rv.Set(reflect.MakeSlice(t, n, n))
 		}
 		for i := 0; i < n; i++ {
 			if len(data) < 2 {
