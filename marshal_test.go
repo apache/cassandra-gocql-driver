@@ -461,6 +461,19 @@ var marshalTests = []struct {
 		[]byte(nil),
 		(*map[string]int)(nil),
 	},
+	{
+		&TypeInfo{Type: TypeVarchar},
+		[]byte("HELLO WORLD"),
+		func() *CustomString {
+			customString := CustomString("hello world")
+			return &customString
+		}(),
+	},
+	{
+		&TypeInfo{Type: TypeVarchar},
+		[]byte(nil),
+		(*CustomString)(nil),
+	},
 }
 
 func decimalize(s string) *inf.Dec {
@@ -591,11 +604,67 @@ func TestMarshalVarint(t *testing.T) {
 	}
 }
 
+func equalStringSlice(leftList, rightList []string) bool {
+	if len(leftList) != len(rightList) {
+		return false
+	}
+	for index := range leftList {
+		if rightList[index] != leftList[index] {
+			return false
+		}
+	}
+	return true
+}
+
+func TestMarshalList(t *testing.T) {
+	typeInfo := &TypeInfo {
+		Type: TypeList,
+		Elem: &TypeInfo{
+			Type: TypeVarchar,
+		},
+	}
+
+	sourceLists := [][]string {
+		[]string{ "valueA" },
+		[]string{ "valueA", "valueB" },
+		[]string{ "valueB" },
+	}
+
+	listDatas := [][]byte{}
+
+	for _, list := range sourceLists {
+		listData, marshalErr := Marshal(typeInfo, list)
+		if nil != marshalErr {
+			t.Errorf("Error marshal %+v of type %+v: %s", list, typeInfo, marshalErr)
+		}
+		listDatas = append(listDatas, listData)
+	}
+
+	outputLists := [][]string{}
+
+	var outputList []string
+
+	for _, listData := range listDatas {
+		if unmarshalErr := Unmarshal(typeInfo, listData, &outputList); nil != unmarshalErr {
+			t.Error(unmarshalErr)
+		}
+		outputLists = append(outputLists, outputList)
+	}
+
+	for index, sourceList := range sourceLists {
+		outputList := outputLists[index]
+		if !equalStringSlice(sourceList, outputList) {
+			t.Errorf("Lists %+v not equal to lists %+v, but should", sourceList, outputList)
+		}
+	}
+}
+
 type CustomString string
 
 func (c CustomString) MarshalCQL(info *TypeInfo) ([]byte, error) {
 	return []byte(strings.ToUpper(string(c))), nil
 }
+
 func (c *CustomString) UnmarshalCQL(info *TypeInfo, data []byte) error {
 	*c = CustomString(strings.ToLower(string(data)))
 	return nil
