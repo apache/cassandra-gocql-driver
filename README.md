@@ -165,6 +165,11 @@ Other Projects
 
 * [gocqldriver](https://github.com/tux21b/gocqldriver) is the predecessor of gocql based on Go's "database/sql" package. This project isn't maintained anymore, because Cassandra wasn't a good fit for the traditional "database/sql" API. Use this package instead.
 
+SEO
+---
+
+For some reason, when you google `golang cassandra`, this project doesn't feature very highly in the result list. But if you google `go cassandra`, then we're a bit higher up the list. So this is note to try to convince Google that Golang is an alias for Go.
+
 License
 -------
 
