@@ -417,7 +417,8 @@ func (c *Conn) executeQuery(qry *Query) *Iter {
 		PageSize:  qry.pageSize,
 		PageState: qry.pageState,
 	}
-	if qry.shouldPrepare() {
+
+	if qry.prepared {
 		// Prepare all DML queries. Other queries can not be prepared.
 		info, err := c.prepareStatement(qry.stmt, qry.trace)
 		if err != nil {
