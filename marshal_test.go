@@ -84,6 +84,26 @@ var marshalTests = []struct {
 		int32(math.MaxInt32),
 	},
 	{
+		&TypeInfo{Type: TypeInt},
+		[]byte("\x00\x00\x00\x00"),
+		"0",
+	},
+	{
+		&TypeInfo{Type: TypeInt},
+		[]byte("\x01\x02\x03\x04"),
+		"16909060",
+	},
+	{
+		&TypeInfo{Type: TypeInt},
+		[]byte("\x80\x00\x00\x00"),
+		"-2147483648", // math.MinInt32
+	},
+	{
+		&TypeInfo{Type: TypeInt},
+		[]byte("\x7f\xff\xff\xff"),
+		"2147483647", // math.MaxInt32
+	},
+	{
 		&TypeInfo{Type: TypeBigInt},
 		[]byte("\x00\x00\x00\x00\x00\x00\x00\x00"),
 		0,
@@ -102,6 +122,26 @@ var marshalTests = []struct {
 		&TypeInfo{Type: TypeBigInt},
 		[]byte("\x7f\xff\xff\xff\xff\xff\xff\xff"),
 		int64(math.MaxInt64),
+	},
+	{
+		&TypeInfo{Type: TypeBigInt},
+		[]byte("\x00\x00\x00\x00\x00\x00\x00\x00"),
+		"0",
+	},
+	{
+		&TypeInfo{Type: TypeBigInt},
+		[]byte("\x01\x02\x03\x04\x05\x06\x07\x08"),
+		"72623859790382856",
+	},
+	{
+		&TypeInfo{Type: TypeBigInt},
+		[]byte("\x80\x00\x00\x00\x00\x00\x00\x00"),
+		"-9223372036854775808", // math.MinInt64
+	},
+	{
+		&TypeInfo{Type: TypeBigInt},
+		[]byte("\x7f\xff\xff\xff\xff\xff\xff\xff"),
+		"9223372036854775807", // math.MaxInt64
 	},
 	{
 		&TypeInfo{Type: TypeBoolean},

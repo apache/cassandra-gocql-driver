@@ -12,6 +12,7 @@ import (
 	"math/big"
 	"net"
 	"reflect"
+	"strconv"
 	"time"
 
 	"speter.net/go/exp/math/dec/inf"
@@ -251,6 +252,12 @@ func marshalInt(info *TypeInfo, value interface{}) ([]byte, error) {
 		return encInt(int32(v)), nil
 	case uint8:
 		return encInt(int32(v)), nil
+	case string:
+		i, err := strconv.ParseInt(value.(string), 10, 32)
+		if err != nil {
+			return nil, marshalErrorf("can not marshal string to int: %s", err)
+		}
+		return encInt(int32(i)), nil
 	}
 	rv := reflect.ValueOf(value)
 	switch rv.Type().Kind() {
@@ -313,6 +320,12 @@ func marshalBigInt(info *TypeInfo, value interface{}) ([]byte, error) {
 		return encBigInt(int64(v)), nil
 	case big.Int:
 		return encBigInt2C(&v), nil
+	case string:
+		i, err := strconv.ParseInt(value.(string), 10, 64)
+		if err != nil {
+			return nil, marshalErrorf("can not marshal string to bigint: %s", err)
+		}
+		return encBigInt(i), nil
 	}
 	rv := reflect.ValueOf(value)
 	switch rv.Type().Kind() {
@@ -476,6 +489,9 @@ func unmarshalIntlike(info *TypeInfo, int64Val int64, data []byte, value interfa
 		return nil
 	case *big.Int:
 		decBigInt2C(data, v)
+		return nil
+	case *string:
+		*v = strconv.FormatInt(int64Val, 10)
 		return nil
 	}
 
