@@ -63,6 +63,10 @@ type ClusterConfig struct {
 	MaxPreparedStmts int           // Sets the maximum cache size for prepared statements globally for gocql (default: 1000)
 	Discovery        DiscoveryConfig
 	SslOpts          *SslOptions
+	// if ConnState is not nil then it will be called when a connection state changes,
+	// and is supported by the connection pool.
+	// These states are covered by the ConnState type.
+	ConnState func(*Conn, ConnState)
 }
 
 // NewCluster generates a new config for the default cluster implementation.
