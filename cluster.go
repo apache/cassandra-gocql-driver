@@ -6,6 +6,7 @@ package gocql
 
 import (
 	"errors"
+	"net"
 	"sync"
 	"time"
 
@@ -66,7 +67,7 @@ type ClusterConfig struct {
 	// if ConnState is not nil then it will be called when a connection state changes,
 	// and is supported by the connection pool.
 	// These states are covered by the ConnState type.
-	ConnState func(*Conn, ConnState)
+	ConnState func(net.Conn, ConnState)
 }
 
 // NewCluster generates a new config for the default cluster implementation.
