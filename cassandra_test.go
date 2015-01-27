@@ -1427,3 +1427,66 @@ func TestEmptyTimestamp(t *testing.T) {
 		t.Errorf("time.Time bind variable should still be empty (was %s)", timeVal)
 	}
 }
+
+func TestKeyspaceMetadata(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+
+	if err := createTable(session, "CREATE TABLE test_metadata (first_id int, second_id int, third_id int, PRIMARY KEY (first_id, second_id))"); err != nil {
+		t.Fatalf("failed to create table with error '%v'", err)
+	}
+
+	if err := session.Query("CREATE INDEX index_metadata ON test_metadata ( third_id )").Exec(); err != nil {
+		t.Fatalf("failed to create index with err: %v", err)
+	}
+
+	keyspaceMetadata, err := session.KeyspaceMetadata()
+	if err != nil {
+		t.Fatalf("failed to query keyspace metadata with err: %v", err)
+	}
+	if keyspaceMetadata == nil {
+		t.Fatal("expected the keyspace metadata to not be nil, but it was nil")
+	}
+	if keyspaceMetadata.Name != session.cfg.Keyspace {
+		t.Fatalf("Expected the keyspace name to be %s but was %s", session.cfg.Keyspace, keyspaceMetadata.Name)
+	}
+	if len(keyspaceMetadata.Tables) == 0 {
+		t.Errorf("Expected tables but there were none")
+	}
+
+	tableMetadata, found := keyspaceMetadata.Tables["test_metadata"]
+	if !found {
+		t.Fatalf("failed to find the test_metadata table metadata")
+	}
+
+	if len(tableMetadata.PartitionKey) != 1 {
+		t.Errorf("expected partition key length of 1, but was %d", len(tableMetadata.PartitionKey))
+	}
+	for i, column := range tableMetadata.PartitionKey {
+		if column == nil {
+			t.Errorf("partition key column metadata at index %d was nil", i)
+		}
+	}
+	if tableMetadata.PartitionKey[0].Name != "first_id" {
+		t.Errorf("Expected the first partition key column to be 'first_id' but was '%s'", tableMetadata.PartitionKey[0].Name)
+	}
+	if len(tableMetadata.ClusteringColumns) != 1 {
+		t.Fatalf("expected clustering columns length of 1, but was %d", len(tableMetadata.ClusteringColumns))
+	}
+	for i, column := range tableMetadata.ClusteringColumns {
+		if column == nil {
+			t.Fatalf("clustering column metadata at index %d was nil", i)
+		}
+	}
+	if tableMetadata.ClusteringColumns[0].Name != "second_id" {
+		t.Errorf("Expected the first clustering column to be 'second_id' but was '%s'", tableMetadata.ClusteringColumns[0].Name)
+	}
+	thirdColumn, found := tableMetadata.Columns["third_id"]
+	if !found {
+		t.Fatalf("Expected a column definition for 'third_id'")
+	}
+	if thirdColumn.Index.Name != "index_metadata" {
+		t.Errorf("Expected column index named 'index_metadata' but was '%s'", thirdColumn.Index.Name)
+	}
+}
+

@@ -1123,7 +1123,7 @@ type TypeInfo struct {
 	Type   Type
 	Key    *TypeInfo // only used for TypeMap
 	Elem   *TypeInfo // only used for TypeMap, TypeList and TypeSet
-	Custom string    // only used for TypeCostum
+	Custom string    // only used for TypeCustom
 }
 
 // String returns a human readable name for the Cassandra datatype
@@ -1154,6 +1154,7 @@ const (
 	TypeDouble    Type = 0x0007
 	TypeFloat     Type = 0x0008
 	TypeInt       Type = 0x0009
+	TypeText      Type = 0x000A
 	TypeTimestamp Type = 0x000B
 	TypeUUID      Type = 0x000C
 	TypeVarchar   Type = 0x000D
@@ -1163,6 +1164,8 @@ const (
 	TypeList      Type = 0x0020
 	TypeMap       Type = 0x0021
 	TypeSet       Type = 0x0022
+	TypeUDT       Type = 0x0030
+	TypeTuple     Type = 0x0031
 )
 
 // String returns the name of the identifier.
@@ -1188,12 +1191,16 @@ func (t Type) String() string {
 		return "float"
 	case TypeInt:
 		return "int"
+	case TypeText:
+		return "text"
 	case TypeTimestamp:
 		return "timestamp"
 	case TypeUUID:
 		return "uuid"
 	case TypeVarchar:
 		return "varchar"
+	case TypeVarint:
+		return "varint"
 	case TypeTimeUUID:
 		return "timeuuid"
 	case TypeInet:
@@ -1204,8 +1211,10 @@ func (t Type) String() string {
 		return "map"
 	case TypeSet:
 		return "set"
-	case TypeVarint:
-		return "varint"
+	case TypeUDT:
+		return "udt"
+	case TypeTuple:
+		return "tuple"
 	default:
 		return "unknown"
 	}

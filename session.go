@@ -24,12 +24,13 @@ import (
 // and automatically sets a default consinstency level on all operations
 // that do not have a consistency level set.
 type Session struct {
-	Pool     ConnectionPool
-	cons     Consistency
-	pageSize int
-	prefetch float64
-	trace    Tracer
-	mu       sync.RWMutex
+	Pool            ConnectionPool
+	cons            Consistency
+	pageSize        int
+	prefetch        float64
+	schemaDescriber *schemaDescriber
+	trace           Tracer
+	mu              sync.RWMutex
 
 	cfg ClusterConfig
 
@@ -161,6 +162,17 @@ func (s *Session) executeQuery(qry *Query) *Iter {
 	}
 
 	return iter
+}
+
+// Returns the schema metadata for the keyspace of this session including
+// table and column schema metadata.
+func (s *Session) KeyspaceMetadata() (*KeyspaceMetadata, error) {
+	s.mu.Lock()
+	if s.schemaDescriber == nil {
+		s.schemaDescriber = &schemaDescriber{session: s}
+	}
+	s.mu.Unlock()
+	return s.schemaDescriber.GetSchema()
 }
 
 // ExecuteBatch executes a batch operation and returns nil if successful
