@@ -2,6 +2,7 @@ package gocql
 
 import (
 	"log"
+	"net"
 	"sync"
 	"time"
 )
@@ -85,9 +86,8 @@ To see a more complete example of a ConnectionPool implementation please see the
 type ConnectionPool interface {
 	Pick(*Query) *Conn
 	Size() int
-	HandleError(*Conn, error, bool)
 	Close()
-	SetHosts(host []HostInfo)
+	SetHosts(hosts []*HostInfo, partitioner string)
 }
 
 //NewPoolFunc is the type used by ClusterConfig to create a pool of a specific type.
@@ -165,7 +165,7 @@ func (c *SimplePool) connect(addr string) error {
 		SslOpts:       c.cfg.SslOpts,
 	}
 
-	conn, err := Connect(addr, cfg, c)
+	conn, err := Connect(addr, cfg, c.HandleError)
 	if err != nil {
 		log.Printf("connect: failed to connect to %q: %v", addr, err)
 		return err
@@ -332,7 +332,7 @@ func (c *SimplePool) Close() {
 	})
 }
 
-func (c *SimplePool) SetHosts(hosts []HostInfo) {
+func (c *SimplePool) SetHosts(hosts []*HostInfo, partitioner string) {
 
 	c.hostMu.Lock()
 	toRemove := make(map[string]struct{})
@@ -341,8 +341,6 @@ func (c *SimplePool) SetHosts(hosts []HostInfo) {
 	}
 
 	for _, host := range hosts {
-		host := host
-
 		delete(toRemove, host.Peer)
 		// we already have it
 		if _, ok := c.hosts[host.Peer]; ok {
@@ -351,7 +349,7 @@ func (c *SimplePool) SetHosts(hosts []HostInfo) {
 			continue
 		}
 
-		c.hosts[host.Peer] = &host
+		c.hosts[host.Peer] = host
 	}
 
 	// can we hold c.mu whilst iterating this loop?
@@ -380,5 +378,382 @@ func (c *SimplePool) removeHostLocked(addr string) {
 		if conn.Address() == addr {
 			c.removeConnLocked(conn)
 		}
+	}
+}
+
+//NewRoundRobinConnPool creates a connection pool which selects hosts by
+//round-robin, and then selects a connection for that host by round-robin.
+func NewRoundRobinConnPool(cfg *ClusterConfig) ConnectionPool {
+	return newPolicyConnPool(
+		cfg,
+		NewRoundRobinHostPolicy(),
+		NewRoundRobinConnPolicy,
+	)
+}
+
+//NewTokenAwareConnPool creates a connection pool which selects hosts by
+//a token aware policy, and then selects a connection for that host by
+//round-robin.
+func NewTokenAwareConnPool(cfg *ClusterConfig) ConnectionPool {
+	return newPolicyConnPool(
+		cfg,
+		NewTokenAwareHostPolicy(NewRoundRobinHostPolicy()),
+		NewRoundRobinConnPolicy,
+	)
+}
+
+type policyConnPool struct {
+	port     int
+	numConns int
+	connCfg  ConnConfig
+	keyspace string
+
+	mu            sync.RWMutex
+	hostPolicy    HostSelectionPolicy
+	connPolicy    func() ConnSelectionPolicy
+	hostConnPools map[string]*hostConnPool
+}
+
+func newPolicyConnPool(
+	cfg *ClusterConfig,
+	hostPolicy HostSelectionPolicy,
+	connPolicy func() ConnSelectionPolicy,
+) ConnectionPool {
+	// create the pool
+	pool := &policyConnPool{
+		port:     cfg.Port,
+		numConns: cfg.NumConns,
+		connCfg: ConnConfig{
+			ProtoVersion:  cfg.ProtoVersion,
+			CQLVersion:    cfg.CQLVersion,
+			Timeout:       cfg.Timeout,
+			NumStreams:    cfg.NumStreams,
+			Compressor:    cfg.Compressor,
+			Authenticator: cfg.Authenticator,
+			Keepalive:     cfg.SocketKeepalive,
+			SslOpts:       cfg.SslOpts,
+		},
+		keyspace:      cfg.Keyspace,
+		hostPolicy:    hostPolicy,
+		connPolicy:    connPolicy,
+		hostConnPools: map[string]*hostConnPool{},
+	}
+
+	hosts := make([]*HostInfo, len(cfg.Hosts))
+	for i, hostAddr := range cfg.Hosts {
+		hosts[i] = &HostInfo{Peer: hostAddr}
+	}
+
+	pool.SetHosts(hosts, "")
+
+	return pool
+}
+
+func (p *policyConnPool) SetHosts(hosts []*HostInfo, partitioner string) {
+	p.mu.Lock()
+
+	toRemove := make(map[string]struct{})
+	for addr := range p.hostConnPools {
+		toRemove[addr] = struct{}{}
+	}
+
+	// TODO connect to hosts in parallel, but wait for pools to be
+	// created before returning
+
+	for _, host := range hosts {
+		pool, exists := p.hostConnPools[host.Peer]
+		if !exists {
+			// create a connection pool for the host
+			pool = newHostConnPool(
+				host.Peer,
+				p.port,
+				p.numConns,
+				p.connCfg,
+				p.keyspace,
+				p.connPolicy(),
+			)
+			p.hostConnPools[host.Peer] = pool
+		} else {
+			// still have this host, so don't remove it
+			delete(toRemove, host.Peer)
+		}
+	}
+
+	for addr := range toRemove {
+		pool := p.hostConnPools[addr]
+		delete(p.hostConnPools, addr)
+		pool.Close()
+	}
+
+	// update the policy
+	p.hostPolicy.SetHosts(hosts, partitioner)
+
+	p.mu.Unlock()
+}
+
+func (p *policyConnPool) Size() int {
+	p.mu.RLock()
+	count := 0
+	for _, pool := range p.hostConnPools {
+		count += pool.Size()
+	}
+	p.mu.RUnlock()
+
+	return count
+}
+
+func (p *policyConnPool) Pick(qry *Query) *Conn {
+	nextHost := p.hostPolicy.Pick(qry)
+
+	p.mu.RLock()
+	var host *HostInfo
+	var conn *Conn
+	for conn == nil {
+		host = nextHost()
+		if host == nil {
+			break
+		}
+		conn = p.hostConnPools[host.Peer].Pick(qry)
+	}
+	p.mu.RUnlock()
+	return conn
+}
+
+func (p *policyConnPool) Close() {
+	p.mu.Lock()
+	// remove the hosts from the policy
+	p.hostPolicy.SetHosts([]*HostInfo{}, "")
+	// close the pools
+	for addr, pool := range p.hostConnPools {
+		delete(p.hostConnPools, addr)
+		pool.Close()
+	}
+	p.mu.Unlock()
+}
+
+type hostConnPool struct {
+	host     string
+	port     int
+	addr     string
+	size     int
+	connCfg  ConnConfig
+	keyspace string
+	policy   ConnSelectionPolicy
+	// protection for conns, closed, filling
+	mu      sync.Mutex
+	conns   []*Conn
+	closed  bool
+	filling bool
+}
+
+func newHostConnPool(
+	host string,
+	port int,
+	size int,
+	connCfg ConnConfig,
+	keyspace string,
+	policy ConnSelectionPolicy,
+) *hostConnPool {
+
+	pool := &hostConnPool{
+		host:     host,
+		port:     port,
+		addr:     JoinHostPort(host, port),
+		size:     size,
+		connCfg:  connCfg,
+		keyspace: keyspace,
+		policy:   policy,
+		conns:    make([]*Conn, 0, size),
+		filling:  false,
+		closed:   false,
+	}
+
+	// fill the pool with the initial connections before returning
+	pool.fill()
+
+	return pool
+}
+
+func (pool *hostConnPool) Pick(qry *Query) *Conn {
+	pool.mu.Lock()
+	if pool.closed {
+		pool.mu.Unlock()
+		return nil
+	}
+
+	empty := len(pool.conns) == 0
+	pool.mu.Unlock()
+
+	if empty {
+		// try to fill the empty pool
+		pool.fill()
+	}
+
+	return pool.policy.Pick(qry)
+}
+
+//Size returns the number of connections currently active in the pool
+func (pool *hostConnPool) Size() int {
+	pool.mu.Lock()
+	defer pool.mu.Unlock()
+
+	return len(pool.conns)
+}
+
+func (pool *hostConnPool) Close() {
+	pool.mu.Lock()
+	defer pool.mu.Unlock()
+
+	if pool.closed {
+		return
+	}
+	pool.closed = true
+
+	// drain, but don't wait
+	go pool.drain()
+}
+
+func (pool *hostConnPool) fill() {
+	pool.mu.Lock()
+	// avoid filling a closed pool, or concurrent filling
+	if pool.closed || pool.filling {
+		pool.mu.Unlock()
+		return
+	}
+
+	// determine the filling work to be done
+	startCount := len(pool.conns)
+	fillCount := pool.size - startCount
+
+	// avoid filling a full (or overfull) pool
+	if fillCount <= 0 {
+		pool.mu.Unlock()
+		return
+	}
+
+	// ok fill the pool
+	pool.filling = true
+
+	// allow others to access the pool while filling
+	pool.mu.Unlock()
+
+	// fill only the first connection synchronously
+	if startCount == 0 {
+		err := pool.connect()
+		if opErr, ok := err.(*net.OpError); ok && opErr.Op == "read" {
+			// connection refused
+			// these are typical during a node outage so avoid log spam.
+		} else if err != nil {
+			log.Printf("error: failed to connect to %s - %v", pool.addr, err)
+		}
+
+		if err != nil {
+			// probably unreachable host
+			go pool.stopFilling()
+			return
+		}
+
+		// filled one
+		fillCount--
+	}
+
+	// fill the rest of the pool asynchronously
+	go func() {
+		for fillCount > 0 {
+			err := pool.connect()
+			if opErr, ok := err.(*net.OpError); ok && opErr.Op == "read" {
+				// connection refused
+				// these are typical during a node outage so avoid log spam.
+			} else if err != nil {
+				log.Printf("error: failed to connect to %s - %v", pool.addr, err)
+			}
+
+			// decrement, even on error
+			fillCount--
+		}
+
+		// mark the end of filling
+		pool.stopFilling()
+	}()
+}
+
+func (pool *hostConnPool) stopFilling() {
+	time.Sleep(100 * time.Millisecond)
+	pool.mu.Lock()
+	pool.filling = false
+	pool.mu.Unlock()
+}
+
+// create a new connection to the host and add it to the pool
+func (pool *hostConnPool) connect() error {
+	// try to connect
+	conn, err := Connect(pool.addr, pool.connCfg, pool.handleError)
+	if err != nil {
+		return err
+	}
+
+	if pool.keyspace != "" {
+		// set the keyspace
+		if err := conn.UseKeyspace(pool.keyspace); err != nil {
+			conn.Close()
+			return err
+		}
+	}
+
+	// add the Conn to the pool
+	pool.mu.Lock()
+	defer pool.mu.Unlock()
+
+	if pool.closed {
+		conn.Close()
+		return nil
+	}
+
+	pool.conns = append(pool.conns, conn)
+	pool.policy.SetConns(pool.conns)
+	return nil
+}
+
+// handle any error from a Conn
+func (pool *hostConnPool) handleError(conn *Conn, err error, closed bool) {
+	if !closed {
+		// still an open connection, so continue using it
+		return
+	}
+
+	pool.mu.Lock()
+	defer pool.mu.Unlock()
+
+	// find the connection index
+	for i, candidate := range pool.conns {
+		if candidate == conn {
+			// remove the connection, not preserving order
+			pool.conns[i], pool.conns = pool.conns[len(pool.conns)-1], pool.conns[:len(pool.conns)-1]
+
+			// update the policy
+			pool.policy.SetConns(pool.conns)
+
+			// lost a connection, so fill the pool
+			go pool.fill()
+			break
+		}
+	}
+}
+
+// removes and closes all connections from the pool
+func (pool *hostConnPool) drain() {
+	pool.mu.Lock()
+	defer pool.mu.Unlock()
+
+	// empty the pool
+	conns := pool.conns
+	pool.conns = pool.conns[:0]
+
+	// update the policy
+	pool.policy.SetConns(pool.conns)
+
+	// close the connections
+	for _, conn := range conns {
+		conn.Close()
 	}
 }

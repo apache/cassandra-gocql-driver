@@ -135,7 +135,7 @@ func TestRingDiscovery(t *testing.T) {
 		time.Sleep(*flagAutoWait)
 	}
 
-	size := len(session.Pool.(*SimplePool).connPool)
+	size := session.Pool.Size()
 
 	if *clusterSize != size {
 		t.Logf("WARN: Expected a cluster size of %d, but actual size was %d", *clusterSize, size)
@@ -1549,5 +1549,50 @@ func TestRoutingKey(t *testing.T) {
 	cacheSize = session.routingKeyInfoCache.lru.Len()
 	if cacheSize != 2 {
 		t.Errorf("Expected cache size to be 2 but was %d", cacheSize)
+	}
+}
+
+func TestTokenAwareConnPool(t *testing.T) {
+	cluster := createCluster()
+	cluster.ConnPoolType = NewTokenAwareConnPool
+	cluster.DiscoverHosts = true
+
+	// Drop and re-create the keyspace once. Different tests should use their own
+	// individual tables, but can assume that the table does not exist before.
+	initOnce.Do(func() {
+		createKeyspace(t, cluster, "gocql_test")
+	})
+
+	cluster.Keyspace = "gocql_test"
+	session, err := cluster.CreateSession()
+	if err != nil {
+		t.Fatal("createSession:", err)
+	}
+	defer session.Close()
+
+	if *clusterSize > 1 {
+		// wait for autodiscovery to update the pool with the list of known hosts
+		time.Sleep(*flagAutoWait)
+	}
+
+	if session.Pool.Size() != cluster.NumConns*len(cluster.Hosts) {
+		t.Errorf("Expected pool size %d but was %d", cluster.NumConns*len(cluster.Hosts), session.Pool.Size())
+	}
+
+	if err := createTable(session, "CREATE TABLE test_token_aware (id int, data text, PRIMARY KEY (id))"); err != nil {
+		t.Fatalf("failed to create test_token_aware table with err: %v", err)
+	}
+	query := session.Query("INSERT INTO test_token_aware (id, data) VALUES (?,?)", 42, "8 * 6 =")
+	if err := query.Exec(); err != nil {
+		t.Fatalf("failed to insert with err: %v", err)
+	}
+	query = session.Query("SELECT data FROM test_token_aware where id = ?", 42).Consistency(One)
+	iter := query.Iter()
+	var data string
+	if !iter.Scan(&data) {
+		t.Error("failed to scan data")
+	}
+	if err := iter.Close(); err != nil {
+		t.Errorf("iter failed with err: %v", err)
 	}
 }
