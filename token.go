@@ -239,7 +239,7 @@ type tokenRing struct {
 	hosts       []*HostInfo
 }
 
-func newTokenRing(partitioner string, hosts []*HostInfo) (*tokenRing, error) {
+func newTokenRing(partitioner string, hosts []HostInfo) (*tokenRing, error) {
 	tokenRing := &tokenRing{
 		tokens: []token{},
 		hosts:  []*HostInfo{},
@@ -255,7 +255,8 @@ func newTokenRing(partitioner string, hosts []*HostInfo) (*tokenRing, error) {
 		return nil, fmt.Errorf("Unsupported partitioner '%s'", partitioner)
 	}
 
-	for _, host := range hosts {
+	for i := range hosts {
+		host := &hosts[i]
 		for _, strToken := range host.Tokens {
 			token := tokenRing.partitioner.ParseString(strToken)
 			tokenRing.tokens = append(tokenRing.tokens, token)
