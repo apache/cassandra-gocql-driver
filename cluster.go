@@ -61,6 +61,7 @@ type ClusterConfig struct {
 	ConnPoolType     NewPoolFunc   // The function used to create the connection pool for the session (default: NewSimplePool)
 	DiscoverHosts    bool          // If set, gocql will attempt to automatically discover other members of the Cassandra cluster (default: false)
 	MaxPreparedStmts int           // Sets the maximum cache size for prepared statements globally for gocql (default: 1000)
+	PageSize         int           // Default page size to use for created sessions (default: 0)
 	Discovery        DiscoveryConfig
 	SslOpts          *SslOptions
 }
@@ -106,6 +107,7 @@ func (cfg *ClusterConfig) CreateSession() (*Session, error) {
 	if pool.Size() > 0 {
 		s := NewSession(pool, *cfg)
 		s.SetConsistency(cfg.Consistency)
+		s.SetPageSize(cfg.PageSize)
 
 		if cfg.DiscoverHosts {
 			hostSource := &ringDescriber{
