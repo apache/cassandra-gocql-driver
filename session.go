@@ -5,6 +5,8 @@
 package gocql
 
 import (
+	"bytes"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
@@ -12,6 +14,8 @@ import (
 	"sync"
 	"time"
 	"unicode"
+
+	"github.com/golang/groupcache/lru"
 )
 
 // Session is the interface used by users to interact with the database.
@@ -24,13 +28,14 @@ import (
 // and automatically sets a default consinstency level on all operations
 // that do not have a consistency level set.
 type Session struct {
-	Pool            ConnectionPool
-	cons            Consistency
-	pageSize        int
-	prefetch        float64
-	schemaDescriber *schemaDescriber
-	trace           Tracer
-	mu              sync.RWMutex
+	Pool                ConnectionPool
+	cons                Consistency
+	pageSize            int
+	prefetch            float64
+	routingKeyInfoCache routingKeyInfoLRU
+	schemaDescriber     *schemaDescriber
+	trace               Tracer
+	mu                  sync.RWMutex
 
 	cfg ClusterConfig
 
@@ -40,7 +45,12 @@ type Session struct {
 
 // NewSession wraps an existing Node.
 func NewSession(p ConnectionPool, c ClusterConfig) *Session {
-	return &Session{Pool: p, cons: c.Consistency, prefetch: 0.25, cfg: c}
+	session := &Session{Pool: p, cons: c.Consistency, prefetch: 0.25, cfg: c}
+
+	// create the query info cache
+	session.routingKeyInfoCache.lru = lru.New(c.MaxRoutingKeyInfo)
+
+	return session
 }
 
 // SetConsistency sets the default consistency level for this session. This
@@ -185,6 +195,104 @@ func (s *Session) KeyspaceMetadata(keyspace string) (*KeyspaceMetadata, error) {
 	return s.schemaDescriber.getSchema(keyspace)
 }
 
+// returns routing key indexes and type info
+func (s *Session) routingKeyInfo(stmt string) *routingKeyInfo {
+	s.routingKeyInfoCache.mu.Lock()
+	cacheKey := s.cfg.Keyspace + stmt
+	entry, cached := s.routingKeyInfoCache.lru.Get(cacheKey)
+	if cached {
+		// done accessing the cache
+		s.routingKeyInfoCache.mu.Unlock()
+		// the entry is an inflight struct similiar to that used by
+		// Conn to prepare statements
+		inflight := entry.(*inflightCachedEntry)
+		// wait for any inflight work
+		inflight.wg.Wait()
+
+		if inflight.err != nil {
+			// return nil for any error
+			return nil
+		}
+
+		return inflight.value.(*routingKeyInfo)
+	}
+
+	// create a new inflight entry while the data is created
+	inflight := new(inflightCachedEntry)
+	inflight.wg.Add(1)
+	defer inflight.wg.Done()
+	s.routingKeyInfoCache.lru.Add(cacheKey, inflight)
+	s.routingKeyInfoCache.mu.Unlock()
+
+	var queryInfo *QueryInfo
+	var partitionKey []*ColumnMetadata
+
+	// get the query info for the statement
+	conn := s.Pool.Pick(nil)
+	if conn != nil {
+		queryInfo, inflight.err = conn.prepareStatement(stmt, s.trace)
+		if inflight.err == nil {
+			if len(queryInfo.Args) == 0 {
+				// no arguments, no routing key, and no error
+				return nil
+			}
+
+			// get the table metadata
+			table := queryInfo.Args[0].Table
+			var keyspaceMetadata *KeyspaceMetadata
+			keyspaceMetadata, inflight.err = s.KeyspaceMetadata(s.cfg.Keyspace)
+			if inflight.err == nil {
+				tableMetadata, found := keyspaceMetadata.Tables[table]
+				if !found {
+					inflight.err = ErrNoMetadata
+				}
+
+				partitionKey = tableMetadata.PartitionKey
+			}
+		}
+	} else {
+		// no connections
+		inflight.err = ErrNoConnections
+	}
+
+	if inflight.err != nil {
+		// remove from the cache
+		s.routingKeyInfoCache.mu.Lock()
+		s.routingKeyInfoCache.lru.Remove(cacheKey)
+		s.routingKeyInfoCache.mu.Unlock()
+		return nil
+	}
+
+	size := len(partitionKey)
+	routingKeyInfo := &routingKeyInfo{
+		indexes: make([]int, size),
+		types:   make([]*TypeInfo, size),
+	}
+	for i, keyColumn := range partitionKey {
+		routingKeyInfo.indexes[i] = -1
+		// find the column in the query info
+		for j, boundColumn := range queryInfo.Args {
+			if keyColumn.Name == boundColumn.Name {
+				// there may be many such columns, pick the first
+				routingKeyInfo.indexes[i] = j
+				routingKeyInfo.types[i] = boundColumn.TypeInfo
+				break
+			}
+		}
+
+		if routingKeyInfo.indexes[i] == -1 {
+			// missing a routing key column mapping
+			// no error, but cache a nil result
+			return nil
+		}
+	}
+
+	// cache this result
+	inflight.value = routingKeyInfo
+
+	return routingKeyInfo
+}
+
 // ExecuteBatch executes a batch operation and returns nil if successful
 // otherwise an error is returned describing the failure.
 func (s *Session) ExecuteBatch(batch *Batch) error {
@@ -234,6 +342,7 @@ type Query struct {
 	values       []interface{}
 	cons         Consistency
 	pageSize     int
+	routingKey   []byte
 	pageState    []byte
 	prefetch     float64
 	trace        Tracer
@@ -285,6 +394,58 @@ func (q *Query) Trace(trace Tracer) *Query {
 func (q *Query) PageSize(n int) *Query {
 	q.pageSize = n
 	return q
+}
+
+// RoutingKey sets the routing key to use when a token aware connection
+// pool is used to optimize the routing of this query.
+func (q *Query) RoutingKey(routingKey []byte) *Query {
+	q.routingKey = routingKey
+	return q
+}
+
+// GetRoutingKey gets the routing key to use for routing this query. If
+// a routing key has not been explicitly set, then the routing key will
+// be constructed if possible using the keyspace's schema and the query
+// info for this query statement.
+func (q *Query) GetRoutingKey() []byte {
+	if q.routingKey != nil {
+		return q.routingKey
+	}
+
+	// try to determine the routing key
+	routingKeyInfo := q.session.routingKeyInfo(q.stmt)
+	if routingKeyInfo == nil {
+		return nil
+	}
+
+	if len(routingKeyInfo.indexes) == 1 {
+		// single column routing key
+		routingKey, err := Marshal(
+			routingKeyInfo.types[0],
+			q.values[routingKeyInfo.indexes[0]],
+		)
+		if err != nil {
+			return nil
+		}
+		return routingKey
+	}
+
+	// composite routing key
+	buf := &bytes.Buffer{}
+	for i := range routingKeyInfo.indexes {
+		encoded, err := Marshal(
+			routingKeyInfo.types[i],
+			q.values[routingKeyInfo.indexes[i]],
+		)
+		if err != nil {
+			return nil
+		}
+		binary.Write(buf, binary.BigEndian, int16(len(encoded)))
+		buf.Write(encoded)
+		buf.WriteByte(0x00)
+	}
+	routingKey := buf.Bytes()
+	return routingKey
 }
 
 func (q *Query) shouldPrepare() bool {
@@ -610,6 +771,34 @@ type ColumnInfo struct {
 	TypeInfo *TypeInfo
 }
 
+// routing key indexes LRU cache
+type routingKeyInfoLRU struct {
+	lru *lru.Cache
+	mu  sync.Mutex
+}
+
+type routingKeyInfo struct {
+	indexes []int
+	types   []*TypeInfo
+}
+
+//Max adjusts the maximum size of the cache and cleans up the oldest records if
+//the new max is lower than the previous value. Not concurrency safe.
+func (q *routingKeyInfoLRU) Max(max int) {
+	q.mu.Lock()
+	for q.lru.Len() > max {
+		q.lru.RemoveOldest()
+	}
+	q.lru.MaxEntries = max
+	q.mu.Unlock()
+}
+
+type inflightCachedEntry struct {
+	wg    sync.WaitGroup
+	err   error
+	value interface{}
+}
+
 // Tracer is the interface implemented by query tracers. Tracers have the
 // ability to obtain a detailed event log of all events that happened during
 // the execution of a query from Cassandra. Gathering this information might
@@ -682,6 +871,7 @@ var (
 	ErrSessionClosed = errors.New("session has been closed")
 	ErrNoConnections = errors.New("no connections available")
 	ErrNoKeyspace    = errors.New("no keyspace provided")
+	ErrNoMetadata    = errors.New("no metadata available")
 )
 
 type ErrProtocol struct{ error }
