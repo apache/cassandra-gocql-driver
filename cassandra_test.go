@@ -135,7 +135,7 @@ func TestRingDiscovery(t *testing.T) {
 		time.Sleep(*flagAutoWait)
 	}
 
-	size := len(session.Pool.(*SimplePool).connPool)
+	size := session.Pool.Size()
 
 	if *clusterSize != size {
 		t.Logf("WARN: Expected a cluster size of %d, but actual size was %d", *clusterSize, size)
@@ -1425,5 +1425,174 @@ func TestEmptyTimestamp(t *testing.T) {
 
 	if !timeVal.IsZero() {
 		t.Errorf("time.Time bind variable should still be empty (was %s)", timeVal)
+	}
+}
+
+func TestKeyspaceMetadata(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+
+	if err := createTable(session, "CREATE TABLE test_metadata (first_id int, second_id int, third_id int, PRIMARY KEY (first_id, second_id))"); err != nil {
+		t.Fatalf("failed to create table with error '%v'", err)
+	}
+
+	if err := session.Query("CREATE INDEX index_metadata ON test_metadata ( third_id )").Exec(); err != nil {
+		t.Fatalf("failed to create index with err: %v", err)
+	}
+
+	keyspaceMetadata, err := session.KeyspaceMetadata()
+	if err != nil {
+		t.Fatalf("failed to query keyspace metadata with err: %v", err)
+	}
+	if keyspaceMetadata == nil {
+		t.Fatal("expected the keyspace metadata to not be nil, but it was nil")
+	}
+	if keyspaceMetadata.Name != session.cfg.Keyspace {
+		t.Fatalf("Expected the keyspace name to be %s but was %s", session.cfg.Keyspace, keyspaceMetadata.Name)
+	}
+	if len(keyspaceMetadata.Tables) == 0 {
+		t.Errorf("Expected tables but there were none")
+	}
+
+	tableMetadata, found := keyspaceMetadata.Tables["test_metadata"]
+	if !found {
+		t.Fatalf("failed to find the test_metadata table metadata")
+	}
+
+	if len(tableMetadata.PartitionKey) != 1 {
+		t.Errorf("expected partition key length of 1, but was %d", len(tableMetadata.PartitionKey))
+	}
+	for i, column := range tableMetadata.PartitionKey {
+		if column == nil {
+			t.Errorf("partition key column metadata at index %d was nil", i)
+		}
+	}
+	if tableMetadata.PartitionKey[0].Name != "first_id" {
+		t.Errorf("Expected the first partition key column to be 'first_id' but was '%s'", tableMetadata.PartitionKey[0].Name)
+	}
+	if len(tableMetadata.ClusteringColumns) != 1 {
+		t.Fatalf("expected clustering columns length of 1, but was %d", len(tableMetadata.ClusteringColumns))
+	}
+	for i, column := range tableMetadata.ClusteringColumns {
+		if column == nil {
+			t.Fatalf("clustering column metadata at index %d was nil", i)
+		}
+	}
+	if tableMetadata.ClusteringColumns[0].Name != "second_id" {
+		t.Errorf("Expected the first clustering column to be 'second_id' but was '%s'", tableMetadata.ClusteringColumns[0].Name)
+	}
+	thirdColumn, found := tableMetadata.Columns["third_id"]
+	if !found {
+		t.Fatalf("Expected a column definition for 'third_id'")
+	}
+	if thirdColumn.Index.Name != "index_metadata" {
+		t.Errorf("Expected column index named 'index_metadata' but was '%s'", thirdColumn.Index.Name)
+	}
+}
+
+func TestRoutingKey(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+
+	if err := createTable(session, "CREATE TABLE test_single_routing_key (first_id int, second_id int, PRIMARY KEY (first_id, second_id))"); err != nil {
+		t.Fatalf("failed to create table with error '%v'", err)
+	}
+	if err := createTable(session, "CREATE TABLE test_composite_routing_key (first_id int, second_id int, PRIMARY KEY ((first_id,second_id)))"); err != nil {
+		t.Fatalf("failed to create table with error '%v'", err)
+	}
+
+	routingKeyInfo := session.routingKeyInfo("SELECT * FROM test_single_routing_key WHERE second_id=? AND first_id=?")
+	if routingKeyInfo == nil {
+		t.Fatal("Expected routing key info, but was nil")
+	}
+	if len(routingKeyInfo.indexes) != 1 {
+		t.Fatalf("Expected routing key indexes length to be 1 but was %d", len(routingKeyInfo.indexes))
+	}
+	if routingKeyInfo.indexes[0] != 1 {
+		t.Errorf("Expected routing key index[0] to be 1 but was %d", routingKeyInfo.indexes[0])
+	}
+	query := session.Query("SELECT * FROM test_single_routing_key WHERE second_id=? AND first_id=?", 1, 2)
+	routingKey := query.GetRoutingKey()
+	expectedRoutingKey := []byte{0, 0, 0, 2}
+	if !reflect.DeepEqual(expectedRoutingKey, routingKey) {
+		t.Errorf("Expected routing key %v but was %v", expectedRoutingKey, routingKey)
+	}
+
+	// verify the cache is working
+	session.routingKeyInfo("SELECT * FROM test_single_routing_key WHERE second_id=? AND first_id=?")
+	cacheSize := session.routingKeyInfoCache.lru.Len()
+	if cacheSize != 1 {
+		t.Errorf("Expected cache size to be 1 but was %d", cacheSize)
+	}
+
+	routingKeyInfo = session.routingKeyInfo("SELECT * FROM test_composite_routing_key WHERE second_id=? AND first_id=?")
+	if routingKeyInfo == nil {
+		t.Fatal("Expected routing key info, but was nil")
+	}
+	if len(routingKeyInfo.indexes) != 2 {
+		t.Fatalf("Expected routing key indexes length to be 2 but was %d", len(routingKeyInfo.indexes))
+	}
+	if routingKeyInfo.indexes[0] != 1 {
+		t.Errorf("Expected routing key index[0] to be 1 but was %d", routingKeyInfo.indexes[0])
+	}
+	if routingKeyInfo.indexes[1] != 0 {
+		t.Errorf("Expected routing key index[1] to be 0 but was %d", routingKeyInfo.indexes[1])
+	}
+	query = session.Query("SELECT * FROM test_composite_routing_key WHERE second_id=? AND first_id=?", 1, 2)
+	routingKey = query.GetRoutingKey()
+	expectedRoutingKey = []byte{0, 4, 0, 0, 0, 2, 0, 0, 4, 0, 0, 0, 1, 0}
+	if !reflect.DeepEqual(expectedRoutingKey, routingKey) {
+		t.Errorf("Expected routing key %v but was %v", expectedRoutingKey, routingKey)
+	}
+
+	// verify the cache is working
+	cacheSize = session.routingKeyInfoCache.lru.Len()
+	if cacheSize != 2 {
+		t.Errorf("Expected cache size to be 2 but was %d", cacheSize)
+	}
+}
+
+func TestTokenAwareConnPool(t *testing.T) {
+	cluster := createCluster()
+	cluster.ConnPoolType = NewTokenAwareConnPool
+	cluster.DiscoverHosts = true
+
+	// Drop and re-create the keyspace once. Different tests should use their own
+	// individual tables, but can assume that the table does not exist before.
+	initOnce.Do(func() {
+		createKeyspace(t, cluster, "gocql_test")
+	})
+
+	cluster.Keyspace = "gocql_test"
+	session, err := cluster.CreateSession()
+	if err != nil {
+		t.Fatal("createSession:", err)
+	}
+	defer session.Close()
+
+	if *clusterSize > 1 {
+		// wait for autodiscovery to update the pool with the list of known hosts
+		time.Sleep(*flagAutoWait)
+	}
+
+	if session.Pool.Size() != cluster.NumConns*len(cluster.Hosts) {
+		t.Errorf("Expected pool size %d but was %d", cluster.NumConns*len(cluster.Hosts), session.Pool.Size())
+	}
+
+	if err := createTable(session, "CREATE TABLE test_token_aware (id int, data text, PRIMARY KEY (id))"); err != nil {
+		t.Fatalf("failed to create test_token_aware table with err: %v", err)
+	}
+	query := session.Query("INSERT INTO test_token_aware (id, data) VALUES (?,?)", 42, "8 * 6 =")
+	if err := query.Exec(); err != nil {
+		t.Fatalf("failed to insert with err: %v", err)
+	}
+	query = session.Query("SELECT data FROM test_token_aware where id = ?", 42).Consistency(One)
+	iter := query.Iter()
+	var data string
+	if !iter.Scan(&data) {
+		t.Error("failed to scan data")
+	}
+	if err := iter.Close(); err != nil {
+		t.Errorf("iter failed with err: %v", err)
 	}
 }

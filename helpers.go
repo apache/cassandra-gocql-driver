@@ -97,9 +97,9 @@ func getApacheCassandraType(class string) Type {
 		case "MapType":
 			return TypeMap
 		case "ListType":
-			return TypeInet
+			return TypeList
 		case "SetType":
-			return TypeInet
+			return TypeSet
 		}
 	}
 	return TypeCustom

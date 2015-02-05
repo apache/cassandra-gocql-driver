@@ -92,7 +92,7 @@ type Conn struct {
 	calls []callReq
 	nwait int32
 
-	pool            ConnectionPool
+	handleError     HandleError
 	compressor      Compressor
 	auth            Authenticator
 	addr            string
@@ -103,9 +103,13 @@ type Conn struct {
 	isClosed bool
 }
 
+// a HandleError func is called by a Connection object to report an
+// error has occured.
+type HandleError func(conn *Conn, err error, closed bool)
+
 // Connect establishes a connection to a Cassandra node.
 // You must also call the Serve method before you can execute any queries.
-func Connect(addr string, cfg ConnConfig, pool ConnectionPool) (*Conn, error) {
+func Connect(addr string, cfg ConnConfig, handleError HandleError) (*Conn, error) {
 	var (
 		err  error
 		conn net.Conn
@@ -146,16 +150,16 @@ func Connect(addr string, cfg ConnConfig, pool ConnectionPool) (*Conn, error) {
 		cfg.ProtoVersion = 2
 	}
 	c := &Conn{
-		conn:       conn,
-		r:          bufio.NewReader(conn),
-		uniq:       make(chan uint8, cfg.NumStreams),
-		calls:      make([]callReq, cfg.NumStreams),
-		timeout:    cfg.Timeout,
-		version:    uint8(cfg.ProtoVersion),
-		addr:       conn.RemoteAddr().String(),
-		pool:       pool,
-		compressor: cfg.Compressor,
-		auth:       cfg.Authenticator,
+		conn:        conn,
+		r:           bufio.NewReader(conn),
+		uniq:        make(chan uint8, cfg.NumStreams),
+		calls:       make([]callReq, cfg.NumStreams),
+		timeout:     cfg.Timeout,
+		version:     uint8(cfg.ProtoVersion),
+		addr:        conn.RemoteAddr().String(),
+		handleError: handleError,
+		compressor:  cfg.Compressor,
+		auth:        cfg.Authenticator,
 	}
 
 	if cfg.Keepalive > 0 {
@@ -251,7 +255,7 @@ func (c *Conn) serve() {
 			req.resp <- callResp{nil, err}
 		}
 	}
-	c.pool.HandleError(c, err, true)
+	c.handleError(c, err, true)
 }
 
 func (c *Conn) recv() (frame, error) {
