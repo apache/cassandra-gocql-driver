@@ -967,9 +967,9 @@ func injectInvalidPreparedStatement(t *testing.T, session *Session, table string
 	stmt := "INSERT INTO " + table + " (foo, bar) VALUES (?, 7)"
 	conn := session.Pool.Pick(nil)
 	flight := new(inflightPrepare)
-	stmtsLRU.mu.Lock()
+	stmtsLRU.Lock()
 	stmtsLRU.lru.Add(conn.addr+stmt, flight)
-	stmtsLRU.mu.Unlock()
+	stmtsLRU.Unlock()
 	flight.info = &QueryInfo{
 		Id: []byte{'f', 'o', 'o', 'b', 'a', 'r'},
 		Args: []ColumnInfo{ColumnInfo{
@@ -1057,9 +1057,9 @@ func TestQueryInfo(t *testing.T) {
 func TestPreparedCacheEviction(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
-	stmtsLRU.mu.Lock()
+	stmtsLRU.Lock()
 	stmtsLRU.Max(4)
-	stmtsLRU.mu.Unlock()
+	stmtsLRU.Unlock()
 
 	if err := createTable(session, "CREATE TABLE prepcachetest (id int,mod int,PRIMARY KEY (id))"); err != nil {
 		t.Fatalf("failed to create table with error '%v'", err)
