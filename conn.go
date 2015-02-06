@@ -364,13 +364,16 @@ func (c *Conn) ping() error {
 }
 
 func (c *Conn) prepareStatement(stmt string, trace Tracer) (*QueryInfo, error) {
-	stmtsLRU.mu.Lock()
+	stmtsLRU.Lock()
+	if stmtsLRU.lru == nil {
+		initStmtsLRU(defaultMaxPreparedStmts)
+	}
 
 	stmtCacheKey := c.addr + c.currentKeyspace + stmt
 
 	if val, ok := stmtsLRU.lru.Get(stmtCacheKey); ok {
 		flight := val.(*inflightPrepare)
-		stmtsLRU.mu.Unlock()
+		stmtsLRU.Unlock()
 		flight.wg.Wait()
 		return flight.info, flight.err
 	}
@@ -378,7 +381,7 @@ func (c *Conn) prepareStatement(stmt string, trace Tracer) (*QueryInfo, error) {
 	flight := new(inflightPrepare)
 	flight.wg.Add(1)
 	stmtsLRU.lru.Add(stmtCacheKey, flight)
-	stmtsLRU.mu.Unlock()
+	stmtsLRU.Unlock()
 
 	resp, err := c.exec(&prepareFrame{Stmt: stmt}, trace)
 	if err != nil {
@@ -402,9 +405,9 @@ func (c *Conn) prepareStatement(stmt string, trace Tracer) (*QueryInfo, error) {
 	flight.wg.Done()
 
 	if err != nil {
-		stmtsLRU.mu.Lock()
+		stmtsLRU.Lock()
 		stmtsLRU.lru.Remove(stmtCacheKey)
-		stmtsLRU.mu.Unlock()
+		stmtsLRU.Unlock()
 	}
 
 	return flight.info, flight.err
@@ -471,14 +474,14 @@ func (c *Conn) executeQuery(qry *Query) *Iter {
 	case resultKeyspaceFrame:
 		return &Iter{}
 	case RequestErrUnprepared:
-		stmtsLRU.mu.Lock()
+		stmtsLRU.Lock()
 		stmtCacheKey := c.addr + c.currentKeyspace + qry.stmt
 		if _, ok := stmtsLRU.lru.Get(stmtCacheKey); ok {
 			stmtsLRU.lru.Remove(stmtCacheKey)
-			stmtsLRU.mu.Unlock()
+			stmtsLRU.Unlock()
 			return c.executeQuery(qry)
 		}
-		stmtsLRU.mu.Unlock()
+		stmtsLRU.Unlock()
 		return &Iter{err: x}
 	case error:
 		return &Iter{err: x}
@@ -602,9 +605,9 @@ func (c *Conn) executeBatch(batch *Batch) error {
 	case RequestErrUnprepared:
 		stmt, found := stmts[string(x.StatementId)]
 		if found {
-			stmtsLRU.mu.Lock()
+			stmtsLRU.Lock()
 			stmtsLRU.lru.Remove(c.addr + c.currentKeyspace + stmt)
-			stmtsLRU.mu.Unlock()
+			stmtsLRU.Unlock()
 		}
 		if found {
 			return c.executeBatch(batch)

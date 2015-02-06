@@ -12,13 +12,15 @@ import (
 	"github.com/golang/groupcache/lru"
 )
 
+const defaultMaxPreparedStmts = 1000
+
 //Package global reference to Prepared Statements LRU
 var stmtsLRU preparedLRU
 
 //preparedLRU is the prepared statement cache
 type preparedLRU struct {
+	sync.Mutex
 	lru *lru.Cache
-	mu  sync.Mutex
 }
 
 //Max adjusts the maximum size of the cache and cleans up the oldest records if
@@ -28,6 +30,14 @@ func (p *preparedLRU) Max(max int) {
 		p.lru.RemoveOldest()
 	}
 	p.lru.MaxEntries = max
+}
+
+func initStmtsLRU(max int) {
+	if stmtsLRU.lru != nil {
+		stmtsLRU.Max(max)
+	} else {
+		stmtsLRU.lru = lru.New(max)
+	}
 }
 
 // To enable periodic node discovery enable DiscoverHosts in ClusterConfig
@@ -79,7 +89,7 @@ func NewCluster(hosts ...string) *ClusterConfig {
 		Consistency:      Quorum,
 		ConnPoolType:     NewSimplePool,
 		DiscoverHosts:    false,
-		MaxPreparedStmts: 1000,
+		MaxPreparedStmts: defaultMaxPreparedStmts,
 	}
 	return cfg
 }
@@ -95,13 +105,9 @@ func (cfg *ClusterConfig) CreateSession() (*Session, error) {
 	pool := cfg.ConnPoolType(cfg)
 
 	//Adjust the size of the prepared statements cache to match the latest configuration
-	stmtsLRU.mu.Lock()
-	if stmtsLRU.lru != nil {
-		stmtsLRU.Max(cfg.MaxPreparedStmts)
-	} else {
-		stmtsLRU.lru = lru.New(cfg.MaxPreparedStmts)
-	}
-	stmtsLRU.mu.Unlock()
+	stmtsLRU.Lock()
+	initStmtsLRU(cfg.MaxPreparedStmts)
+	stmtsLRU.Unlock()
 
 	//See if there are any connections in the pool
 	if pool.Size() > 0 {
