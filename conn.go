@@ -366,7 +366,7 @@ func (c *Conn) ping() error {
 func (c *Conn) prepareStatement(stmt string, trace Tracer) (*QueryInfo, error) {
 	stmtsLRU.Lock()
 	if stmtsLRU.lru == nil {
-		initStmtsLRU(1000)
+		initStmtsLRU(defaultMaxPreparedStmts)
 	}
 
 	stmtCacheKey := c.addr + c.currentKeyspace + stmt

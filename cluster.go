@@ -12,6 +12,8 @@ import (
 	"github.com/golang/groupcache/lru"
 )
 
+const defaultMaxPreparedStmts = 1000
+
 //Package global reference to Prepared Statements LRU
 var stmtsLRU preparedLRU
 
@@ -86,7 +88,7 @@ func NewCluster(hosts ...string) *ClusterConfig {
 		Consistency:      Quorum,
 		ConnPoolType:     NewSimplePool,
 		DiscoverHosts:    false,
-		MaxPreparedStmts: 1000,
+		MaxPreparedStmts: defaultMaxPreparedStmts,
 	}
 	return cfg
 }
