@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/golang/groupcache/lru"
+	"github.com/gocql/gocql/Godeps/_workspace/src/github.com/golang/groupcache/lru"
 )
 
 const defaultMaxPreparedStmts = 1000

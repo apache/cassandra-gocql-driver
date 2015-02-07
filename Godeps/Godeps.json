@@ -1,0 +1,22 @@
+{
+	"ImportPath": "github.com/gocql/gocql",
+	"GoVersion": "go1.3.3",
+	"Packages": [
+		"./..."
+	],
+	"Deps": [
+		{
+			"ImportPath": "code.google.com/p/snappy-go/snappy",
+			"Comment": "null-15",
+			"Rev": "12e4b4183793ac4b061921e7980845e750679fd0"
+		},
+		{
+			"ImportPath": "github.com/golang/groupcache/lru",
+			"Rev": "d781998583680cda80cf61e0b37dd0cd8da2eb52"
+		},
+		{
+			"ImportPath": "speter.net/go/exp/math/dec/inf",
+			"Rev": "e7e3eaa7355cc9ff7c686b32706fb2f3ccfe963b"
+		}
+	]
+}

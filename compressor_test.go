@@ -4,7 +4,7 @@ package gocql
 
 import (
 	"bytes"
-	"code.google.com/p/snappy-go/snappy"
+	"github.com/gocql/gocql/Godeps/_workspace/src/code.google.com/p/snappy-go/snappy"
 	"testing"
 )
 
