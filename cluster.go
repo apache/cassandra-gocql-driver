@@ -50,6 +50,12 @@ type DiscoveryConfig struct {
 	Sleep time.Duration
 }
 
+type KeepaliveConfig struct {
+	Interval 	time.Duration
+	Idle 		time.Duration
+	Count 		int
+}
+
 // ClusterConfig is a struct to configure the default cluster implementation
 // of gocoql. It has a varity of attributes that can be used to modify the
 // behavior to fit the most common use cases. Applications that requre a
@@ -67,7 +73,7 @@ type ClusterConfig struct {
 	Compressor       Compressor    // compression algorithm (default: nil)
 	Authenticator    Authenticator // authenticator (default: nil)
 	RetryPolicy      RetryPolicy   // Default retry policy to use for queries (default: 0)
-	SocketKeepalive  time.Duration // The keepalive period to use, enabled if > 0 (default: 0)
+	Keepalive  		 *KeepaliveConfig // The keepalive period to use, enabled if > 0 (default: 0)
 	ConnPoolType     NewPoolFunc   // The function used to create the connection pool for the session (default: NewSimplePool)
 	DiscoverHosts    bool          // If set, gocql will attempt to automatically discover other members of the Cassandra cluster (default: false)
 	MaxPreparedStmts int           // Sets the maximum cache size for prepared statements globally for gocql (default: 1000)
