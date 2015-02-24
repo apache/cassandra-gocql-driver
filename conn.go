@@ -457,6 +457,12 @@ func (c *Conn) executeQuery(qry *Query) *Iter {
 	}
 	switch x := resp.(type) {
 	case resultVoidFrame:
+		stmtsLRU.Lock()
+		stmtCacheKey := c.addr + c.currentKeyspace + qry.stmt
+		if _, ok := stmtsLRU.lru.Get(stmtCacheKey); ok {
+			stmtsLRU.lru.Remove(stmtCacheKey)
+		}
+		stmtsLRU.Unlock()
 		return &Iter{}
 	case resultRowsFrame:
 		iter := &Iter{columns: x.Columns, rows: x.Rows}
