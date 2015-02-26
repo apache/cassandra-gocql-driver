@@ -227,6 +227,8 @@ func (c *SimplePool) fillPool() {
 	c.hostMu.RLock()
 
 	//Walk through list of defined hosts
+	cHostConnected := make(chan int, len(c.hosts))
+	hostsPending := 0
 	for host := range c.hosts {
 		addr := JoinHostPort(host, c.cfg.Port)
 
@@ -251,7 +253,9 @@ func (c *SimplePool) fillPool() {
 
 		//This is reached if the host is responsive and needs more connections
 		//Create connections for host synchronously to mitigate flooding the host.
+		hostsPending++
 		go func(a string, conns int) {
+			defer func() { cHostConnected <- 1 }()
 			for ; conns < c.cfg.NumConns; conns++ {
 				c.connect(a)
 			}
@@ -259,6 +263,12 @@ func (c *SimplePool) fillPool() {
 	}
 
 	c.hostMu.RUnlock()
+
+	//Wait until we're finished connecting to each host before returning
+	for hostsPending > 0 {
+		<- cHostConnected
+		hostsPending--
+	}
 }
 
 // Should only be called if c.mu is locked
