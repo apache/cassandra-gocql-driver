@@ -659,14 +659,15 @@ var typeLookupTest = []struct {
 	{"FloatType", TypeFloat},
 	{"Int32Type", TypeInt},
 	{"DateType", TypeTimestamp},
+	{"TimestampType", TypeTimestamp},
 	{"UUIDType", TypeUUID},
 	{"UTF8Type", TypeVarchar},
 	{"IntegerType", TypeVarint},
 	{"TimeUUIDType", TypeTimeUUID},
 	{"InetAddressType", TypeInet},
 	{"MapType", TypeMap},
-	{"ListType", TypeInet},
-	{"SetType", TypeInet},
+	{"ListType", TypeList},
+	{"SetType", TypeSet},
 	{"unknown", TypeCustom},
 }
 
