@@ -18,8 +18,14 @@ The following matrix shows the versions of Go and Cassandra that are tested with
 
 Go/Cassandra | 1.2.19 | 2.0.11 | 2.1.2
 -------------| -------| ------| ---------
-1.2  | yes | yes | yes
 1.3  | yes | yes | yes
+1.4  | yes | yes | yes
+
+
+Sunsetting Model
+----------------
+
+In general, the gocql team will focus on supporting the current and previous versions of Golang. gocql may still work with older versions of Golang, but offical support for these versions will have been sunset.
 
 Installation
 ------------
