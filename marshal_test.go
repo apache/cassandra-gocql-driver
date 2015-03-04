@@ -666,8 +666,8 @@ var typeLookupTest = []struct {
 	{"TimeUUIDType", TypeTimeUUID},
 	{"InetAddressType", TypeInet},
 	{"MapType", TypeMap},
-	{"ListType", TypeInet},
-	{"SetType", TypeInet},
+	{"ListType", TypeList},
+	{"SetType", TypeSet},
 	{"unknown", TypeCustom},
 }
 
