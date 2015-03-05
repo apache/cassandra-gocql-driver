@@ -48,7 +48,7 @@ function run_tests() {
 	ccm start -v
 	ccm status
 
-	go test -v . -timeout 10s -run=TestAuthentication -tags integration -runauth
+	go test -v . -timeout 10s -run=TestAuthentication -tags integration -runauth -cluster=$(ccm liveset) -clusterSize=$clusterSize -autowait=2000ms
 
 	ccm clear
 }
