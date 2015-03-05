@@ -27,8 +27,6 @@ function run_tests() {
 		"read_request_timeout_in_ms: 5000"
 		"compaction_throughput_mb_per_sec: 0"
 		"in_memory_compaction_limit_in_mb: 1"
-		"reduce_cache_sizes_at: 0"
-		"reduce_cache_capacity_to: 0"
 	)
 
 	for f in "${conf[@]}"; do
