@@ -45,6 +45,10 @@ function run_tests() {
 		proto=1
 	fi
 
+	local tmp=$(mktemp)
+	echo 'SELECT peer, data_center, rack FROM system.peers' > $tmp	
+	cqlsh -f $tmp 127.0.0.1
+
 	go test -timeout 5m -tags integration -cover -v -runssl -proto=$proto -rf=3 -cluster=$(ccm liveset) -clusterSize=$clusterSize -autowait=2000ms ./... | tee results.txt
 
 	if [ ${PIPESTATUS[0]} -ne 0 ]; then 
