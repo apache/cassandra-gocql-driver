@@ -12,27 +12,29 @@ function run_tests() {
 	sed -i '/#HEAP_NEWSIZE/c\HEAP_NEWSIZE="32M"' ~/.ccm/repository/$version/conf/cassandra-env.sh
 
 	local conf=(
-		'client_encryption_options.enabled: true'
-		'client_encryption_options.keystore: testdata/pki/.keystore'
-		'client_encryption_options.keystore_password: cassandra'
-		'client_encryption_options.require_client_auth: true'
-		'client_encryption_options.truststore: testdata/pki/.truststore'
-		'client_encryption_options.truststore_password: cassandra'
-		'concurrent_reads: 2'
-		'concurrent_writes: 2'
-		'rpc_server_type: hsha'
-		'rpc_min_threads: 1'
-		'rpc_max_threads: 1'
-		'write_request_timeout_in_ms: 5000'
-		'read_request_timeout_in_ms: 5000'
-		'compaction_throughput_mb_per_sec: 0'
-		'in_memory_compaction_limit_in_mb: 1'
-		'reduce_cache_sizes_at: 0'
-		'reduce_cache_capacity_to: 0'
-
+		"client_encryption_options.enabled: true"
+		"client_encryption_options.keystore: testdata/pki/.keystore"
+		"client_encryption_options.keystore_password: cassandra"
+		"client_encryption_options.require_client_auth: true"
+		"client_encryption_options.truststore: testdata/pki/.truststore"
+		"client_encryption_options.truststore_password: cassandra"
+		"concurrent_reads: 2"
+		"concurrent_writes: 2"
+		"rpc_server_type: hsha"
+		"rpc_min_threads: 1"
+		"rpc_max_threads: 1"
+		"write_request_timeout_in_ms: 5000"
+		"read_request_timeout_in_ms: 5000"
+		"compaction_throughput_mb_per_sec: 0"
+		"in_memory_compaction_limit_in_mb: 1"
+		"reduce_cache_sizes_at: 0"
+		"reduce_cache_capacity_to: 0"
 	)
 
-	ccm updateconf ${conf[@]}
+	for f in "${conf[@]}"; do
+		ccm updateconf "'$f'"
+	done
+
 	ccm start -v
 	ccm status
 	ccm node1 nodetool status
