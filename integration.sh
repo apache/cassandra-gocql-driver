@@ -45,8 +45,12 @@ function run_tests() {
 	fi
 
 	local tmp=$(mktemp)
-	echo 'SELECT peer, data_center, rack FROM system.peers;' > $tmp	
+	echo 'SELECT peer, data_center, rack, release_version FROM system.peers;' > $tmp	
 	ccm node1 cqlsh -f $tmp
+	local tmp=$(mktemp)
+	echo 'SELECT bootstrapped, cluster_name, cql_version, data_center, release_version FROM system.local;' > $tmp	
+	ccm node1 cqlsh -f $tmp
+
 
 	sleep 3
 
