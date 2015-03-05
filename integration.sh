@@ -7,7 +7,7 @@ function run_tests() {
 	local version=$1
 
 	ccm create test -v binary:$version -n $clusterSize -d --vnodes
-	
+
 	sed -i '/#MAX_HEAP_SIZE/c\MAX_HEAP_SIZE="256M"' ~/.ccm/repository/$version/conf/cassandra-env.sh
 	sed -i '/#HEAP_NEWSIZE/c\HEAP_NEWSIZE="100M"' ~/.ccm/repository/$version/conf/cassandra-env.sh
 
@@ -15,7 +15,7 @@ function run_tests() {
 	ccm start -v
 	ccm status
 	ccm node1 nodetool status
-	
+
 	local proto=2
 	if [[ $version == 1.2.* ]]; then
 		proto=1
@@ -39,6 +39,17 @@ function run_tests() {
 		echo "--- FAIL: expected coverage of at least 60 %, but coverage was $cover %"
 		exit 1
 	fi
+
+	ccm stop
+	ccm status
+
+	ccm updateconf "authenticator: PasswordAuthenticator"
+
+	go test -v . -run=TestAuthentication -tags integration -runauth
+
+	ccm start -v
+	ccm status
+
 	ccm clear
 }
 run_tests $1

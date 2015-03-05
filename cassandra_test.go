@@ -22,15 +22,16 @@ import (
 )
 
 var (
-	flagCluster    = flag.String("cluster", "127.0.0.1", "a comma-separated list of host:port tuples")
-	flagProto      = flag.Int("proto", 2, "protcol version")
-	flagCQL        = flag.String("cql", "3.0.0", "CQL version")
-	flagRF         = flag.Int("rf", 1, "replication factor for test keyspace")
-	clusterSize    = flag.Int("clusterSize", 1, "the expected size of the cluster")
-	flagRetry      = flag.Int("retries", 5, "number of times to retry queries")
-	flagAutoWait   = flag.Duration("autowait", 1000*time.Millisecond, "time to wait for autodiscovery to fill the hosts poll")
-	flagRunSslTest = flag.Bool("runssl", false, "Set to true to run ssl test")
-	clusterHosts   []string
+	flagCluster     = flag.String("cluster", "127.0.0.1", "a comma-separated list of host:port tuples")
+	flagProto       = flag.Int("proto", 2, "protcol version")
+	flagCQL         = flag.String("cql", "3.0.0", "CQL version")
+	flagRF          = flag.Int("rf", 1, "replication factor for test keyspace")
+	clusterSize     = flag.Int("clusterSize", 1, "the expected size of the cluster")
+	flagRetry       = flag.Int("retries", 5, "number of times to retry queries")
+	flagAutoWait    = flag.Duration("autowait", 1000*time.Millisecond, "time to wait for autodiscovery to fill the hosts poll")
+	flagRunSslTest  = flag.Bool("runssl", false, "Set to true to run ssl test")
+	flagRunAuthTest = flag.Bool("runauth", false, "Set to true to run authentication test")
+	clusterHosts    []string
 )
 
 func init() {
@@ -110,6 +111,24 @@ func createSession(tb testing.TB) *Session {
 	}
 
 	return session
+}
+
+func TestAuthentication(t *testing.T) {
+
+	if !*flagRunAuthTest {
+		t.Skip("Authentication is not configured in the target cluster")
+	}
+
+	cluster := NewCluster(clusterHosts[0])
+
+	cluster.Authenticator = PasswordAuthenticator{
+		Username: "cassandra",
+		Password: "cassandra",
+	}
+
+	if _, err := cluster.CreateSession(); err != nil {
+		t.Errorf("Authentication error: %s", err)
+	}
 }
 
 //TestRingDiscovery makes sure that you can autodiscover other cluster members when you seed a cluster config with just one node
