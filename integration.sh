@@ -28,7 +28,6 @@ function run_tests() {
 		"write_request_timeout_in_ms: 5000"
 		"read_request_timeout_in_ms: 5000"
 		"compaction_throughput_mb_per_sec: 0"
-		"in_memory_compaction_limit_in_mb: 1"
 	)
 
 	for f in "${conf[@]}"; do
@@ -48,6 +47,8 @@ function run_tests() {
 	local tmp=$(mktemp)
 	echo 'SELECT peer, data_center, rack FROM system.peers' > $tmp	
 	cqlsh -f $tmp 127.0.0.1
+
+	sleep 3
 
 	go test -timeout 5m -tags integration -cover -v -runssl -proto=$proto -rf=3 -cluster=$(ccm liveset) -clusterSize=$clusterSize -autowait=2000ms ./... | tee results.txt
 
