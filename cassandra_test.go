@@ -22,15 +22,17 @@ import (
 )
 
 var (
-	flagCluster    = flag.String("cluster", "127.0.0.1", "a comma-separated list of host:port tuples")
-	flagProto      = flag.Int("proto", 2, "protcol version")
-	flagCQL        = flag.String("cql", "3.0.0", "CQL version")
-	flagRF         = flag.Int("rf", 1, "replication factor for test keyspace")
-	clusterSize    = flag.Int("clusterSize", 1, "the expected size of the cluster")
-	flagRetry      = flag.Int("retries", 5, "number of times to retry queries")
-	flagAutoWait   = flag.Duration("autowait", 1000*time.Millisecond, "time to wait for autodiscovery to fill the hosts poll")
-	flagRunSslTest = flag.Bool("runssl", false, "Set to true to run ssl test")
-	clusterHosts   []string
+	flagCluster      = flag.String("cluster", "127.0.0.1", "a comma-separated list of host:port tuples")
+	flagProto        = flag.Int("proto", 2, "protcol version")
+	flagCQL          = flag.String("cql", "3.0.0", "CQL version")
+	flagRF           = flag.Int("rf", 1, "replication factor for test keyspace")
+	clusterSize      = flag.Int("clusterSize", 1, "the expected size of the cluster")
+	flagRetry        = flag.Int("retries", 5, "number of times to retry queries")
+	flagAutoWait     = flag.Duration("autowait", 1000*time.Millisecond, "time to wait for autodiscovery to fill the hosts poll")
+	flagRunSslTest   = flag.Bool("runssl", false, "Set to true to run ssl test")
+	flagRunAuthTest  = flag.Bool("runauth", false, "Set to true to run authentication test")
+	flagCompressTest = flag.String("compressor", "", "compressor to use")
+	clusterHosts     []string
 )
 
 func init() {
@@ -57,7 +59,7 @@ func createTable(s *Session, table string) error {
 	err := s.Query(table).Consistency(All).Exec()
 	if *clusterSize > 1 {
 		// wait for table definition to propogate
-		time.Sleep(250 * time.Millisecond)
+		time.Sleep(1 * time.Second)
 	}
 	return err
 }
@@ -71,6 +73,15 @@ func createCluster() *ClusterConfig {
 	if *flagRetry > 0 {
 		cluster.RetryPolicy = &SimpleRetryPolicy{NumRetries: *flagRetry}
 	}
+
+	switch *flagCompressTest {
+	case "snappy":
+		cluster.Compressor = &SnappyCompressor{}
+	case "":
+	default:
+		panic("invalid compressor: " + *flagCompressTest)
+	}
+
 	cluster = addSslOptions(cluster)
 	return cluster
 }
@@ -80,7 +91,8 @@ func createKeyspace(tb testing.TB, cluster *ClusterConfig, keyspace string) {
 	if err != nil {
 		tb.Fatal("createSession:", err)
 	}
-	if err = session.Query(`DROP KEYSPACE ` + keyspace).Exec(); err != nil {
+	defer session.Close()
+	if err = session.Query(`DROP KEYSPACE IF EXISTS ` + keyspace).Exec(); err != nil {
 		tb.Log("drop keyspace:", err)
 	}
 	if err := session.Query(fmt.Sprintf(`CREATE KEYSPACE %s
@@ -91,7 +103,6 @@ func createKeyspace(tb testing.TB, cluster *ClusterConfig, keyspace string) {
 		tb.Fatalf("error creating keyspace %s: %v", keyspace, err)
 	}
 	tb.Logf("Created keyspace %s", keyspace)
-	session.Close()
 }
 
 func createSession(tb testing.TB) *Session {
@@ -112,22 +123,41 @@ func createSession(tb testing.TB) *Session {
 	return session
 }
 
+func TestAuthentication(t *testing.T) {
+
+	if *flagProto < 2 {
+		t.Skip("Authentication is not supported with protocol < 2")
+	}
+
+	if !*flagRunAuthTest {
+		t.Skip("Authentication is not configured in the target cluster")
+	}
+
+	cluster := createCluster()
+
+	cluster.Authenticator = PasswordAuthenticator{
+		Username: "cassandra",
+		Password: "cassandra",
+	}
+
+	session, err := cluster.CreateSession()
+
+	if err != nil {
+		t.Fatalf("Authentication error: %s", err)
+	}
+
+	session.Close()
+}
+
 //TestRingDiscovery makes sure that you can autodiscover other cluster members when you seed a cluster config with just one node
 func TestRingDiscovery(t *testing.T) {
-
-	cluster := NewCluster(clusterHosts[0])
-	cluster.ProtoVersion = *flagProto
-	cluster.CQLVersion = *flagCQL
-	cluster.Timeout = 5 * time.Second
-	cluster.Consistency = Quorum
-	if *flagRetry > 0 {
-		cluster.RetryPolicy = &SimpleRetryPolicy{NumRetries: *flagRetry}
-	}
+	cluster := createCluster()
+	cluster.Hosts = clusterHosts[:1]
 	cluster.DiscoverHosts = true
-	cluster = addSslOptions(cluster)
+
 	session, err := cluster.CreateSession()
 	if err != nil {
-		t.Errorf("got error connecting to the cluster %v", err)
+		t.Fatalf("got error connecting to the cluster %v", err)
 	}
 
 	if *clusterSize > 1 {
@@ -145,8 +175,8 @@ func TestRingDiscovery(t *testing.T) {
 }
 
 func TestEmptyHosts(t *testing.T) {
-	cluster := NewCluster()
-	cluster = addSslOptions(cluster)
+	cluster := createCluster()
+	cluster.Hosts = nil
 	if session, err := cluster.CreateSession(); err == nil {
 		session.Close()
 		t.Error("expected err, got nil")
@@ -169,11 +199,8 @@ func TestUseStatementError(t *testing.T) {
 
 //TestInvalidKeyspace checks that an invalid keyspace will return promptly and without a flood of connections
 func TestInvalidKeyspace(t *testing.T) {
-	cluster := NewCluster(clusterHosts...)
-	cluster.ProtoVersion = *flagProto
-	cluster.CQLVersion = *flagCQL
+	cluster := createCluster()
 	cluster.Keyspace = "invalidKeyspace"
-	cluster = addSslOptions(cluster)
 	session, err := cluster.CreateSession()
 	if err != nil {
 		if err != ErrNoConnectionsStarted {
@@ -481,15 +508,17 @@ func TestNotEnoughQueryArgs(t *testing.T) {
 func TestCreateSessionTimeout(t *testing.T) {
 	go func() {
 		<-time.After(2 * time.Second)
-		t.Fatal("no startup timeout")
+		t.Error("no startup timeout")
 	}()
-	c := NewCluster("127.0.0.1:1")
-	c = addSslOptions(c)
-	_, err := c.CreateSession()
 
+	cluster := createCluster()
+	cluster.Hosts = []string{"127.0.0.1:1"}
+	session, err := cluster.CreateSession()
 	if err == nil {
+		session.Close()
 		t.Fatal("expected ErrNoConnectionsStarted, but no error was returned.")
 	}
+
 	if err != ErrNoConnectionsStarted {
 		t.Fatalf("expected ErrNoConnectionsStarted, but received %v", err)
 	}
@@ -503,6 +532,7 @@ type FullName struct {
 func (n FullName) MarshalCQL(info *TypeInfo) ([]byte, error) {
 	return []byte(n.FirstName + " " + n.LastName), nil
 }
+
 func (n *FullName) UnmarshalCQL(info *TypeInfo, data []byte) error {
 	t := strings.SplitN(string(data), " ", 2)
 	n.FirstName, n.LastName = t[0], t[1]
@@ -970,16 +1000,19 @@ func injectInvalidPreparedStatement(t *testing.T, session *Session, table string
 	stmtsLRU.Lock()
 	stmtsLRU.lru.Add(conn.addr+stmt, flight)
 	stmtsLRU.Unlock()
-	flight.info = &QueryInfo{
-		Id: []byte{'f', 'o', 'o', 'b', 'a', 'r'},
-		Args: []ColumnInfo{ColumnInfo{
-			Keyspace: "gocql_test",
-			Table:    table,
-			Name:     "foo",
-			TypeInfo: &TypeInfo{
-				Type: TypeVarchar,
-			},
-		}},
+	flight.info = &resultPreparedFrame{
+		preparedID: []byte{'f', 'o', 'o', 'b', 'a', 'r'},
+		reqMeta: resultMetadata{
+			columns: []ColumnInfo{
+				{
+					Keyspace: "gocql_test",
+					Table:    table,
+					Name:     "foo",
+					TypeInfo: &TypeInfo{
+						Type: TypeVarchar,
+					},
+				},
+			}},
 	}
 	return stmt, conn
 }
@@ -1042,13 +1075,13 @@ func TestQueryInfo(t *testing.T) {
 		t.Fatalf("Failed to execute query for preparing statement: %v", err)
 	}
 
-	if len(info.Args) != 1 {
-		t.Fatalf("Was not expecting meta data for %d query arguments, but got %d\n", 1, len(info.Args))
+	if len(info.reqMeta.columns) != 1 {
+		t.Fatalf("Was not expecting meta data for %d query arguments, but got %d\n", 1, len(info.reqMeta.columns))
 	}
 
 	if *flagProto > 1 {
-		if len(info.Rval) != 2 {
-			t.Fatalf("Was not expecting meta data for %d result columns, but got %d\n", 2, len(info.Rval))
+		if len(info.respMeta.columns) != 2 {
+			t.Fatalf("Was not expecting meta data for %d result columns, but got %d\n", 2, len(info.respMeta.columns))
 		}
 	}
 }
@@ -1425,5 +1458,400 @@ func TestEmptyTimestamp(t *testing.T) {
 
 	if !timeVal.IsZero() {
 		t.Errorf("time.Time bind variable should still be empty (was %s)", timeVal)
+	}
+}
+
+func TestGetKeyspaceMetadata(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+
+	keyspaceMetadata, err := getKeyspaceMetadata(session, "gocql_test")
+	if err != nil {
+		t.Fatalf("failed to query the keyspace metadata with err: %v", err)
+	}
+	if keyspaceMetadata == nil {
+		t.Fatal("failed to query the keyspace metadata, nil returned")
+	}
+	if keyspaceMetadata.Name != "gocql_test" {
+		t.Errorf("Expected keyspace name to be 'gocql' but was '%s'", keyspaceMetadata.Name)
+	}
+	if keyspaceMetadata.StrategyClass != "org.apache.cassandra.locator.SimpleStrategy" {
+		t.Errorf("Expected replication strategy class to be 'org.apache.cassandra.locator.SimpleStrategy' but was '%s'", keyspaceMetadata.StrategyClass)
+	}
+	if keyspaceMetadata.StrategyOptions == nil {
+		t.Error("Expected replication strategy options map but was nil")
+	}
+	rfStr, ok := keyspaceMetadata.StrategyOptions["replication_factor"]
+	if !ok {
+		t.Fatalf("Expected strategy option 'replication_factor' but was not found in %v", keyspaceMetadata.StrategyOptions)
+	}
+	rfInt, err := strconv.Atoi(rfStr.(string))
+	if err != nil {
+		t.Fatalf("Error converting string to int with err: %v", err)
+	}
+	if rfInt != *flagRF {
+		t.Errorf("Expected replication factor to be %d but was %d", *flagRF, rfInt)
+	}
+}
+
+func TestGetTableMetadata(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+
+	if err := createTable(session, "CREATE TABLE test_table_metadata (first_id int, second_id int, third_id int, PRIMARY KEY (first_id, second_id))"); err != nil {
+		t.Fatalf("failed to create table with error '%v'", err)
+	}
+
+	tables, err := getTableMetadata(session, "gocql_test")
+	if err != nil {
+		t.Fatalf("failed to query the table metadata with err: %v", err)
+	}
+	if tables == nil {
+		t.Fatal("failed to query the table metadata, nil returned")
+	}
+
+	var testTable *TableMetadata
+
+	// verify all tables have minimum expected data
+	for i := range tables {
+		table := &tables[i]
+
+		if table.Name == "" {
+			t.Errorf("Expected table name to be set, but it was empty: index=%d metadata=%+v", i, table)
+		}
+		if table.Keyspace != "gocql_test" {
+			t.Errorf("Expected keyspace for '%d' table metadata to be 'gocql_test' but was '%s'", table.Name, table.Keyspace)
+		}
+		if table.KeyValidator == "" {
+			t.Errorf("Expected key validator to be set for table %s", table.Name)
+		}
+		if table.Comparator == "" {
+			t.Errorf("Expected comparator to be set for table %s", table.Name)
+		}
+		if table.DefaultValidator == "" {
+			t.Errorf("Expected default validator to be set for table %s", table.Name)
+		}
+
+		// these fields are not set until the metadata is compiled
+		if table.PartitionKey != nil {
+			t.Errorf("Did not expect partition key for table %s", table.Name)
+		}
+		if table.ClusteringColumns != nil {
+			t.Errorf("Did not expect clustering columns for table %s", table.Name)
+		}
+		if table.Columns != nil {
+			t.Errorf("Did not expect columns for table %s", table.Name)
+		}
+
+		// for the next part of the test after this loop, find the metadata for the test table
+		if table.Name == "test_table_metadata" {
+			testTable = table
+		}
+	}
+
+	// verify actual values on the test tables
+	if testTable == nil {
+		t.Fatal("Expected table metadata for name 'test_table_metadata'")
+	}
+	if testTable.KeyValidator != "org.apache.cassandra.db.marshal.Int32Type" {
+		t.Errorf("Expected test_table_metadata key validator to be 'org.apache.cassandra.db.marshal.Int32Type' but was '%s'", testTable.KeyValidator)
+	}
+	if testTable.Comparator != "org.apache.cassandra.db.marshal.CompositeType(org.apache.cassandra.db.marshal.Int32Type,org.apache.cassandra.db.marshal.UTF8Type)" {
+		t.Errorf("Expected test_table_metadata key validator to be 'org.apache.cassandra.db.marshal.CompositeType(org.apache.cassandra.db.marshal.Int32Type,org.apache.cassandra.db.marshal.UTF8Type)' but was '%s'", testTable.Comparator)
+	}
+	if testTable.DefaultValidator != "org.apache.cassandra.db.marshal.BytesType" {
+		t.Errorf("Expected test_table_metadata key validator to be 'org.apache.cassandra.db.marshal.BytesType' but was '%s'", testTable.DefaultValidator)
+	}
+	expectedKeyAliases := []string{"first_id"}
+	if !reflect.DeepEqual(testTable.KeyAliases, expectedKeyAliases) {
+		t.Errorf("Expected key aliases %v but was %v", expectedKeyAliases, testTable.KeyAliases)
+	}
+	expectedColumnAliases := []string{"second_id"}
+	if !reflect.DeepEqual(testTable.ColumnAliases, expectedColumnAliases) {
+		t.Errorf("Expected key aliases %v but was %v", expectedColumnAliases, testTable.ColumnAliases)
+	}
+	if testTable.ValueAlias != "" {
+		t.Errorf("Expected value alias '' but was '%s'", testTable.ValueAlias)
+	}
+}
+
+func TestGetColumnMetadata(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+
+	if err := createTable(session, "CREATE TABLE test_column_metadata (first_id int, second_id int, third_id int, PRIMARY KEY (first_id, second_id))"); err != nil {
+		t.Fatalf("failed to create table with error '%v'", err)
+	}
+
+	if err := session.Query("CREATE INDEX index_column_metadata ON test_column_metadata ( third_id )").Exec(); err != nil {
+		t.Fatalf("failed to create index with err: %v", err)
+	}
+
+	columns, err := getColumnMetadata(session, "gocql_test")
+	if err != nil {
+		t.Fatalf("failed to query column metadata with err: %v", err)
+	}
+	if columns == nil {
+		t.Fatal("failed to query column metadata, nil returned")
+	}
+
+	testColumns := map[string]*ColumnMetadata{}
+
+	// verify actual values on the test columns
+	for i := range columns {
+		column := &columns[i]
+
+		if column.Name == "" {
+			t.Errorf("Expected column name to be set, but it was empty: index=%d metadata=%+v", i, column)
+		}
+		if column.Table == "" {
+			t.Errorf("Expected column %s table name to be set, but it was empty", column.Name)
+		}
+		if column.Keyspace != "gocql_test" {
+			t.Errorf("Expected column %s keyspace name to be 'gocql_test', but it was '%s'", column.Name, column.Keyspace)
+		}
+		if column.Kind == "" {
+			t.Errorf("Expected column %s kind to be set, but it was empty", column.Name)
+		}
+		if session.cfg.ProtoVersion == 1 && column.Kind != "regular" {
+			t.Errorf("Expected column %s kind to be set to 'regular' for proto V1 but it was '%s'", column.Name, column.Kind)
+		}
+		if column.Validator == "" {
+			t.Errorf("Expected column %s validator to be set, but it was empty", column.Name)
+		}
+
+		// find the test table columns for the next step after this loop
+		if column.Table == "test_column_metadata" {
+			testColumns[column.Name] = column
+		}
+	}
+
+	if *flagProto == 1 {
+		// V1 proto only returns "regular columns"
+		if len(testColumns) != 1 {
+			t.Errorf("Expected 1 test columns but there were %d", len(testColumns))
+		}
+		thirdID, found := testColumns["third_id"]
+		if !found {
+			t.Fatalf("Expected to find column 'third_id' metadata but there was only %v", testColumns)
+		}
+
+		if thirdID.Kind != REGULAR {
+			t.Errorf("Expected %s column kind to be '%s' but it was '%s'", thirdID.Name, REGULAR, thirdID.Kind)
+		}
+
+		if thirdID.Index.Name != "index_column_metadata" {
+			t.Errorf("Expected %s column index name to be 'index_column_metadata' but it was '%s'", thirdID.Name, thirdID.Index.Name)
+		}
+	} else {
+		if len(testColumns) != 3 {
+			t.Errorf("Expected 3 test columns but there were %d", len(testColumns))
+		}
+		firstID, found := testColumns["first_id"]
+		if !found {
+			t.Fatalf("Expected to find column 'first_id' metadata but there was only %v", testColumns)
+		}
+		secondID, found := testColumns["second_id"]
+		if !found {
+			t.Fatalf("Expected to find column 'second_id' metadata but there was only %v", testColumns)
+		}
+		thirdID, found := testColumns["third_id"]
+		if !found {
+			t.Fatalf("Expected to find column 'third_id' metadata but there was only %v", testColumns)
+		}
+
+		if firstID.Kind != PARTITION_KEY {
+			t.Errorf("Expected %s column kind to be '%s' but it was '%s'", firstID.Name, PARTITION_KEY, firstID.Kind)
+		}
+		if secondID.Kind != CLUSTERING_KEY {
+			t.Errorf("Expected %s column kind to be '%s' but it was '%s'", secondID.Name, CLUSTERING_KEY, secondID.Kind)
+		}
+		if thirdID.Kind != REGULAR {
+			t.Errorf("Expected %s column kind to be '%s' but it was '%s'", thirdID.Name, REGULAR, thirdID.Kind)
+		}
+
+		if thirdID.Index.Name != "index_column_metadata" {
+			t.Errorf("Expected %s column index name to be 'index_column_metadata' but it was '%s'", thirdID.Name, thirdID.Index.Name)
+		}
+	}
+}
+
+func TestKeyspaceMetadata(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+
+	if err := createTable(session, "CREATE TABLE test_metadata (first_id int, second_id int, third_id int, PRIMARY KEY (first_id, second_id))"); err != nil {
+		t.Fatalf("failed to create table with error '%v'", err)
+	}
+
+	if err := session.Query("CREATE INDEX index_metadata ON test_metadata ( third_id )").Exec(); err != nil {
+		t.Fatalf("failed to create index with err: %v", err)
+	}
+
+	keyspaceMetadata, err := session.KeyspaceMetadata("gocql_test")
+	if err != nil {
+		t.Fatalf("failed to query keyspace metadata with err: %v", err)
+	}
+	if keyspaceMetadata == nil {
+		t.Fatal("expected the keyspace metadata to not be nil, but it was nil")
+	}
+	if keyspaceMetadata.Name != session.cfg.Keyspace {
+		t.Fatalf("Expected the keyspace name to be %s but was %s", session.cfg.Keyspace, keyspaceMetadata.Name)
+	}
+	if len(keyspaceMetadata.Tables) == 0 {
+		t.Errorf("Expected tables but there were none")
+	}
+
+	tableMetadata, found := keyspaceMetadata.Tables["test_metadata"]
+	if !found {
+		t.Fatalf("failed to find the test_metadata table metadata")
+	}
+
+	if len(tableMetadata.PartitionKey) != 1 {
+		t.Errorf("expected partition key length of 1, but was %d", len(tableMetadata.PartitionKey))
+	}
+	for i, column := range tableMetadata.PartitionKey {
+		if column == nil {
+			t.Errorf("partition key column metadata at index %d was nil", i)
+		}
+	}
+	if tableMetadata.PartitionKey[0].Name != "first_id" {
+		t.Errorf("Expected the first partition key column to be 'first_id' but was '%s'", tableMetadata.PartitionKey[0].Name)
+	}
+	if len(tableMetadata.ClusteringColumns) != 1 {
+		t.Fatalf("expected clustering columns length of 1, but was %d", len(tableMetadata.ClusteringColumns))
+	}
+	for i, column := range tableMetadata.ClusteringColumns {
+		if column == nil {
+			t.Fatalf("clustering column metadata at index %d was nil", i)
+		}
+	}
+	if tableMetadata.ClusteringColumns[0].Name != "second_id" {
+		t.Errorf("Expected the first clustering column to be 'second_id' but was '%s'", tableMetadata.ClusteringColumns[0].Name)
+	}
+	thirdColumn, found := tableMetadata.Columns["third_id"]
+	if !found {
+		t.Fatalf("Expected a column definition for 'third_id'")
+	}
+	if thirdColumn.Index.Name != "index_metadata" {
+		t.Errorf("Expected column index named 'index_metadata' but was '%s'", thirdColumn.Index.Name)
+	}
+}
+
+func TestRoutingKey(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+
+	if err := createTable(session, "CREATE TABLE test_single_routing_key (first_id int, second_id int, PRIMARY KEY (first_id, second_id))"); err != nil {
+		t.Fatalf("failed to create table with error '%v'", err)
+	}
+	if err := createTable(session, "CREATE TABLE test_composite_routing_key (first_id int, second_id int, PRIMARY KEY ((first_id, second_id)))"); err != nil {
+		t.Fatalf("failed to create table with error '%v'", err)
+	}
+
+	routingKeyInfo, err := session.routingKeyInfo("SELECT * FROM test_single_routing_key WHERE second_id=? AND first_id=?")
+	if err != nil {
+		t.Fatalf("failed to get routing key info due to error: %v", err)
+	}
+	if routingKeyInfo == nil {
+		t.Fatal("Expected routing key info, but was nil")
+	}
+	if len(routingKeyInfo.indexes) != 1 {
+		t.Fatalf("Expected routing key indexes length to be 1 but was %d", len(routingKeyInfo.indexes))
+	}
+	if routingKeyInfo.indexes[0] != 1 {
+		t.Errorf("Expected routing key index[0] to be 1 but was %d", routingKeyInfo.indexes[0])
+	}
+	if len(routingKeyInfo.types) != 1 {
+		t.Fatalf("Expected routing key types length to be 1 but was %d", len(routingKeyInfo.types))
+	}
+	if routingKeyInfo.types[0] == nil {
+		t.Fatal("Expected routing key types[0] to be non-nil")
+	}
+	if routingKeyInfo.types[0].Type != TypeInt {
+		t.Fatalf("Expected routing key types[0].Type to be %v but was %v", TypeInt, routingKeyInfo.types[0])
+	}
+
+	// verify the cache is working
+	routingKeyInfo, err = session.routingKeyInfo("SELECT * FROM test_single_routing_key WHERE second_id=? AND first_id=?")
+	if err != nil {
+		t.Fatalf("failed to get routing key info due to error: %v", err)
+	}
+	if len(routingKeyInfo.indexes) != 1 {
+		t.Fatalf("Expected routing key indexes length to be 1 but was %d", len(routingKeyInfo.indexes))
+	}
+	if routingKeyInfo.indexes[0] != 1 {
+		t.Errorf("Expected routing key index[0] to be 1 but was %d", routingKeyInfo.indexes[0])
+	}
+	if len(routingKeyInfo.types) != 1 {
+		t.Fatalf("Expected routing key types length to be 1 but was %d", len(routingKeyInfo.types))
+	}
+	if routingKeyInfo.types[0] == nil {
+		t.Fatal("Expected routing key types[0] to be non-nil")
+	}
+	if routingKeyInfo.types[0].Type != TypeInt {
+		t.Fatalf("Expected routing key types[0] to be %v but was %v", TypeInt, routingKeyInfo.types[0])
+	}
+	cacheSize := session.routingKeyInfoCache.lru.Len()
+	if cacheSize != 1 {
+		t.Errorf("Expected cache size to be 1 but was %d", cacheSize)
+	}
+
+	query := session.Query("SELECT * FROM test_single_routing_key WHERE second_id=? AND first_id=?", 1, 2)
+	routingKey, err := query.GetRoutingKey()
+	if err != nil {
+		t.Fatalf("Failed to get routing key due to error: %v", err)
+	}
+	expectedRoutingKey := []byte{0, 0, 0, 2}
+	if !reflect.DeepEqual(expectedRoutingKey, routingKey) {
+		t.Errorf("Expected routing key %v but was %v", expectedRoutingKey, routingKey)
+	}
+
+	routingKeyInfo, err = session.routingKeyInfo("SELECT * FROM test_composite_routing_key WHERE second_id=? AND first_id=?")
+	if err != nil {
+		t.Fatalf("failed to get routing key info due to error: %v", err)
+	}
+	if routingKeyInfo == nil {
+		t.Fatal("Expected routing key info, but was nil")
+	}
+	if len(routingKeyInfo.indexes) != 2 {
+		t.Fatalf("Expected routing key indexes length to be 2 but was %d", len(routingKeyInfo.indexes))
+	}
+	if routingKeyInfo.indexes[0] != 1 {
+		t.Errorf("Expected routing key index[0] to be 1 but was %d", routingKeyInfo.indexes[0])
+	}
+	if routingKeyInfo.indexes[1] != 0 {
+		t.Errorf("Expected routing key index[1] to be 0 but was %d", routingKeyInfo.indexes[1])
+	}
+	if len(routingKeyInfo.types) != 2 {
+		t.Fatalf("Expected routing key types length to be 1 but was %d", len(routingKeyInfo.types))
+	}
+	if routingKeyInfo.types[0] == nil {
+		t.Fatal("Expected routing key types[0] to be non-nil")
+	}
+	if routingKeyInfo.types[0].Type != TypeInt {
+		t.Fatalf("Expected routing key types[0] to be %v but was %v", TypeInt, routingKeyInfo.types[0])
+	}
+	if routingKeyInfo.types[1] == nil {
+		t.Fatal("Expected routing key types[1] to be non-nil")
+	}
+	if routingKeyInfo.types[1].Type != TypeInt {
+		t.Fatalf("Expected routing key types[0] to be %v but was %v", TypeInt, routingKeyInfo.types[1])
+	}
+
+	query = session.Query("SELECT * FROM test_composite_routing_key WHERE second_id=? AND first_id=?", 1, 2)
+	routingKey, err = query.GetRoutingKey()
+	if err != nil {
+		t.Fatalf("Failed to get routing key due to error: %v", err)
+	}
+	expectedRoutingKey = []byte{0, 4, 0, 0, 0, 2, 0, 0, 4, 0, 0, 0, 1, 0}
+	if !reflect.DeepEqual(expectedRoutingKey, routingKey) {
+		t.Errorf("Expected routing key %v but was %v", expectedRoutingKey, routingKey)
+	}
+
+	// verify the cache is working
+	cacheSize = session.routingKeyInfoCache.lru.Len()
+	if cacheSize != 2 {
+		t.Errorf("Expected cache size to be 2 but was %d", cacheSize)
 	}
 }

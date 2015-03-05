@@ -40,6 +40,9 @@ func Marshal(info *TypeInfo, value interface{}) ([]byte, error) {
 	if value == nil {
 		return nil, nil
 	}
+	if info.Proto < protoVersion1 {
+		panic("protocol version not set")
+	}
 
 	if v, ok := value.(Marshaler); ok {
 		return v.MarshalCQL(info)
@@ -814,6 +817,28 @@ func unmarshalTimestamp(info *TypeInfo, data []byte, value interface{}) error {
 	return unmarshalErrorf("can not unmarshal %s into %T", info, value)
 }
 
+func writeCollectionSize(info *TypeInfo, n int, buf *bytes.Buffer) error {
+	if info.Proto > protoVersion2 {
+		if n > math.MaxInt32 {
+			return marshalErrorf("marshal: collection too large")
+		}
+
+		buf.WriteByte(byte(n >> 24))
+		buf.WriteByte(byte(n >> 16))
+		buf.WriteByte(byte(n >> 8))
+		buf.WriteByte(byte(n))
+	} else {
+		if n > math.MaxUint16 {
+			return marshalErrorf("marshal: collection too large")
+		}
+
+		buf.WriteByte(byte(n >> 8))
+		buf.WriteByte(byte(n))
+	}
+
+	return nil
+}
+
 func marshalList(info *TypeInfo, value interface{}) ([]byte, error) {
 	rv := reflect.ValueOf(value)
 	t := rv.Type()
@@ -825,21 +850,19 @@ func marshalList(info *TypeInfo, value interface{}) ([]byte, error) {
 		}
 		buf := &bytes.Buffer{}
 		n := rv.Len()
-		if n > math.MaxUint16 {
-			return nil, marshalErrorf("marshal: slice / array too large")
+
+		if err := writeCollectionSize(info, n, buf); err != nil {
+			return nil, err
 		}
-		buf.WriteByte(byte(n >> 8))
-		buf.WriteByte(byte(n))
+
 		for i := 0; i < n; i++ {
 			item, err := Marshal(info.Elem, rv.Index(i).Interface())
 			if err != nil {
 				return nil, err
 			}
-			if len(item) > math.MaxUint16 {
-				return nil, marshalErrorf("marshal: slice / array item too large")
+			if err := writeCollectionSize(info, len(item), buf); err != nil {
+				return nil, err
 			}
-			buf.WriteByte(byte(len(item) >> 8))
-			buf.WriteByte(byte(len(item)))
 			buf.Write(item)
 		}
 		return buf.Bytes(), nil
@@ -856,6 +879,17 @@ func marshalList(info *TypeInfo, value interface{}) ([]byte, error) {
 		}
 	}
 	return nil, marshalErrorf("can not marshal %T into %s", value, info)
+}
+
+func readCollectionSize(info *TypeInfo, data []byte) (size, read int) {
+	if info.Proto > protoVersion2 {
+		size = int(data[0])<<24 | int(data[1])<<16 | int(data[2])<<8 | int(data[3])
+		read = 4
+	} else {
+		size = int(data[0])<<8 | int(data[1])
+		read = 2
+	}
+	return
 }
 
 func unmarshalList(info *TypeInfo, data []byte, value interface{}) error {
@@ -879,8 +913,8 @@ func unmarshalList(info *TypeInfo, data []byte, value interface{}) error {
 		if len(data) < 2 {
 			return unmarshalErrorf("unmarshal list: unexpected eof")
 		}
-		n := int(data[0])<<8 | int(data[1])
-		data = data[2:]
+		n, p := readCollectionSize(info, data)
+		data = data[p:]
 		if k == reflect.Array {
 			if rv.Len() != n {
 				return unmarshalErrorf("unmarshal list: array with wrong size")
@@ -894,8 +928,8 @@ func unmarshalList(info *TypeInfo, data []byte, value interface{}) error {
 			if len(data) < 2 {
 				return unmarshalErrorf("unmarshal list: unexpected eof")
 			}
-			m := int(data[0])<<8 | int(data[1])
-			data = data[2:]
+			m, p := readCollectionSize(info, data)
+			data = data[p:]
 			if err := Unmarshal(info.Elem, data[:m], rv.Index(i).Addr().Interface()); err != nil {
 				return err
 			}
@@ -917,33 +951,29 @@ func marshalMap(info *TypeInfo, value interface{}) ([]byte, error) {
 	}
 	buf := &bytes.Buffer{}
 	n := rv.Len()
-	if n > math.MaxUint16 {
-		return nil, marshalErrorf("marshal: map too large")
+
+	if err := writeCollectionSize(info, n, buf); err != nil {
+		return nil, err
 	}
-	buf.WriteByte(byte(n >> 8))
-	buf.WriteByte(byte(n))
+
 	keys := rv.MapKeys()
 	for _, key := range keys {
 		item, err := Marshal(info.Key, key.Interface())
 		if err != nil {
 			return nil, err
 		}
-		if len(item) > math.MaxUint16 {
-			return nil, marshalErrorf("marshal: slice / array item too large")
+		if err := writeCollectionSize(info, len(item), buf); err != nil {
+			return nil, err
 		}
-		buf.WriteByte(byte(len(item) >> 8))
-		buf.WriteByte(byte(len(item)))
 		buf.Write(item)
 
 		item, err = Marshal(info.Elem, rv.MapIndex(key).Interface())
 		if err != nil {
 			return nil, err
 		}
-		if len(item) > math.MaxUint16 {
-			return nil, marshalErrorf("marshal: slice / array item too large")
+		if err := writeCollectionSize(info, len(item), buf); err != nil {
+			return nil, err
 		}
-		buf.WriteByte(byte(len(item) >> 8))
-		buf.WriteByte(byte(len(item)))
 		buf.Write(item)
 	}
 	return buf.Bytes(), nil
@@ -967,22 +997,22 @@ func unmarshalMap(info *TypeInfo, data []byte, value interface{}) error {
 	if len(data) < 2 {
 		return unmarshalErrorf("unmarshal map: unexpected eof")
 	}
-	n := int(data[1]) | int(data[0])<<8
-	data = data[2:]
+	n, p := readCollectionSize(info, data)
+	data = data[p:]
 	for i := 0; i < n; i++ {
 		if len(data) < 2 {
 			return unmarshalErrorf("unmarshal list: unexpected eof")
 		}
-		m := int(data[1]) | int(data[0])<<8
-		data = data[2:]
+		m, p := readCollectionSize(info, data)
+		data = data[p:]
 		key := reflect.New(t.Key())
 		if err := Unmarshal(info.Key, data[:m], key.Interface()); err != nil {
 			return err
 		}
 		data = data[m:]
 
-		m = int(data[1]) | int(data[0])<<8
-		data = data[2:]
+		m, p = readCollectionSize(info, data)
+		data = data[p:]
 		val := reflect.New(t.Elem())
 		if err := Unmarshal(info.Elem, data[:m], val.Interface()); err != nil {
 			return err
@@ -1120,10 +1150,11 @@ func unmarshalInet(info *TypeInfo, data []byte, value interface{}) error {
 
 // TypeInfo describes a Cassandra specific data type.
 type TypeInfo struct {
+	Proto  byte // version of the protocol
 	Type   Type
 	Key    *TypeInfo // only used for TypeMap
 	Elem   *TypeInfo // only used for TypeMap, TypeList and TypeSet
-	Custom string    // only used for TypeCostum
+	Custom string    // only used for TypeCustom
 }
 
 // String returns a human readable name for the Cassandra datatype
@@ -1145,24 +1176,24 @@ type Type int
 
 const (
 	TypeCustom    Type = 0x0000
-	TypeAscii     Type = 0x0001
-	TypeBigInt    Type = 0x0002
-	TypeBlob      Type = 0x0003
-	TypeBoolean   Type = 0x0004
-	TypeCounter   Type = 0x0005
-	TypeDecimal   Type = 0x0006
-	TypeDouble    Type = 0x0007
-	TypeFloat     Type = 0x0008
-	TypeInt       Type = 0x0009
-	TypeTimestamp Type = 0x000B
-	TypeUUID      Type = 0x000C
-	TypeVarchar   Type = 0x000D
-	TypeVarint    Type = 0x000E
-	TypeTimeUUID  Type = 0x000F
-	TypeInet      Type = 0x0010
-	TypeList      Type = 0x0020
-	TypeMap       Type = 0x0021
-	TypeSet       Type = 0x0022
+	TypeAscii          = 0x0001
+	TypeBigInt         = 0x0002
+	TypeBlob           = 0x0003
+	TypeBoolean        = 0x0004
+	TypeCounter        = 0x0005
+	TypeDecimal        = 0x0006
+	TypeDouble         = 0x0007
+	TypeFloat          = 0x0008
+	TypeInt            = 0x0009
+	TypeTimestamp      = 0x000B
+	TypeUUID           = 0x000C
+	TypeVarchar        = 0x000D
+	TypeVarint         = 0x000E
+	TypeTimeUUID       = 0x000F
+	TypeInet           = 0x0010
+	TypeList           = 0x0020
+	TypeMap            = 0x0021
+	TypeSet            = 0x0022
 )
 
 // String returns the name of the identifier.
@@ -1207,7 +1238,7 @@ func (t Type) String() string {
 	case TypeVarint:
 		return "varint"
 	default:
-		return "unknown"
+		return fmt.Sprintf("unkown_type_%d", t)
 	}
 }
 
