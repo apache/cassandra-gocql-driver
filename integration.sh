@@ -60,8 +60,10 @@ function run_tests() {
 		echo "--- FAIL: ccm status follows:"
 		ccm status
 		ccm node1 nodetool status
-		ccm node1 showlog > status.log
-		cat status.log
+		ccm node1 showlog
+		ccm node2 showlog
+		ccm node3 showlog
+
 		echo "--- FAIL: Received a non-zero exit code from the go test execution, please investigate this"
 		exit 1
 	fi
