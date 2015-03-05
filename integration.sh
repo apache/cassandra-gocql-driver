@@ -45,10 +45,10 @@ function run_tests() {
 
 	ccm updateconf "authenticator: PasswordAuthenticator"
 
-	go test -v . -run=TestAuthentication -tags integration -runauth
-
 	ccm start -v
 	ccm status
+
+	go test -v . -run=TestAuthentication -tags integration -runauth
 
 	ccm clear
 }
