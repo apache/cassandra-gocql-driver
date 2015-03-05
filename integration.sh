@@ -8,8 +8,10 @@ function run_tests() {
 
 	ccm create test -v binary:$version -n $clusterSize -d --vnodes
 	
-	sed -i '/#MAX_HEAP_SIZE/c\MAX_HEAP_SIZE="128M"' ~/.ccm/repository/$version/conf/cassandra-env.sh
+	sed -i '/#MAX_HEAP_SIZE/c\MAX_HEAP_SIZE="512M"' ~/.ccm/repository/$version/conf/cassandra-env.sh
 	sed -i '/#HEAP_NEWSIZE/c\HEAP_NEWSIZE="32M"' ~/.ccm/repository/$version/conf/cassandra-env.sh
+
+	free -mt
 
 	local conf=(
 		"client_encryption_options.enabled: true"
@@ -35,6 +37,7 @@ function run_tests() {
 
 	ccm start -v
 	ccm status
+	free -mt
 	ccm node1 nodetool status
 	
 	local proto=2
