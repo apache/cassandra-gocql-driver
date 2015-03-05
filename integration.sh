@@ -46,7 +46,7 @@ function run_tests() {
 
 	local tmp=$(mktemp)
 	echo 'SELECT peer, data_center, rack FROM system.peers' > $tmp	
-	cqlsh -f $tmp 127.0.0.1
+	ccm node1 cqlsh -f $tmp 127.0.0.1
 
 	sleep 3
 
