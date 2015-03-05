@@ -5,11 +5,10 @@ set -e
 function run_tests() {
 	local clusterSize=3
 	local version=$1
-	java -version
 
 	ccm create test -v binary:$version -n $clusterSize -d --vnodes
 	
-	sed -i '/#MAX_HEAP_SIZE/c\MAX_HEAP_SIZE="256M"' ~/.ccm/repository/$version/conf/cassandra-env.sh
+	sed -i '/#MAX_HEAP_SIZE/c\MAX_HEAP_SIZE="512M"' ~/.ccm/repository/$version/conf/cassandra-env.sh
 	sed -i '/#HEAP_NEWSIZE/c\HEAP_NEWSIZE="100M"' ~/.ccm/repository/$version/conf/cassandra-env.sh
 
 	ccm updateconf 'client_encryption_options.enabled: true' 'client_encryption_options.keystore: testdata/pki/.keystore' 'client_encryption_options.keystore_password: cassandra' 'client_encryption_options.require_client_auth: true' 'client_encryption_options.truststore: testdata/pki/.truststore' 'client_encryption_options.truststore_password: cassandra' 'concurrent_reads: 2' 'concurrent_writes: 2' 'rpc_server_type: hsha' 'rpc_min_threads: 1' 'rpc_max_threads: 8' 'write_request_timeout_in_ms: 5000' 'read_request_timeout_in_ms: 5000'
