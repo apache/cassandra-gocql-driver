@@ -32,7 +32,7 @@ function run_tests() {
 	)
 
 	for f in "${conf[@]}"; do
-		ccm updateconf "'$f'"
+		ccm updateconf "$f"
 	done
 
 	ccm start -v
