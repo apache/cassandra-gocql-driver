@@ -2,6 +2,37 @@
 
 set -e
 
+vercomp () {
+    if [[ $1 == $2 ]]
+    then
+        return 0
+    fi
+    local IFS=.
+    local i ver1=($1) ver2=($2)
+    # fill empty fields in ver1 with zeros
+    for ((i=${#ver1[@]}; i<${#ver2[@]}; i++))
+    do
+        ver1[i]=0
+    done
+    for ((i=0; i<${#ver1[@]}; i++))
+    do
+        if [[ -z ${ver2[i]} ]]
+        then
+            # fill empty fields in ver2 with zeros
+            ver2[i]=0
+        fi
+        if ((10#${ver1[i]} > 10#${ver2[i]}))
+        then
+            return 1
+        fi
+        if ((10#${ver1[i]} < 10#${ver2[i]}))
+        then
+            return 2
+        fi
+    done
+    return 0
+}
+
 function run_tests() {
 	local clusterSize=3
 	local version=$1
@@ -43,20 +74,28 @@ function run_tests() {
 	# ccm stop
 	# ccm status
 
-	ccm updateconf "authenticator: PasswordAuthenticator"
-	ccm updateconf "authorizer: CassandraAuthorizer"
-	ccm updateconf "concurrent_reads: 2"
-	ccm updateconf "concurrent_writes: 2"
-	ccm updateconf "rpc_server_type: sync"
-	ccm updateconf "rpc_min_threads: 2"
-	ccm updateconf "rpc_max_threads: 2"
-	ccm updateconf "write_request_timeout_in_ms: 5000"
-	ccm updateconf "read_request_timeout_in_ms: 5000"
+	local miniumum=2.1
+	vercomp $version $miniumum
 
-	ccm start -v
-	ccm status
+    if [[ $? == 1 ]]
+    then
+    	ccm updateconf "authenticator: PasswordAuthenticator"
+		ccm updateconf "authorizer: CassandraAuthorizer"
+		ccm updateconf "concurrent_reads: 2"
+		ccm updateconf "concurrent_writes: 2"
+		ccm updateconf "rpc_server_type: sync"
+		ccm updateconf "rpc_min_threads: 2"
+		ccm updateconf "rpc_max_threads: 2"
+		ccm updateconf "write_request_timeout_in_ms: 5000"
+		ccm updateconf "read_request_timeout_in_ms: 5000"
 
-	go test -v . -timeout 10s -run=TestAuthentication -tags integration -runauth -proto=$proto -cluster=$(ccm liveset) -clusterSize=$clusterSize -autowait=2000ms
+		ccm start -v
+		ccm status
+
+		go test -v . -timeout 10s -run=TestAuthentication -tags integration -runauth -proto=$proto -cluster=$(ccm liveset) -clusterSize=$clusterSize -autowait=2000ms    
+    else
+        echo "Ignoring authentication test for Cassandra version $version"
+    fi
 
 	ccm clear
 }
