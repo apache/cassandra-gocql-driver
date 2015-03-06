@@ -2,7 +2,7 @@
 
 set -e
 
-vercomp () {
+function vercomp() {
     if [[ $1 == $2 ]]
     then
         return 0
