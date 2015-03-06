@@ -115,6 +115,10 @@ func createSession(tb testing.TB) *Session {
 
 func TestAuthentication(t *testing.T) {
 
+	if *flagProto < 2 {
+		t.Skip("Authentication is not supported with protocol < 2")
+	}
+
 	if !*flagRunAuthTest {
 		t.Skip("Authentication is not configured in the target cluster")
 	}
