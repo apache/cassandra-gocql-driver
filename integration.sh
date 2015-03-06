@@ -44,6 +44,7 @@ function run_tests() {
 	# ccm status
 
 	ccm updateconf "authenticator: PasswordAuthenticator"
+	ccm updateconf "authorizer: CassandraAuthorizer"
 
 	ccm start -v
 	ccm status
