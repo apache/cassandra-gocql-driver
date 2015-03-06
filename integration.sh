@@ -45,6 +45,13 @@ function run_tests() {
 
 	ccm updateconf "authenticator: PasswordAuthenticator"
 	ccm updateconf "authorizer: CassandraAuthorizer"
+	ccm updateconf "concurrent_reads: 2"
+	ccm updateconf "concurrent_writes: 2"
+	ccm updateconf "rpc_server_type: sync"
+	ccm updateconf "rpc_min_threads: 2"
+	ccm updateconf "rpc_max_threads: 2"
+	ccm updateconf "write_request_timeout_in_ms: 5000"
+	ccm updateconf "read_request_timeout_in_ms: 5000"
 
 	ccm start -v
 	ccm status
