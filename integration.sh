@@ -89,9 +89,9 @@ function run_tests() {
 	# ccm status
 
 	local miniumum=2.1
-	vercomp $version $miniumum
+	local comp="$(vercomp $version $miniumum)" || true
 
-    if [[ $? == 1 ]]
+    if [[ $comp == 1 ]]
     then
     	ccm updateconf "authenticator: PasswordAuthenticator"
 		ccm updateconf "authorizer: CassandraAuthorizer"
