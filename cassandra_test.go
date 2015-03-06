@@ -130,9 +130,13 @@ func TestAuthentication(t *testing.T) {
 		Password: "cassandra",
 	}
 
-	if _, err := cluster.CreateSession(); err != nil {
+	session, err := cluster.CreateSession()
+
+	if err != nil {
 		t.Errorf("Authentication error: %s", err)
 	}
+
+	session.Close()
 }
 
 //TestRingDiscovery makes sure that you can autodiscover other cluster members when you seed a cluster config with just one node
