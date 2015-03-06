@@ -16,10 +16,10 @@ function run_tests() {
 	# ccm status
 	# ccm node1 nodetool status
 
-	# local proto=2
-	# if [[ $version == 1.2.* ]]; then
-	# 	proto=1
-	# fi
+	local proto=2
+	if [[ $version == 1.2.* ]]; then
+		proto=1
+	fi
 
 	# go test -timeout 5m -tags integration -cover -v -runssl -proto=$proto -rf=3 -cluster=$(ccm liveset) -clusterSize=$clusterSize -autowait=2000ms ./... | tee results.txt
 
@@ -56,7 +56,7 @@ function run_tests() {
 	ccm start -v
 	ccm status
 
-	go test -v . -timeout 10s -run=TestAuthentication -tags integration -runauth -cluster=$(ccm liveset) -clusterSize=$clusterSize -autowait=2000ms
+	go test -v . -timeout 10s -run=TestAuthentication -tags integration -runauth -proto=$proto -cluster=$(ccm liveset) -clusterSize=$clusterSize -autowait=2000ms
 
 	ccm clear
 }
