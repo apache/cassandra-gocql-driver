@@ -2,10 +2,10 @@
 
 set -e
 
-function vercomp() {
+function compare() {
     if [[ $1 == $2 ]]
     then
-        return 0
+        echo 0
     fi
     local IFS=.
     local i ver1=($1) ver2=($2)
@@ -23,14 +23,14 @@ function vercomp() {
         fi
         if ((10#${ver1[i]} > 10#${ver2[i]}))
         then
-            return 1
+            echo 1
         fi
         if ((10#${ver1[i]} < 10#${ver2[i]}))
         then
-            return 2
+            echo 2
         fi
     done
-    return 0
+    echo 0
 }
 
 function run_tests() {
@@ -73,7 +73,7 @@ function run_tests() {
 	fi
 
 	local miniumum=2.1
-	local comp="$(vercomp $version $miniumum)" || true
+	local comp=$(compare $version $miniumum) || true
 
 	echo "Result of version comparison: $comp"
 
