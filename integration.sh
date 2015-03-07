@@ -85,8 +85,9 @@ function run_tests() {
 
 		ccm start -v
 		ccm status
+		ccm node1 nodetool status
 
-		go test -v . -timeout 10s -run=TestAuthentication -tags integration -runauth -proto=$proto -cluster=$(ccm liveset) -clusterSize=$clusterSize -autowait=2000ms    
+		go test -v . -timeout 15s -run=TestAuthentication -tags integration -runauth -proto=$proto -cluster=$(ccm liveset) -clusterSize=$clusterSize -autowait=5000ms
     else
         echo "Ignoring authentication test for Cassandra version $version; mimimum was $mimimum"
     fi
