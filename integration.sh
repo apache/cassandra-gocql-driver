@@ -75,6 +75,8 @@ function run_tests() {
 	local miniumum=2.1
 	local comp="$(vercomp $version $miniumum)" || true
 
+	echo "Result of version comparison: $comp"
+
     if [[ $comp == 1 ]]
     then
     	ccm stop
@@ -87,7 +89,7 @@ function run_tests() {
 
 		go test -v . -timeout 10s -run=TestAuthentication -tags integration -runauth -proto=$proto -cluster=$(ccm liveset) -clusterSize=$clusterSize -autowait=2000ms    
     else
-        echo "Ignoring authentication test for Cassandra version $version"
+        echo "Ignoring authentication test for Cassandra version $version; mimimum was $mimimum"
     fi
 
 	ccm clear
