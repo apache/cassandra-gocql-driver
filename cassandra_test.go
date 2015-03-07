@@ -133,7 +133,7 @@ func TestAuthentication(t *testing.T) {
 	session, err := cluster.CreateSession()
 
 	if err != nil {
-		t.Errorf("Authentication error: %s", err)
+		t.Fatalf("Authentication error: %s", err)
 	}
 
 	session.Close()
