@@ -21,9 +21,11 @@ import (
 	"time"
 )
 
-const defaultFrameSize = 4096
-const flagResponse = 0x80
-const maskVersion = 0x7F
+const (
+	defaultFrameSize = 4096
+	flagResponse     = 0x80
+	maskVersion      = 0x7F
+)
 
 //JoinHostPort is a utility to return a address string that can be used
 //gocql.Conn to form a connection with a host.
