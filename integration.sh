@@ -30,7 +30,6 @@ function compare() {
             echo 2
         fi
     done
-    echo 0
 }
 
 function run_tests() {
@@ -72,8 +71,8 @@ function run_tests() {
 		exit 1
 	fi
 
-	local miniumum=2.1
-	local comp=$(compare $version $miniumum) || true
+	local mimimum=2.1
+	local comp=$(compare $version $mimimum) || true
 
 	echo "Result of version comparison: $comp"
 
