@@ -86,6 +86,8 @@ function run_tests() {
 		ccm start -v
 		ccm status
 		ccm node1 nodetool status
+		ccm node2 nodetool status
+		ccm node3 nodetool status
 
 		go test -v . -timeout 15s -run=TestAuthentication -tags integration -runauth -proto=$proto -cluster=$(ccm liveset) -clusterSize=$clusterSize -autowait=5000ms
     else
