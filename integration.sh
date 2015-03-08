@@ -84,6 +84,9 @@ function run_tests() {
     	ccm updateconf 'authenticator: PasswordAuthenticator' 'authorizer: CassandraAuthorizer'
 
 		ccm start -v
+		ccm node1 compact
+		ccm node2 compact
+		ccm node3 compact
 		ccm status
 		ccm node1 nodetool status
 		ccm node2 nodetool status
