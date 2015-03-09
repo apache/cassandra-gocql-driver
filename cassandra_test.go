@@ -1432,7 +1432,7 @@ func TestGetKeyspaceMetadata(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 
-	keyspaceMetadata, err := getKeyspaceMetadata(session)
+	keyspaceMetadata, err := getKeyspaceMetadata(session, "gocql_test")
 	if err != nil {
 		t.Fatalf("failed to query the keyspace metadata with err: %v", err)
 	}
@@ -1469,7 +1469,7 @@ func TestGetTableMetadata(t *testing.T) {
 		t.Fatalf("failed to create table with error '%v'", err)
 	}
 
-	tables, err := getTableMetadata(session)
+	tables, err := getTableMetadata(session, "gocql_test")
 	if err != nil {
 		t.Fatalf("failed to query the table metadata with err: %v", err)
 	}
@@ -1554,7 +1554,7 @@ func TestGetColumnMetadata(t *testing.T) {
 		t.Fatalf("failed to create index with err: %v", err)
 	}
 
-	columns, err := getColumnMetadata(session)
+	columns, err := getColumnMetadata(session, "gocql_test")
 	if err != nil {
 		t.Fatalf("failed to query column metadata with err: %v", err)
 	}
@@ -1655,7 +1655,7 @@ func TestKeyspaceMetadata(t *testing.T) {
 		t.Fatalf("failed to create index with err: %v", err)
 	}
 
-	keyspaceMetadata, err := session.KeyspaceMetadata()
+	keyspaceMetadata, err := session.KeyspaceMetadata("gocql_test")
 	if err != nil {
 		t.Fatalf("failed to query keyspace metadata with err: %v", err)
 	}

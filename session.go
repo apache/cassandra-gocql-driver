@@ -164,15 +164,25 @@ func (s *Session) executeQuery(qry *Query) *Iter {
 	return iter
 }
 
-// Returns the schema metadata for the keyspace of this session including
-// table and column schema metadata.
-func (s *Session) KeyspaceMetadata() (*KeyspaceMetadata, error) {
+// KeyspaceMetadata returns the schema metadata for the keyspace specified.
+func (s *Session) KeyspaceMetadata(keyspace string) (*KeyspaceMetadata, error) {
+	// fail fast
+	if s.Closed() {
+		return nil, ErrSessionClosed
+	}
+
+	if keyspace == "" {
+		return nil, ErrNoKeyspace
+	}
+
 	s.mu.Lock()
+	// lazy-init schemaDescriber
 	if s.schemaDescriber == nil {
-		s.schemaDescriber = &schemaDescriber{session: s}
+		s.schemaDescriber = newSchemaDescriber(s)
 	}
 	s.mu.Unlock()
-	return s.schemaDescriber.getSchema()
+
+	return s.schemaDescriber.getSchema(keyspace)
 }
 
 // ExecuteBatch executes a batch operation and returns nil if successful
@@ -671,6 +681,7 @@ var (
 	ErrUseStmt       = errors.New("use statements aren't supported. Please see https://github.com/gocql/gocql for explaination.")
 	ErrSessionClosed = errors.New("session has been closed")
 	ErrNoConnections = errors.New("no connections available")
+	ErrNoKeyspace    = errors.New("no keyspace provided")
 )
 
 type ErrProtocol struct{ error }
