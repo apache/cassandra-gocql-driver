@@ -19,6 +19,8 @@ function run_tests() {
 	local proto=2
 	if [[ $version == 1.2.* ]]; then
 		proto=1
+	elif [[ $version == 2.1.* ]]; then
+		proto=3
 	fi
 
 	go test -timeout 5m -tags integration -cover -v -runssl -proto=$proto -rf=3 -cluster=$(ccm liveset) -clusterSize=$clusterSize -autowait=2000ms ./... | tee results.txt
