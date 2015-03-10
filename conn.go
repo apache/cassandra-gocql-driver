@@ -707,7 +707,7 @@ func (c *Conn) decodeFrame(f frame, trace Tracer) (rval interface{}, err error) 
 		case resultKindVoid:
 			return resultVoidFrame{}, nil
 		case resultKindRows:
-			columns, pageState := f.readMetaData()
+			columns, pageState := f.readMetaData(c.version)
 			numRows := f.readInt()
 			values := make([][]byte, numRows*len(columns))
 			for i := 0; i < len(values); i++ {
@@ -723,11 +723,11 @@ func (c *Conn) decodeFrame(f frame, trace Tracer) (rval interface{}, err error) 
 			return resultKeyspaceFrame{keyspace}, nil
 		case resultKindPrepared:
 			id := f.readShortBytes()
-			args, _ := f.readMetaData()
+			args, _ := f.readMetaData(c.version)
 			if c.version < 2 {
 				return resultPreparedFrame{PreparedId: id, Arguments: args}, nil
 			}
-			rvals, _ := f.readMetaData()
+			rvals, _ := f.readMetaData(c.version)
 			return resultPreparedFrame{PreparedId: id, Arguments: args, ReturnValues: rvals}, nil
 		case resultKindSchemaChanged:
 			return resultVoidFrame{}, nil

@@ -285,9 +285,12 @@ func (f *frame) readShortBytes() []byte {
 	return v
 }
 
-func (f *frame) readTypeInfo() *TypeInfo {
+func (f *frame) readTypeInfo(version uint8) *TypeInfo {
 	x := f.readShort()
-	typ := &TypeInfo{Type: Type(x)}
+	typ := &TypeInfo{
+		Proto: version,
+		Type:  Type(x),
+	}
 	switch typ.Type {
 	case TypeCustom:
 		typ.Custom = f.readString()
@@ -295,22 +298,22 @@ func (f *frame) readTypeInfo() *TypeInfo {
 			typ = &TypeInfo{Type: cassType}
 			switch typ.Type {
 			case TypeMap:
-				typ.Key = f.readTypeInfo()
+				typ.Key = f.readTypeInfo(version)
 				fallthrough
 			case TypeList, TypeSet:
-				typ.Elem = f.readTypeInfo()
+				typ.Elem = f.readTypeInfo(version)
 			}
 		}
 	case TypeMap:
-		typ.Key = f.readTypeInfo()
+		typ.Key = f.readTypeInfo(version)
 		fallthrough
 	case TypeList, TypeSet:
-		typ.Elem = f.readTypeInfo()
+		typ.Elem = f.readTypeInfo(version)
 	}
 	return typ
 }
 
-func (f *frame) readMetaData() ([]ColumnInfo, []byte) {
+func (f *frame) readMetaData(version uint8) ([]ColumnInfo, []byte) {
 	flags := f.readInt()
 	numColumns := f.readInt()
 
@@ -335,7 +338,7 @@ func (f *frame) readMetaData() ([]ColumnInfo, []byte) {
 			columns[i].Table = f.readString()
 		}
 		columns[i].Name = f.readString()
-		columns[i].TypeInfo = f.readTypeInfo()
+		columns[i].TypeInfo = f.readTypeInfo(version)
 	}
 	return columns, pageState
 }
