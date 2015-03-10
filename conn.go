@@ -586,7 +586,7 @@ func (c *Conn) executeBatch(batch *Batch) error {
 	if c.version == protoVersion1 {
 		return ErrUnsupported
 	}
-	f := make(frame, headerProtoSize[c.version], defaultFrameSize)
+	f := newFrame(c.version)
 	f.setHeader(c.version, 0, 0, opBatch)
 	f.writeByte(byte(batch.Type))
 	f.writeShort(uint16(len(batch.Entries)))
@@ -634,6 +634,10 @@ func (c *Conn) executeBatch(batch *Batch) error {
 		}
 	}
 	f.writeConsistency(batch.Cons)
+	if c.version >= protoVersion3 {
+		// TODO: add support for flags here
+		f.writeByte(0)
+	}
 
 	resp, err := c.exec(f, nil)
 	if err != nil {
