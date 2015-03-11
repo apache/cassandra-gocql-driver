@@ -1123,7 +1123,7 @@ type TypeInfo struct {
 	Type   Type
 	Key    *TypeInfo // only used for TypeMap
 	Elem   *TypeInfo // only used for TypeMap, TypeList and TypeSet
-	Custom string    // only used for TypeCostum
+	Custom string    // only used for TypeCustom
 }
 
 // String returns a human readable name for the Cassandra datatype
