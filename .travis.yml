@@ -4,9 +4,10 @@ matrix:
   fast_finish: true
 
 env:
-  - CASS=1.2.19
-  - CASS=2.0.11
-  - CASS=2.1.2
+  - CASS=1.2.19 AUTH=false
+  - CASS=2.0.11 AUTH=false
+  - CASS=2.1.2  AUTH=false
+  - CASS=2.1.2  AUTH=true
 
 go:
   - 1.3
@@ -29,7 +30,7 @@ install:
 script:
   - set -e
   - go test -v -tags unit
-  - bash -x integration.sh $CASS
+  - bash -x integration.sh $CASS $AUTH
   - go vet .
 
 notifications:
