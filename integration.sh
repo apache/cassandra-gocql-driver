@@ -7,6 +7,10 @@ function run_tests() {
 	local version=$1
 	local auth=$2
 
+	if [ "$auth" = true ]; then
+		clusterSize=1
+	fi
+
 	ccm create test -v binary:$version -n $clusterSize -d --vnodes
 
 	sed -i '/#MAX_HEAP_SIZE/c\MAX_HEAP_SIZE="256M"' ~/.ccm/repository/$version/conf/cassandra-env.sh
@@ -22,8 +26,6 @@ function run_tests() {
 	ccm start -v
 	ccm status
 	ccm node1 nodetool status
-	ccm node2 nodetool status
-	ccm node3 nodetool status
 
 	local proto=2
 	if [[ $version == 1.2.* ]]; then
@@ -32,7 +34,7 @@ function run_tests() {
 
 	if [ "$auth" = true ]
     then
-    	go test -v . -timeout 15s -run=TestAuthentication -tags integration -runauth -rf=3 -proto=$proto -cluster=$(ccm liveset) -clusterSize=$clusterSize -autowait=1000ms
+    	go test -v . -timeout 15s -run=TestAuthentication -tags integration -runauth -proto=$proto -cluster=$(ccm liveset) -clusterSize=$clusterSize -autowait=1000ms
 	else
 		go test -timeout 5m -tags integration -cover -v -runssl -proto=$proto -rf=3 -cluster=$(ccm liveset) -clusterSize=$clusterSize -autowait=2000ms ./... | tee results.txt
 
