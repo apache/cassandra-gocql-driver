@@ -330,15 +330,20 @@ func (c *Conn) execSimple(op operation) (interface{}, error) {
 		// this should be a noop err
 		return nil, err
 	}
-	f.setLength(len(f)-headerProtoSize[c.version], c.version)
+
+	bodyLen := len(f) - headerProtoSize[c.version]
+	f.setLength(bodyLen, c.version)
 
 	if _, err := c.Write([]byte(f)); err != nil {
 		c.Close()
 		return nil, err
 	}
+
+	// here recv wont timeout waiting for a header, should it?
 	if f, err = c.recv(); err != nil {
 		return nil, err
 	}
+
 	return c.decodeFrame(f, nil)
 }
 
@@ -347,6 +352,7 @@ func (c *Conn) exec(op operation, trace Tracer) (interface{}, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	if trace != nil {
 		req[1] |= flagTrace
 	}
@@ -360,7 +366,8 @@ func (c *Conn) exec(op operation, trace Tracer) (interface{}, error) {
 		req = append(req[:headerSize], frame(body)...)
 		req[1] |= flagCompress
 	}
-	req.setLength(len(req)-headerSize, c.version)
+	bodyLen := len(req) - headerSize
+	req.setLength(bodyLen, c.version)
 
 	id := <-c.uniq
 	req.setStream(id, c.version)
