@@ -68,6 +68,7 @@ func createCluster() *ClusterConfig {
 	cluster.CQLVersion = *flagCQL
 	cluster.Timeout = 5 * time.Second
 	cluster.Consistency = Quorum
+	cluster.NumStreams = 1
 	if *flagRetry > 0 {
 		cluster.RetryPolicy = &SimpleRetryPolicy{NumRetries: *flagRetry}
 	}
