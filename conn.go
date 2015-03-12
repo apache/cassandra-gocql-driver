@@ -389,6 +389,7 @@ func (c *Conn) exec(op operation, trace Tracer) (interface{}, error) {
 	if reply.err != nil {
 		return nil, reply.err
 	}
+
 	return c.decodeFrame(reply.buf, trace)
 }
 
@@ -683,13 +684,14 @@ func (c *Conn) decodeFrame(f frame, trace Tracer) (rval interface{}, err error) 
 		}
 	}()
 
-	if len(f) < headerProtoSize[c.version] {
-		return nil, NewErrProtocol("Decoding frame: less data received than required for header: %d < %d", len(f), headerProtoSize[c.version])
+	headerSize := headerProtoSize[c.version]
+	if len(f) < headerSize {
+		return nil, NewErrProtocol("Decoding frame: less data received than required for header: %d < %d", len(f), headerSize)
 	} else if f[0] != c.version|flagResponse {
 		return nil, NewErrProtocol("Decoding frame: response protocol version does not match connection protocol version (%d != %d)", f[0], c.version|flagResponse)
 	}
 
-	flags, op, f := f[1], f.Op(c.version), f[headerProtoSize[c.version]:]
+	flags, op, f := f[1], f.Op(c.version), f[headerSize:]
 	if flags&flagCompress != 0 && len(f) > 0 && c.compressor != nil {
 		if buf, err := c.compressor.Decode([]byte(f)); err != nil {
 			return nil, err
