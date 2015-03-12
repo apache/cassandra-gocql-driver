@@ -306,7 +306,7 @@ func (c *Conn) recv() (frame, error) {
 	for i := 0; i < maxAttempts; i++ {
 		var nn int
 		c.conn.SetReadDeadline(time.Now().Add(c.timeout))
-		nn, err = c.Read(resp[n : size+bodySize])
+		nn, err = io.ReadFull(c.r, resp[n:size+bodySize])
 		if err == nil {
 			break
 		}
