@@ -9,8 +9,8 @@ function run_tests() {
 	env | grep -i CASSANDRA
 
 	# cassandra will set min heap size to this as well
-	export MAX_HEAP_SIZE="1G"
-	export HEAP_NEWSIZE="200M"
+	export MAX_HEAP_SIZE="512M"
+	export HEAP_NEWSIZE="100M"
 
 	ccm create test -v binary:$version -n $clusterSize -d --vnodes
 
