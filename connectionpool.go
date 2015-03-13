@@ -171,6 +171,10 @@ func (c *SimplePool) connect(addr string) error {
 		return err
 	}
 
+	if fn := c.cfg.ConnState; fn != nil {
+		fn(conn.conn, StateNew)
+	}
+
 	return c.addConn(conn)
 }
 
@@ -274,6 +278,11 @@ func (c *SimplePool) removeConnLocked(conn *Conn) {
 		delete(c.connPool, conn.addr)
 	}
 	delete(c.conns, conn)
+
+	// im not so keen on executing this with c.mu held
+	if fn := c.cfg.ConnState; fn != nil {
+		fn(conn.conn, StateClosed)
+	}
 }
 
 func (c *SimplePool) removeConn(conn *Conn) {
@@ -286,6 +295,10 @@ func (c *SimplePool) removeConn(conn *Conn) {
 //Logic is then executed within the pool to clean up the erroroneous connection and try to
 //top off the pool.
 func (c *SimplePool) HandleError(conn *Conn, err error, closed bool) {
+	if fn := c.cfg.ConnState; fn != nil {
+		fn(conn.conn, StateError)
+	}
+
 	if !closed {
 		// ignore all non-fatal errors
 		return

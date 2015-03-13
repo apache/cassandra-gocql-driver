@@ -19,6 +19,18 @@ import (
 	"time"
 )
 
+type ConnState int
+
+const (
+	// StateNew fires when a connection is connected to cassandra and as
+	// exchanged any auth info and received a SetupFrame
+	StateNew ConnState = iota
+	// StateClosed fires after a connection is removed from the pool and closed
+	StateClosed
+	// StateError fires when any error occurs on a connection
+	StateError
+)
+
 const defaultFrameSize = 4096
 const flagResponse = 0x80
 const maskVersion = 0x7F

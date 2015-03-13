@@ -6,6 +6,7 @@ package gocql
 
 import (
 	"errors"
+	"net"
 	"sync"
 	"time"
 
@@ -74,6 +75,10 @@ type ClusterConfig struct {
 	PageSize         int           // Default page size to use for created sessions (default: 0)
 	Discovery        DiscoveryConfig
 	SslOpts          *SslOptions
+	// if ConnState is not nil then it will be called when a connection state changes,
+	// and is supported by the connection pool.
+	// These states are covered by the ConnState type.
+	ConnState func(net.Conn, ConnState)
 }
 
 // NewCluster generates a new config for the default cluster implementation.
