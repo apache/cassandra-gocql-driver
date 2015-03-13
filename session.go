@@ -432,6 +432,7 @@ func (iter *Iter) Columns() []ColumnInfo {
 // end of the result set was reached or if an error occurred. Close should
 // be called afterwards to retrieve any potential errors.
 func (iter *Iter) Scan(dest ...interface{}) bool {
+	iter.checkErrAndNotFound()
 	if iter.err != nil {
 		return false
 	}
