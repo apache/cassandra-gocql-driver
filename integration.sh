@@ -12,6 +12,7 @@ function run_tests() {
 	ccm updateconf 'rpc_min_threads: 1' 'rpc_max_threads: 4'
 	ccm updateconf 'phi_convict_threshold: 10'
 	ccm updateconf 'memtable_total_space_in_mb: 128'
+	ccm updateconf 'commitlog_total_space_in_mb: 128'
 	ccm start -v
 	ccm status
 	ccm node1 nodetool status
