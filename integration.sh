@@ -32,7 +32,7 @@ function run_tests() {
 	sleep 2s
 
 	free -mt
-	go test -timeout 5m -tags integration -cover -v -runssl -proto=$proto -rf=3 -cluster=$(ccm liveset) -clusterSize=$clusterSize -autowait=2000ms ./... | tee results.txt
+	go test -timeout 5m -tags integration -v -runssl -proto=$proto -rf=3 -cluster=$(ccm liveset) -clusterSize=$clusterSize -autowait=2000ms ./... | tee results.txt
 
 	if [ ${PIPESTATUS[0]} -ne 0 ]; then
 		free -mt
@@ -45,12 +45,15 @@ function run_tests() {
 		exit 1
 	fi
 
-	cover=`cat results.txt | grep coverage: | grep -o "[0-9]\{1,3\}" | head -n 1`
+	# cover=`cat results.txt | grep coverage: | grep -o "[0-9]\{1,3\}" | head -n 1`
 
-	if [[ $cover -lt "55" ]]; then
-		echo "--- FAIL: expected coverage of at least 60 %, but coverage was $cover %"
-		exit 1
-	fi
-	ccm clear
+	# if [[ $cover -lt "55" ]]; then
+	# 	echo "--- FAIL: expected coverage of at least 60 %, but coverage was $cover %"
+	# 	exit 1
+	# fi
+
+	ccm stop
+	ccm remove
 }
+
 run_tests $1
