@@ -40,7 +40,7 @@ type Session struct {
 
 // NewSession wraps an existing Node.
 func NewSession(p ConnectionPool, c ClusterConfig) *Session {
-	return &Session{Pool: p, cons: Quorum, prefetch: 0.25, cfg: c}
+	return &Session{Pool: p, cons: c.Consistency, prefetch: 0.25, cfg: c}
 }
 
 // SetConsistency sets the default consistency level for this session. This
