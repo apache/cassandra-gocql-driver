@@ -113,7 +113,10 @@ func (cfg *ClusterConfig) CreateSession() (*Session, error) {
 		cfg.NumStreams = maxStreams
 	}
 
-	pool := cfg.ConnPoolType(cfg)
+	pool, err := cfg.ConnPoolType(cfg)
+	if err != nil {
+		return nil, err
+	}
 
 	//Adjust the size of the prepared statements cache to match the latest configuration
 	stmtsLRU.Lock()

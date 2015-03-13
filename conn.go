@@ -7,11 +7,9 @@ package gocql
 import (
 	"bufio"
 	"crypto/tls"
-	"crypto/x509"
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"net"
 	"strconv"
@@ -81,7 +79,7 @@ type ConnConfig struct {
 	Compressor    Compressor
 	Authenticator Authenticator
 	Keepalive     time.Duration
-	SslOpts       *SslOptions
+	TLSConfig     *tls.Config
 }
 
 // Conn is a single connection to a Cassandra node. It can be used to execute
@@ -115,31 +113,10 @@ func Connect(addr string, cfg ConnConfig, pool ConnectionPool) (*Conn, error) {
 		conn net.Conn
 	)
 
-	if cfg.SslOpts != nil {
-		certPool := x509.NewCertPool()
-		//ca cert is optional
-		if cfg.SslOpts.CaPath != "" {
-			pem, err := ioutil.ReadFile(cfg.SslOpts.CaPath)
-			if err != nil {
-				return nil, err
-			}
-			if !certPool.AppendCertsFromPEM(pem) {
-				return nil, errors.New("Failed parsing or appending certs")
-			}
-		}
-
-		mycert, err := tls.LoadX509KeyPair(cfg.SslOpts.CertPath, cfg.SslOpts.KeyPath)
-		if err != nil {
-			return nil, err
-		}
-
-		config := tls.Config{
-			Certificates: []tls.Certificate{mycert},
-			RootCAs:      certPool,
-		}
-
-		config.InsecureSkipVerify = !cfg.SslOpts.EnableHostVerification
-		if conn, err = tls.Dial("tcp", addr, &config); err != nil {
+	if cfg.TLSConfig != nil {
+		// the TLS config is safe to be reused by connections but it must not
+		// be modified after being used.
+		if conn, err = tls.Dial("tcp", addr, cfg.TLSConfig); err != nil {
 			return nil, err
 		}
 	} else if conn, err = net.DialTimeout("tcp", addr, cfg.Timeout); err != nil {
