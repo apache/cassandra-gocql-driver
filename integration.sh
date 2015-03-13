@@ -31,9 +31,11 @@ function run_tests() {
 	# let cassandra settle
 	sleep 2s
 
+	free -mt
 	go test -timeout 5m -tags integration -cover -v -runssl -proto=$proto -rf=3 -cluster=$(ccm liveset) -clusterSize=$clusterSize -autowait=2000ms ./... | tee results.txt
 
 	if [ ${PIPESTATUS[0]} -ne 0 ]; then
+		free -mt
 		echo "--- FAIL: ccm status follows:"
 		ccm status
 		ccm node1 nodetool status
