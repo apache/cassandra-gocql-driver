@@ -22,6 +22,9 @@ function run_tests() {
 		proto=3
 	fi
 
+	# let cassandra settle
+	sleep 2s
+
 	go test -timeout 5m -tags integration -cover -v -runssl -proto=$proto -rf=3 -cluster=$(ccm liveset) -clusterSize=$clusterSize -autowait=2000ms ./... | tee results.txt
 
 	if [ ${PIPESTATUS[0]} -ne 0 ]; then
