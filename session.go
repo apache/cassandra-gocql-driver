@@ -471,12 +471,10 @@ func (iter *Iter) Close() error {
 
 // checkErrAndNotFound handle error and NotFound in one method.
 func (iter *Iter) checkErrAndNotFound() error {
-	if iter.err != nil {
-		return iter.err
-	} else if len(iter.rows) == 0 {
-		return ErrNotFound
+	if iter.err == nil && len(iter.rows) == 0 {
+		iter.err = ErrNotFound
 	}
-	return nil
+	return iter.err
 }
 
 type nextIter struct {
