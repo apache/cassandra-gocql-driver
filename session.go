@@ -362,9 +362,6 @@ func (q *Query) MapScan(m map[string]interface{}) error {
 // were selected, ErrNotFound is returned.
 func (q *Query) Scan(dest ...interface{}) error {
 	iter := q.Iter()
-	if err := iter.checkErrAndNotFound(); err != nil {
-		return err
-	}
 	iter.Scan(dest...)
 	return iter.Close()
 }
