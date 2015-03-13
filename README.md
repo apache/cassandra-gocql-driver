@@ -16,10 +16,16 @@ Supported Versions
 
 The following matrix shows the versions of Go and Cassandra that are tested with the integration test suite as part of the CI build:
 
-Go/Cassandra | 1.2.18 | 2.0.9 | 2.1.0-RC5
+Go/Cassandra | 1.2.19 | 2.0.11 | 2.1.2
 -------------| -------| ------| ---------
-1.2  | yes | yes | partial
-1.3  | yes | yes | partial
+1.3  | yes | yes | yes
+1.4  | yes | yes | yes
+
+
+Sunsetting Model
+----------------
+
+In general, the gocql team will focus on supporting the current and previous versions of Golang. gocql may still work with older versions of Golang, but offical support for these versions will have been sunset.
 
 Installation
 ------------
@@ -149,12 +155,28 @@ There are various ways to bind application level data structures to CQL statemen
 * The `Bind()` API provides a client app with a low level mechanism to introspect query meta data and extract appropriate field values from application level data structures.
 * Building on top of the gocql driver, [cqlr](https://github.com/relops/cqlr) adds the ability to auto-bind a CQL iterator to a struct or to bind a struct to an INSERT statement.
 * Another external project that layers on top of gocql is [cqlc](http://relops.com/cqlc) which generates gocql compliant code from your Cassandra schema so that you can write type safe CQL statements in Go with a natural query syntax.
+*  [gocassa](https://github.com/hailocab/gocassa) is an external project that layers on top of gocql to provide convenient query building and data binding.
+
+Ecosphere
+---------
+
+The following community maintained tools are known to integrate with gocql:
+
+* [migrate](https://github.com/mattes/migrate) is a migration handling tool written in Go with Cassandra support.
+* [negronicql](https://github.com/mikebthun/negronicql) is gocql middleware for Negroni.
+* [cqlr](https://github.com/relops/cqlr) adds the ability to auto-bind a CQL iterator to a struct or to bind a struct to an INSERT statement.
+* [cqlc](http://relops.com/cqlc) which generates gocql compliant code from your Cassandra schema so that you can write type safe CQL statements in Go with a natural query syntax.
+* [gocassa](https://github.com/hailocab/gocassa) provides query building, adds data binding, and provides easy-to-use "recipe" tables for common query use-cases.
 
 Other Projects
 --------------
 
 * [gocqldriver](https://github.com/tux21b/gocqldriver) is the predecessor of gocql based on Go's "database/sql" package. This project isn't maintained anymore, because Cassandra wasn't a good fit for the traditional "database/sql" API. Use this package instead.
-* [migrate](https://github.com/mattes/migrate) is a migration handling tool written in Go with Cassandra support.
+
+SEO
+---
+
+For some reason, when you google `golang cassandra`, this project doesn't feature very highly in the result list. But if you google `go cassandra`, then we're a bit higher up the list. So this is note to try to convince Google that Golang is an alias for Go.
 
 License
 -------

@@ -12,6 +12,8 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net"
+	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -20,6 +22,16 @@ import (
 const defaultFrameSize = 4096
 const flagResponse = 0x80
 const maskVersion = 0x7F
+
+//JoinHostPort is a utility to return a address string that can be used
+//gocql.Conn to form a connection with a host.
+func JoinHostPort(addr string, port int) string {
+	addr = strings.TrimSpace(addr)
+	if _, _, err := net.SplitHostPort(addr); err != nil {
+		addr = net.JoinHostPort(addr, strconv.Itoa(port))
+	}
+	return addr
+}
 
 type Authenticator interface {
 	Challenge(req []byte) (resp []byte, auth Authenticator, err error)
@@ -48,9 +60,9 @@ func (p PasswordAuthenticator) Success(data []byte) error {
 }
 
 type SslOptions struct {
-	CertPath               string
-	KeyPath                string
-	CaPath                 string //optional depending on server config
+	CertPath string
+	KeyPath  string
+	CaPath   string //optional depending on server config
 	// If you want to verify the hostname and server cert (like a wildcard for cass cluster) then you should turn this on
 	// This option is basically the inverse of InSecureSkipVerify
 	// See InSecureSkipVerify in http://golang.org/pkg/crypto/tls/ for more info
@@ -352,13 +364,16 @@ func (c *Conn) ping() error {
 }
 
 func (c *Conn) prepareStatement(stmt string, trace Tracer) (*QueryInfo, error) {
-	stmtsLRU.mu.Lock()
+	stmtsLRU.Lock()
+	if stmtsLRU.lru == nil {
+		initStmtsLRU(defaultMaxPreparedStmts)
+	}
 
 	stmtCacheKey := c.addr + c.currentKeyspace + stmt
 
 	if val, ok := stmtsLRU.lru.Get(stmtCacheKey); ok {
 		flight := val.(*inflightPrepare)
-		stmtsLRU.mu.Unlock()
+		stmtsLRU.Unlock()
 		flight.wg.Wait()
 		return flight.info, flight.err
 	}
@@ -366,7 +381,7 @@ func (c *Conn) prepareStatement(stmt string, trace Tracer) (*QueryInfo, error) {
 	flight := new(inflightPrepare)
 	flight.wg.Add(1)
 	stmtsLRU.lru.Add(stmtCacheKey, flight)
-	stmtsLRU.mu.Unlock()
+	stmtsLRU.Unlock()
 
 	resp, err := c.exec(&prepareFrame{Stmt: stmt}, trace)
 	if err != nil {
@@ -390,9 +405,9 @@ func (c *Conn) prepareStatement(stmt string, trace Tracer) (*QueryInfo, error) {
 	flight.wg.Done()
 
 	if err != nil {
-		stmtsLRU.mu.Lock()
+		stmtsLRU.Lock()
 		stmtsLRU.lru.Remove(stmtCacheKey)
-		stmtsLRU.mu.Unlock()
+		stmtsLRU.Unlock()
 	}
 
 	return flight.info, flight.err
@@ -459,14 +474,14 @@ func (c *Conn) executeQuery(qry *Query) *Iter {
 	case resultKeyspaceFrame:
 		return &Iter{}
 	case RequestErrUnprepared:
-		stmtsLRU.mu.Lock()
+		stmtsLRU.Lock()
 		stmtCacheKey := c.addr + c.currentKeyspace + qry.stmt
 		if _, ok := stmtsLRU.lru.Get(stmtCacheKey); ok {
 			stmtsLRU.lru.Remove(stmtCacheKey)
-			stmtsLRU.mu.Unlock()
+			stmtsLRU.Unlock()
 			return c.executeQuery(qry)
 		}
-		stmtsLRU.mu.Unlock()
+		stmtsLRU.Unlock()
 		return &Iter{err: x}
 	case error:
 		return &Iter{err: x}
@@ -503,6 +518,10 @@ func (c *Conn) Close() {
 
 func (c *Conn) Address() string {
 	return c.addr
+}
+
+func (c *Conn) AvailableStreams() int {
+	return len(c.uniq)
 }
 
 func (c *Conn) UseKeyspace(keyspace string) error {
@@ -586,9 +605,9 @@ func (c *Conn) executeBatch(batch *Batch) error {
 	case RequestErrUnprepared:
 		stmt, found := stmts[string(x.StatementId)]
 		if found {
-			stmtsLRU.mu.Lock()
+			stmtsLRU.Lock()
 			stmtsLRU.lru.Remove(c.addr + c.currentKeyspace + stmt)
-			stmtsLRU.mu.Unlock()
+			stmtsLRU.Unlock()
 		}
 		if found {
 			return c.executeBatch(batch)

@@ -217,7 +217,7 @@ func (u UUID) Time() time.Time {
 	}
 	t := u.Timestamp()
 	sec := t / 1e7
-	nsec := t % 1e7
+	nsec := (t % 1e7) * 100
 	return time.Unix(sec+timeBase, nsec).UTC()
 }
 

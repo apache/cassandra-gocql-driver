@@ -1,6 +1,4 @@
-// Copyright (c) 2012 The gocql Authors. All rights reserved.
-// Use of this source code is governed by a BSD-style
-// license that can be found in the LICENSE file.
+// +build all unit
 
 package gocql
 
@@ -136,7 +134,7 @@ func TestRandomUUIDInvalidAPICalls(t *testing.T) {
 }
 
 func TestUUIDFromTime(t *testing.T) {
-	date := time.Date(1982, 5, 5, 12, 34, 56, 0, time.UTC)
+	date := time.Date(1982, 5, 5, 12, 34, 56, 400, time.UTC)
 	uuid := UUIDFromTime(date)
 
 	if uuid.Time() != date {
@@ -146,8 +144,8 @@ func TestUUIDFromTime(t *testing.T) {
 
 func TestParseUUID(t *testing.T) {
 	uuid, _ := ParseUUID("486f3a88-775b-11e3-ae07-d231feb1dc81")
-	if uuid.Time().Truncate(time.Second) != time.Date(2014, 1, 7, 5, 19, 29, 0, time.UTC) {
-		t.Errorf("Expected date of 1/7/2014 at 5:19:29, got %v", uuid.Time())
+	if uuid.Time() != time.Date(2014, 1, 7, 5, 19, 29, 222516000, time.UTC) {
+		t.Errorf("Expected date of 1/7/2014 at 5:19:29.222516, got %v", uuid.Time())
 	}
 }
 
