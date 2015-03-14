@@ -47,7 +47,7 @@ Features
   * Automatic reconnect on connection failures with exponential falloff
   * Round robin distribution of queries to different hosts
   * Round robin distribution of queries to different connections on a host
-  * Each connection can execute up to 128 concurrent queries
+  * Each connection can execute up to n concurrent queries (whereby n is the limit set by the protocol version the client chooses to use)
   * Optional automatic discovery of nodes
   * Optional support for periodic node discovery via system.peers
 * Iteration over paged results with configurable page size
