@@ -362,9 +362,6 @@ func (q *Query) MapScan(m map[string]interface{}) error {
 // were selected, ErrNotFound is returned.
 func (q *Query) Scan(dest ...interface{}) error {
 	iter := q.Iter()
-	if err := iter.checkErrAndNotFound(); err != nil {
-		return err
-	}
 	iter.Scan(dest...)
 	return iter.Close()
 }
@@ -432,6 +429,7 @@ func (iter *Iter) Columns() []ColumnInfo {
 // end of the result set was reached or if an error occurred. Close should
 // be called afterwards to retrieve any potential errors.
 func (iter *Iter) Scan(dest ...interface{}) bool {
+	iter.checkErrAndNotFound()
 	if iter.err != nil {
 		return false
 	}
@@ -471,12 +469,10 @@ func (iter *Iter) Close() error {
 
 // checkErrAndNotFound handle error and NotFound in one method.
 func (iter *Iter) checkErrAndNotFound() error {
-	if iter.err != nil {
-		return iter.err
-	} else if len(iter.rows) == 0 {
-		return ErrNotFound
+	if iter.err == nil && len(iter.rows) == 0 {
+		iter.err = ErrNotFound
 	}
-	return nil
+	return iter.err
 }
 
 type nextIter struct {
