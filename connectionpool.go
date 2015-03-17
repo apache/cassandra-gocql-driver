@@ -297,7 +297,10 @@ func (c *SimplePool) HandleError(conn *Conn, err error, closed bool) {
 		return
 	}
 	c.removeConn(conn)
-	if !c.quit {
+	c.mu.Lock()
+	poolClosed := c.quit
+	c.mu.Unlock()
+	if !poolClosed {
 		go c.fillPool() // top off pool.
 	}
 }

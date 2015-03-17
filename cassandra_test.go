@@ -1427,3 +1427,280 @@ func TestEmptyTimestamp(t *testing.T) {
 		t.Errorf("time.Time bind variable should still be empty (was %s)", timeVal)
 	}
 }
+
+func TestGetKeyspaceMetadata(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+
+	keyspaceMetadata, err := getKeyspaceMetadata(session, "gocql_test")
+	if err != nil {
+		t.Fatalf("failed to query the keyspace metadata with err: %v", err)
+	}
+	if keyspaceMetadata == nil {
+		t.Fatal("failed to query the keyspace metadata, nil returned")
+	}
+	if keyspaceMetadata.Name != "gocql_test" {
+		t.Errorf("Expected keyspace name to be 'gocql' but was '%s'", keyspaceMetadata.Name)
+	}
+	if keyspaceMetadata.StrategyClass != "org.apache.cassandra.locator.SimpleStrategy" {
+		t.Errorf("Expected replication strategy class to be 'org.apache.cassandra.locator.SimpleStrategy' but was '%s'", keyspaceMetadata.StrategyClass)
+	}
+	if keyspaceMetadata.StrategyOptions == nil {
+		t.Error("Expected replication strategy options map but was nil")
+	}
+	rfStr, ok := keyspaceMetadata.StrategyOptions["replication_factor"]
+	if !ok {
+		t.Fatalf("Expected strategy option 'replication_factor' but was not found in %v", keyspaceMetadata.StrategyOptions)
+	}
+	rfInt, err := strconv.Atoi(rfStr.(string))
+	if err != nil {
+		t.Fatalf("Error converting string to int with err: %v", err)
+	}
+	if rfInt != *flagRF {
+		t.Errorf("Expected replication factor to be %d but was %d", *flagRF, rfInt)
+	}
+}
+
+func TestGetTableMetadata(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+
+	if err := createTable(session, "CREATE TABLE test_table_metadata (first_id int, second_id int, third_id int, PRIMARY KEY (first_id, second_id))"); err != nil {
+		t.Fatalf("failed to create table with error '%v'", err)
+	}
+
+	tables, err := getTableMetadata(session, "gocql_test")
+	if err != nil {
+		t.Fatalf("failed to query the table metadata with err: %v", err)
+	}
+	if tables == nil {
+		t.Fatal("failed to query the table metadata, nil returned")
+	}
+
+	var testTable *TableMetadata
+
+	// verify all tables have minimum expected data
+	for i := range tables {
+		table := &tables[i]
+
+		if table.Name == "" {
+			t.Errorf("Expected table name to be set, but it was empty: index=%d metadata=%+v", i, table)
+		}
+		if table.Keyspace != "gocql_test" {
+			t.Errorf("Expected keyspace for '%d' table metadata to be 'gocql_test' but was '%s'", table.Name, table.Keyspace)
+		}
+		if table.KeyValidator == "" {
+			t.Errorf("Expected key validator to be set for table %s", table.Name)
+		}
+		if table.Comparator == "" {
+			t.Errorf("Expected comparator to be set for table %s", table.Name)
+		}
+		if table.DefaultValidator == "" {
+			t.Errorf("Expected default validator to be set for table %s", table.Name)
+		}
+
+		// these fields are not set until the metadata is compiled
+		if table.PartitionKey != nil {
+			t.Errorf("Did not expect partition key for table %s", table.Name)
+		}
+		if table.ClusteringColumns != nil {
+			t.Errorf("Did not expect clustering columns for table %s", table.Name)
+		}
+		if table.Columns != nil {
+			t.Errorf("Did not expect columns for table %s", table.Name)
+		}
+
+		// for the next part of the test after this loop, find the metadata for the test table
+		if table.Name == "test_table_metadata" {
+			testTable = table
+		}
+	}
+
+	// verify actual values on the test tables
+	if testTable == nil {
+		t.Fatal("Expected table metadata for name 'test_table_metadata'")
+	}
+	if testTable.KeyValidator != "org.apache.cassandra.db.marshal.Int32Type" {
+		t.Errorf("Expected test_table_metadata key validator to be 'org.apache.cassandra.db.marshal.Int32Type' but was '%s'", testTable.KeyValidator)
+	}
+	if testTable.Comparator != "org.apache.cassandra.db.marshal.CompositeType(org.apache.cassandra.db.marshal.Int32Type,org.apache.cassandra.db.marshal.UTF8Type)" {
+		t.Errorf("Expected test_table_metadata key validator to be 'org.apache.cassandra.db.marshal.CompositeType(org.apache.cassandra.db.marshal.Int32Type,org.apache.cassandra.db.marshal.UTF8Type)' but was '%s'", testTable.Comparator)
+	}
+	if testTable.DefaultValidator != "org.apache.cassandra.db.marshal.BytesType" {
+		t.Errorf("Expected test_table_metadata key validator to be 'org.apache.cassandra.db.marshal.BytesType' but was '%s'", testTable.DefaultValidator)
+	}
+	expectedKeyAliases := []string{"first_id"}
+	if !reflect.DeepEqual(testTable.KeyAliases, expectedKeyAliases) {
+		t.Errorf("Expected key aliases %v but was %v", expectedKeyAliases, testTable.KeyAliases)
+	}
+	expectedColumnAliases := []string{"second_id"}
+	if !reflect.DeepEqual(testTable.ColumnAliases, expectedColumnAliases) {
+		t.Errorf("Expected key aliases %v but was %v", expectedColumnAliases, testTable.ColumnAliases)
+	}
+	if testTable.ValueAlias != "" {
+		t.Errorf("Expected value alias '' but was '%s'", testTable.ValueAlias)
+	}
+}
+
+func TestGetColumnMetadata(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+
+	if err := createTable(session, "CREATE TABLE test_column_metadata (first_id int, second_id int, third_id int, PRIMARY KEY (first_id, second_id))"); err != nil {
+		t.Fatalf("failed to create table with error '%v'", err)
+	}
+
+	if err := session.Query("CREATE INDEX index_column_metadata ON test_column_metadata ( third_id )").Exec(); err != nil {
+		t.Fatalf("failed to create index with err: %v", err)
+	}
+
+	columns, err := getColumnMetadata(session, "gocql_test")
+	if err != nil {
+		t.Fatalf("failed to query column metadata with err: %v", err)
+	}
+	if columns == nil {
+		t.Fatal("failed to query column metadata, nil returned")
+	}
+
+	testColumns := map[string]*ColumnMetadata{}
+
+	// verify actual values on the test columns
+	for i := range columns {
+		column := &columns[i]
+
+		if column.Name == "" {
+			t.Errorf("Expected column name to be set, but it was empty: index=%d metadata=%+v", i, column)
+		}
+		if column.Table == "" {
+			t.Errorf("Expected column %s table name to be set, but it was empty", column.Name)
+		}
+		if column.Keyspace != "gocql_test" {
+			t.Errorf("Expected column %s keyspace name to be 'gocql_test', but it was '%s'", column.Name, column.Keyspace)
+		}
+		if column.Kind == "" {
+			t.Errorf("Expected column %s kind to be set, but it was empty", column.Name)
+		}
+		if session.cfg.ProtoVersion == 1 && column.Kind != "regular" {
+			t.Errorf("Expected column %s kind to be set to 'regular' for proto V1 but it was '%s'", column.Name, column.Kind)
+		}
+		if column.Validator == "" {
+			t.Errorf("Expected column %s validator to be set, but it was empty", column.Name)
+		}
+
+		// find the test table columns for the next step after this loop
+		if column.Table == "test_column_metadata" {
+			testColumns[column.Name] = column
+		}
+	}
+
+	if *flagProto == 1 {
+		// V1 proto only returns "regular columns"
+		if len(testColumns) != 1 {
+			t.Errorf("Expected 1 test columns but there were %d", len(testColumns))
+		}
+		thirdID, found := testColumns["third_id"]
+		if !found {
+			t.Fatalf("Expected to find column 'third_id' metadata but there was only %v", testColumns)
+		}
+
+		if thirdID.Kind != REGULAR {
+			t.Errorf("Expected %s column kind to be '%s' but it was '%s'", thirdID.Name, REGULAR, thirdID.Kind)
+		}
+
+		if thirdID.Index.Name != "index_column_metadata" {
+			t.Errorf("Expected %s column index name to be 'index_column_metadata' but it was '%s'", thirdID.Name, thirdID.Index.Name)
+		}
+	} else {
+		if len(testColumns) != 3 {
+			t.Errorf("Expected 3 test columns but there were %d", len(testColumns))
+		}
+		firstID, found := testColumns["first_id"]
+		if !found {
+			t.Fatalf("Expected to find column 'first_id' metadata but there was only %v", testColumns)
+		}
+		secondID, found := testColumns["second_id"]
+		if !found {
+			t.Fatalf("Expected to find column 'second_id' metadata but there was only %v", testColumns)
+		}
+		thirdID, found := testColumns["third_id"]
+		if !found {
+			t.Fatalf("Expected to find column 'third_id' metadata but there was only %v", testColumns)
+		}
+
+		if firstID.Kind != PARTITION_KEY {
+			t.Errorf("Expected %s column kind to be '%s' but it was '%s'", firstID.Name, PARTITION_KEY, firstID.Kind)
+		}
+		if secondID.Kind != CLUSTERING_KEY {
+			t.Errorf("Expected %s column kind to be '%s' but it was '%s'", secondID.Name, CLUSTERING_KEY, secondID.Kind)
+		}
+		if thirdID.Kind != REGULAR {
+			t.Errorf("Expected %s column kind to be '%s' but it was '%s'", thirdID.Name, REGULAR, thirdID.Kind)
+		}
+
+		if thirdID.Index.Name != "index_column_metadata" {
+			t.Errorf("Expected %s column index name to be 'index_column_metadata' but it was '%s'", thirdID.Name, thirdID.Index.Name)
+		}
+	}
+}
+
+func TestKeyspaceMetadata(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+
+	if err := createTable(session, "CREATE TABLE test_metadata (first_id int, second_id int, third_id int, PRIMARY KEY (first_id, second_id))"); err != nil {
+		t.Fatalf("failed to create table with error '%v'", err)
+	}
+
+	if err := session.Query("CREATE INDEX index_metadata ON test_metadata ( third_id )").Exec(); err != nil {
+		t.Fatalf("failed to create index with err: %v", err)
+	}
+
+	keyspaceMetadata, err := session.KeyspaceMetadata("gocql_test")
+	if err != nil {
+		t.Fatalf("failed to query keyspace metadata with err: %v", err)
+	}
+	if keyspaceMetadata == nil {
+		t.Fatal("expected the keyspace metadata to not be nil, but it was nil")
+	}
+	if keyspaceMetadata.Name != session.cfg.Keyspace {
+		t.Fatalf("Expected the keyspace name to be %s but was %s", session.cfg.Keyspace, keyspaceMetadata.Name)
+	}
+	if len(keyspaceMetadata.Tables) == 0 {
+		t.Errorf("Expected tables but there were none")
+	}
+
+	tableMetadata, found := keyspaceMetadata.Tables["test_metadata"]
+	if !found {
+		t.Fatalf("failed to find the test_metadata table metadata")
+	}
+
+	if len(tableMetadata.PartitionKey) != 1 {
+		t.Errorf("expected partition key length of 1, but was %d", len(tableMetadata.PartitionKey))
+	}
+	for i, column := range tableMetadata.PartitionKey {
+		if column == nil {
+			t.Errorf("partition key column metadata at index %d was nil", i)
+		}
+	}
+	if tableMetadata.PartitionKey[0].Name != "first_id" {
+		t.Errorf("Expected the first partition key column to be 'first_id' but was '%s'", tableMetadata.PartitionKey[0].Name)
+	}
+	if len(tableMetadata.ClusteringColumns) != 1 {
+		t.Fatalf("expected clustering columns length of 1, but was %d", len(tableMetadata.ClusteringColumns))
+	}
+	for i, column := range tableMetadata.ClusteringColumns {
+		if column == nil {
+			t.Fatalf("clustering column metadata at index %d was nil", i)
+		}
+	}
+	if tableMetadata.ClusteringColumns[0].Name != "second_id" {
+		t.Errorf("Expected the first clustering column to be 'second_id' but was '%s'", tableMetadata.ClusteringColumns[0].Name)
+	}
+	thirdColumn, found := tableMetadata.Columns["third_id"]
+	if !found {
+		t.Fatalf("Expected a column definition for 'third_id'")
+	}
+	if thirdColumn.Index.Name != "index_metadata" {
+		t.Errorf("Expected column index named 'index_metadata' but was '%s'", thirdColumn.Index.Name)
+	}
+}

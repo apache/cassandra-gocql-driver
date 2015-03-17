@@ -18,8 +18,14 @@ The following matrix shows the versions of Go and Cassandra that are tested with
 
 Go/Cassandra | 1.2.19 | 2.0.11 | 2.1.2
 -------------| -------| ------| ---------
-1.2  | yes | yes | yes
 1.3  | yes | yes | yes
+1.4  | yes | yes | yes
+
+
+Sunsetting Model
+----------------
+
+In general, the gocql team will focus on supporting the current and previous versions of Golang. gocql may still work with older versions of Golang, but offical support for these versions will have been sunset.
 
 Installation
 ------------
@@ -41,14 +47,17 @@ Features
   * Automatic reconnect on connection failures with exponential falloff
   * Round robin distribution of queries to different hosts
   * Round robin distribution of queries to different connections on a host
-  * Each connection can execute up to 128 concurrent queries
+  * Each connection can execute up to n concurrent queries (whereby n is the limit set by the protocol version the client chooses to use)
   * Optional automatic discovery of nodes
   * Optional support for periodic node discovery via system.peers
+* Support for password authentication
 * Iteration over paged results with configurable page size
 * Support for TLS/SSL
 * Optional frame compression (using snappy)
 * Automatic query preparation
 * Support for query tracing
+* Experimental support for CQL protocol version 3
+* An API to access the schema metadata of a given keyspace
 
 Please visit the [Roadmap](https://github.com/gocql/gocql/wiki/Roadmap) page to see what is on the horizion.
 
@@ -149,6 +158,7 @@ There are various ways to bind application level data structures to CQL statemen
 * The `Bind()` API provides a client app with a low level mechanism to introspect query meta data and extract appropriate field values from application level data structures.
 * Building on top of the gocql driver, [cqlr](https://github.com/relops/cqlr) adds the ability to auto-bind a CQL iterator to a struct or to bind a struct to an INSERT statement.
 * Another external project that layers on top of gocql is [cqlc](http://relops.com/cqlc) which generates gocql compliant code from your Cassandra schema so that you can write type safe CQL statements in Go with a natural query syntax.
+*  [gocassa](https://github.com/hailocab/gocassa) is an external project that layers on top of gocql to provide convenient query building and data binding.
 
 Ecosphere
 ---------
@@ -159,6 +169,7 @@ The following community maintained tools are known to integrate with gocql:
 * [negronicql](https://github.com/mikebthun/negronicql) is gocql middleware for Negroni.
 * [cqlr](https://github.com/relops/cqlr) adds the ability to auto-bind a CQL iterator to a struct or to bind a struct to an INSERT statement.
 * [cqlc](http://relops.com/cqlc) which generates gocql compliant code from your Cassandra schema so that you can write type safe CQL statements in Go with a natural query syntax.
+* [gocassa](https://github.com/hailocab/gocassa) provides query building, adds data binding, and provides easy-to-use "recipe" tables for common query use-cases.
 
 Other Projects
 --------------
