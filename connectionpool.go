@@ -254,7 +254,7 @@ func (c *SimplePool) fillPool() {
 		//Create connections for host synchronously to mitigate flooding the host.
 		wg.Add(1)
 		go func(a string, conns int) {
-			defer func() { wg.Done() }()
+			defer wg.Done()
 			for ; conns < c.cfg.NumConns; conns++ {
 				c.connect(a)
 			}
