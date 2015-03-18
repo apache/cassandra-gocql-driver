@@ -95,6 +95,9 @@ func TestCompileMetadata(t *testing.T) {
 							Type: TypeInfo{Type: TypeBlob},
 						},
 					},
+					LastComponent: &ColumnMetadata{
+						Name: "key",
+					},
 					ClusteringColumns: []*ColumnMetadata{},
 					Columns: map[string]*ColumnMetadata{
 						"key": &ColumnMetadata{
@@ -122,6 +125,9 @@ func TestCompileMetadata(t *testing.T) {
 							Type:  TypeInfo{Type: TypeInt},
 							Order: ASC,
 						},
+					},
+					LastComponent: &ColumnMetadata{
+						Name: "message_version",
 					},
 					Columns: map[string]*ColumnMetadata{
 						"target_id": &ColumnMetadata{
@@ -155,6 +161,9 @@ func TestCompileMetadata(t *testing.T) {
 							Type: TypeInfo{Type: TypeInet},
 						},
 					},
+					LastComponent: &ColumnMetadata{
+						Name: "peer",
+					},
 					ClusteringColumns: []*ColumnMetadata{},
 					Columns: map[string]*ColumnMetadata{
 						"peer": &ColumnMetadata{
@@ -184,6 +193,9 @@ func TestCompileMetadata(t *testing.T) {
 							Type:  TypeInfo{Type: TypeVarchar},
 							Order: ASC,
 						},
+					},
+					LastComponent: &ColumnMetadata{
+						Name: "index_name",
 					},
 					Columns: map[string]*ColumnMetadata{
 						"table_name": &ColumnMetadata{
@@ -216,6 +228,9 @@ func TestCompileMetadata(t *testing.T) {
 							Type:  TypeInfo{Type: TypeTimeUUID},
 							Order: ASC,
 						},
+					},
+					LastComponent: &ColumnMetadata{
+						Name: "revid",
 					},
 					Columns: map[string]*ColumnMetadata{
 						"title": &ColumnMetadata{
@@ -293,6 +308,9 @@ func TestCompileMetadata(t *testing.T) {
 						},
 					},
 					ClusteringColumns: []*ColumnMetadata{},
+					LastComponent: &ColumnMetadata{
+						Name: "Key1",
+					},
 					Columns: map[string]*ColumnMetadata{
 						"Key1": &ColumnMetadata{
 							Name: "Key1",
@@ -313,6 +331,9 @@ func TestCompileMetadata(t *testing.T) {
 							Name: "Column2",
 							Type: TypeInfo{Type: TypeVarchar},
 						},
+					},
+					LastComponent: &ColumnMetadata{
+						Name: "Column2",
 					},
 					Columns: map[string]*ColumnMetadata{
 						"Column1": &ColumnMetadata{
@@ -401,6 +422,10 @@ func assertKeyspaceMetadata(t *testing.T, actual, expected *KeyspaceMetadata) {
 						t.Errorf("Expected %s.Tables[%s].ClusteringColumns[%d].Kind to be '%v' but was '%v'", expected.Name, keyT, i, CLUSTERING_KEY, at.ClusteringColumns[i].Kind)
 					}
 				}
+			}
+
+			if et.LastComponent.Name != at.LastComponent.Name {
+				t.Errorf("Expected %s.Tables[%s].LastComponent.Name to be '%v' but was '%v'", expected.Name, keyT, et.LastComponent.Name, at.LastComponent.Name)
 			}
 			if len(et.Columns) != len(at.Columns) {
 				eKeys := make([]string, 0, len(et.Columns))

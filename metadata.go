@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -36,6 +37,7 @@ type TableMetadata struct {
 	PartitionKey      []*ColumnMetadata
 	ClusteringColumns []*ColumnMetadata
 	Columns           map[string]*ColumnMetadata
+	LastComponent     *ColumnMetadata
 }
 
 // schema metadata for a column
@@ -86,6 +88,13 @@ type schemaDescriber struct {
 
 	cache map[string]*KeyspaceMetadata
 }
+
+// Sort column metadata by their component index
+type ByComponentIndex []*ColumnMetadata
+
+func (a ByComponentIndex) Len() int           { return len(a) }
+func (a ByComponentIndex) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
+func (a ByComponentIndex) Less(i, j int) bool { return a[i].ComponentIndex < a[j].ComponentIndex }
 
 func newSchemaDescriber(session *Session) *schemaDescriber {
 	return &schemaDescriber{
@@ -176,6 +185,30 @@ func compileMetadata(
 	} else {
 		compileV2Metadata(tables)
 	}
+
+	for i := range keyspace.Tables {
+		indexLastComponent(keyspace.Tables[i])
+	}
+}
+
+func indexLastComponent(t *TableMetadata) {
+	var reversed []*ColumnMetadata
+	if len(t.ClusteringColumns) > 0 {
+		reversed = reverseClone(t.ClusteringColumns)
+	} else {
+		reversed = reverseClone(t.PartitionKey)
+	}
+	lastComponent := reversed[0]
+	t.LastComponent = t.Columns[lastComponent.Name]
+}
+
+func reverseClone(cols []*ColumnMetadata) []*ColumnMetadata {
+	reversed := make([]*ColumnMetadata, 0, len(cols))
+	for _, c := range cols {
+		reversed = append(reversed, c)
+	}
+	sort.Sort(sort.Reverse(ByComponentIndex(reversed)))
+	return reversed
 }
 
 // V1 protocol does not return as much column metadata as V2+ so determining
