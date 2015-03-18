@@ -278,11 +278,6 @@ func (c *Conn) serve() {
 	c.pool.HandleError(c, err, true)
 }
 
-func (c *Conn) Write(p []byte) (int, error) {
-	c.conn.SetWriteDeadline(time.Now().Add(c.timeout))
-	return c.conn.Write(p)
-}
-
 func (c *Conn) Read(p []byte) (int, error) {
 	return c.r.Read(p)
 }
