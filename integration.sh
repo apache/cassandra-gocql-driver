@@ -2,6 +2,8 @@
 
 set -e
 
+ps aux
+
 function run_tests() {
 	local clusterSize=3
 	local version=$1
