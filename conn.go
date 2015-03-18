@@ -243,6 +243,14 @@ func (c *Conn) startup(cfg *ConnConfig) error {
 	}
 }
 
+func (c *Conn) Write(p []byte) (int, error) {
+	if c.timeout > 0 {
+		c.conn.SetWriteDeadline(time.Now().Add(c.timeout))
+	}
+
+	return c.conn.Write(p)
+}
+
 // Serve starts the stream multiplexer for this connection, which is required
 // to execute any queries. This method runs as long as the connection is
 // open and is therefore usually called in a separate goroutine.
@@ -268,11 +276,6 @@ func (c *Conn) serve() {
 		}
 	}
 	c.pool.HandleError(c, err, true)
-}
-
-func (c *Conn) Write(p []byte) (int, error) {
-	c.conn.SetWriteDeadline(time.Now().Add(c.timeout))
-	return c.conn.Write(p)
 }
 
 func (c *Conn) Read(p []byte) (int, error) {
