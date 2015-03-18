@@ -95,15 +95,13 @@ func TestCompileMetadata(t *testing.T) {
 							Type: TypeInfo{Type: TypeBlob},
 						},
 					},
-					LastComponent: &ColumnMetadata{
-						Name: "key",
-					},
 					ClusteringColumns: []*ColumnMetadata{},
 					Columns: map[string]*ColumnMetadata{
 						"key": &ColumnMetadata{
-							Name: "key",
-							Type: TypeInfo{Type: TypeBlob},
-							Kind: PARTITION_KEY,
+							Name:          "key",
+							Type:          TypeInfo{Type: TypeBlob},
+							Kind:          PARTITION_KEY,
+							LastComponent: true,
 						},
 					},
 				},
@@ -126,14 +124,12 @@ func TestCompileMetadata(t *testing.T) {
 							Order: ASC,
 						},
 					},
-					LastComponent: &ColumnMetadata{
-						Name: "message_version",
-					},
 					Columns: map[string]*ColumnMetadata{
 						"target_id": &ColumnMetadata{
-							Name: "target_id",
-							Type: TypeInfo{Type: TypeUUID},
-							Kind: PARTITION_KEY,
+							Name:          "target_id",
+							Type:          TypeInfo{Type: TypeUUID},
+							Kind:          PARTITION_KEY,
+							LastComponent: true,
 						},
 						"hint_id": &ColumnMetadata{
 							Name:  "hint_id",
@@ -142,10 +138,11 @@ func TestCompileMetadata(t *testing.T) {
 							Kind:  CLUSTERING_KEY,
 						},
 						"message_version": &ColumnMetadata{
-							Name:  "message_version",
-							Type:  TypeInfo{Type: TypeInt},
-							Order: ASC,
-							Kind:  CLUSTERING_KEY,
+							Name:          "message_version",
+							Type:          TypeInfo{Type: TypeInt},
+							Order:         ASC,
+							Kind:          CLUSTERING_KEY,
+							LastComponent: true,
 						},
 						"mutation": &ColumnMetadata{
 							Name: "mutation",
@@ -161,15 +158,13 @@ func TestCompileMetadata(t *testing.T) {
 							Type: TypeInfo{Type: TypeInet},
 						},
 					},
-					LastComponent: &ColumnMetadata{
-						Name: "peer",
-					},
 					ClusteringColumns: []*ColumnMetadata{},
 					Columns: map[string]*ColumnMetadata{
 						"peer": &ColumnMetadata{
-							Name: "peer",
-							Type: TypeInfo{Type: TypeInet},
-							Kind: PARTITION_KEY,
+							Name:          "peer",
+							Type:          TypeInfo{Type: TypeInet},
+							Kind:          PARTITION_KEY,
+							LastComponent: true,
 						},
 						"data_center":     &ColumnMetadata{Keyspace: "V1Keyspace", Table: "peers", Kind: REGULAR, Name: "data_center", ComponentIndex: 0, Validator: "org.apache.cassandra.db.marshal.UTF8Type", Type: TypeInfo{Type: TypeVarchar}},
 						"host_id":         &ColumnMetadata{Keyspace: "V1Keyspace", Table: "peers", Kind: REGULAR, Name: "host_id", ComponentIndex: 0, Validator: "org.apache.cassandra.db.marshal.UUIDType", Type: TypeInfo{Type: TypeUUID}},
@@ -194,19 +189,18 @@ func TestCompileMetadata(t *testing.T) {
 							Order: ASC,
 						},
 					},
-					LastComponent: &ColumnMetadata{
-						Name: "index_name",
-					},
 					Columns: map[string]*ColumnMetadata{
 						"table_name": &ColumnMetadata{
-							Name: "table_name",
-							Type: TypeInfo{Type: TypeVarchar},
-							Kind: PARTITION_KEY,
+							Name:          "table_name",
+							Type:          TypeInfo{Type: TypeVarchar},
+							Kind:          PARTITION_KEY,
+							LastComponent: true,
 						},
 						"index_name": &ColumnMetadata{
-							Name: "index_name",
-							Type: TypeInfo{Type: TypeVarchar},
-							Kind: CLUSTERING_KEY,
+							Name:          "index_name",
+							Type:          TypeInfo{Type: TypeVarchar},
+							Kind:          CLUSTERING_KEY,
+							LastComponent: true,
 						},
 						"value": &ColumnMetadata{
 							Name: "value",
@@ -229,19 +223,18 @@ func TestCompileMetadata(t *testing.T) {
 							Order: ASC,
 						},
 					},
-					LastComponent: &ColumnMetadata{
-						Name: "revid",
-					},
 					Columns: map[string]*ColumnMetadata{
 						"title": &ColumnMetadata{
-							Name: "title",
-							Type: TypeInfo{Type: TypeVarchar},
-							Kind: PARTITION_KEY,
+							Name:          "title",
+							Type:          TypeInfo{Type: TypeVarchar},
+							Kind:          PARTITION_KEY,
+							LastComponent: true,
 						},
 						"revid": &ColumnMetadata{
-							Name: "revid",
-							Type: TypeInfo{Type: TypeTimeUUID},
-							Kind: CLUSTERING_KEY,
+							Name:          "revid",
+							Type:          TypeInfo{Type: TypeTimeUUID},
+							Kind:          CLUSTERING_KEY,
+							LastComponent: true,
 						},
 					},
 				},
@@ -308,14 +301,12 @@ func TestCompileMetadata(t *testing.T) {
 						},
 					},
 					ClusteringColumns: []*ColumnMetadata{},
-					LastComponent: &ColumnMetadata{
-						Name: "Key1",
-					},
 					Columns: map[string]*ColumnMetadata{
 						"Key1": &ColumnMetadata{
-							Name: "Key1",
-							Type: TypeInfo{Type: TypeVarchar},
-							Kind: PARTITION_KEY,
+							Name:          "Key1",
+							Type:          TypeInfo{Type: TypeVarchar},
+							Kind:          PARTITION_KEY,
+							LastComponent: true,
 						},
 					},
 				},
@@ -332,19 +323,18 @@ func TestCompileMetadata(t *testing.T) {
 							Type: TypeInfo{Type: TypeVarchar},
 						},
 					},
-					LastComponent: &ColumnMetadata{
-						Name: "Column2",
-					},
 					Columns: map[string]*ColumnMetadata{
 						"Column1": &ColumnMetadata{
-							Name: "Column1",
-							Type: TypeInfo{Type: TypeVarchar},
-							Kind: PARTITION_KEY,
+							Name:          "Column1",
+							Type:          TypeInfo{Type: TypeVarchar},
+							Kind:          PARTITION_KEY,
+							LastComponent: true,
 						},
 						"Column2": &ColumnMetadata{
-							Name: "Column2",
-							Type: TypeInfo{Type: TypeVarchar},
-							Kind: CLUSTERING_KEY,
+							Name:          "Column2",
+							Type:          TypeInfo{Type: TypeVarchar},
+							Kind:          CLUSTERING_KEY,
+							LastComponent: true,
 						},
 						"Column3": &ColumnMetadata{
 							Name: "Column3",
@@ -423,10 +413,6 @@ func assertKeyspaceMetadata(t *testing.T, actual, expected *KeyspaceMetadata) {
 					}
 				}
 			}
-
-			if et.LastComponent.Name != at.LastComponent.Name {
-				t.Errorf("Expected %s.Tables[%s].LastComponent.Name to be '%v' but was '%v'", expected.Name, keyT, et.LastComponent.Name, at.LastComponent.Name)
-			}
 			if len(et.Columns) != len(at.Columns) {
 				eKeys := make([]string, 0, len(et.Columns))
 				for key := range et.Columns {
@@ -462,6 +448,9 @@ func assertKeyspaceMetadata(t *testing.T, actual, expected *KeyspaceMetadata) {
 						}
 						if ec.Kind != ac.Kind {
 							t.Errorf("Expected %s.Tables[%s].Columns[%s].Kind to be '%v' but was '%v'", expected.Name, keyT, keyC, ec.Kind, ac.Kind)
+						}
+						if ec.LastComponent != ac.LastComponent {
+							t.Errorf("Expected %s.Tables[%s].Columns[%s].LastComponent to be '%v' but was '%v'", expected.Name, keyT, keyC, ec.LastComponent, ac.LastComponent)
 						}
 					}
 				}

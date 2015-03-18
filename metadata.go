@@ -37,7 +37,6 @@ type TableMetadata struct {
 	PartitionKey      []*ColumnMetadata
 	ClusteringColumns []*ColumnMetadata
 	Columns           map[string]*ColumnMetadata
-	LastComponent     *ColumnMetadata
 }
 
 // schema metadata for a column
@@ -46,6 +45,7 @@ type ColumnMetadata struct {
 	Table          string
 	Name           string
 	ComponentIndex int
+	LastComponent  bool
 	Kind           string
 	Validator      string
 	Type           TypeInfo
@@ -192,14 +192,14 @@ func compileMetadata(
 }
 
 func indexLastComponent(t *TableMetadata) {
-	var reversed []*ColumnMetadata
 	if len(t.ClusteringColumns) > 0 {
-		reversed = reverseClone(t.ClusteringColumns)
-	} else {
-		reversed = reverseClone(t.PartitionKey)
+		clustered := reverseClone(t.ClusteringColumns)
+		lastClustered := clustered[0]
+		t.Columns[lastClustered.Name].LastComponent = true
 	}
-	lastComponent := reversed[0]
-	t.LastComponent = t.Columns[lastComponent.Name]
+	partitioned := reverseClone(t.PartitionKey)
+	lastParitioned := partitioned[0]
+	t.Columns[lastParitioned.Name].LastComponent = true
 }
 
 func reverseClone(cols []*ColumnMetadata) []*ColumnMetadata {
