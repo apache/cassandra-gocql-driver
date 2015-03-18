@@ -29,6 +29,10 @@ install:
   - popd
   - go get .
 
+before_script:
+  - sudo service postgres stop
+  - sudo service mysqld stop
+
 script:
   - set -e
   - go test -v -tags unit
