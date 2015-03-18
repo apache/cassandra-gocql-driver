@@ -187,19 +187,23 @@ func compileMetadata(
 	}
 
 	for i := range keyspace.Tables {
-		indexLastComponent(keyspace.Tables[i])
+		indexLastComponents(keyspace.Tables[i])
 	}
 }
 
-func indexLastComponent(t *TableMetadata) {
+func indexLastComponents(t *TableMetadata) {
 	if len(t.ClusteringColumns) > 0 {
-		clustered := reverseClone(t.ClusteringColumns)
-		lastClustered := clustered[0]
-		t.Columns[lastClustered.Name].LastComponent = true
+		col := lastComponentName(t.ClusteringColumns)
+		t.Columns[col].LastComponent = true
 	}
-	partitioned := reverseClone(t.PartitionKey)
-	lastParitioned := partitioned[0]
-	t.Columns[lastParitioned.Name].LastComponent = true
+	col := lastComponentName(t.PartitionKey)
+	t.Columns[col].LastComponent = true
+}
+
+func lastComponentName(cols []*ColumnMetadata) string {
+	reversed := reverseClone(cols)
+	last := reversed[0]
+	return last.Name
 }
 
 func reverseClone(cols []*ColumnMetadata) []*ColumnMetadata {
