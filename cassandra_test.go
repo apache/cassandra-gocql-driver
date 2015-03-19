@@ -57,7 +57,7 @@ func createTable(s *Session, table string) error {
 	err := s.Query(table).Consistency(All).Exec()
 	if *clusterSize > 1 {
 		// wait for table definition to propogate
-		time.Sleep(250 * time.Millisecond)
+		time.Sleep(1 * time.Second)
 	}
 	return err
 }
