@@ -2,6 +2,10 @@ language: go
 
 sudo: false
 
+cache:
+  directories:
+    $HOME/.ccm/repository
+
 matrix:
   fast_finish: true
 
