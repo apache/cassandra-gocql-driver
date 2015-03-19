@@ -4,7 +4,7 @@ sudo: false
 
 cache:
   directories:
-    $HOME/.ccm/repository
+    - $HOME/.ccm/repository
 
 matrix:
   fast_finish: true
