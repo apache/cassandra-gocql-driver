@@ -10,9 +10,12 @@ matrix:
   fast_finish: true
 
 env:
-- CASS=1.2.19
-- CASS=2.0.12
-- CASS=2.1.2
+  global:
+    - GOMAXPROCS=2
+  matrix:
+    - CASS=1.2.19
+    - CASS=2.0.12
+    - CASS=2.1.2
 
 go:
   - 1.3
