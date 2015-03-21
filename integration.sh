@@ -30,6 +30,8 @@ function run_tests() {
 	local proto=2
 	if [[ $version == 1.2.* ]]; then
 		proto=1
+	elif [[ $version == 2.1.* ]]; then
+		proto=3
 	fi
 
 	if [ "$auth" = true ]

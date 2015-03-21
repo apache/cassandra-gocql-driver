@@ -62,7 +62,7 @@ type ClusterConfig struct {
 	Port             int           // port (default: 9042)
 	Keyspace         string        // initial keyspace (optional)
 	NumConns         int           // number of connections per host (default: 2)
-	NumStreams       int           // number of streams per connection (default: 128)
+	NumStreams       int           // number of streams per connection (default: max per protocol, either 128 or 32768)
 	Consistency      Consistency   // default consistency level (default: Quorum)
 	Compressor       Compressor    // compression algorithm (default: nil)
 	Authenticator    Authenticator // authenticator (default: nil)
@@ -85,7 +85,6 @@ func NewCluster(hosts ...string) *ClusterConfig {
 		Timeout:          600 * time.Millisecond,
 		Port:             9042,
 		NumConns:         2,
-		NumStreams:       128,
 		Consistency:      Quorum,
 		ConnPoolType:     NewSimplePool,
 		DiscoverHosts:    false,
@@ -102,6 +101,16 @@ func (cfg *ClusterConfig) CreateSession() (*Session, error) {
 	if len(cfg.Hosts) < 1 {
 		return nil, ErrNoHosts
 	}
+
+	maxStreams := 128
+	if cfg.ProtoVersion > protoVersion2 {
+		maxStreams = 32768
+	}
+
+	if cfg.NumStreams <= 0 || cfg.NumStreams > maxStreams {
+		cfg.NumStreams = maxStreams
+	}
+
 	pool := cfg.ConnPoolType(cfg)
 
 	//Adjust the size of the prepared statements cache to match the latest configuration

@@ -24,12 +24,13 @@ import (
 // and automatically sets a default consinstency level on all operations
 // that do not have a consistency level set.
 type Session struct {
-	Pool     ConnectionPool
-	cons     Consistency
-	pageSize int
-	prefetch float64
-	trace    Tracer
-	mu       sync.RWMutex
+	Pool            ConnectionPool
+	cons            Consistency
+	pageSize        int
+	prefetch        float64
+	schemaDescriber *schemaDescriber
+	trace           Tracer
+	mu              sync.RWMutex
 
 	cfg ClusterConfig
 
@@ -39,7 +40,7 @@ type Session struct {
 
 // NewSession wraps an existing Node.
 func NewSession(p ConnectionPool, c ClusterConfig) *Session {
-	return &Session{Pool: p, cons: Quorum, prefetch: 0.25, cfg: c}
+	return &Session{Pool: p, cons: c.Consistency, prefetch: 0.25, cfg: c}
 }
 
 // SetConsistency sets the default consistency level for this session. This
@@ -161,6 +162,27 @@ func (s *Session) executeQuery(qry *Query) *Iter {
 	}
 
 	return iter
+}
+
+// KeyspaceMetadata returns the schema metadata for the keyspace specified.
+func (s *Session) KeyspaceMetadata(keyspace string) (*KeyspaceMetadata, error) {
+	// fail fast
+	if s.Closed() {
+		return nil, ErrSessionClosed
+	}
+
+	if keyspace == "" {
+		return nil, ErrNoKeyspace
+	}
+
+	s.mu.Lock()
+	// lazy-init schemaDescriber
+	if s.schemaDescriber == nil {
+		s.schemaDescriber = newSchemaDescriber(s)
+	}
+	s.mu.Unlock()
+
+	return s.schemaDescriber.getSchema(keyspace)
 }
 
 // ExecuteBatch executes a batch operation and returns nil if successful
@@ -659,6 +681,7 @@ var (
 	ErrUseStmt       = errors.New("use statements aren't supported. Please see https://github.com/gocql/gocql for explaination.")
 	ErrSessionClosed = errors.New("session has been closed")
 	ErrNoConnections = errors.New("no connections available")
+	ErrNoKeyspace    = errors.New("no keyspace provided")
 )
 
 type ErrProtocol struct{ error }
