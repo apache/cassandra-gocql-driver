@@ -9,7 +9,6 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
-	"io"
 	"log"
 	"net"
 	"strconv"
@@ -90,6 +89,8 @@ type Conn struct {
 	r       *bufio.Reader
 	timeout time.Duration
 
+	headerBuf []byte
+
 	uniq  chan int
 	calls []callReq
 	nwait int32
@@ -100,6 +101,7 @@ type Conn struct {
 	addr            string
 	version         uint8
 	currentKeyspace string
+	started         bool
 
 	closedMu sync.RWMutex
 	isClosed bool
@@ -129,9 +131,12 @@ func Connect(addr string, cfg ConnConfig, pool ConnectionPool) (*Conn, error) {
 		cfg.ProtoVersion = 2
 	}
 
+	headerSize := 8
+
 	maxStreams := 128
 	if cfg.ProtoVersion > protoVersion2 {
 		maxStreams = 32768
+		headerSize = 9
 	}
 
 	if cfg.NumStreams <= 0 || cfg.NumStreams > maxStreams {
@@ -149,6 +154,8 @@ func Connect(addr string, cfg ConnConfig, pool ConnectionPool) (*Conn, error) {
 		pool:       pool,
 		compressor: cfg.Compressor,
 		auth:       cfg.Authenticator,
+
+		headerBuf: make([]byte, headerSize),
 	}
 
 	if cfg.Keepalive > 0 {
@@ -159,65 +166,114 @@ func Connect(addr string, cfg ConnConfig, pool ConnectionPool) (*Conn, error) {
 		c.uniq <- i
 	}
 
+	go c.serve()
+
 	if err := c.startup(&cfg); err != nil {
 		conn.Close()
 		return nil, err
 	}
-
-	go c.serve()
+	c.started = true
 
 	return c, nil
 }
 
 func (c *Conn) startup(cfg *ConnConfig) error {
-	compression := ""
+	m := map[string]string{
+		"CQL_VERSION": cfg.CQLVersion,
+	}
+
 	if c.compressor != nil {
-		compression = c.compressor.Name()
+		m["COMPRESSION"] = c.compressor.Name()
 	}
-	var req operation = &startupFrame{
-		CQLVersion:  cfg.CQLVersion,
-		Compression: compression,
+
+	frame, err := c.exec(&writeStartupFrame{opts: m})
+	if err != nil {
+		return err
 	}
-	var challenger Authenticator
+
+	switch v := frame.(type) {
+	case error:
+		return v
+	case *readyFrame:
+		return nil
+	case *authenticateFrame:
+		return c.authenticateHandshake(v)
+	default:
+		return NewErrProtocol("Unknown type of response to startup frame: %s", v)
+	}
+}
+
+func (c *Conn) authenticateHandshake(authFrame *authenticateFrame) error {
+	if c.auth == nil {
+		return fmt.Errorf("authentication required (using %q)", authFrame.class)
+	}
+
+	resp, challenger, err := c.auth.Challenge([]byte(authFrame.class))
+	if err != nil {
+		return err
+	}
+
+	req := &writeAuthResponseFrame{data: resp}
+
 	for {
-		resp, err := c.execSimple(req)
+		frame, err := c.exec(req)
 		if err != nil {
 			return err
 		}
-		switch x := resp.(type) {
-		case readyFrame:
-			return nil
+
+		switch v := frame.(type) {
 		case error:
-			return x
-		case authenticateFrame:
-			if c.auth == nil {
-				return fmt.Errorf("authentication required (using %q)", x.Authenticator)
-			}
-			var resp []byte
-			resp, challenger, err = c.auth.Challenge([]byte(x.Authenticator))
-			if err != nil {
-				return err
-			}
-			req = &authResponseFrame{resp}
-		case authChallengeFrame:
-			if challenger == nil {
-				return fmt.Errorf("authentication error (invalid challenge)")
-			}
-			var resp []byte
-			resp, challenger, err = challenger.Challenge(x.Data)
-			if err != nil {
-				return err
-			}
-			req = &authResponseFrame{resp}
+			return v
 		case authSuccessFrame:
 			if challenger != nil {
-				return challenger.Success(x.Data)
+				return challenger.Success(v.data)
 			}
 			return nil
-		default:
-			return NewErrProtocol("Unknown type of response to startup frame: %s", x)
+		case authChallengeFrame:
+			resp, challenger, err = challenger.Challenge(v.data)
+			if err != nil {
+				return err
+			}
+
+			req = &writeAuthResponseFrame{
+				data: resp,
+			}
 		}
 	}
+}
+
+func (c *Conn) exec(req frameWriter) (frame, error) {
+	stream := <-c.uniq
+
+	call := &c.calls[stream]
+	atomic.StoreInt32(&call.active, 1)
+	defer atomic.StoreInt32(&call.active, 0)
+
+	call.resp = make(chan callResp, 1)
+
+	// log.Printf("%v: OUT stream=%d (%T) req=%v\n", c.conn.LocalAddr(), stream, req, req)
+	framer := newFramer(c, c, c.compressor, c.version)
+	err := req.writeFrame(framer, stream)
+	framerPool.Put(framer)
+
+	if err != nil {
+		return nil, err
+	}
+
+	resp := <-call.resp
+	call.resp = nil
+	if resp.err != nil {
+		return nil, resp.err
+	}
+	defer framerPool.Put(resp.framer)
+
+	frame, err := resp.framer.parseFrame()
+	if err != nil {
+		return nil, err
+	}
+	// log.Printf("%v: IN stream=%d (%T) resp=%v\n", c.conn.LocalAddr(), stream, frame, frame)
+
+	return frame, nil
 }
 
 // Serve starts the stream multiplexer for this connection, which is required
@@ -225,26 +281,30 @@ func (c *Conn) startup(cfg *ConnConfig) error {
 // open and is therefore usually called in a separate goroutine.
 func (c *Conn) serve() {
 	var (
-		err  error
-		resp frame
+		err    error
+		framer *framer
 	)
 
 	for {
-		resp, err = c.recv()
+		framer, err = c.recv()
 		if err != nil {
 			break
 		}
-		c.dispatch(resp)
+		c.dispatch(framer)
 	}
 
 	c.Close()
 	for id := 0; id < len(c.calls); id++ {
 		req := &c.calls[id]
-		if atomic.LoadInt32(&req.active) == 1 {
+		if atomic.CompareAndSwapInt32(&req.active, 1, 0) {
 			req.resp <- callResp{nil, err}
+			close(req.resp)
 		}
 	}
-	c.pool.HandleError(c, err, true)
+
+	if c.started {
+		c.pool.HandleError(c, err, true)
+	}
 }
 
 func (c *Conn) Write(p []byte) (int, error) {
@@ -256,139 +316,44 @@ func (c *Conn) Read(p []byte) (int, error) {
 	return c.r.Read(p)
 }
 
-func (c *Conn) recv() (frame, error) {
-	size := headerProtoSize[c.version]
-	resp := make(frame, size, size+512)
-
+func (c *Conn) recv() (*framer, error) {
 	// read a full header, ignore timeouts, as this is being ran in a loop
-	c.conn.SetReadDeadline(time.Time{})
-	_, err := io.ReadFull(c.r, resp[:size])
+	// TODO: TCP level deadlines? or just query level dealines?
+
+	// were just reading headers over and over and copy bodies
+	head, err := readHeader(c.r, c.headerBuf)
 	if err != nil {
 		return nil, err
 	}
 
-	if v := c.version | flagResponse; resp[0] != v {
-		return nil, NewErrProtocol("recv: response protocol version does not match connection protocol version (%d != %d)", resp[0], v)
+	// log.Printf("header=%v\n", head)
+	if head.version.version() != c.version {
+		return nil, NewErrProtocol("unexpected protocol version in response: got %d expected %d", head.version.version(), c.version)
 	}
 
-	bodySize := resp.Length(c.version)
-	if bodySize == 0 {
-		return resp, nil
-	}
-	resp.grow(bodySize)
-
-	const maxAttempts = 5
-
-	n := size
-	for i := 0; i < maxAttempts; i++ {
-		var nn int
-		c.conn.SetReadDeadline(time.Now().Add(c.timeout))
-		nn, err = io.ReadFull(c.r, resp[n:size+bodySize])
-		if err == nil {
-			break
-		}
-		n += nn
-
-		if verr, ok := err.(net.Error); !ok || !verr.Temporary() {
-			break
-		}
-	}
-
-	if err != nil {
+	framer := newFramer(c.r, c, c.compressor, c.version)
+	if err := framer.readFrame(&head); err != nil {
 		return nil, err
 	}
 
-	return resp, nil
+	return framer, nil
 }
 
-func (c *Conn) execSimple(op operation) (interface{}, error) {
-	f, err := op.encodeFrame(c.version, nil)
-	if err != nil {
-		// this should be a noop err
-		return nil, err
-	}
-
-	bodyLen := len(f) - headerProtoSize[c.version]
-	f.setLength(bodyLen, c.version)
-
-	if _, err := c.Write([]byte(f)); err != nil {
-		c.Close()
-		return nil, err
-	}
-
-	// here recv wont timeout waiting for a header, should it?
-	if f, err = c.recv(); err != nil {
-		return nil, err
-	}
-
-	return c.decodeFrame(f, nil)
-}
-
-func (c *Conn) exec(op operation, trace Tracer) (interface{}, error) {
-	req, err := op.encodeFrame(c.version, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	if trace != nil {
-		req[1] |= flagTrace
-	}
-
-	headerSize := headerProtoSize[c.version]
-	if len(req) > headerSize && c.compressor != nil {
-		body, err := c.compressor.Encode([]byte(req[headerSize:]))
-		if err != nil {
-			return nil, err
-		}
-		req = append(req[:headerSize], frame(body)...)
-		req[1] |= flagCompress
-	}
-	bodyLen := len(req) - headerSize
-	req.setLength(bodyLen, c.version)
-
-	id := <-c.uniq
-	req.setStream(id, c.version)
-	call := &c.calls[id]
-	call.resp = make(chan callResp, 1)
-	atomic.AddInt32(&c.nwait, 1)
-	atomic.StoreInt32(&call.active, 1)
-
-	if _, err := c.Write(req); err != nil {
-		c.uniq <- id
-		c.Close()
-		return nil, err
-	}
-
-	reply := <-call.resp
-	call.resp = nil
-	c.uniq <- id
-
-	if reply.err != nil {
-		return nil, reply.err
-	}
-
-	return c.decodeFrame(reply.buf, trace)
-}
-
-func (c *Conn) dispatch(resp frame) {
-	id := resp.Stream(c.version)
+func (c *Conn) dispatch(f *framer) {
+	id := f.header.stream
 	if id >= len(c.calls) {
 		return
 	}
+
+	// TODO: replace this with a sparse map
 	call := &c.calls[id]
-	if !atomic.CompareAndSwapInt32(&call.active, 1, 0) {
-		return
-	}
+
+	call.resp <- callResp{f, nil}
 	atomic.AddInt32(&c.nwait, -1)
-	call.resp <- callResp{resp, nil}
+	c.uniq <- id
 }
 
-func (c *Conn) ping() error {
-	_, err := c.exec(&optionsFrame{}, nil)
-	return err
-}
-
-func (c *Conn) prepareStatement(stmt string, trace Tracer) (*QueryInfo, error) {
+func (c *Conn) prepareStatement(stmt string, trace Tracer) (*resultPreparedFrame, error) {
 	stmtsLRU.Lock()
 	if stmtsLRU.lru == nil {
 		initStmtsLRU(defaultMaxPreparedStmts)
@@ -397,8 +362,8 @@ func (c *Conn) prepareStatement(stmt string, trace Tracer) (*QueryInfo, error) {
 	stmtCacheKey := c.addr + c.currentKeyspace + stmt
 
 	if val, ok := stmtsLRU.lru.Get(stmtCacheKey); ok {
-		flight := val.(*inflightPrepare)
 		stmtsLRU.Unlock()
+		flight := val.(*inflightPrepare)
 		flight.wg.Wait()
 		return flight.info, flight.err
 	}
@@ -408,28 +373,29 @@ func (c *Conn) prepareStatement(stmt string, trace Tracer) (*QueryInfo, error) {
 	stmtsLRU.lru.Add(stmtCacheKey, flight)
 	stmtsLRU.Unlock()
 
-	resp, err := c.exec(&prepareFrame{Stmt: stmt}, trace)
-	if err != nil {
-		flight.err = err
-	} else {
-		switch x := resp.(type) {
-		case resultPreparedFrame:
-			flight.info = &QueryInfo{
-				Id:   x.PreparedId,
-				Args: x.Arguments,
-				Rval: x.ReturnValues,
-			}
-		case error:
-			flight.err = x
-		default:
-			flight.err = NewErrProtocol("Unknown type in response to prepare frame: %s", x)
-		}
-		err = flight.err
+	prep := &writePrepareFrame{
+		statement: stmt,
 	}
 
+	resp, err := c.exec(prep)
+	if err != nil {
+		flight.err = err
+		flight.wg.Done()
+		return nil, err
+	}
+
+	switch x := resp.(type) {
+	case *resultPreparedFrame:
+		// log.Printf("prepared %q => %x\n", stmt, x.preparedID)
+		flight.info = x
+	case error:
+		flight.err = x
+	default:
+		flight.err = NewErrProtocol("Unknown type in response to prepare frame: %s", x)
+	}
 	flight.wg.Done()
 
-	if err != nil {
+	if flight.err != nil {
 		stmtsLRU.Lock()
 		stmtsLRU.lru.Remove(stmtCacheKey)
 		stmtsLRU.Unlock()
@@ -439,12 +405,20 @@ func (c *Conn) prepareStatement(stmt string, trace Tracer) (*QueryInfo, error) {
 }
 
 func (c *Conn) executeQuery(qry *Query) *Iter {
-	op := &queryFrame{
-		Stmt:      qry.stmt,
-		Cons:      qry.cons,
-		PageSize:  qry.pageSize,
-		PageState: qry.pageState,
+	params := queryParams{
+		consistency: qry.cons,
 	}
+
+	// TODO: Add DefaultTimestamp, SerialConsistency
+	if len(qry.pageState) > 0 {
+		params.pagingState = qry.pageState
+	}
+	if qry.pageSize > 0 {
+		params.pageSize = qry.pageSize
+	}
+	// log.Printf("%+#v\n", qry)
+
+	var frame frameWriter
 	if qry.shouldPrepare() {
 		// Prepare all DML queries. Other queries can not be prepared.
 		info, err := c.prepareStatement(qry.stmt, qry.trace)
@@ -457,46 +431,75 @@ func (c *Conn) executeQuery(qry *Query) *Iter {
 		if qry.binding == nil {
 			values = qry.values
 		} else {
-			values, err = qry.binding(info)
+			binding := &QueryInfo{
+				Id:   info.preparedID,
+				Args: info.reqMeta.columns,
+				Rval: info.respMeta.columns,
+			}
+
+			values, err = qry.binding(binding)
 			if err != nil {
 				return &Iter{err: err}
 			}
 		}
 
-		if len(values) != len(info.Args) {
+		if len(values) != len(info.reqMeta.columns) {
 			return &Iter{err: ErrQueryArgLength}
 		}
-		op.Prepared = info.Id
-		op.Values = make([][]byte, len(values))
+		params.values = make([]queryValues, len(values))
 		for i := 0; i < len(values); i++ {
-			val, err := Marshal(info.Args[i].TypeInfo, values[i])
+			val, err := Marshal(info.reqMeta.columns[i].TypeInfo, values[i])
 			if err != nil {
 				return &Iter{err: err}
 			}
-			op.Values[i] = val
+
+			v := &params.values[i]
+			v.value = val
+			// TODO: handle query binding names
+		}
+
+		frame = &writeExecuteFrame{
+			preparedID: info.preparedID,
+			params:     params,
+		}
+	} else {
+		frame = &writeQueryFrame{
+			statement: qry.stmt,
+			params:    params,
 		}
 	}
-	resp, err := c.exec(op, qry.trace)
+
+	resp, err := c.exec(frame)
 	if err != nil {
 		return &Iter{err: err}
 	}
+
+	// log.Printf("resp=%T\n", resp)
+
 	switch x := resp.(type) {
-	case resultVoidFrame:
+	case *resultVoidFrame:
 		return &Iter{}
-	case resultRowsFrame:
-		iter := &Iter{columns: x.Columns, rows: x.Rows}
-		if len(x.PagingState) > 0 {
+	case *resultRowsFrame:
+		iter := &Iter{
+			columns: x.meta.columns,
+			rows:    x.rows,
+		}
+
+		// log.Printf("result meta=%v\n", x.meta)
+		if len(x.meta.pagingState) > 0 {
 			iter.next = &nextIter{
 				qry: *qry,
 				pos: int((1 - qry.prefetch) * float64(len(iter.rows))),
 			}
-			iter.next.qry.pageState = x.PagingState
+
+			iter.next.qry.pageState = x.meta.pagingState
 			if iter.next.pos < 1 {
 				iter.next.pos = 1
 			}
 		}
+
 		return iter
-	case resultKeyspaceFrame:
+	case *resultKeyspaceFrame, *resultSchemaChangeFrame:
 		return &Iter{}
 	case RequestErrUnprepared:
 		stmtsLRU.Lock()
@@ -507,6 +510,7 @@ func (c *Conn) executeQuery(qry *Query) *Iter {
 			return c.executeQuery(qry)
 		}
 		stmtsLRU.Unlock()
+		panic(x)
 		return &Iter{err: x}
 	case error:
 		return &Iter{err: x}
@@ -550,12 +554,16 @@ func (c *Conn) AvailableStreams() int {
 }
 
 func (c *Conn) UseKeyspace(keyspace string) error {
-	resp, err := c.exec(&queryFrame{Stmt: `USE "` + keyspace + `"`, Cons: Any}, nil)
+	q := &writeQueryFrame{statement: `USE "` + keyspace + `"`}
+	q.params.consistency = Any
+
+	resp, err := c.exec(q)
 	if err != nil {
 		return err
 	}
+
 	switch x := resp.(type) {
-	case resultKeyspaceFrame:
+	case *resultKeyspaceFrame:
 	case error:
 		return x
 	default:
@@ -571,65 +579,69 @@ func (c *Conn) executeBatch(batch *Batch) error {
 	if c.version == protoVersion1 {
 		return ErrUnsupported
 	}
-	f := newFrame(c.version)
-	f.setHeader(c.version, 0, 0, opBatch)
-	f.writeByte(byte(batch.Type))
-	f.writeShort(uint16(len(batch.Entries)))
+
+	n := len(batch.Entries)
+	req := &writeBatchFrame{
+		typ:         batch.Type,
+		statements:  make([]batchStatment, n),
+		consistency: batch.Cons,
+	}
 
 	stmts := make(map[string]string)
 
-	for i := 0; i < len(batch.Entries); i++ {
+	for i := 0; i < n; i++ {
 		entry := &batch.Entries[i]
-		var info *QueryInfo
-		var args []interface{}
+		b := &req.statements[i]
 		if len(entry.Args) > 0 || entry.binding != nil {
-			var err error
-			info, err = c.prepareStatement(entry.Stmt, nil)
+			info, err := c.prepareStatement(entry.Stmt, nil)
 			if err != nil {
 				return err
 			}
 
+			var args []interface{}
 			if entry.binding == nil {
 				args = entry.Args
 			} else {
-				args, err = entry.binding(info)
+				binding := &QueryInfo{
+					Id:   info.preparedID,
+					Args: info.reqMeta.columns,
+					Rval: info.respMeta.columns,
+				}
+				args, err = entry.binding(binding)
 				if err != nil {
 					return err
 				}
 			}
 
-			if len(args) != len(info.Args) {
+			if len(args) != len(info.reqMeta.columns) {
 				return ErrQueryArgLength
 			}
 
-			stmts[string(info.Id)] = entry.Stmt
-			f.writeByte(1)
-			f.writeShortBytes(info.Id)
-		} else {
-			f.writeByte(0)
-			f.writeLongString(entry.Stmt)
-		}
-		f.writeShort(uint16(len(args)))
-		for j := 0; j < len(args); j++ {
-			val, err := Marshal(info.Args[j].TypeInfo, args[j])
-			if err != nil {
-				return err
+			b.preparedID = info.preparedID
+			stmts[string(info.preparedID)] = entry.Stmt
+
+			b.values = make([]queryValues, len(info.reqMeta.columns))
+
+			for j := 0; j < len(info.reqMeta.columns); j++ {
+				val, err := Marshal(info.reqMeta.columns[j].TypeInfo, args[j])
+				if err != nil {
+					return err
+				}
+
+				b.values[j].value = val
+				// TODO: add names
 			}
-			f.writeBytes(val)
+		} else {
+			b.statement = entry.Stmt
 		}
-	}
-	f.writeConsistency(batch.Cons)
-	if c.version >= protoVersion3 {
-		// TODO: add support for flags here
-		f.writeByte(0)
 	}
 
-	resp, err := c.exec(f, nil)
+	resp, err := c.exec(req)
 	if err != nil {
 		return err
 	}
 	switch x := resp.(type) {
-	case resultVoidFrame:
+	case *resultVoidFrame:
 		return nil
 	case RequestErrUnprepared:
 		stmt, found := stmts[string(x.StatementId)]
@@ -650,91 +662,6 @@ func (c *Conn) executeBatch(batch *Batch) error {
 	}
 }
 
-func (c *Conn) decodeFrame(f frame, trace Tracer) (rval interface{}, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			if e, ok := r.(ErrProtocol); ok {
-				err = e
-				return
-			}
-			panic(r)
-		}
-	}()
-
-	headerSize := headerProtoSize[c.version]
-	if len(f) < headerSize {
-		return nil, NewErrProtocol("Decoding frame: less data received than required for header: %d < %d", len(f), headerSize)
-	} else if f[0] != c.version|flagResponse {
-		return nil, NewErrProtocol("Decoding frame: response protocol version does not match connection protocol version (%d != %d)", f[0], c.version|flagResponse)
-	}
-
-	flags, op, f := f[1], f.Op(c.version), f[headerSize:]
-	if flags&flagCompress != 0 && len(f) > 0 && c.compressor != nil {
-		if buf, err := c.compressor.Decode([]byte(f)); err != nil {
-			return nil, err
-		} else {
-			f = frame(buf)
-		}
-	}
-	if flags&flagTrace != 0 {
-		if len(f) < 16 {
-			return nil, NewErrProtocol("Decoding frame: length of frame less than 16 while tracing is enabled")
-		}
-		traceId := []byte(f[:16])
-		f = f[16:]
-		trace.Trace(traceId)
-	}
-
-	switch op {
-	case opReady:
-		return readyFrame{}, nil
-	case opResult:
-		switch kind := f.readInt(); kind {
-		case resultKindVoid:
-			return resultVoidFrame{}, nil
-		case resultKindRows:
-			columns, pageState := f.readMetaData(c.version)
-			numRows := f.readInt()
-			values := make([][]byte, numRows*len(columns))
-			for i := 0; i < len(values); i++ {
-				values[i] = f.readBytes()
-			}
-			rows := make([][][]byte, numRows)
-			for i := 0; i < numRows; i++ {
-				rows[i], values = values[:len(columns)], values[len(columns):]
-			}
-			return resultRowsFrame{columns, rows, pageState}, nil
-		case resultKindKeyspace:
-			keyspace := f.readString()
-			return resultKeyspaceFrame{keyspace}, nil
-		case resultKindPrepared:
-			id := f.readShortBytes()
-			args, _ := f.readMetaData(c.version)
-			if c.version < 2 {
-				return resultPreparedFrame{PreparedId: id, Arguments: args}, nil
-			}
-			rvals, _ := f.readMetaData(c.version)
-			return resultPreparedFrame{PreparedId: id, Arguments: args, ReturnValues: rvals}, nil
-		case resultKindSchemaChanged:
-			return resultVoidFrame{}, nil
-		default:
-			return nil, NewErrProtocol("Decoding frame: unknown result kind %s", kind)
-		}
-	case opAuthenticate:
-		return authenticateFrame{f.readString()}, nil
-	case opAuthChallenge:
-		return authChallengeFrame{f.readBytes()}, nil
-	case opAuthSuccess:
-		return authSuccessFrame{f.readBytes()}, nil
-	case opSupported:
-		return supportedFrame{}, nil
-	case opError:
-		return f.readError(), nil
-	default:
-		return nil, NewErrProtocol("Decoding frame: unknown op", op)
-	}
-}
-
 func (c *Conn) setKeepalive(d time.Duration) error {
 	if tc, ok := c.conn.(*net.TCPConn); ok {
 		err := tc.SetKeepAlivePeriod(d)
@@ -748,25 +675,18 @@ func (c *Conn) setKeepalive(d time.Duration) error {
 	return nil
 }
 
-// QueryInfo represents the meta data associated with a prepared CQL statement.
-type QueryInfo struct {
-	Id   []byte
-	Args []ColumnInfo
-	Rval []ColumnInfo
-}
-
 type callReq struct {
 	active int32
 	resp   chan callResp
 }
 
 type callResp struct {
-	buf frame
-	err error
+	framer *framer
+	err    error
 }
 
 type inflightPrepare struct {
-	info *QueryInfo
+	info *resultPreparedFrame
 	err  error
 	wg   sync.WaitGroup
 }

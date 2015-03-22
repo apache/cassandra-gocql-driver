@@ -101,6 +101,12 @@ func (s *Session) Query(stmt string, values ...interface{}) *Query {
 	return qry
 }
 
+type QueryInfo struct {
+	Id   []byte
+	Args []ColumnInfo
+	Rval []ColumnInfo
+}
+
 // Bind generates a new query object based on the query statement passed in.
 // The query is automatically prepared if it has not previously been executed.
 // The binding callback allows the application to define which query argument
@@ -362,6 +368,9 @@ type Query struct {
 	binding      func(q *QueryInfo) ([]interface{}, error)
 	attempts     int
 	totalLatency int64
+
+	// v3+ send client timestamp in query
+	sendTimestamp bool
 }
 
 //Attempts returns the number of times the query was executed.
@@ -504,6 +513,13 @@ func (q *Query) RetryPolicy(r RetryPolicy) *Query {
 // to an existing query instance.
 func (q *Query) Bind(v ...interface{}) *Query {
 	q.values = v
+	return q
+}
+
+// SendTimestamp will send the current time on the client when sending the query
+// on protocol3 and above. This allows
+func (q *Query) SendTimestamp(b bool) *Query {
+	q.sendTimestamp = b
 	return q
 }
 
@@ -731,12 +747,12 @@ func (b *Batch) Size() int {
 	return len(b.Entries)
 }
 
-type BatchType int
+type BatchType byte
 
 const (
 	LoggedBatch   BatchType = 0
-	UnloggedBatch BatchType = 1
-	CounterBatch  BatchType = 2
+	UnloggedBatch           = 1
+	CounterBatch            = 2
 )
 
 type BatchEntry struct {
@@ -745,46 +761,15 @@ type BatchEntry struct {
 	binding func(q *QueryInfo) ([]interface{}, error)
 }
 
-type Consistency int
-
-const (
-	Any Consistency = 1 + iota
-	One
-	Two
-	Three
-	Quorum
-	All
-	LocalQuorum
-	EachQuorum
-	Serial
-	LocalSerial
-	LocalOne
-)
-
-var ConsistencyNames = []string{
-	0:           "default",
-	Any:         "any",
-	One:         "one",
-	Two:         "two",
-	Three:       "three",
-	Quorum:      "quorum",
-	All:         "all",
-	LocalQuorum: "localquorum",
-	EachQuorum:  "eachquorum",
-	Serial:      "serial",
-	LocalSerial: "localserial",
-	LocalOne:    "localone",
-}
-
-func (c Consistency) String() string {
-	return ConsistencyNames[c]
-}
-
 type ColumnInfo struct {
 	Keyspace string
 	Table    string
 	Name     string
 	TypeInfo *TypeInfo
+}
+
+func (c ColumnInfo) String() string {
+	return fmt.Sprintf("[column keyspace=%s table=%s name=%s type=%v]", c.Keyspace, c.Table, c.Name, c.TypeInfo)
 }
 
 // routing key indexes LRU cache

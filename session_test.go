@@ -222,18 +222,17 @@ func TestBatchBasicAPI(t *testing.T) {
 
 func TestConsistencyNames(t *testing.T) {
 	names := map[Consistency]string{
-		0:           "default",
-		Any:         "any",
-		One:         "one",
-		Two:         "two",
-		Three:       "three",
-		Quorum:      "quorum",
-		All:         "all",
-		LocalQuorum: "localquorum",
-		EachQuorum:  "eachquorum",
-		Serial:      "serial",
-		LocalSerial: "localserial",
-		LocalOne:    "localone",
+		Any:         "ANY",
+		One:         "ONE",
+		Two:         "TWO",
+		Three:       "THREE",
+		Quorum:      "QUORUM",
+		All:         "ALL",
+		LocalQuorum: "LOCAL_QUORUM",
+		EachQuorum:  "EACH_QUORUM",
+		Serial:      "SERIAL",
+		LocalSerial: "LOCAL_SERIAL",
+		LocalOne:    "LOCAL_ONE",
 	}
 
 	for k, v := range names {

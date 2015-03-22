@@ -1,5 +1,7 @@
 package gocql
 
+import "fmt"
+
 const (
 	errServer        = 0x0000
 	errProtocol      = 0x000A
@@ -25,6 +27,8 @@ type RequestError interface {
 }
 
 type errorFrame struct {
+	frameHeader
+
 	code    int
 	message string
 }
@@ -41,11 +45,19 @@ func (e errorFrame) Error() string {
 	return e.Message()
 }
 
+func (e errorFrame) String() string {
+	return fmt.Sprintf("[error code=%x message=%q]", e.code, e.message)
+}
+
 type RequestErrUnavailable struct {
 	errorFrame
 	Consistency Consistency
 	Required    int
 	Alive       int
+}
+
+func (e *RequestErrUnavailable) String() string {
+	return fmt.Sprintf("[request_error_unavailable consistency=%s required=%d alive=%d]", e.Consistency, e.Required, e.Alive)
 }
 
 type RequestErrWriteTimeout struct {
