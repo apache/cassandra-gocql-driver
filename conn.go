@@ -270,7 +270,6 @@ func (c *Conn) exec(req frameWriter, tracer Tracer) (frame, error) {
 	}
 
 	resp := <-call.resp
-	call.resp = nil
 	if resp.err != nil {
 		return nil, resp.err
 	}
