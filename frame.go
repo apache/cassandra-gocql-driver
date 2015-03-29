@@ -130,14 +130,8 @@ const (
 	flagWithNameValues             = 0x40
 
 	// header flags
-	flagCompression byte = 0x01
-	flagTracing          = 0x02
-
-	flagQueryValues byte = 1
-	flagCompress         = 1
-	flagTrace            = 2
-	flagPageState        = 8
-	flagHasMore          = 2
+	flagCompress byte = 0x01
+	flagTracing       = 0x02
 )
 
 type Consistency uint16
@@ -865,7 +859,7 @@ func (f *framer) writeQueryParams(opts *queryParams) {
 
 	var flags byte
 	if len(opts.values) > 0 {
-		flags |= flagQueryValues
+		flags |= flagValues
 	}
 	if opts.skipMeta {
 		flags |= flagSkipMetaData
@@ -874,7 +868,7 @@ func (f *framer) writeQueryParams(opts *queryParams) {
 		flags |= flagPageSize
 	}
 	if len(opts.pagingState) > 0 {
-		flags |= flagPageState
+		flags |= flagWithPagingState
 	}
 	if opts.serialConsistency > 0 {
 		flags |= flagWithSerialConsistency
