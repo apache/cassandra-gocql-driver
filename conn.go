@@ -177,6 +177,15 @@ func Connect(addr string, cfg ConnConfig, pool ConnectionPool) (*Conn, error) {
 	return c, nil
 }
 
+func (c *Conn) Write(p []byte) (int, error) {
+	c.conn.SetWriteDeadline(time.Now().Add(c.timeout))
+	return c.conn.Write(p)
+}
+
+func (c *Conn) Read(p []byte) (int, error) {
+	return c.r.Read(p)
+}
+
 func (c *Conn) startup(cfg *ConnConfig) error {
 	m := map[string]string{
 		"CQL_VERSION": cfg.CQLVersion,
@@ -242,6 +251,96 @@ func (c *Conn) authenticateHandshake(authFrame *authenticateFrame) error {
 	}
 }
 
+// Serve starts the stream multiplexer for this connection, which is required
+// to execute any queries. This method runs as long as the connection is
+// open and is therefore usually called in a separate goroutine.
+func (c *Conn) serve() {
+	var (
+		err    error
+		header frameHeader
+	)
+
+	for {
+		header, err = c.recv()
+		if err != nil {
+			break
+		}
+		c.dispatch(header)
+	}
+
+	c.Close()
+	for id := 0; id < len(c.calls); id++ {
+		req := &c.calls[id]
+		if atomic.CompareAndSwapInt32(&req.active, 1, 0) {
+			req.resp <- struct{}{}
+			close(req.resp)
+		}
+	}
+
+	if c.started {
+		c.pool.HandleError(c, err, true)
+	}
+}
+
+func (c *Conn) recv() (frameHeader, error) {
+	// not safe for concurrent reads
+
+	// read a full header, ignore timeouts, as this is being ran in a loop
+	// TODO: TCP level deadlines? or just query level deadlines?
+
+	// were just reading headers over and over and copy bodies
+	head, err := readHeader(c.r, c.headerBuf)
+	if err != nil {
+		return frameHeader{}, err
+	}
+
+	call := &c.calls[head.stream]
+
+	call.mu.Lock()
+	log.Printf("readframe stream=%v\n", head.stream)
+	err = call.framer.readFrame(&head)
+	call.mu.Unlock()
+	if err != nil {
+		return frameHeader{}, err
+	}
+
+	if head.version.version() != c.version {
+		return frameHeader{}, NewErrProtocol("unexpected protocol version in response: got %d expected %d", head.version.version(), c.version)
+	}
+
+	return head, nil
+}
+
+func (c *Conn) dispatch(header frameHeader) {
+	id := header.stream
+	if id >= len(c.calls) {
+		// should this panic?
+		return
+	}
+
+	// TODO: replace this with a sparse map
+	call := &c.calls[id]
+
+	call.resp <- struct{}{}
+	atomic.AddInt32(&c.nwait, -1)
+
+	c.uniq <- id
+}
+
+type callReq struct {
+	active int32
+	// could use a waitgroup but this allows us to do timeouts on the read/send
+	resp   chan struct{}
+	mu     sync.Mutex
+	framer *framer
+	err    error
+}
+
+type callResp struct {
+	framer *framer
+	err    error
+}
+
 func (c *Conn) exec(req frameWriter, tracer Tracer) (frame, error) {
 	// TODO: move tracer onto conn
 	stream := <-c.uniq
@@ -250,32 +349,32 @@ func (c *Conn) exec(req frameWriter, tracer Tracer) (frame, error) {
 	atomic.StoreInt32(&call.active, 1)
 	defer atomic.StoreInt32(&call.active, 0)
 
-	call.resp = make(chan callResp, 1)
+	// resp is basically a waiting semafore protecting the framer
+	call.resp = make(chan struct{}, 1)
 
 	// log.Printf("%v: OUT stream=%d (%T) req=%v\n", c.conn.LocalAddr(), stream, req, req)
 	framer := newFramer(c, c, c.compressor, c.version)
+	defer framerPool.Put(framer)
+	call.framer = framer
 
-	// unfortunatly this part of the protocol leaks in conn, somehow move this
-	// out into framer. One way to do it would be to use the same framer to send
-	// and recv for a single stream.
 	if tracer != nil {
-		framer.flags |= flagTracing
+		framer.trace()
 	}
 
+	log.Printf("writing frame stream=%v\n", stream)
+	call.mu.Lock()
 	err := req.writeFrame(framer, stream)
-	framerPool.Put(framer)
-
+	call.mu.Unlock()
 	if err != nil {
 		return nil, err
 	}
 
-	resp := <-call.resp
-	if resp.err != nil {
-		return nil, resp.err
+	<-call.resp
+	if call.err != nil {
+		return nil, call.err
 	}
-	defer framerPool.Put(resp.framer)
 
-	frame, err := resp.framer.parseFrame()
+	frame, err := framer.parseFrame()
 	if err != nil {
 		return nil, err
 	}
@@ -286,83 +385,6 @@ func (c *Conn) exec(req frameWriter, tracer Tracer) (frame, error) {
 	// log.Printf("%v: IN stream=%d (%T) resp=%v\n", c.conn.LocalAddr(), stream, frame, frame)
 
 	return frame, nil
-}
-
-// Serve starts the stream multiplexer for this connection, which is required
-// to execute any queries. This method runs as long as the connection is
-// open and is therefore usually called in a separate goroutine.
-func (c *Conn) serve() {
-	var (
-		err    error
-		framer *framer
-	)
-
-	for {
-		framer, err = c.recv()
-		if err != nil {
-			break
-		}
-		c.dispatch(framer)
-	}
-
-	c.Close()
-	for id := 0; id < len(c.calls); id++ {
-		req := &c.calls[id]
-		if atomic.CompareAndSwapInt32(&req.active, 1, 0) {
-			req.resp <- callResp{nil, err}
-			close(req.resp)
-		}
-	}
-
-	if c.started {
-		c.pool.HandleError(c, err, true)
-	}
-}
-
-func (c *Conn) Write(p []byte) (int, error) {
-	c.conn.SetWriteDeadline(time.Now().Add(c.timeout))
-	return c.conn.Write(p)
-}
-
-func (c *Conn) Read(p []byte) (int, error) {
-	return c.r.Read(p)
-}
-
-func (c *Conn) recv() (*framer, error) {
-	// read a full header, ignore timeouts, as this is being ran in a loop
-	// TODO: TCP level deadlines? or just query level dealines?
-
-	// were just reading headers over and over and copy bodies
-	head, err := readHeader(c.r, c.headerBuf)
-	if err != nil {
-		return nil, err
-	}
-
-	// log.Printf("header=%v\n", head)
-	if head.version.version() != c.version {
-		return nil, NewErrProtocol("unexpected protocol version in response: got %d expected %d", head.version.version(), c.version)
-	}
-
-	framer := newFramer(c.r, c, c.compressor, c.version)
-	if err := framer.readFrame(&head); err != nil {
-		return nil, err
-	}
-
-	return framer, nil
-}
-
-func (c *Conn) dispatch(f *framer) {
-	id := f.header.stream
-	if id >= len(c.calls) {
-		return
-	}
-
-	// TODO: replace this with a sparse map
-	call := &c.calls[id]
-
-	call.resp <- callResp{f, nil}
-	atomic.AddInt32(&c.nwait, -1)
-	c.uniq <- id
 }
 
 func (c *Conn) prepareStatement(stmt string, trace Tracer) (*resultPreparedFrame, error) {
@@ -686,16 +708,6 @@ func (c *Conn) setKeepalive(d time.Duration) error {
 	}
 
 	return nil
-}
-
-type callReq struct {
-	active int32
-	resp   chan callResp
-}
-
-type callResp struct {
-	framer *framer
-	err    error
 }
 
 type inflightPrepare struct {
