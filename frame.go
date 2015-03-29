@@ -301,6 +301,11 @@ func readHeader(r io.Reader, p []byte) (frameHeader, error) {
 	return head, nil
 }
 
+// explicitly enables tracing for the framers outgoing requests
+func (f *framer) trace() {
+	f.flags |= flagTracing
+}
+
 // reads a frame form the wire into the framers buffer
 func (f *framer) readFrame(head *frameHeader) error {
 	// assume the underlying reader takes care of timeouts and retries
