@@ -253,6 +253,8 @@ func newFramer(r io.Reader, w io.Writer, compressor Compressor, version byte) *f
 		flags |= flagCompress
 	}
 
+	version &= protoVersionMask
+
 	headSize := 8
 	if version > protoVersion2 {
 		headSize = 9
