@@ -186,7 +186,7 @@ func (c *Conn) startup(cfg *ConnConfig) error {
 		m["COMPRESSION"] = c.compressor.Name()
 	}
 
-	frame, err := c.exec(&writeStartupFrame{opts: m})
+	frame, err := c.exec(&writeStartupFrame{opts: m}, nil)
 	if err != nil {
 		return err
 	}
@@ -216,7 +216,7 @@ func (c *Conn) authenticateHandshake(authFrame *authenticateFrame) error {
 	req := &writeAuthResponseFrame{data: resp}
 
 	for {
-		frame, err := c.exec(req)
+		frame, err := c.exec(req, nil)
 		if err != nil {
 			return err
 		}
@@ -242,7 +242,8 @@ func (c *Conn) authenticateHandshake(authFrame *authenticateFrame) error {
 	}
 }
 
-func (c *Conn) exec(req frameWriter) (frame, error) {
+func (c *Conn) exec(req frameWriter, tracer Tracer) (frame, error) {
+	// TODO: move tracer onto conn
 	stream := <-c.uniq
 
 	call := &c.calls[stream]
@@ -253,6 +254,14 @@ func (c *Conn) exec(req frameWriter) (frame, error) {
 
 	// log.Printf("%v: OUT stream=%d (%T) req=%v\n", c.conn.LocalAddr(), stream, req, req)
 	framer := newFramer(c, c, c.compressor, c.version)
+
+	// unfortunatly this part of the protocol leaks in conn, somehow move this
+	// out into framer. One way to do it would be to use the same framer to send
+	// and recv for a single stream.
+	if tracer != nil {
+		framer.flags |= flagTracing
+	}
+
 	err := req.writeFrame(framer, stream)
 	framerPool.Put(framer)
 
@@ -270,6 +279,10 @@ func (c *Conn) exec(req frameWriter) (frame, error) {
 	frame, err := resp.framer.parseFrame()
 	if err != nil {
 		return nil, err
+	}
+
+	if len(framer.traceID) > 0 {
+		tracer.Trace(framer.traceID)
 	}
 	// log.Printf("%v: IN stream=%d (%T) resp=%v\n", c.conn.LocalAddr(), stream, frame, frame)
 
@@ -377,7 +390,7 @@ func (c *Conn) prepareStatement(stmt string, trace Tracer) (*resultPreparedFrame
 		statement: stmt,
 	}
 
-	resp, err := c.exec(prep)
+	resp, err := c.exec(prep, trace)
 	if err != nil {
 		flight.err = err
 		flight.wg.Done()
@@ -469,7 +482,7 @@ func (c *Conn) executeQuery(qry *Query) *Iter {
 		}
 	}
 
-	resp, err := c.exec(frame)
+	resp, err := c.exec(frame, qry.trace)
 	if err != nil {
 		return &Iter{err: err}
 	}
@@ -557,7 +570,7 @@ func (c *Conn) UseKeyspace(keyspace string) error {
 	q := &writeQueryFrame{statement: `USE "` + keyspace + `"`}
 	q.params.consistency = Any
 
-	resp, err := c.exec(q)
+	resp, err := c.exec(q, nil)
 	if err != nil {
 		return err
 	}
@@ -636,7 +649,8 @@ func (c *Conn) executeBatch(batch *Batch) error {
 		}
 	}
 
-	resp, err := c.exec(req)
+	// TODO: should batch support tracing?
+	resp, err := c.exec(req, nil)
 	if err != nil {
 		return err
 	}

@@ -240,6 +240,9 @@ type framer struct {
 	// if this frame was read then the header will be here
 	header *frameHeader
 
+	// if tracing flag is set this is not nil
+	traceID []byte
+
 	buf []byte
 }
 
@@ -263,6 +266,7 @@ func newFramer(r io.Reader, w io.Writer, compressor Compressor, version byte) *f
 	f.headSize = headSize
 	f.buf = f.buf[:0]
 	f.header = nil
+	f.traceID = nil
 
 	return f
 }
@@ -332,6 +336,14 @@ func (f *framer) readFrame(head *frameHeader) error {
 }
 
 func (f *framer) parseFrame() (frame, error) {
+	if f.header.version.request() {
+		return frameHeader{}, NewErrProtocol("got a request frame from server: %v", f.header.version)
+	}
+
+	if f.header.flags&flagTracing == flagTracing {
+		f.readTrace()
+	}
+
 	// asumes that the frame body has been read into buf
 	switch f.header.op {
 	case opError:
@@ -474,6 +486,10 @@ func (f *framer) finishWrite() error {
 	}
 
 	return nil
+}
+
+func (f *framer) readTrace() {
+	f.traceID = f.readUUID().Bytes()
 }
 
 type readyFrame struct {
@@ -1083,15 +1099,18 @@ func (f *framer) readString() (s string) {
 	return
 }
 
-func (f *framer) longString() (s string) {
+func (f *framer) readLongString() (s string) {
 	size := f.readInt()
 	s = string(f.buf[:size])
 	f.buf = f.buf[size:]
 	return
 }
 
-func (f *framer) readUUID() (u *UUID) {
-	return
+func (f *framer) readUUID() *UUID {
+	// TODO: how to handle this error, if it is a uuid, then sureley, problems?
+	u, _ := UUIDFromBytes(f.buf[:16])
+	f.buf = f.buf[16:]
+	return &u
 }
 
 func (f *framer) readStringList() []string {
