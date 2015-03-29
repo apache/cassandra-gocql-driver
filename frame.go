@@ -285,11 +285,7 @@ func readHeader(r io.Reader, p []byte) (frameHeader, error) {
 
 	head := frameHeader{}
 	version := p[0] & protoVersionMask
-	direction := p[0] & protoDirectionMask
 	head.version = protoVersion(p[0])
-	if direction == protoVersionRequest {
-		return frameHeader{}, NewErrProtocol("got a request frame from server: %v", head.version)
-	}
 
 	head.flags = p[1]
 	if version > protoVersion2 {
@@ -319,9 +315,6 @@ func (f *framer) readFrame(head *frameHeader) error {
 		return err
 	}
 
-	// TODO: move frame processing out of framer and onto the requesting callers
-	// this means that we will not be able to reuse buffers between streams, which
-	// may end up being slower than parsing on the IO thread.
 	if head.flags&flagCompress == flagCompress {
 		if f.compres == nil {
 			return NewErrProtocol("no compressor available with compressed frame body")
@@ -427,7 +420,8 @@ func (f *framer) parseErrorFrame() (frame, error) {
 }
 
 func (f *framer) writeHeader(flags byte, op frameOp, stream int) {
-	f.buf = append(f.buf[0:],
+	f.buf = f.buf[:0]
+	f.buf = append(f.buf,
 		f.proto,
 		flags,
 	)
@@ -467,7 +461,12 @@ func (f *framer) setLength(length int) {
 
 func (f *framer) finishWrite() error {
 	length := len(f.buf) - f.headSize
-	if f.flags&flagCompress == flagCompress && f.compres != nil {
+	if f.buf[1]&flagCompress == flagCompress {
+		if f.compres == nil {
+			panic("compress flag set with no compressor")
+		}
+
+		// TODO: only compress frames which are big enough
 		compressed, err := f.compres.Encode(f.buf[f.headSize:])
 		if err != nil {
 			return err
