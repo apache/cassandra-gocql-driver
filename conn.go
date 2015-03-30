@@ -518,7 +518,6 @@ func (c *Conn) executeQuery(qry *Query) *Iter {
 			return c.executeQuery(qry)
 		}
 		stmtsLRU.Unlock()
-		panic(x)
 		return &Iter{err: x}
 	case error:
 		return &Iter{err: x}
