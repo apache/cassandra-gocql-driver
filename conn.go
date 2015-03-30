@@ -336,8 +336,6 @@ func (c *Conn) exec(req frameWriter, tracer Tracer) (frame, error) {
 	}
 
 	// resp is basically a waiting semaphore protecting the framer
-
-	// log.Printf("%v: OUT stream=%d (%T) req=%v\n", c.conn.LocalAddr(), stream, req, req)
 	framer := newFramer(c, c, c.compressor, c.version)
 	defer framerPool.Put(framer)
 
@@ -348,7 +346,7 @@ func (c *Conn) exec(req frameWriter, tracer Tracer) (frame, error) {
 	}
 
 	// there is a race that we can read and write to the same buffer, I dont think
-	// the data will actually corrupt but to be safe and apepase the race detector gods,
+	// the data will actually corrupt but to be safe and appease the race detector gods,
 	// guard it.
 	// We could fix this by using seperate read and write buffers, which may end up
 	// being faster and easier to reason about.
@@ -376,7 +374,6 @@ func (c *Conn) exec(req frameWriter, tracer Tracer) (frame, error) {
 	if len(framer.traceID) > 0 {
 		tracer.Trace(framer.traceID)
 	}
-	// log.Printf("%v: IN stream=%d (%T) resp=%v\n", c.conn.LocalAddr(), stream, frame, frame)
 
 	return frame, nil
 }
@@ -414,7 +411,6 @@ func (c *Conn) prepareStatement(stmt string, trace Tracer) (*resultPreparedFrame
 
 	switch x := resp.(type) {
 	case *resultPreparedFrame:
-		// log.Printf("prepared %q => %x\n", stmt, x.preparedID)
 		flight.info = x
 	case error:
 		flight.err = x
@@ -444,7 +440,6 @@ func (c *Conn) executeQuery(qry *Query) *Iter {
 	if qry.pageSize > 0 {
 		params.pageSize = qry.pageSize
 	}
-	// log.Printf("%+#v\n", qry)
 
 	var frame frameWriter
 	if qry.shouldPrepare() {
@@ -502,8 +497,6 @@ func (c *Conn) executeQuery(qry *Query) *Iter {
 		return &Iter{err: err}
 	}
 
-	// log.Printf("resp=%T\n", resp)
-
 	switch x := resp.(type) {
 	case *resultVoidFrame:
 		return &Iter{}
@@ -513,7 +506,6 @@ func (c *Conn) executeQuery(qry *Query) *Iter {
 			rows:    x.rows,
 		}
 
-		// log.Printf("result meta=%v\n", x.meta)
 		if len(x.meta.pagingState) > 0 {
 			iter.next = &nextIter{
 				qry: *qry,

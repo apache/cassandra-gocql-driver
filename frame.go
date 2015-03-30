@@ -484,7 +484,6 @@ func (f *framer) finishWrite() error {
 	f.setLength(length)
 
 	_, err := f.w.Write(f.buf)
-	// log.Printf("OUT wrote=%d header=% X\n", n, f.buf[:f.headSize])
 
 	f.buf = f.buf[:0]
 	if err != nil {
@@ -633,7 +632,6 @@ func (f *framer) parseResultMetadata() resultMetadata {
 		table = f.readString()
 	}
 
-	// log.Printf("flags=% X keyspace=%s table=%s\n", meta.flags, keyspace, table)
 	cols := make([]ColumnInfo, colCount)
 
 	for i := 0; i < colCount; i++ {
@@ -691,12 +689,11 @@ type resultRowsFrame struct {
 }
 
 func (f *resultRowsFrame) String() string {
-	return "[result_rows]"
+	return fmt.Sprintf("[result_rows meta=%v]", f.meta)
 }
 
 func (f *framer) parseResultRows() frame {
 	meta := f.parseResultMetadata()
-	// log.Printf("parsed meta=%v\n", meta)
 
 	numRows := f.readInt()
 	colCount := len(meta.columns)
