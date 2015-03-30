@@ -219,10 +219,12 @@ func (f frameHeader) Header() frameHeader {
 	return f
 }
 
+const defaultBufSize = 128
+
 var framerPool = sync.Pool{
 	New: func() interface{} {
 		return &framer{
-			buf: make([]byte, 0, 4096),
+			buf: make([]byte, defaultBufSize),
 		}
 	},
 }
@@ -367,7 +369,7 @@ func (f *framer) parseFrame() (frame, error) {
 		return nil, NewErrProtocol("unknown op in frame header: %s", f.header.op)
 	}
 
-	f.buf = make([]byte, 1024)
+	f.buf = make([]byte, defaultBufSize)
 
 	return frame, err
 }
