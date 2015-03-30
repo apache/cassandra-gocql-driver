@@ -335,6 +335,8 @@ func (f *framer) readFrame(head *frameHeader) error {
 	return nil
 }
 
+// after a call to parseFrame the frame owns f.buf, and the framer
+// is safe to use its buffer again (it is fresh)
 func (f *framer) parseFrame() (frame, error) {
 	if f.header.version.request() {
 		return frameHeader{}, NewErrProtocol("got a request frame from server: %v", f.header.version)
@@ -344,20 +346,30 @@ func (f *framer) parseFrame() (frame, error) {
 		f.readTrace()
 	}
 
+	var (
+		frame frame
+		err   error
+	)
+
 	// asumes that the frame body has been read into buf
 	switch f.header.op {
 	case opError:
-		return f.parseErrorFrame()
+		frame, err = f.parseErrorFrame()
 	case opReady:
-		return f.parseReadyFrame(), nil
+		frame = f.parseReadyFrame()
 	case opResult:
-		return f.parseResultFrame()
+		frame, err = f.parseResultFrame()
 	case opSupported:
-		return f.parseSupportedFrame(), nil
+		frame = f.parseSupportedFrame()
 	case opAuthenticate:
-		return f.parseAuthenticateFrame(), nil
+		frame = f.parseAuthenticateFrame()
+	default:
+		return nil, NewErrProtocol("unknown op in frame header: %s", f.header.op)
 	}
-	return nil, NewErrProtocol("unknown op in frame header: %s", f.header.op)
+
+	f.buf = make([]byte, 1024)
+
+	return frame, err
 }
 
 func (f *framer) parseErrorFrame() (frame, error) {
@@ -1133,30 +1145,16 @@ func (f *framer) readBytes() []byte {
 		return nil
 	}
 
-	// TODO: should we use copy here? this way it is consistent with the rest of
-	// the readers which do not retain a pointer to the underlying buffer.
-	l := make([]byte, size)
-	n := copy(l, f.buf)
-	if n != size {
-		panic(fmt.Sprintf("not enough bytes to bytes: size=%d read=%d", size, n))
-	}
-
-	f.buf = f.buf[n:]
+	l := f.buf[:size]
+	f.buf = f.buf[size:]
 
 	return l
 }
 
 func (f *framer) readShortBytes() []byte {
-	size := f.readShort()
+	n := f.readShort()
 
-	// TODO: should we use copy here? this way it is consistent with the rest of
-	// the readers which do not retain a pointer to the underlying buffer.
-	l := make([]byte, size)
-	n := copy(l, f.buf)
-	if n != int(size) {
-		panic("not enough space in buffer to read bytes")
-	}
-
+	l := f.buf[:n]
 	f.buf = f.buf[n:]
 
 	return l
@@ -1170,9 +1168,7 @@ func (f *framer) readInet() (net.IP, int) {
 		panic(fmt.Sprintf("invalid IP size: %d", size))
 	}
 
-	ip := make([]byte, size)
-	copy(ip, f.buf)
-
+	ip := f.buf[:size]
 	f.buf = f.buf[size:]
 
 	port := f.readInt()
