@@ -175,7 +175,7 @@ func (c Consistency) String() string {
 	case LocalOne:
 		return "LOCAL_ONE"
 	default:
-		return fmt.Sprintf("UNKNOWN_CONS_0x%x", c)
+		return fmt.Sprintf("UNKNOWN_CONS_0x%x", uint16(c))
 	}
 }
 
