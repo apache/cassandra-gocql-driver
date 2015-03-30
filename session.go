@@ -368,9 +368,6 @@ type Query struct {
 	binding      func(q *QueryInfo) ([]interface{}, error)
 	attempts     int
 	totalLatency int64
-
-	// v3+ send client timestamp in query
-	sendTimestamp bool
 }
 
 //Attempts returns the number of times the query was executed.
@@ -513,13 +510,6 @@ func (q *Query) RetryPolicy(r RetryPolicy) *Query {
 // to an existing query instance.
 func (q *Query) Bind(v ...interface{}) *Query {
 	q.values = v
-	return q
-}
-
-// SendTimestamp will send the current time on the client when sending the query
-// on protocol3 and above. This allows
-func (q *Query) SendTimestamp(b bool) *Query {
-	q.sendTimestamp = b
 	return q
 }
 
