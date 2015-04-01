@@ -1704,3 +1704,121 @@ func TestKeyspaceMetadata(t *testing.T) {
 		t.Errorf("Expected column index named 'index_metadata' but was '%s'", thirdColumn.Index.Name)
 	}
 }
+
+func TestRoutingKey(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+
+	if err := createTable(session, "CREATE TABLE test_single_routing_key (first_id int, second_id int, PRIMARY KEY (first_id, second_id))"); err != nil {
+		t.Fatalf("failed to create table with error '%v'", err)
+	}
+	if err := createTable(session, "CREATE TABLE test_composite_routing_key (first_id int, second_id int, PRIMARY KEY ((first_id, second_id)))"); err != nil {
+		t.Fatalf("failed to create table with error '%v'", err)
+	}
+
+	routingKeyInfo, err := session.routingKeyInfo("SELECT * FROM test_single_routing_key WHERE second_id=? AND first_id=?")
+	if err != nil {
+		t.Fatalf("failed to get routing key info due to error: %v", err)
+	}
+	if routingKeyInfo == nil {
+		t.Fatal("Expected routing key info, but was nil")
+	}
+	if len(routingKeyInfo.indexes) != 1 {
+		t.Fatalf("Expected routing key indexes length to be 1 but was %d", len(routingKeyInfo.indexes))
+	}
+	if routingKeyInfo.indexes[0] != 1 {
+		t.Errorf("Expected routing key index[0] to be 1 but was %d", routingKeyInfo.indexes[0])
+	}
+	if len(routingKeyInfo.types) != 1 {
+		t.Fatalf("Expected routing key types length to be 1 but was %d", len(routingKeyInfo.types))
+	}
+	if routingKeyInfo.types[0] == nil {
+		t.Fatal("Expected routing key types[0] to be non-nil")
+	}
+	if routingKeyInfo.types[0].Type != TypeInt {
+		t.Fatalf("Expected routing key types[0].Type to be %v but was %v", TypeInt, routingKeyInfo.types[0])
+	}
+
+	// verify the cache is working
+	routingKeyInfo, err = session.routingKeyInfo("SELECT * FROM test_single_routing_key WHERE second_id=? AND first_id=?")
+	if err != nil {
+		t.Fatalf("failed to get routing key info due to error: %v", err)
+	}
+	if len(routingKeyInfo.indexes) != 1 {
+		t.Fatalf("Expected routing key indexes length to be 1 but was %d", len(routingKeyInfo.indexes))
+	}
+	if routingKeyInfo.indexes[0] != 1 {
+		t.Errorf("Expected routing key index[0] to be 1 but was %d", routingKeyInfo.indexes[0])
+	}
+	if len(routingKeyInfo.types) != 1 {
+		t.Fatalf("Expected routing key types length to be 1 but was %d", len(routingKeyInfo.types))
+	}
+	if routingKeyInfo.types[0] == nil {
+		t.Fatal("Expected routing key types[0] to be non-nil")
+	}
+	if routingKeyInfo.types[0].Type != TypeInt {
+		t.Fatalf("Expected routing key types[0] to be %v but was %v", TypeInt, routingKeyInfo.types[0])
+	}
+	cacheSize := session.routingKeyInfoCache.lru.Len()
+	if cacheSize != 1 {
+		t.Errorf("Expected cache size to be 1 but was %d", cacheSize)
+	}
+
+	query := session.Query("SELECT * FROM test_single_routing_key WHERE second_id=? AND first_id=?", 1, 2)
+	routingKey, err := query.GetRoutingKey()
+	if err != nil {
+		t.Fatalf("Failed to get routing key due to error: %v", err)
+	}
+	expectedRoutingKey := []byte{0, 0, 0, 2}
+	if !reflect.DeepEqual(expectedRoutingKey, routingKey) {
+		t.Errorf("Expected routing key %v but was %v", expectedRoutingKey, routingKey)
+	}
+
+	routingKeyInfo, err = session.routingKeyInfo("SELECT * FROM test_composite_routing_key WHERE second_id=? AND first_id=?")
+	if err != nil {
+		t.Fatalf("failed to get routing key info due to error: %v", err)
+	}
+	if routingKeyInfo == nil {
+		t.Fatal("Expected routing key info, but was nil")
+	}
+	if len(routingKeyInfo.indexes) != 2 {
+		t.Fatalf("Expected routing key indexes length to be 2 but was %d", len(routingKeyInfo.indexes))
+	}
+	if routingKeyInfo.indexes[0] != 1 {
+		t.Errorf("Expected routing key index[0] to be 1 but was %d", routingKeyInfo.indexes[0])
+	}
+	if routingKeyInfo.indexes[1] != 0 {
+		t.Errorf("Expected routing key index[1] to be 0 but was %d", routingKeyInfo.indexes[1])
+	}
+	if len(routingKeyInfo.types) != 2 {
+		t.Fatalf("Expected routing key types length to be 1 but was %d", len(routingKeyInfo.types))
+	}
+	if routingKeyInfo.types[0] == nil {
+		t.Fatal("Expected routing key types[0] to be non-nil")
+	}
+	if routingKeyInfo.types[0].Type != TypeInt {
+		t.Fatalf("Expected routing key types[0] to be %v but was %v", TypeInt, routingKeyInfo.types[0])
+	}
+	if routingKeyInfo.types[1] == nil {
+		t.Fatal("Expected routing key types[1] to be non-nil")
+	}
+	if routingKeyInfo.types[1].Type != TypeInt {
+		t.Fatalf("Expected routing key types[0] to be %v but was %v", TypeInt, routingKeyInfo.types[1])
+	}
+
+	query = session.Query("SELECT * FROM test_composite_routing_key WHERE second_id=? AND first_id=?", 1, 2)
+	routingKey, err = query.GetRoutingKey()
+	if err != nil {
+		t.Fatalf("Failed to get routing key due to error: %v", err)
+	}
+	expectedRoutingKey = []byte{0, 4, 0, 0, 0, 2, 0, 0, 4, 0, 0, 0, 1, 0}
+	if !reflect.DeepEqual(expectedRoutingKey, routingKey) {
+		t.Errorf("Expected routing key %v but was %v", expectedRoutingKey, routingKey)
+	}
+
+	// verify the cache is working
+	cacheSize = session.routingKeyInfoCache.lru.Len()
+	if cacheSize != 2 {
+		t.Errorf("Expected cache size to be 2 but was %d", cacheSize)
+	}
+}
