@@ -231,8 +231,10 @@ func (s *Session) routingKeyInfo(stmt string) (*routingKeyInfo, error) {
 	s.routingKeyInfoCache.lru.Add(cacheKey, inflight)
 	s.routingKeyInfoCache.mu.Unlock()
 
-	var queryInfo *QueryInfo
-	var partitionKey []*ColumnMetadata
+	var (
+		prepared     *resultPreparedFrame
+		partitionKey []*ColumnMetadata
+	)
 
 	// get the query info for the statement
 	conn := s.Pool.Pick(nil)
@@ -244,19 +246,21 @@ func (s *Session) routingKeyInfo(stmt string) (*routingKeyInfo, error) {
 		return nil, inflight.err
 	}
 
-	queryInfo, inflight.err = conn.prepareStatement(stmt, nil)
+	prepared, inflight.err = conn.prepareStatement(stmt, nil)
 	if inflight.err != nil {
 		// don't cache this error
 		s.routingKeyInfoCache.Remove(cacheKey)
 		return nil, inflight.err
 	}
-	if len(queryInfo.Args) == 0 {
+
+	if len(prepared.reqMeta.columns) == 0 {
 		// no arguments, no routing key, and no error
 		return nil, nil
 	}
 
 	// get the table metadata
-	table := queryInfo.Args[0].Table
+	table := prepared.reqMeta.columns[0].Table
+
 	var keyspaceMetadata *KeyspaceMetadata
 	keyspaceMetadata, inflight.err = s.KeyspaceMetadata(s.cfg.Keyspace)
 	if inflight.err != nil {
@@ -288,7 +292,7 @@ func (s *Session) routingKeyInfo(stmt string) (*routingKeyInfo, error) {
 		routingKeyInfo.indexes[keyIndex] = -1
 
 		// find the column in the query info
-		for argIndex, boundColumn := range queryInfo.Args {
+		for argIndex, boundColumn := range prepared.reqMeta.columns {
 			if keyColumn.Name == boundColumn.Name {
 				// there may be many such bound columns, pick the first
 				routingKeyInfo.indexes[keyIndex] = argIndex
