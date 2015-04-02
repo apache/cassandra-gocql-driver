@@ -9,6 +9,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"strconv"
@@ -177,12 +178,34 @@ func Connect(addr string, cfg ConnConfig, pool ConnectionPool) (*Conn, error) {
 }
 
 func (c *Conn) Write(p []byte) (int, error) {
-	c.conn.SetWriteDeadline(time.Now().Add(c.timeout))
+	if c.timeout > 0 {
+		c.conn.SetWriteDeadline(time.Now().Add(c.timeout))
+	}
+
 	return c.conn.Write(p)
 }
 
-func (c *Conn) Read(p []byte) (int, error) {
-	return c.r.Read(p)
+func (c *Conn) Read(p []byte) (n int, err error) {
+	const maxAttempts = 5
+
+	for i := 0; i < maxAttempts; i++ {
+		var nn int
+		if c.timeout > 0 {
+			c.conn.SetReadDeadline(time.Now().Add(c.timeout))
+		}
+
+		nn, err = io.ReadFull(c.r, p[n:])
+		n += nn
+		if err == nil {
+			break
+		}
+
+		if verr, ok := err.(net.Error); !ok || !verr.Temporary() {
+			break
+		}
+	}
+
+	return
 }
 
 func (c *Conn) startup(cfg *ConnConfig) error {
@@ -288,6 +311,9 @@ func (c *Conn) recv() error {
 
 	// read a full header, ignore timeouts, as this is being ran in a loop
 	// TODO: TCP level deadlines? or just query level deadlines?
+	if c.timeout > 0 {
+		c.conn.SetReadDeadline(time.Time{})
+	}
 
 	// were just reading headers over and over and copy bodies
 	head, err := readHeader(c.r, c.headerBuf)
