@@ -22,15 +22,16 @@ import (
 )
 
 var (
-	flagCluster    = flag.String("cluster", "127.0.0.1", "a comma-separated list of host:port tuples")
-	flagProto      = flag.Int("proto", 2, "protcol version")
-	flagCQL        = flag.String("cql", "3.0.0", "CQL version")
-	flagRF         = flag.Int("rf", 1, "replication factor for test keyspace")
-	clusterSize    = flag.Int("clusterSize", 1, "the expected size of the cluster")
-	flagRetry      = flag.Int("retries", 5, "number of times to retry queries")
-	flagAutoWait   = flag.Duration("autowait", 1000*time.Millisecond, "time to wait for autodiscovery to fill the hosts poll")
-	flagRunSslTest = flag.Bool("runssl", false, "Set to true to run ssl test")
-	clusterHosts   []string
+	flagCluster      = flag.String("cluster", "127.0.0.1", "a comma-separated list of host:port tuples")
+	flagProto        = flag.Int("proto", 2, "protcol version")
+	flagCQL          = flag.String("cql", "3.0.0", "CQL version")
+	flagRF           = flag.Int("rf", 1, "replication factor for test keyspace")
+	clusterSize      = flag.Int("clusterSize", 1, "the expected size of the cluster")
+	flagRetry        = flag.Int("retries", 5, "number of times to retry queries")
+	flagAutoWait     = flag.Duration("autowait", 1000*time.Millisecond, "time to wait for autodiscovery to fill the hosts poll")
+	flagRunSslTest   = flag.Bool("runssl", false, "Set to true to run ssl test")
+	flagCompressTest = flag.String("compressor", "", "compressor to use")
+	clusterHosts     []string
 )
 
 func init() {
@@ -71,6 +72,15 @@ func createCluster() *ClusterConfig {
 	if *flagRetry > 0 {
 		cluster.RetryPolicy = &SimpleRetryPolicy{NumRetries: *flagRetry}
 	}
+
+	switch *flagCompressTest {
+	case "snappy":
+		cluster.Compressor = &SnappyCompressor{}
+	case "":
+	default:
+		panic("invalid compressor: " + *flagCompressTest)
+	}
+
 	cluster = addSslOptions(cluster)
 	return cluster
 }
