@@ -479,7 +479,6 @@ func (f *framer) setLength(length int) {
 }
 
 func (f *framer) finishWrite() error {
-	length := len(f.buf) - f.headSize
 	if f.buf[1]&flagCompress == flagCompress {
 		if f.compres == nil {
 			panic("compress flag set with no compressor")
@@ -491,10 +490,9 @@ func (f *framer) finishWrite() error {
 			return err
 		}
 
-		// assuming that len(compressed) < len(f.buf)
-		length = copy(f.buf[f.headSize:], compressed)
-		f.buf = f.buf[:f.headSize+length]
+		f.buf = append(f.buf[:f.headSize], compressed...)
 	}
+	length := len(f.buf) - f.headSize
 	f.setLength(length)
 
 	_, err := f.w.Write(f.buf)
