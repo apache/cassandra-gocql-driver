@@ -32,6 +32,7 @@ func BenchmarkMurmur3H1(b *testing.B) {
 		data[i] = byte(i)
 	}
 	for i := 0; i < b.N; i++ {
+		b.ResetTimer()
 		h1 = murmur3H1(data[:])
 		_ = Murmur3Token(int64(h1))
 	}
@@ -98,13 +99,13 @@ func TestRandomPartitioner(t *testing.T) {
 }
 
 func TestRandomToken(t *testing.T) {
-	if (RandomToken{big.NewInt(42)}).Less(RandomToken{big.NewInt(42)}) {
+	if ((*RandomToken)(big.NewInt(42))).Less((*RandomToken)(big.NewInt(42))) {
 		t.Errorf("Expected Less to return false, but was true")
 	}
-	if !(RandomToken{big.NewInt(41)}).Less(RandomToken{big.NewInt(42)}) {
+	if !((*RandomToken)(big.NewInt(41))).Less((*RandomToken)(big.NewInt(42))) {
 		t.Errorf("Expected Less to return true, but was false")
 	}
-	if (RandomToken{big.NewInt(42)}).Less(RandomToken{big.NewInt(41)}) {
+	if ((*RandomToken)(big.NewInt(42))).Less((*RandomToken)(big.NewInt(41))) {
 		t.Errorf("Expected Less to return false, but was true")
 	}
 }

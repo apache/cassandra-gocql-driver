@@ -42,8 +42,10 @@ func murmur3H1(data []byte) uint64 {
 
 	var h1, h2, k1, k2 uint64
 
-	const c1 = 0x87c37b91114253d5
-	const c2 = 0x4cf5ad432745937f
+	const (
+		c1 = 0x87c37b91114253d5
+		c2 = 0x4cf5ad432745937f
+	)
 
 	// body
 	nBlocks := length / 16
@@ -141,8 +143,10 @@ func murmur3H1(data []byte) uint64 {
 	h2 += h1
 
 	// finalizer
-	const fmix1 = 0xff51afd7ed558ccd
-	const fmix2 = 0xc4ceb9fe1a85ec53
+	const (
+		fmix1 = 0xff51afd7ed558ccd
+		fmix2 = 0xc4ceb9fe1a85ec53
+	)
 
 	// fmix64(h1)
 	h1 ^= h1 >> 33
@@ -201,9 +205,7 @@ func (o OrderPreservingToken) Less(token Token) bool {
 
 // random partitioner and token
 type RandomPartitioner struct{}
-type RandomToken struct {
-	*big.Int
-}
+type RandomToken big.Int
 
 func (p RandomPartitioner) Hash(partitionKey []byte) Token {
 	hash := md5.New()
@@ -213,17 +215,21 @@ func (p RandomPartitioner) Hash(partitionKey []byte) Token {
 	val = val.SetBytes(sum)
 	val = val.Abs(val)
 
-	return RandomToken{val}
+	return (*RandomToken)(val)
 }
 
 func (p RandomPartitioner) ParseString(str string) Token {
 	val := new(big.Int)
 	val.SetString(str, 10)
-	return RandomToken{val}
+	return (*RandomToken)(val)
 }
 
-func (r RandomToken) Less(token Token) bool {
-	return -1 == r.Int.Cmp(token.(RandomToken).Int)
+func (r *RandomToken) String() string {
+	return (*big.Int)(r).String()
+}
+
+func (r *RandomToken) Less(token Token) bool {
+	return -1 == (*big.Int)(r).Cmp((*big.Int)(token.(*RandomToken)))
 }
 
 // a data structure for organizing the relationship between tokens and hosts
