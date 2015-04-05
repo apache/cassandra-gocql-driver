@@ -598,16 +598,16 @@ func (q *Query) MapScanCAS(dest map[string]interface{}) (applied bool, err error
 // were returned by a query. The iterator might send additional queries to the
 // database during the iteration if paging was enabled.
 type Iter struct {
-	err     error
-	pos     int
-	rows    [][][]byte
-	columns []ColumnInfo
-	next    *nextIter
+	err  error
+	pos  int
+	rows [][][]byte
+	meta resultMetadata
+	next *nextIter
 }
 
 // Columns returns the name and type of the selected columns.
 func (iter *Iter) Columns() []ColumnInfo {
-	return iter.columns
+	return iter.meta.columns
 }
 
 // Scan consumes the next row of the iterator and copies the columns of the
@@ -632,20 +632,46 @@ func (iter *Iter) Scan(dest ...interface{}) bool {
 	if iter.next != nil && iter.pos == iter.next.pos {
 		go iter.next.fetch()
 	}
-	if len(dest) != len(iter.columns) {
+
+	// currently only support scanning into an expand tuple, such that its the same
+	// as scanning in more values from a single column
+	if len(dest) != iter.meta.actualColCount {
 		iter.err = errors.New("count mismatch")
 		return false
 	}
-	for i := 0; i < len(iter.columns); i++ {
+
+	// i is the current position in dest, could posible replace it and just use
+	// slices of dest
+	i := 0
+	for c, col := range iter.meta.columns {
 		if dest[i] == nil {
+			i++
 			continue
 		}
-		err := Unmarshal(iter.columns[i].TypeInfo, iter.rows[iter.pos][i], dest[i])
-		if err != nil {
-			iter.err = err
+
+		// how can we allow users to pass in a single struct to unmarshal into
+		if col.TypeInfo.Type() == TypeTuple {
+			// this will panic, actually a bug, please report
+			tuple := col.TypeInfo.(TupleTypeInfo)
+
+			count := len(tuple.Elems)
+			// here we pass in a slice of the struct which has the number number of
+			// values as elements in the tuple
+			iter.err = Unmarshal(col.TypeInfo, iter.rows[iter.pos][c], dest[i:i+count])
+			if iter.err != nil {
+				return false
+			}
+			i += count
+			continue
+		}
+
+		iter.err = Unmarshal(col.TypeInfo, iter.rows[iter.pos][c], dest[i])
+		if iter.err != nil {
 			return false
 		}
+		i++
 	}
+
 	iter.pos++
 	return true
 }

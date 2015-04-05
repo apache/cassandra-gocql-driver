@@ -128,6 +128,8 @@ func Unmarshal(info TypeInfo, data []byte, value interface{}) error {
 		return unmarshalUUID(info, data, value)
 	case TypeInet:
 		return unmarshalInet(info, data, value)
+	case TypeTuple:
+		return unmarshalTuple(info, data, value)
 	}
 	// TODO(tux21b): add the remaining types
 	return fmt.Errorf("can not unmarshal %s into %T", info, value)
@@ -1167,6 +1169,35 @@ func unmarshalInet(info TypeInfo, data []byte, value interface{}) error {
 	return unmarshalErrorf("cannot unmarshal %s into %T", info, value)
 }
 
+// currently only support unmarshal into a list of values, this makes it possible
+// to support tuples without changing the query API. In the future this can be extend
+// to allow unmarshalling into custom tuple types.
+func unmarshalTuple(info TypeInfo, data []byte, value interface{}) error {
+	if v, ok := value.(Unmarshaler); ok {
+		return v.UnmarshalCQL(info, data)
+	}
+
+	tuple := info.(TupleTypeInfo)
+	switch v := value.(type) {
+	case []interface{}:
+		for i, elem := range tuple.Elems {
+			// each element inside data is a [bytes]
+			size := readInt(data)
+			data = data[4:]
+
+			err := Unmarshal(elem, data[:size], v[i])
+			if err != nil {
+				return err
+			}
+			data = data[size:]
+		}
+
+		return nil
+	}
+
+	return unmarshalErrorf("cannot unmarshal %s into %T", info, value)
+}
+
 // TypeInfo describes a Cassandra specific data type.
 type TypeInfo interface {
 	Type() Type
@@ -1234,7 +1265,7 @@ func (c CollectionType) String() string {
 
 type TupleTypeInfo struct {
 	NativeType
-	Elem []TypeInfo
+	Elems []TypeInfo
 }
 
 // String returns a human readable name for the Cassandra datatype
@@ -1307,8 +1338,10 @@ func (t Type) String() string {
 		return "set"
 	case TypeVarint:
 		return "varint"
+	case TypeTuple:
+		return "tuple"
 	default:
-		return fmt.Sprintf("unkown_type_%d", t)
+		return fmt.Sprintf("unknown_type_%d", t)
 	}
 }
 

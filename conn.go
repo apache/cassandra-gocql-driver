@@ -503,8 +503,8 @@ func (c *Conn) executeQuery(qry *Query) *Iter {
 		return &Iter{}
 	case *resultRowsFrame:
 		iter := &Iter{
-			columns: x.meta.columns,
-			rows:    x.rows,
+			meta: x.meta,
+			rows: x.rows,
 		}
 
 		if len(x.meta.pagingState) > 0 {

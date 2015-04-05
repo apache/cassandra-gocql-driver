@@ -588,7 +588,18 @@ func (f *framer) readTypeInfo() TypeInfo {
 
 	switch simple.typ {
 	case TypeTuple:
-		panic("not implemented")
+		n := f.readShort()
+		tuple := TupleTypeInfo{
+			NativeType: simple,
+			Elems:      make([]TypeInfo, n),
+		}
+
+		for i := 0; i < int(n); i++ {
+			tuple.Elems[i] = f.readTypeInfo()
+		}
+
+		return tuple
+
 	case TypeMap, TypeList, TypeSet:
 		collection := CollectionType{
 			NativeType: simple,
@@ -613,6 +624,11 @@ type resultMetadata struct {
 	pagingState []byte
 
 	columns []ColumnInfo
+
+	// this is a count of the total number of columns which can be scanned,
+	// it is at minimum len(columns) but may be larger, for instance when a column
+	// is a UDT or tuple.
+	actualColCount int
 }
 
 func (r resultMetadata) String() string {
@@ -625,6 +641,7 @@ func (f *framer) parseResultMetadata() resultMetadata {
 	}
 
 	colCount := f.readInt()
+	meta.actualColCount = colCount
 
 	if meta.flags&flagHasMorePages == flagHasMorePages {
 		meta.pagingState = f.readBytes()
@@ -656,6 +673,12 @@ func (f *framer) parseResultMetadata() resultMetadata {
 
 		col.Name = f.readString()
 		col.TypeInfo = f.readTypeInfo()
+		switch v := col.TypeInfo.(type) {
+		// maybe also UDT
+		case TupleTypeInfo:
+			// -1 because we already included the tuple column
+			meta.actualColCount += len(v.Elems) - 1
+		}
 	}
 
 	meta.columns = cols
