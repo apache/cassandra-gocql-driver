@@ -18,14 +18,8 @@ type RowData struct {
 	Values  []interface{}
 }
 
-// New creates a pointer to an empty version of whatever type
-// is referenced by the TypeInfo receiver
-func (t *TypeInfo) New() interface{} {
-	return reflect.New(goType(t)).Interface()
-}
-
-func goType(t *TypeInfo) reflect.Type {
-	switch t.Type {
+func goType(t TypeInfo) reflect.Type {
+	switch t.Type() {
 	case TypeVarchar, TypeAscii, TypeInet:
 		return reflect.TypeOf(*new(string))
 	case TypeBigInt, TypeCounter:
@@ -47,9 +41,9 @@ func goType(t *TypeInfo) reflect.Type {
 	case TypeUUID, TypeTimeUUID:
 		return reflect.TypeOf(*new(UUID))
 	case TypeList, TypeSet:
-		return reflect.SliceOf(goType(t.Elem))
+		return reflect.SliceOf(goType(t.(CollectionType).Elem))
 	case TypeMap:
-		return reflect.MapOf(goType(t.Key), goType(t.Elem))
+		return reflect.MapOf(goType(t.(CollectionType).Key), goType(t.(CollectionType).Elem))
 	case TypeVarint:
 		return reflect.TypeOf(*new(*big.Int))
 	default:

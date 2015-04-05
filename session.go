@@ -285,7 +285,7 @@ func (s *Session) routingKeyInfo(stmt string) (*routingKeyInfo, error) {
 	size := len(partitionKey)
 	routingKeyInfo := &routingKeyInfo{
 		indexes: make([]int, size),
-		types:   make([]*TypeInfo, size),
+		types:   make([]TypeInfo, size),
 	}
 	for keyIndex, keyColumn := range partitionKey {
 		// set an indicator for checking if the mapping is missing
@@ -759,7 +759,7 @@ type ColumnInfo struct {
 	Keyspace string
 	Table    string
 	Name     string
-	TypeInfo *TypeInfo
+	TypeInfo TypeInfo
 }
 
 func (c ColumnInfo) String() string {
@@ -774,7 +774,7 @@ type routingKeyInfoLRU struct {
 
 type routingKeyInfo struct {
 	indexes []int
-	types   []*TypeInfo
+	types   []TypeInfo
 }
 
 func (r *routingKeyInfoLRU) Remove(key string) {

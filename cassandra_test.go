@@ -502,11 +502,11 @@ type FullName struct {
 	LastName  string
 }
 
-func (n FullName) MarshalCQL(info *TypeInfo) ([]byte, error) {
+func (n FullName) MarshalCQL(info TypeInfo) ([]byte, error) {
 	return []byte(n.FirstName + " " + n.LastName), nil
 }
 
-func (n *FullName) UnmarshalCQL(info *TypeInfo, data []byte) error {
+func (n *FullName) UnmarshalCQL(info TypeInfo, data []byte) error {
 	t := strings.SplitN(string(data), " ", 2)
 	n.FirstName, n.LastName = t[0], t[1]
 	return nil
@@ -981,8 +981,8 @@ func injectInvalidPreparedStatement(t *testing.T, session *Session, table string
 					Keyspace: "gocql_test",
 					Table:    table,
 					Name:     "foo",
-					TypeInfo: &TypeInfo{
-						Type: TypeVarchar,
+					TypeInfo: NativeType{
+						typ: TypeVarchar,
 					},
 				},
 			}},
@@ -1741,8 +1741,8 @@ func TestRoutingKey(t *testing.T) {
 	if routingKeyInfo.types[0] == nil {
 		t.Fatal("Expected routing key types[0] to be non-nil")
 	}
-	if routingKeyInfo.types[0].Type != TypeInt {
-		t.Fatalf("Expected routing key types[0].Type to be %v but was %v", TypeInt, routingKeyInfo.types[0])
+	if routingKeyInfo.types[0].Type() != TypeInt {
+		t.Fatalf("Expected routing key types[0].Type to be %v but was %v", TypeInt, routingKeyInfo.types[0].Type())
 	}
 
 	// verify the cache is working
@@ -1762,8 +1762,8 @@ func TestRoutingKey(t *testing.T) {
 	if routingKeyInfo.types[0] == nil {
 		t.Fatal("Expected routing key types[0] to be non-nil")
 	}
-	if routingKeyInfo.types[0].Type != TypeInt {
-		t.Fatalf("Expected routing key types[0] to be %v but was %v", TypeInt, routingKeyInfo.types[0])
+	if routingKeyInfo.types[0].Type() != TypeInt {
+		t.Fatalf("Expected routing key types[0] to be %v but was %v", TypeInt, routingKeyInfo.types[0].Type())
 	}
 	cacheSize := session.routingKeyInfoCache.lru.Len()
 	if cacheSize != 1 {
@@ -1802,14 +1802,14 @@ func TestRoutingKey(t *testing.T) {
 	if routingKeyInfo.types[0] == nil {
 		t.Fatal("Expected routing key types[0] to be non-nil")
 	}
-	if routingKeyInfo.types[0].Type != TypeInt {
-		t.Fatalf("Expected routing key types[0] to be %v but was %v", TypeInt, routingKeyInfo.types[0])
+	if routingKeyInfo.types[0].Type() != TypeInt {
+		t.Fatalf("Expected routing key types[0] to be %v but was %v", TypeInt, routingKeyInfo.types[0].Type())
 	}
 	if routingKeyInfo.types[1] == nil {
 		t.Fatal("Expected routing key types[1] to be non-nil")
 	}
-	if routingKeyInfo.types[1].Type != TypeInt {
-		t.Fatalf("Expected routing key types[0] to be %v but was %v", TypeInt, routingKeyInfo.types[1])
+	if routingKeyInfo.types[1].Type() != TypeInt {
+		t.Fatalf("Expected routing key types[0] to be %v but was %v", TypeInt, routingKeyInfo.types[1].Type())
 	}
 
 	query = session.Query("SELECT * FROM test_composite_routing_key WHERE second_id=? AND first_id=?", 1, 2)
