@@ -23,7 +23,7 @@ function run_tests() {
 		proto=3
 	fi
 
-	go test -timeout 5m -tags integration -cover -v -runssl -proto=$proto -rf=3 -cluster=$(ccm liveset) -clusterSize=$clusterSize -autowait=2000ms ./... | tee results.txt
+	go test -timeout 5m -tags integration -cover -v -runssl -proto=$proto -rf=3 -cluster=$(ccm liveset) -clusterSize=$clusterSize -autowait=2000ms -compressor=snappy ./... | tee results.txt
 
 	if [ ${PIPESTATUS[0]} -ne 0 ]; then
 		echo "--- FAIL: ccm status follows:"
