@@ -14,8 +14,8 @@ env:
     - GOMAXPROCS=2
   matrix:
     - CASS=1.2.19
-    - CASS=2.0.12
-    - CASS=2.1.2
+    - CASS=2.0.14
+    - CASS=2.1.4
 
 go:
   - 1.3
