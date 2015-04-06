@@ -434,7 +434,10 @@ func (c *Conn) executeQuery(qry *Query) *Iter {
 		consistency: qry.cons,
 	}
 
-	// TODO: Add DefaultTimestamp, SerialConsistency
+	// frame checks that it is not 0
+	params.serialConsistency = qry.serialCons
+
+	// TODO: Add DefaultTimestamp
 	if len(qry.pageState) > 0 {
 		params.pagingState = qry.pageState
 	}

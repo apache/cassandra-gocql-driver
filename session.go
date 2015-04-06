@@ -96,7 +96,7 @@ func (s *Session) Query(stmt string, values ...interface{}) *Query {
 	s.mu.RLock()
 	qry := &Query{stmt: stmt, values: values, cons: s.cons,
 		session: s, pageSize: s.pageSize, trace: s.trace,
-		prefetch: s.prefetch, rt: s.cfg.RetryPolicy}
+		prefetch: s.prefetch, rt: s.cfg.RetryPolicy, serialCons: s.cfg.SerialConsistency}
 	s.mu.RUnlock()
 	return qry
 }
@@ -372,6 +372,7 @@ type Query struct {
 	binding      func(q *QueryInfo) ([]interface{}, error)
 	attempts     int
 	totalLatency int64
+	serialCons   Consistency
 }
 
 //Attempts returns the number of times the query was executed.
@@ -514,6 +515,19 @@ func (q *Query) RetryPolicy(r RetryPolicy) *Query {
 // to an existing query instance.
 func (q *Query) Bind(v ...interface{}) *Query {
 	q.values = v
+	return q
+}
+
+// SerialConsistency sets the consistencyc level for the
+// serial phase of conditional updates. That consitency can only be
+// either SERIAL or LOCAL_SERIAL and if not present, it defaults to
+// SERIAL. This option will be ignored for anything else that a
+// conditional update/insert.
+func (q *Query) SerialConsistency(cons Consistency) *Query {
+	if !(cons == Serial || cons == LocalSerial) {
+		panic("only acceptable consistency for serial_consistency is SERIAL or LOCAL_SERIAL")
+	}
+	q.serialCons = cons
 	return q
 }
 

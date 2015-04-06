@@ -73,6 +73,7 @@ type ClusterConfig struct {
 	MaxPreparedStmts  int           // Sets the maximum cache size for prepared statements globally for gocql (default: 1000)
 	MaxRoutingKeyInfo int           // Sets the maximum cache size for query info about statements for each session (default: 1000)
 	PageSize          int           // Default page size to use for created sessions (default: 0)
+	SerialConsistency Consistency   // Sets the consistency for the serial part of queries, values can be either SERIAL or LOCAL_SERIAL (default: unset)
 	Discovery         DiscoveryConfig
 	SslOpts           *SslOptions
 }
