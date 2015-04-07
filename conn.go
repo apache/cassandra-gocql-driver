@@ -79,7 +79,7 @@ type ConnConfig struct {
 	Compressor    Compressor
 	Authenticator Authenticator
 	Keepalive     time.Duration
-	TLSConfig     *tls.Config
+	tlsConfig     *tls.Config
 }
 
 // Conn is a single connection to a Cassandra node. It can be used to execute
@@ -113,10 +113,10 @@ func Connect(addr string, cfg ConnConfig, pool ConnectionPool) (*Conn, error) {
 		conn net.Conn
 	)
 
-	if cfg.TLSConfig != nil {
+	if cfg.tlsConfig != nil {
 		// the TLS config is safe to be reused by connections but it must not
 		// be modified after being used.
-		if conn, err = tls.Dial("tcp", addr, cfg.TLSConfig); err != nil {
+		if conn, err = tls.Dial("tcp", addr, cfg.tlsConfig); err != nil {
 			return nil, err
 		}
 	} else if conn, err = net.DialTimeout("tcp", addr, cfg.Timeout); err != nil {
