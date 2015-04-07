@@ -11,15 +11,15 @@ import (
 )
 
 func TestMurmur3H1(t *testing.T) {
-	// assertMurmur3H1(t, []byte{}, 0x000000000000000)
-	// assertMurmur3H1(t, []byte{0}, 0x4610abe56eff5cb5)
-	// assertMurmur3H1(t, []byte{0, 1}, 0x7cb3f5c58dab264c)
-	// assertMurmur3H1(t, []byte{0, 1, 2}, 0xb872a12fef53e6be)
-	// assertMurmur3H1(t, []byte{0, 1, 2, 3}, 0xe1c594ae0ddfaf10)
-	// assertMurmur3H1(t, []byte("hello"), 0xcbd8a7b341bd9b02)
-	// assertMurmur3H1(t, []byte("hello, world"), 0x342fac623a5ebc8e)
+	assertMurmur3H1(t, []byte{}, 0x000000000000000)
+	assertMurmur3H1(t, []byte{0}, 0x4610abe56eff5cb5)
+	assertMurmur3H1(t, []byte{0, 1}, 0x7cb3f5c58dab264c)
+	assertMurmur3H1(t, []byte{0, 1, 2}, 0xb872a12fef53e6be)
+	assertMurmur3H1(t, []byte{0, 1, 2, 3}, 0xe1c594ae0ddfaf10)
+	assertMurmur3H1(t, []byte("hello"), 0xcbd8a7b341bd9b02)
+	assertMurmur3H1(t, []byte("hello, world"), 0x342fac623a5ebc8e)
 	assertMurmur3H1(t, []byte("19 Jan 2038 at 3:14:07 AM"), 0xb89e5988b737affc)
-	// assertMurmur3H1(t, []byte("The quick brown fox jumps over the lazy dog."), 0xcd99481f9ee902c9)
+	assertMurmur3H1(t, []byte("The quick brown fox jumps over the lazy dog."), 0xcd99481f9ee902c9)
 }
 
 func assertMurmur3H1(t *testing.T, data []byte, expected uint64) {
