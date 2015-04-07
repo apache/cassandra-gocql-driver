@@ -133,7 +133,7 @@ func TestAuthentication(t *testing.T) {
 		t.Skip("Authentication is not configured in the target cluster")
 	}
 
-	cluster := NewCluster(clusterHosts[0])
+	cluster := createCluster()
 
 	cluster.Authenticator = PasswordAuthenticator{
 		Username: "cassandra",
