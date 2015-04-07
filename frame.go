@@ -365,6 +365,10 @@ func (f *framer) parseFrame() (frame, error) {
 		frame = f.parseSupportedFrame()
 	case opAuthenticate:
 		frame = f.parseAuthenticateFrame()
+	case opAuthChallenge:
+		frame = f.parseAuthChallengeFrame()
+	case opAuthSuccess:
+		frame = f.parseAuthSuccessFrame()
 	default:
 		return nil, NewErrProtocol("unknown op in frame header: %s", f.header.op)
 	}
