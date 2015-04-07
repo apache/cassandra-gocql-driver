@@ -38,7 +38,7 @@ function run_tests() {
     then
     	go test -v . -timeout 15s -run=TestAuthentication -tags integration -runauth -proto=$proto -cluster=$(ccm liveset) -clusterSize=$clusterSize -autowait=1000ms
 	else
-		go test -timeout 5m -tags integration -cover -v -runssl -proto=$proto -rf=3 -cluster=$(ccm liveset) -clusterSize=$clusterSize -autowait=2000ms ./... | tee results.txt
+		go test -timeout 5m -tags integration -cover -v -runssl -proto=$proto -rf=3 -cluster=$(ccm liveset) -clusterSize=$clusterSize -autowait=2000ms -compressor=snappy ./... | tee results.txt
 
 		if [ ${PIPESTATUS[0]} -ne 0 ]; then
 			echo "--- FAIL: ccm status follows:"

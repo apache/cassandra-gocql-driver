@@ -331,6 +331,9 @@ func getKeyspaceMetadata(
 		`,
 		keyspaceName,
 	)
+	// Set a routing key to avoid GetRoutingKey from computing the routing key
+	// TODO use a separate connection (pool) for system keyspace queries.
+	query.RoutingKey([]byte{})
 
 	keyspace := &KeyspaceMetadata{Name: keyspaceName}
 	var strategyOptionsJSON []byte
@@ -375,6 +378,9 @@ func getTableMetadata(
 		`,
 		keyspaceName,
 	)
+	// Set a routing key to avoid GetRoutingKey from computing the routing key
+	// TODO use a separate connection (pool) for system keyspace queries.
+	query.RoutingKey([]byte{})
 	iter := query.Iter()
 
 	tables := []TableMetadata{}
@@ -511,6 +517,9 @@ func getColumnMetadata(
 	var indexOptionsJSON []byte
 
 	query := session.Query(stmt, keyspaceName)
+	// Set a routing key to avoid GetRoutingKey from computing the routing key
+	// TODO use a separate connection (pool) for system keyspace queries.
+	query.RoutingKey([]byte{})
 	iter := query.Iter()
 
 	for scan(iter, &column, &indexOptionsJSON) {

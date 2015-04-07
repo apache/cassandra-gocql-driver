@@ -59,7 +59,7 @@ func init() {
 }
 
 // ParseUUID parses a 32 digit hexadecimal number (that might contain hypens)
-// represanting an UUID.
+// representing an UUID.
 func ParseUUID(input string) (UUID, error) {
 	var u UUID
 	j := 0
