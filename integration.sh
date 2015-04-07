@@ -5,13 +5,32 @@ set -e
 function run_tests() {
 	local clusterSize=3
 	local version=$1
-	local auth=$2
+    local auth=$2
 
-	if [ "$auth" = true ]; then
+    local keypath="$(pwd)/testdata/pki"
+
+    if [ "$auth" = true ]; then
 		clusterSize=1
 	fi
 
+	local conf=(
+	    "client_encryption_options.enabled: true"
+	    "client_encryption_options.keystore: $keypath/.keystore"
+	    "client_encryption_options.keystore_password: cassandra"
+	    "client_encryption_options.require_client_auth: true"
+	    "client_encryption_options.truststore: $keypath/.truststore"
+	    "client_encryption_options.truststore_password: cassandra"
+	    "concurrent_reads: 2"
+	    "concurrent_writes: 2"
+	    "rpc_server_type: sync"
+	    "rpc_min_threads: 2"
+	    "rpc_max_threads: 2"
+	    "write_request_timeout_in_ms: 5000"
+	    "read_request_timeout_in_ms: 5000"
+	)
+
 	ccm create test -v binary:$version -n $clusterSize -d --vnodes
+    ccm updateconf "${conf[@]}"
 
 	sed -i '/#MAX_HEAP_SIZE/c\MAX_HEAP_SIZE="256M"' ~/.ccm/repository/$version/conf/cassandra-env.sh
 	sed -i '/#HEAP_NEWSIZE/c\HEAP_NEWSIZE="100M"' ~/.ccm/repository/$version/conf/cassandra-env.sh
