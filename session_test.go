@@ -9,7 +9,10 @@ import (
 func TestSessionAPI(t *testing.T) {
 
 	cfg := ClusterConfig{}
-	pool := NewSimplePool(&cfg)
+	pool, err := NewSimplePool(&cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	s := NewSession(pool, cfg)
 
@@ -60,7 +63,7 @@ func TestSessionAPI(t *testing.T) {
 
 	testBatch := s.NewBatch(LoggedBatch)
 	testBatch.Query("test")
-	err := s.ExecuteBatch(testBatch)
+	err = s.ExecuteBatch(testBatch)
 
 	if err != ErrNoConnections {
 		t.Fatalf("expected session.ExecuteBatch to return '%v', got '%v'", ErrNoConnections, err)
@@ -151,7 +154,10 @@ func TestBatchBasicAPI(t *testing.T) {
 
 	cfg := ClusterConfig{}
 	cfg.RetryPolicy = &SimpleRetryPolicy{NumRetries: 2}
-	pool := NewSimplePool(&cfg)
+	pool, err := NewSimplePool(&cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	s := NewSession(pool, cfg)
 	b := s.NewBatch(UnloggedBatch)
