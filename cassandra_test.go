@@ -124,17 +124,10 @@ func createSession(tb testing.TB) *Session {
 
 //TestRingDiscovery makes sure that you can autodiscover other cluster members when you seed a cluster config with just one node
 func TestRingDiscovery(t *testing.T) {
-
-	cluster := NewCluster(clusterHosts[0])
-	cluster.ProtoVersion = *flagProto
-	cluster.CQLVersion = *flagCQL
-	cluster.Timeout = 5 * time.Second
-	cluster.Consistency = Quorum
-	if *flagRetry > 0 {
-		cluster.RetryPolicy = &SimpleRetryPolicy{NumRetries: *flagRetry}
-	}
+	cluster := createCluster()
+	cluster.Hosts = clusterHosts[:1]
 	cluster.DiscoverHosts = true
-	cluster = addSslOptions(cluster)
+
 	session, err := cluster.CreateSession()
 	if err != nil {
 		t.Errorf("got error connecting to the cluster %v", err)
@@ -155,8 +148,8 @@ func TestRingDiscovery(t *testing.T) {
 }
 
 func TestEmptyHosts(t *testing.T) {
-	cluster := NewCluster()
-	cluster = addSslOptions(cluster)
+	cluster := createCluster()
+	cluster.Hosts = nil
 	if session, err := cluster.CreateSession(); err == nil {
 		session.Close()
 		t.Error("expected err, got nil")
@@ -179,11 +172,8 @@ func TestUseStatementError(t *testing.T) {
 
 //TestInvalidKeyspace checks that an invalid keyspace will return promptly and without a flood of connections
 func TestInvalidKeyspace(t *testing.T) {
-	cluster := NewCluster(clusterHosts...)
-	cluster.ProtoVersion = *flagProto
-	cluster.CQLVersion = *flagCQL
+	cluster := createCluster()
 	cluster.Keyspace = "invalidKeyspace"
-	cluster = addSslOptions(cluster)
 	session, err := cluster.CreateSession()
 	if err != nil {
 		if err != ErrNoConnectionsStarted {
@@ -491,15 +481,17 @@ func TestNotEnoughQueryArgs(t *testing.T) {
 func TestCreateSessionTimeout(t *testing.T) {
 	go func() {
 		<-time.After(2 * time.Second)
-		t.Fatal("no startup timeout")
+		t.Error("no startup timeout")
 	}()
-	c := NewCluster("127.0.0.1:1")
-	c = addSslOptions(c)
-	_, err := c.CreateSession()
 
+	cluster := createCluster()
+	cluster.Hosts = []string{"127.0.0.1:1"}
+	session, err := cluster.CreateSession()
 	if err == nil {
+		session.Close()
 		t.Fatal("expected ErrNoConnectionsStarted, but no error was returned.")
 	}
+
 	if err != ErrNoConnectionsStarted {
 		t.Fatalf("expected ErrNoConnectionsStarted, but received %v", err)
 	}
@@ -513,6 +505,7 @@ type FullName struct {
 func (n FullName) MarshalCQL(info *TypeInfo) ([]byte, error) {
 	return []byte(n.FirstName + " " + n.LastName), nil
 }
+
 func (n *FullName) UnmarshalCQL(info *TypeInfo, data []byte) error {
 	t := strings.SplitN(string(data), " ", 2)
 	n.FirstName, n.LastName = t[0], t[1]
