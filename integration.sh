@@ -29,11 +29,10 @@ function run_tests() {
 	    "read_request_timeout_in_ms: 5000"
 	)
 
-	ccm create test -v binary:$version -n $clusterSize -d --vnodes
-    ccm updateconf "${conf[@]}"
+	ccm remove test || true
 
-	sed -i '/#MAX_HEAP_SIZE/c\MAX_HEAP_SIZE="256M"' ~/.ccm/repository/$version/conf/cassandra-env.sh
-	sed -i '/#HEAP_NEWSIZE/c\HEAP_NEWSIZE="100M"' ~/.ccm/repository/$version/conf/cassandra-env.sh
+	ccm create test -v binary:$version -n $clusterSize -d --vnodes --jvm_arg="-Xmx256m -XX:NewSize=100m"
+    ccm updateconf "${conf[@]}"
 
 	if [ "$auth" = true ]
     then
@@ -76,7 +75,7 @@ function run_tests() {
 		fi
 	fi
 
-	ccm clear
+	ccm remove
 }
 
 run_tests $1 $2
