@@ -255,12 +255,12 @@ func (c *Conn) authenticateHandshake(authFrame *authenticateFrame) error {
 		switch v := frame.(type) {
 		case error:
 			return v
-		case authSuccessFrame:
+		case *authSuccessFrame:
 			if challenger != nil {
 				return challenger.Success(v.data)
 			}
 			return nil
-		case authChallengeFrame:
+		case *authChallengeFrame:
 			resp, challenger, err = challenger.Challenge(v.data)
 			if err != nil {
 				return err

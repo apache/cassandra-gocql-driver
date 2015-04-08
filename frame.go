@@ -811,6 +811,10 @@ type authenticateFrame struct {
 	class string
 }
 
+func (a *authenticateFrame) String() string {
+	return fmt.Sprintf("[authenticate class=%q]", a.class)
+}
+
 func (f *framer) parseAuthenticateFrame() frame {
 	return &authenticateFrame{
 		frameHeader: *f.header,
@@ -824,6 +828,10 @@ type authSuccessFrame struct {
 	data []byte
 }
 
+func (a *authSuccessFrame) String() string {
+	return fmt.Sprintf("[auth_success data=%q]", a.data)
+}
+
 func (f *framer) parseAuthSuccessFrame() frame {
 	return &authSuccessFrame{
 		frameHeader: *f.header,
@@ -835,6 +843,10 @@ type authChallengeFrame struct {
 	frameHeader
 
 	data []byte
+}
+
+func (a *authChallengeFrame) String() string {
+	return fmt.Sprintf("[auth_challenge data=%q]", a.data)
 }
 
 func (f *framer) parseAuthChallengeFrame() frame {
