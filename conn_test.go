@@ -510,7 +510,7 @@ func (srv *TestServer) process(f *framer) {
 			go func() {
 				<-time.After(1 * time.Second)
 				f.writeHeader(0, opResult, head.stream)
-				f.buf[0] = srv.protocol | 0x80
+				f.wbuf[0] = srv.protocol | 0x80
 				f.writeInt(resultKindVoid)
 				if err := f.finishWrite(); err != nil {
 					srv.t.Error(err)
@@ -534,7 +534,7 @@ func (srv *TestServer) process(f *framer) {
 		f.writeString("not supported")
 	}
 
-	f.buf[0] = srv.protocol | 0x80
+	f.wbuf[0] = srv.protocol | 0x80
 
 	if err := f.finishWrite(); err != nil {
 		srv.t.Error(err)

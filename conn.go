@@ -322,9 +322,7 @@ func (c *Conn) recv() error {
 	}
 
 	call := &c.calls[head.stream]
-	call.mu.Lock()
 	err = call.framer.readFrame(&head)
-	call.mu.Unlock()
 	if err != nil {
 		return err
 	}
@@ -340,7 +338,6 @@ func (c *Conn) recv() error {
 type callReq struct {
 	// could use a waitgroup but this allows us to do timeouts on the read/send
 	resp   chan error
-	mu     sync.Mutex
 	framer *framer
 }
 
@@ -351,22 +348,13 @@ func (c *Conn) exec(req frameWriter, tracer Tracer) (frame, error) {
 	call := &c.calls[stream]
 	// resp is basically a waiting semaphore protecting the framer
 	framer := newFramer(c, c, c.compressor, c.version)
-	defer framerPool.Put(framer)
-
 	call.framer = framer
 
 	if tracer != nil {
 		framer.trace()
 	}
 
-	// there is a race that we can read and write to the same buffer, I dont think
-	// the data will actually corrupt but to be safe and appease the race detector gods,
-	// guard it.
-	// We could fix this by using seperate read and write buffers, which may end up
-	// being faster and easier to reason about.
-	call.mu.Lock()
 	err := req.writeFrame(framer, stream)
-	call.mu.Unlock()
 	if err != nil {
 		return nil, err
 	}
@@ -422,6 +410,7 @@ func (c *Conn) prepareStatement(stmt string, trace Tracer) (*resultPreparedFrame
 		flight.wg.Done()
 		return nil, err
 	}
+	defer resp.release()
 
 	switch x := resp.(type) {
 	case *resultPreparedFrame:
@@ -510,6 +499,7 @@ func (c *Conn) executeQuery(qry *Query) *Iter {
 	if err != nil {
 		return &Iter{err: err}
 	}
+	defer resp.release()
 
 	switch x := resp.(type) {
 	case *resultVoidFrame:
@@ -535,7 +525,7 @@ func (c *Conn) executeQuery(qry *Query) *Iter {
 		return iter
 	case *resultKeyspaceFrame, *resultSchemaChangeFrame:
 		return &Iter{}
-	case RequestErrUnprepared:
+	case *RequestErrUnprepared:
 		stmtsLRU.Lock()
 		stmtCacheKey := c.addr + c.currentKeyspace + qry.stmt
 		if _, ok := stmtsLRU.lru.Get(stmtCacheKey); ok {
@@ -594,6 +584,7 @@ func (c *Conn) UseKeyspace(keyspace string) error {
 	if err != nil {
 		return err
 	}
+	defer resp.release()
 
 	switch x := resp.(type) {
 	case *resultKeyspaceFrame:
@@ -674,10 +665,12 @@ func (c *Conn) executeBatch(batch *Batch) error {
 	if err != nil {
 		return err
 	}
+	defer resp.release()
+
 	switch x := resp.(type) {
 	case *resultVoidFrame:
 		return nil
-	case RequestErrUnprepared:
+	case *RequestErrUnprepared:
 		stmt, found := stmts[string(x.StatementId)]
 		if found {
 			stmtsLRU.Lock()
