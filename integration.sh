@@ -52,6 +52,7 @@ function run_tests() {
 
 	if [ "$auth" = true ]
     then
+    	sleep 15
     	echo "list users;" | CQLSH_HOST=127.0.0.1 cqlsh -u cassandra -p cassandra
     	go test -v . -timeout 15s -run=TestAuthentication -tags integration -runssl -runauth -proto=$proto -cluster=$(ccm liveset) -clusterSize=$clusterSize -autowait=1000ms
 	else
