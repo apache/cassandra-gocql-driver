@@ -137,7 +137,7 @@ func TestRingDiscovery(t *testing.T) {
 	cluster = addSslOptions(cluster)
 	session, err := cluster.CreateSession()
 	if err != nil {
-		t.Errorf("got error connecting to the cluster %v", err)
+		t.Fatalf("got error connecting to the cluster %v", err)
 	}
 
 	if *clusterSize > 1 {
