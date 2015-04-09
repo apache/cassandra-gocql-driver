@@ -30,6 +30,7 @@ var (
 	flagRetry        = flag.Int("retries", 5, "number of times to retry queries")
 	flagAutoWait     = flag.Duration("autowait", 1000*time.Millisecond, "time to wait for autodiscovery to fill the hosts poll")
 	flagRunSslTest   = flag.Bool("runssl", false, "Set to true to run ssl test")
+	flagRunAuthTest  = flag.Bool("runauth", false, "Set to true to run authentication test")
 	flagCompressTest = flag.String("compressor", "", "compressor to use")
 	clusterHosts     []string
 )
@@ -120,6 +121,33 @@ func createSession(tb testing.TB) *Session {
 	}
 
 	return session
+}
+
+// TestAuthentication verifies that gocql will work with a host configured to only accept authenticated connections
+func TestAuthentication(t *testing.T) {
+
+	if *flagProto < 2 {
+		t.Skip("Authentication is not supported with protocol < 2")
+	}
+
+	if !*flagRunAuthTest {
+		t.Skip("Authentication is not configured in the target cluster")
+	}
+
+	cluster := createCluster()
+
+	cluster.Authenticator = PasswordAuthenticator{
+		Username: "cassandra",
+		Password: "cassandra",
+	}
+
+	session, err := cluster.CreateSession()
+
+	if err != nil {
+		t.Fatalf("Authentication error: %s", err)
+	}
+
+	session.Close()
 }
 
 //TestRingDiscovery makes sure that you can autodiscover other cluster members when you seed a cluster config with just one node
