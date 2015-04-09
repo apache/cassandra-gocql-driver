@@ -524,9 +524,6 @@ func (q *Query) Bind(v ...interface{}) *Query {
 // SERIAL. This option will be ignored for anything else that a
 // conditional update/insert.
 func (q *Query) SerialConsistency(cons Consistency) *Query {
-	if !(cons == Serial || cons == LocalSerial) {
-		panic("only acceptable consistency for serial_consistency is SERIAL or LOCAL_SERIAL")
-	}
 	q.serialCons = cons
 	return q
 }
