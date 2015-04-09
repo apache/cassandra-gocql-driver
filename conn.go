@@ -263,6 +263,8 @@ func (c *Conn) authenticateHandshake(authFrame *authenticateFrame) error {
 			req = &writeAuthResponseFrame{
 				data: resp,
 			}
+		default:
+			return fmt.Errorf("unknown frame response during authentication: %v", v)
 		}
 	}
 }
