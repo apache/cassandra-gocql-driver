@@ -1176,24 +1176,24 @@ type Type int
 
 const (
 	TypeCustom    Type = 0x0000
-	TypeAscii     Type = 0x0001
-	TypeBigInt    Type = 0x0002
-	TypeBlob      Type = 0x0003
-	TypeBoolean   Type = 0x0004
-	TypeCounter   Type = 0x0005
-	TypeDecimal   Type = 0x0006
-	TypeDouble    Type = 0x0007
-	TypeFloat     Type = 0x0008
-	TypeInt       Type = 0x0009
-	TypeTimestamp Type = 0x000B
-	TypeUUID      Type = 0x000C
-	TypeVarchar   Type = 0x000D
-	TypeVarint    Type = 0x000E
-	TypeTimeUUID  Type = 0x000F
-	TypeInet      Type = 0x0010
-	TypeList      Type = 0x0020
-	TypeMap       Type = 0x0021
-	TypeSet       Type = 0x0022
+	TypeAscii          = 0x0001
+	TypeBigInt         = 0x0002
+	TypeBlob           = 0x0003
+	TypeBoolean        = 0x0004
+	TypeCounter        = 0x0005
+	TypeDecimal        = 0x0006
+	TypeDouble         = 0x0007
+	TypeFloat          = 0x0008
+	TypeInt            = 0x0009
+	TypeTimestamp      = 0x000B
+	TypeUUID           = 0x000C
+	TypeVarchar        = 0x000D
+	TypeVarint         = 0x000E
+	TypeTimeUUID       = 0x000F
+	TypeInet           = 0x0010
+	TypeList           = 0x0020
+	TypeMap            = 0x0021
+	TypeSet            = 0x0022
 )
 
 // String returns the name of the identifier.
@@ -1238,7 +1238,7 @@ func (t Type) String() string {
 	case TypeVarint:
 		return "varint"
 	default:
-		return "unknown"
+		return fmt.Sprintf("unkown_type_%d", t)
 	}
 }
 

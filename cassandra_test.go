@@ -91,7 +91,8 @@ func createKeyspace(tb testing.TB, cluster *ClusterConfig, keyspace string) {
 	if err != nil {
 		tb.Fatal("createSession:", err)
 	}
-	if err = session.Query(`DROP KEYSPACE ` + keyspace).Exec(); err != nil {
+	defer session.Close()
+	if err = session.Query(`DROP KEYSPACE IF EXISTS ` + keyspace).Exec(); err != nil {
 		tb.Log("drop keyspace:", err)
 	}
 	if err := session.Query(fmt.Sprintf(`CREATE KEYSPACE %s
@@ -102,7 +103,6 @@ func createKeyspace(tb testing.TB, cluster *ClusterConfig, keyspace string) {
 		tb.Fatalf("error creating keyspace %s: %v", keyspace, err)
 	}
 	tb.Logf("Created keyspace %s", keyspace)
-	session.Close()
 }
 
 func createSession(tb testing.TB) *Session {
@@ -151,20 +151,13 @@ func TestAuthentication(t *testing.T) {
 
 //TestRingDiscovery makes sure that you can autodiscover other cluster members when you seed a cluster config with just one node
 func TestRingDiscovery(t *testing.T) {
-
-	cluster := NewCluster(clusterHosts[0])
-	cluster.ProtoVersion = *flagProto
-	cluster.CQLVersion = *flagCQL
-	cluster.Timeout = 5 * time.Second
-	cluster.Consistency = Quorum
-	if *flagRetry > 0 {
-		cluster.RetryPolicy = &SimpleRetryPolicy{NumRetries: *flagRetry}
-	}
+	cluster := createCluster()
+	cluster.Hosts = clusterHosts[:1]
 	cluster.DiscoverHosts = true
-	cluster = addSslOptions(cluster)
+
 	session, err := cluster.CreateSession()
 	if err != nil {
-		t.Errorf("got error connecting to the cluster %v", err)
+		t.Fatalf("got error connecting to the cluster %v", err)
 	}
 
 	if *clusterSize > 1 {
@@ -182,8 +175,8 @@ func TestRingDiscovery(t *testing.T) {
 }
 
 func TestEmptyHosts(t *testing.T) {
-	cluster := NewCluster()
-	cluster = addSslOptions(cluster)
+	cluster := createCluster()
+	cluster.Hosts = nil
 	if session, err := cluster.CreateSession(); err == nil {
 		session.Close()
 		t.Error("expected err, got nil")
@@ -206,11 +199,8 @@ func TestUseStatementError(t *testing.T) {
 
 //TestInvalidKeyspace checks that an invalid keyspace will return promptly and without a flood of connections
 func TestInvalidKeyspace(t *testing.T) {
-	cluster := NewCluster(clusterHosts...)
-	cluster.ProtoVersion = *flagProto
-	cluster.CQLVersion = *flagCQL
+	cluster := createCluster()
 	cluster.Keyspace = "invalidKeyspace"
-	cluster = addSslOptions(cluster)
 	session, err := cluster.CreateSession()
 	if err != nil {
 		if err != ErrNoConnectionsStarted {
@@ -518,15 +508,17 @@ func TestNotEnoughQueryArgs(t *testing.T) {
 func TestCreateSessionTimeout(t *testing.T) {
 	go func() {
 		<-time.After(2 * time.Second)
-		t.Fatal("no startup timeout")
+		t.Error("no startup timeout")
 	}()
-	c := NewCluster("127.0.0.1:1")
-	c = addSslOptions(c)
-	_, err := c.CreateSession()
 
+	cluster := createCluster()
+	cluster.Hosts = []string{"127.0.0.1:1"}
+	session, err := cluster.CreateSession()
 	if err == nil {
+		session.Close()
 		t.Fatal("expected ErrNoConnectionsStarted, but no error was returned.")
 	}
+
 	if err != ErrNoConnectionsStarted {
 		t.Fatalf("expected ErrNoConnectionsStarted, but received %v", err)
 	}
@@ -540,6 +532,7 @@ type FullName struct {
 func (n FullName) MarshalCQL(info *TypeInfo) ([]byte, error) {
 	return []byte(n.FirstName + " " + n.LastName), nil
 }
+
 func (n *FullName) UnmarshalCQL(info *TypeInfo, data []byte) error {
 	t := strings.SplitN(string(data), " ", 2)
 	n.FirstName, n.LastName = t[0], t[1]
@@ -1007,16 +1000,19 @@ func injectInvalidPreparedStatement(t *testing.T, session *Session, table string
 	stmtsLRU.Lock()
 	stmtsLRU.lru.Add(conn.addr+stmt, flight)
 	stmtsLRU.Unlock()
-	flight.info = &QueryInfo{
-		Id: []byte{'f', 'o', 'o', 'b', 'a', 'r'},
-		Args: []ColumnInfo{ColumnInfo{
-			Keyspace: "gocql_test",
-			Table:    table,
-			Name:     "foo",
-			TypeInfo: &TypeInfo{
-				Type: TypeVarchar,
-			},
-		}},
+	flight.info = &resultPreparedFrame{
+		preparedID: []byte{'f', 'o', 'o', 'b', 'a', 'r'},
+		reqMeta: resultMetadata{
+			columns: []ColumnInfo{
+				{
+					Keyspace: "gocql_test",
+					Table:    table,
+					Name:     "foo",
+					TypeInfo: &TypeInfo{
+						Type: TypeVarchar,
+					},
+				},
+			}},
 	}
 	return stmt, conn
 }
@@ -1079,13 +1075,13 @@ func TestQueryInfo(t *testing.T) {
 		t.Fatalf("Failed to execute query for preparing statement: %v", err)
 	}
 
-	if len(info.Args) != 1 {
-		t.Fatalf("Was not expecting meta data for %d query arguments, but got %d\n", 1, len(info.Args))
+	if len(info.reqMeta.columns) != 1 {
+		t.Fatalf("Was not expecting meta data for %d query arguments, but got %d\n", 1, len(info.reqMeta.columns))
 	}
 
 	if *flagProto > 1 {
-		if len(info.Rval) != 2 {
-			t.Fatalf("Was not expecting meta data for %d result columns, but got %d\n", 2, len(info.Rval))
+		if len(info.respMeta.columns) != 2 {
+			t.Fatalf("Was not expecting meta data for %d result columns, but got %d\n", 2, len(info.respMeta.columns))
 		}
 	}
 }
