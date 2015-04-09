@@ -62,6 +62,8 @@ Features
 * Automatic query preparation
 * Support for query tracing
 * Experimental support for CQL protocol version 3
+  * Support for up to 32768 streams
+  * Support for tuple types
 * An API to access the schema metadata of a given keyspace
 
 Please visit the [Roadmap](https://github.com/gocql/gocql/wiki/Roadmap) page to see what is on the horizion.
