@@ -1234,7 +1234,7 @@ func (s NativeType) Custom() string {
 func (s NativeType) String() string {
 	switch s.typ {
 	case TypeCustom:
-		return fmt.Sprintf("%s(%s)", s.typ, s.Custom)
+		return fmt.Sprintf("%s(%s)", s.typ, s.custom)
 	default:
 		return s.typ.String()
 	}
@@ -1257,7 +1257,7 @@ func (c CollectionType) String() string {
 	case TypeList, TypeSet:
 		return fmt.Sprintf("%s(%s)", c.typ, c.Elem)
 	case TypeCustom:
-		return fmt.Sprintf("%s(%s)", c.typ, c.Custom)
+		return fmt.Sprintf("%s(%s)", c.typ, c.custom)
 	default:
 		return c.typ.String()
 	}
