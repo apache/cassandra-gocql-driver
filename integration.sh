@@ -34,6 +34,12 @@ function run_tests() {
 	ccm create test -v binary:$version -n $clusterSize -d --vnodes --jvm_arg="-Xmx256m -XX:NewSize=100m"
     ccm updateconf "${conf[@]}"
 
+    if [ "$auth" = true ]
+	then
+		ccm updateconf 'authenticator: PasswordAuthenticator' 'authorizer: CassandraAuthorizer'
+		rm -rf $HOME/.ccm/test/node1/data/system_auth
+	fi
+
 	ccm start -v
 	ccm status
 	ccm node1 nodetool status
