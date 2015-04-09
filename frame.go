@@ -233,8 +233,8 @@ const defaultBufSize = 128
 var framerPool = sync.Pool{
 	New: func() interface{} {
 		return &framer{
-			wbuf: make([]byte, defaultBufSize),
-			rbuf: make([]byte, defaultBufSize),
+			wbuf:       make([]byte, defaultBufSize),
+			readBuffer: make([]byte, defaultBufSize),
 		}
 	},
 }
@@ -255,6 +255,10 @@ type framer struct {
 	// if tracing flag is set this is not nil
 	traceID []byte
 
+	// holds a ref to the whole byte slice for rbuf so that it can be reset to
+	// 0 after a read.
+	readBuffer []byte
+
 	rbuf []byte
 	wbuf []byte
 }
@@ -273,14 +277,17 @@ func newFramer(r io.Reader, w io.Writer, compressor Compressor, version byte) *f
 		headSize = 9
 	}
 
-	f.r = r
-	f.w = w
 	f.compres = compressor
 	f.proto = version
 	f.flags = flags
 	f.headSize = headSize
-	f.rbuf = f.rbuf[:0]
+
+	f.r = r
+	f.rbuf = f.readBuffer[:0]
+
+	f.w = w
 	f.wbuf = f.wbuf[:0]
+
 	f.header = nil
 	f.traceID = nil
 
@@ -322,13 +329,14 @@ func (f *framer) trace() {
 
 // reads a frame form the wire into the framers buffer
 func (f *framer) readFrame(head *frameHeader) error {
-	// assume the underlying reader takes care of timeouts and retries
-	if cap(f.rbuf) > head.length {
-		f.rbuf = f.rbuf[:head.length]
+	if cap(f.readBuffer) >= head.length {
+		f.rbuf = f.readBuffer[:head.length]
 	} else {
-		f.rbuf = make([]byte, head.length)
+		f.readBuffer = make([]byte, head.length)
+		f.rbuf = f.readBuffer
 	}
 
+	// assume the underlying reader takes care of timeouts and retries
 	_, err := io.ReadFull(f.r, f.rbuf)
 	if err != nil {
 		return err
