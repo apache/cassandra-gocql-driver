@@ -353,13 +353,10 @@ func (f *framer) readFrame(head *frameHeader) error {
 		}
 	}
 
-	head.framer = f
 	f.header = head
 	return nil
 }
 
-// after a call to parseFrame the frame owns f.buf, and the framer
-// is safe to use its buffer again (it is fresh)
 func (f *framer) parseFrame() (frame, error) {
 	if f.header.version.request() {
 		return nil, NewErrProtocol("got a request frame from server: %v", f.header.version)
@@ -374,7 +371,7 @@ func (f *framer) parseFrame() (frame, error) {
 		err   error
 	)
 
-	// asumes that the frame body has been read into buf
+	// asumes that the frame body has been read into rbuf
 	switch f.header.op {
 	case opError:
 		frame = f.parseErrorFrame()
@@ -519,7 +516,6 @@ func (f *framer) finishWrite() error {
 	f.setLength(length)
 
 	_, err := f.w.Write(f.wbuf)
-	f.wbuf = f.wbuf[:0]
 	if err != nil {
 		return err
 	}
@@ -566,21 +562,10 @@ func (w *writeStartupFrame) writeFrame(framer *framer, streamID int) error {
 }
 
 func (f *framer) writeStartupFrame(streamID int, options map[string]string) error {
-	// startup frame must not have the compress flag set
 	f.writeHeader(f.flags&^flagCompress, opStartup, streamID)
 	f.writeStringMap(options)
-	f.setLength(len(f.wbuf) - f.headSize)
 
-	// dont use finishWrite here as it will use compression
-	// TODO: have a type which has a writeHeader / writeBody so we can do
-	// transparent compression
-	_, err := f.w.Write(f.wbuf)
-	f.wbuf = f.wbuf[:0]
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return f.finishWrite()
 }
 
 type writePrepareFrame struct {
