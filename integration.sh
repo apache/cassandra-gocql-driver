@@ -52,9 +52,9 @@ function run_tests() {
 
 	if [ "$auth" = true ]
     then
-    	cqlsh --version
-    	sleep 15s
-    	echo "list users;" | CQLSH_HOST=127.0.0.1 SSL_CERTFILE=$keypath/cassandra.crt cqlsh --ssl -u cassandra -p cassandra
+    	/home/travis/.ccm/repository/$version/cqlsh --version
+    	sleep 3s
+    	echo "list users;" | CQLSH_HOST=127.0.0.1 SSL_CERTFILE=$keypath/cassandra.crt /home/travis/.ccm/repository/$version/cqlsh --ssl -u cassandra -p cassandra
     	go test -v . -timeout 15s -run=TestAuthentication -tags integration -runssl -runauth -proto=$proto -cluster=$(ccm liveset) -clusterSize=$clusterSize -autowait=1000ms
 	else
 		go test -timeout 5m -tags integration -cover -v -runssl -proto=$proto -rf=3 -cluster=$(ccm liveset) -clusterSize=$clusterSize -autowait=2000ms -compressor=snappy ./... | tee results.txt
