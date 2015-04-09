@@ -18,9 +18,6 @@ const (
 	protoVersion1      = 0x01
 	protoVersion2      = 0x02
 	protoVersion3      = 0x03
-
-	protoVersionRequest  = 0x00
-	protoVersionResponse = 0x80
 )
 
 type protoVersion byte
@@ -1317,18 +1314,4 @@ func (f *framer) writeStringMap(m map[string]string) {
 		f.writeString(k)
 		f.writeString(v)
 	}
-}
-
-var consistencyCodes = []uint16{
-	Any:         0x0000,
-	One:         0x0001,
-	Two:         0x0002,
-	Three:       0x0003,
-	Quorum:      0x0004,
-	All:         0x0005,
-	LocalQuorum: 0x0006,
-	EachQuorum:  0x0007,
-	Serial:      0x0008,
-	LocalSerial: 0x0009,
-	LocalOne:    0x000A,
 }
