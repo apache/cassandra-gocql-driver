@@ -18,7 +18,7 @@ func TestErrorsParse(t *testing.T) {
 		t.Fatal("Should have gotten already exists error from cassandra server.")
 	} else {
 		switch e := err.(type) {
-		case RequestErrAlreadyExists:
+		case *RequestErrAlreadyExists:
 			if e.Table != "errors_parse" {
 				t.Fatal("Failed to parse error response from cassandra for ErrAlreadyExists.")
 			}

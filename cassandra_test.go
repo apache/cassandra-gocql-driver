@@ -90,7 +90,8 @@ func createKeyspace(tb testing.TB, cluster *ClusterConfig, keyspace string) {
 	if err != nil {
 		tb.Fatal("createSession:", err)
 	}
-	if err = session.Query(`DROP KEYSPACE ` + keyspace).Exec(); err != nil {
+	defer session.Close()
+	if err = session.Query(`DROP KEYSPACE IF EXISTS ` + keyspace).Exec(); err != nil {
 		tb.Log("drop keyspace:", err)
 	}
 	if err := session.Query(fmt.Sprintf(`CREATE KEYSPACE %s
@@ -101,7 +102,6 @@ func createKeyspace(tb testing.TB, cluster *ClusterConfig, keyspace string) {
 		tb.Fatalf("error creating keyspace %s: %v", keyspace, err)
 	}
 	tb.Logf("Created keyspace %s", keyspace)
-	session.Close()
 }
 
 func createSession(tb testing.TB) *Session {
@@ -973,16 +973,19 @@ func injectInvalidPreparedStatement(t *testing.T, session *Session, table string
 	stmtsLRU.Lock()
 	stmtsLRU.lru.Add(conn.addr+stmt, flight)
 	stmtsLRU.Unlock()
-	flight.info = &QueryInfo{
-		Id: []byte{'f', 'o', 'o', 'b', 'a', 'r'},
-		Args: []ColumnInfo{ColumnInfo{
-			Keyspace: "gocql_test",
-			Table:    table,
-			Name:     "foo",
-			TypeInfo: &TypeInfo{
-				Type: TypeVarchar,
-			},
-		}},
+	flight.info = &resultPreparedFrame{
+		preparedID: []byte{'f', 'o', 'o', 'b', 'a', 'r'},
+		reqMeta: resultMetadata{
+			columns: []ColumnInfo{
+				{
+					Keyspace: "gocql_test",
+					Table:    table,
+					Name:     "foo",
+					TypeInfo: &TypeInfo{
+						Type: TypeVarchar,
+					},
+				},
+			}},
 	}
 	return stmt, conn
 }
@@ -1045,13 +1048,13 @@ func TestQueryInfo(t *testing.T) {
 		t.Fatalf("Failed to execute query for preparing statement: %v", err)
 	}
 
-	if len(info.Args) != 1 {
-		t.Fatalf("Was not expecting meta data for %d query arguments, but got %d\n", 1, len(info.Args))
+	if len(info.reqMeta.columns) != 1 {
+		t.Fatalf("Was not expecting meta data for %d query arguments, but got %d\n", 1, len(info.reqMeta.columns))
 	}
 
 	if *flagProto > 1 {
-		if len(info.Rval) != 2 {
-			t.Fatalf("Was not expecting meta data for %d result columns, but got %d\n", 2, len(info.Rval))
+		if len(info.respMeta.columns) != 2 {
+			t.Fatalf("Was not expecting meta data for %d result columns, but got %d\n", 2, len(info.respMeta.columns))
 		}
 	}
 }
