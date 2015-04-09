@@ -3,6 +3,7 @@
 package gocql
 
 import (
+	"fmt"
 	"testing"
 )
 
@@ -221,7 +222,7 @@ func TestBatchBasicAPI(t *testing.T) {
 }
 
 func TestConsistencyNames(t *testing.T) {
-	names := map[Consistency]string{
+	names := map[fmt.Stringer]string{
 		Any:         "ANY",
 		One:         "ONE",
 		Two:         "TWO",

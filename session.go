@@ -372,7 +372,7 @@ type Query struct {
 	binding      func(q *QueryInfo) ([]interface{}, error)
 	attempts     int
 	totalLatency int64
-	serialCons   Consistency
+	serialCons   SerialConsistency
 }
 
 //Attempts returns the number of times the query was executed.
@@ -523,7 +523,7 @@ func (q *Query) Bind(v ...interface{}) *Query {
 // either SERIAL or LOCAL_SERIAL and if not present, it defaults to
 // SERIAL. This option will be ignored for anything else that a
 // conditional update/insert.
-func (q *Query) SerialConsistency(cons Consistency) *Query {
+func (q *Query) SerialConsistency(cons SerialConsistency) *Query {
 	q.serialCons = cons
 	return q
 }
@@ -698,7 +698,7 @@ type Batch struct {
 	rt           RetryPolicy
 	attempts     int
 	totalLatency int64
-	serialCons   Consistency
+	serialCons   SerialConsistency
 }
 
 // NewBatch creates a new batch operation without defaults from the cluster
@@ -760,7 +760,7 @@ func (b *Batch) Size() int {
 // conditional update/insert.
 //
 // Only available for protocol 3 and above
-func (b *Batch) SerialConsistency(cons Consistency) *Batch {
+func (b *Batch) SerialConsistency(cons SerialConsistency) *Batch {
 	b.serialCons = cons
 	return b
 }
