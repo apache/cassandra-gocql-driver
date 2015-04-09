@@ -17,7 +17,7 @@ function run_tests() {
 	    "client_encryption_options.enabled: true"
 	    "client_encryption_options.keystore: $keypath/.keystore"
 	    "client_encryption_options.keystore_password: cassandra"
-	    "client_encryption_options.require_client_auth: true"
+	    "client_encryption_options.require_client_auth: false"
 	    "client_encryption_options.truststore: $keypath/.truststore"
 	    "client_encryption_options.truststore_password: cassandra"
 	    "concurrent_reads: 2"
