@@ -76,4 +76,4 @@ function run_tests() {
 	ccm remove
 }
 
-run_tests $1
+run_tests $1 $2
