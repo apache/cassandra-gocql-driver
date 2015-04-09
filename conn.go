@@ -605,9 +605,10 @@ func (c *Conn) executeBatch(batch *Batch) error {
 
 	n := len(batch.Entries)
 	req := &writeBatchFrame{
-		typ:         batch.Type,
-		statements:  make([]batchStatment, n),
-		consistency: batch.Cons,
+		typ:               batch.Type,
+		statements:        make([]batchStatment, n),
+		consistency:       batch.Cons,
+		serialConsistency: batch.serialCons,
 	}
 
 	stmts := make(map[string]string)

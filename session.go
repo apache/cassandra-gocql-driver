@@ -698,6 +698,7 @@ type Batch struct {
 	rt           RetryPolicy
 	attempts     int
 	totalLatency int64
+	serialCons   Consistency
 }
 
 // NewBatch creates a new batch operation without defaults from the cluster
@@ -707,7 +708,7 @@ func NewBatch(typ BatchType) *Batch {
 
 // NewBatch creates a new batch operation using defaults defined in the cluster
 func (s *Session) NewBatch(typ BatchType) *Batch {
-	return &Batch{Type: typ, rt: s.cfg.RetryPolicy}
+	return &Batch{Type: typ, rt: s.cfg.RetryPolicy, serialCons: s.cfg.SerialConsistency}
 }
 
 // Attempts returns the number of attempts made to execute the batch.
@@ -750,6 +751,18 @@ func (b *Batch) RetryPolicy(r RetryPolicy) *Batch {
 // Size returns the number of batch statements to be executed by the batch operation.
 func (b *Batch) Size() int {
 	return len(b.Entries)
+}
+
+// SerialConsistency sets the consistencyc level for the
+// serial phase of conditional updates. That consitency can only be
+// either SERIAL or LOCAL_SERIAL and if not present, it defaults to
+// SERIAL. This option will be ignored for anything else that a
+// conditional update/insert.
+//
+// Only available for protocol 3 and above
+func (b *Batch) SerialConsistency(cons Consistency) *Batch {
+	b.serialCons = cons
+	return b
 }
 
 type BatchType byte
