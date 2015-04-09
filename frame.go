@@ -209,15 +209,6 @@ type frameHeader struct {
 	stream  int
 	op      frameOp
 	length  int
-
-	framer *framer
-}
-
-func (f *frameHeader) release() {
-	if f.framer != nil {
-		framerPool.Put(f.framer)
-		f.framer = nil
-	}
 }
 
 func (f frameHeader) String() string {
@@ -296,7 +287,6 @@ func newFramer(r io.Reader, w io.Writer, compressor Compressor, version byte) *f
 
 type frame interface {
 	Header() frameHeader
-	release()
 }
 
 func readHeader(r io.Reader, p []byte) (head frameHeader, err error) {
@@ -1165,17 +1155,24 @@ func (f *framer) readBytes() []byte {
 		return nil
 	}
 
-	l := f.rbuf[:size]
+	// we cant make assumptions about the length of the life of the supplied byte
+	// slice so we defensivly copy it out of the underlying buffer. This has the
+	// downside of increasing allocs per read but will provide much greater memory
+	// safety. The allocs can hopefully be improved in the future.
+	// TODO: dont copy into a new slice
+	l := make([]byte, size)
+	copy(l, f.rbuf[:size])
 	f.rbuf = f.rbuf[size:]
 
 	return l
 }
 
 func (f *framer) readShortBytes() []byte {
-	n := f.readShort()
+	size := f.readShort()
 
-	l := f.rbuf[:n]
-	f.rbuf = f.rbuf[n:]
+	l := make([]byte, size)
+	copy(l, f.rbuf[:size])
+	f.rbuf = f.rbuf[size:]
 
 	return l
 }
@@ -1188,7 +1185,8 @@ func (f *framer) readInet() (net.IP, int) {
 		panic(fmt.Sprintf("invalid IP size: %d", size))
 	}
 
-	ip := f.rbuf[:size]
+	ip := make([]byte, size)
+	copy(ip, f.rbuf[:size])
 	f.rbuf = f.rbuf[size:]
 
 	port := f.readInt()

@@ -377,6 +377,9 @@ func (c *Conn) exec(req frameWriter, tracer Tracer) (frame, error) {
 		tracer.Trace(framer.traceID)
 	}
 
+	framerPool.Put(framer)
+	call.framer = nil
+
 	return frame, nil
 }
 
@@ -410,7 +413,6 @@ func (c *Conn) prepareStatement(stmt string, trace Tracer) (*resultPreparedFrame
 		flight.wg.Done()
 		return nil, err
 	}
-	defer resp.release()
 
 	switch x := resp.(type) {
 	case *resultPreparedFrame:
@@ -499,7 +501,6 @@ func (c *Conn) executeQuery(qry *Query) *Iter {
 	if err != nil {
 		return &Iter{err: err}
 	}
-	defer resp.release()
 
 	switch x := resp.(type) {
 	case *resultVoidFrame:
@@ -584,14 +585,13 @@ func (c *Conn) UseKeyspace(keyspace string) error {
 	if err != nil {
 		return err
 	}
-	defer resp.release()
 
 	switch x := resp.(type) {
 	case *resultKeyspaceFrame:
 	case error:
 		return x
 	default:
-		return NewErrProtocol("Unknown type in response to USE: %s", x)
+		return NewErrProtocol("unknown frame in response to USE: %v", x)
 	}
 
 	c.currentKeyspace = keyspace
@@ -665,7 +665,6 @@ func (c *Conn) executeBatch(batch *Batch) error {
 	if err != nil {
 		return err
 	}
-	defer resp.release()
 
 	switch x := resp.(type) {
 	case *resultVoidFrame:
