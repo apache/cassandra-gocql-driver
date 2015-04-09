@@ -54,7 +54,7 @@ function run_tests() {
 	if [ "$auth" = true ]
     then
     	ccm node1 cqlsh --version
-    	sleep 3s
+    	sleep 30s
     	echo "list users;" | SSL_VALIDATE=false SSL_CERTFILE=$keypath/cassandra.crt ccm node1 cqlsh --ssl -u cassandra -p cassandra
     	go test -v . -timeout 15s -run=TestAuthentication -tags integration -runssl -runauth -proto=$proto -cluster=$(ccm liveset) -clusterSize=$clusterSize -autowait=1000ms
 	else
