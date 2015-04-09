@@ -301,12 +301,20 @@ func (t *tokenRing) String() string {
 }
 
 func (t *tokenRing) GetHostForPartitionKey(partitionKey []byte) *HostInfo {
+	if t == nil {
+		return nil
+	}
+
 	token := t.partitioner.Hash(partitionKey)
 	return t.GetHostForToken(token)
 }
 
 func (t *tokenRing) GetHostForToken(token token) *HostInfo {
-	// find the primary repica
+	if t == nil {
+		return nil
+	}
+
+	// find the primary replica
 	ringIndex := sort.Search(
 		len(t.tokens),
 		func(i int) bool {

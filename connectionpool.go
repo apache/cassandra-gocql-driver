@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"math/rand"
 	"net"
 	"sync"
 	"time"
@@ -89,9 +90,14 @@ this type as the connection pool to use you would assign it to the ClusterConfig
 To see a more complete example of a ConnectionPool implementation please see the SimplePool type.
 */
 type ConnectionPool interface {
+	SetHosts
 	Pick(*Query) *Conn
 	Size() int
 	Close()
+}
+
+// interface to implement to receive the host information
+type SetHosts interface {
 	SetHosts(hosts []HostInfo)
 }
 
@@ -473,6 +479,11 @@ type policyConnPool struct {
 	hostConnPools map[string]*hostConnPool
 }
 
+//Creates a policy based connection pool. This func isn't meant to be directly
+//used as a NewPoolFunc in ClusterConfig, instead a func should be created
+//which satisfies the NewPoolFunc type, which calls this func with the desired
+//hostPolicy and connPolicy; see NewRoundRobinConnPool or NewTokenAwareConnPool
+//for examples.
 func NewPolicyConnPool(
 	cfg *ClusterConfig,
 	hostPolicy HostSelectionPolicy,
@@ -617,7 +628,7 @@ type hostConnPool struct {
 	keyspace string
 	policy   ConnSelectionPolicy
 	// protection for conns, closed, filling
-	mu      sync.Mutex
+	mu      sync.RWMutex
 	conns   []*Conn
 	closed  bool
 	filling bool
@@ -653,14 +664,14 @@ func newHostConnPool(
 
 // Pick a connection from this connection pool for the given query.
 func (pool *hostConnPool) Pick(qry *Query) *Conn {
-	pool.mu.Lock()
+	pool.mu.RLock()
 	if pool.closed {
-		pool.mu.Unlock()
+		pool.mu.RUnlock()
 		return nil
 	}
 
 	empty := len(pool.conns) == 0
-	pool.mu.Unlock()
+	pool.mu.RUnlock()
 
 	if empty {
 		// try to fill the empty pool
@@ -672,8 +683,8 @@ func (pool *hostConnPool) Pick(qry *Query) *Conn {
 
 //Size returns the number of connections currently active in the pool
 func (pool *hostConnPool) Size() int {
-	pool.mu.Lock()
-	defer pool.mu.Unlock()
+	pool.mu.RLock()
+	defer pool.mu.RUnlock()
 
 	return len(pool.conns)
 }
@@ -694,10 +705,10 @@ func (pool *hostConnPool) Close() {
 
 // Fill the connection pool
 func (pool *hostConnPool) fill() {
-	pool.mu.Lock()
+	pool.mu.RLock()
 	// avoid filling a closed pool, or concurrent filling
 	if pool.closed || pool.filling {
-		pool.mu.Unlock()
+		pool.mu.RUnlock()
 		return
 	}
 
@@ -707,6 +718,20 @@ func (pool *hostConnPool) fill() {
 
 	// avoid filling a full (or overfull) pool
 	if fillCount <= 0 {
+		pool.mu.RUnlock()
+		return
+	}
+
+	// switch from read to write lock
+	pool.mu.RUnlock()
+	pool.mu.Lock()
+
+	// double check everything since the lock was released
+	startCount = len(pool.conns)
+	fillCount = pool.size - startCount
+	if pool.closed || pool.filling || fillCount <= 0 {
+		// looks like another goroutine already beat this
+		// goroutine to the filling
 		pool.mu.Unlock()
 		return
 	}
@@ -716,16 +741,14 @@ func (pool *hostConnPool) fill() {
 
 	// allow others to access the pool while filling
 	pool.mu.Unlock()
+	// only this goroutine should make calls to fill/empty the pool at this
+	// point until after this routine or its subordinates calls
+	// fillingStopped
 
 	// fill only the first connection synchronously
 	if startCount == 0 {
 		err := pool.connect()
-		if opErr, ok := err.(*net.OpError); ok && opErr.Op == "read" {
-			// connection refused
-			// these are typical during a node outage so avoid log spam.
-		} else if err != nil {
-			log.Printf("error: failed to connect to %s - %v", pool.addr, err)
-		}
+		pool.logConnectErr(err)
 
 		if err != nil {
 			// probably unreachable host
@@ -741,12 +764,7 @@ func (pool *hostConnPool) fill() {
 	go func() {
 		for fillCount > 0 {
 			err := pool.connect()
-			if opErr, ok := err.(*net.OpError); ok && opErr.Op == "read" {
-				// connection refused
-				// these are typical during a node outage so avoid log spam.
-			} else if err != nil {
-				log.Printf("error: failed to connect to %s - %v", pool.addr, err)
-			}
+			pool.logConnectErr(err)
 
 			// decrement, even on error
 			fillCount--
@@ -757,10 +775,22 @@ func (pool *hostConnPool) fill() {
 	}()
 }
 
+func (pool *hostConnPool) logConnectErr(err error) {
+	if opErr, ok := err.(*net.OpError); ok && (opErr.Op == "dial" || opErr.Op == "red") {
+		// connection refused
+		// these are typical during a node outage so avoid log spam.
+	} else if err != nil {
+		// unexpected error
+		log.Printf("error: failed to connect to %s due to error: %v", pool.addr, err)
+	}
+}
+
 // transition back to a not-filling state.
 func (pool *hostConnPool) fillingStopped() {
 	// wait for some time to avoid back-to-back filling
-	time.Sleep(100 * time.Millisecond)
+	// this provides some time between failed attempts
+	// to fill the pool for the host to recover
+	time.Sleep(time.Duration(rand.Int31n(100)+31) * time.Millisecond)
 
 	pool.mu.Lock()
 	pool.filling = false

@@ -52,10 +52,8 @@ func (s *SimpleRetryPolicy) Attempt(q RetryableQuery) bool {
 //HostSelectionPolicy is an interface for selecting
 //the most appropriate host to execute a given query.
 type HostSelectionPolicy interface {
-	//SetHosts notifies this policy of the current hosts in the cluster
-	SetHosts(hosts []HostInfo)
-	//SetPartitioner notifies this policy of the current token partitioner
-	SetPartitioner(partitioner string)
+	SetHosts
+	SetPartitioner
 	//Pick returns an iteration function over selected hosts
 	Pick(*Query) NextHost
 }
@@ -85,13 +83,17 @@ func (r *roundRobinHostPolicy) SetPartitioner(partitioner string) {
 }
 
 func (r *roundRobinHostPolicy) Pick(qry *Query) NextHost {
-	pos := atomic.AddUint32(&r.pos, 1)
+	// i is used to limit the number of attempts to find a host
+	// to the number of hosts known to this policy
 	var i uint32 = 0
 	return func() *HostInfo {
 		var host *HostInfo
 		r.mu.RLock()
+		// always increment pos to evenly distribute traffic in case of
+		// failures
+		pos := atomic.AddUint32(&r.pos, 1)
 		if len(r.hosts) > 0 && int(i) < len(r.hosts) {
-			host = &r.hosts[(pos+i)%uint32(len(r.hosts))]
+			host = &r.hosts[(pos)%uint32(len(r.hosts))]
 			i++
 		}
 		r.mu.RUnlock()
@@ -127,10 +129,12 @@ func (t *tokenAwareHostPolicy) SetPartitioner(partitioner string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
-	t.fallback.SetPartitioner(partitioner)
-	t.partitioner = partitioner
+	if t.partitioner != partitioner {
+		t.fallback.SetPartitioner(partitioner)
+		t.partitioner = partitioner
 
-	t.resetTokenRing()
+		t.resetTokenRing()
+	}
 }
 
 func (t *tokenAwareHostPolicy) resetTokenRing() {
@@ -166,18 +170,19 @@ func (t *tokenAwareHostPolicy) Pick(qry *Query) NextHost {
 	var host *HostInfo
 
 	t.mu.RLock()
-	if t.tokenRing != nil {
-		host = t.tokenRing.GetHostForPartitionKey(routingKey)
-	}
+	// TODO retrieve a list of hosts based on the replication strategy
+	host = t.tokenRing.GetHostForPartitionKey(routingKey)
 	t.mu.RUnlock()
 
 	if host == nil {
 		return t.fallback.Pick(qry)
 	}
 
-	var hostReturned bool = false
-	var once sync.Once
-	var fallbackIter NextHost
+	// scope these variables for the same lifetime as the iterator function
+	var (
+		hostReturned bool
+		fallbackIter NextHost
+	)
 	return func() *HostInfo {
 		if !hostReturned {
 			hostReturned = true
@@ -185,9 +190,13 @@ func (t *tokenAwareHostPolicy) Pick(qry *Query) NextHost {
 		}
 
 		// fallback
-		once.Do(func() { fallbackIter = t.fallback.Pick(qry) })
+		if fallbackIter == nil {
+			fallbackIter = t.fallback.Pick(qry)
+		}
 
 		fallbackHost := fallbackIter()
+
+		// filter the token aware selected hosts from the fallback hosts
 		if fallbackHost == host {
 			fallbackHost = fallbackIter()
 		}
@@ -210,7 +219,7 @@ type roundRobinConnPolicy struct {
 }
 
 func NewRoundRobinConnPolicy() ConnSelectionPolicy {
-	return &roundRobinConnPolicy{conns: []*Conn{}}
+	return &roundRobinConnPolicy{}
 }
 
 func (r *roundRobinConnPolicy) SetConns(conns []*Conn) {
