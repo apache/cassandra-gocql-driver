@@ -37,6 +37,7 @@ function run_tests() {
 	if [ "$auth" = true ]
     then
 		ccm updateconf 'authenticator: PasswordAuthenticator' 'authorizer: CassandraAuthorizer'
+		rm -rf $HOME/.ccm/test/node1/data/system_auth
 	fi
 
 	ccm start -v
