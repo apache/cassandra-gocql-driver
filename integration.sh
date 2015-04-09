@@ -54,7 +54,7 @@ function run_tests() {
     then
     	ccm node1 cqlsh --version
     	sleep 3s
-    	echo "list users;" | CQLSH_HOST=127.0.0.1 SSL_CERTFILE=$keypath/cassandra.crt ccm node1 cqlsh --ssl -u cassandra -p cassandra
+    	echo "list users;" | SSL_CERTFILE=$keypath/cassandra.crt ccm node1 cqlsh --ssl -u cassandra -p cassandra
     	go test -v . -timeout 15s -run=TestAuthentication -tags integration -runssl -runauth -proto=$proto -cluster=$(ccm liveset) -clusterSize=$clusterSize -autowait=1000ms
 	else
 		go test -timeout 5m -tags integration -cover -v -runssl -proto=$proto -rf=3 -cluster=$(ccm liveset) -clusterSize=$clusterSize -autowait=2000ms -compressor=snappy ./... | tee results.txt
