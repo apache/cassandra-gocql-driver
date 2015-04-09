@@ -18,14 +18,8 @@ type RowData struct {
 	Values  []interface{}
 }
 
-// New creates a pointer to an empty version of whatever type
-// is referenced by the TypeInfo receiver
-func (t *TypeInfo) New() interface{} {
-	return reflect.New(goType(t)).Interface()
-}
-
-func goType(t *TypeInfo) reflect.Type {
-	switch t.Type {
+func goType(t TypeInfo) reflect.Type {
+	switch t.Type() {
 	case TypeVarchar, TypeAscii, TypeInet:
 		return reflect.TypeOf(*new(string))
 	case TypeBigInt, TypeCounter:
@@ -47,11 +41,15 @@ func goType(t *TypeInfo) reflect.Type {
 	case TypeUUID, TypeTimeUUID:
 		return reflect.TypeOf(*new(UUID))
 	case TypeList, TypeSet:
-		return reflect.SliceOf(goType(t.Elem))
+		return reflect.SliceOf(goType(t.(CollectionType).Elem))
 	case TypeMap:
-		return reflect.MapOf(goType(t.Key), goType(t.Elem))
+		return reflect.MapOf(goType(t.(CollectionType).Key), goType(t.(CollectionType).Elem))
 	case TypeVarint:
 		return reflect.TypeOf(*new(*big.Int))
+	case TypeTuple:
+		// what can we do here? all there is to do is to make a list of interface{}
+		tuple := t.(TupleTypeInfo)
+		return reflect.TypeOf(make([]interface{}, len(tuple.Elems)))
 	default:
 		return nil
 	}
@@ -62,47 +60,48 @@ func dereference(i interface{}) interface{} {
 }
 
 func getApacheCassandraType(class string) Type {
-	if strings.HasPrefix(class, apacheCassandraTypePrefix) {
-		switch strings.TrimPrefix(class, apacheCassandraTypePrefix) {
-		case "AsciiType":
-			return TypeAscii
-		case "LongType":
-			return TypeBigInt
-		case "BytesType":
-			return TypeBlob
-		case "BooleanType":
-			return TypeBoolean
-		case "CounterColumnType":
-			return TypeCounter
-		case "DecimalType":
-			return TypeDecimal
-		case "DoubleType":
-			return TypeDouble
-		case "FloatType":
-			return TypeFloat
-		case "Int32Type":
-			return TypeInt
-		case "DateType", "TimestampType":
-			return TypeTimestamp
-		case "UUIDType":
-			return TypeUUID
-		case "UTF8Type":
-			return TypeVarchar
-		case "IntegerType":
-			return TypeVarint
-		case "TimeUUIDType":
-			return TypeTimeUUID
-		case "InetAddressType":
-			return TypeInet
-		case "MapType":
-			return TypeMap
-		case "ListType":
-			return TypeList
-		case "SetType":
-			return TypeSet
-		}
+	switch strings.TrimPrefix(class, apacheCassandraTypePrefix) {
+	case "AsciiType":
+		return TypeAscii
+	case "LongType":
+		return TypeBigInt
+	case "BytesType":
+		return TypeBlob
+	case "BooleanType":
+		return TypeBoolean
+	case "CounterColumnType":
+		return TypeCounter
+	case "DecimalType":
+		return TypeDecimal
+	case "DoubleType":
+		return TypeDouble
+	case "FloatType":
+		return TypeFloat
+	case "Int32Type":
+		return TypeInt
+	case "DateType", "TimestampType":
+		return TypeTimestamp
+	case "UUIDType":
+		return TypeUUID
+	case "UTF8Type":
+		return TypeVarchar
+	case "IntegerType":
+		return TypeVarint
+	case "TimeUUIDType":
+		return TypeTimeUUID
+	case "InetAddressType":
+		return TypeInet
+	case "MapType":
+		return TypeMap
+	case "ListType":
+		return TypeList
+	case "SetType":
+		return TypeSet
+	case "TupleType":
+		return TypeTuple
+	default:
+		return TypeCustom
 	}
-	return TypeCustom
 }
 
 func (r *RowData) rowMap(m map[string]interface{}) {

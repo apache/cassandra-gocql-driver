@@ -92,14 +92,14 @@ func TestCompileMetadata(t *testing.T) {
 					PartitionKey: []*ColumnMetadata{
 						&ColumnMetadata{
 							Name: "key",
-							Type: TypeInfo{Type: TypeBlob},
+							Type: NativeType{typ: TypeBlob},
 						},
 					},
 					ClusteringColumns: []*ColumnMetadata{},
 					Columns: map[string]*ColumnMetadata{
 						"key": &ColumnMetadata{
 							Name: "key",
-							Type: TypeInfo{Type: TypeBlob},
+							Type: NativeType{typ: TypeBlob},
 							Kind: PARTITION_KEY,
 						},
 					},
@@ -108,42 +108,42 @@ func TestCompileMetadata(t *testing.T) {
 					PartitionKey: []*ColumnMetadata{
 						&ColumnMetadata{
 							Name: "target_id",
-							Type: TypeInfo{Type: TypeUUID},
+							Type: NativeType{typ: TypeUUID},
 						},
 					},
 					ClusteringColumns: []*ColumnMetadata{
 						&ColumnMetadata{
 							Name:  "hint_id",
-							Type:  TypeInfo{Type: TypeTimeUUID},
+							Type:  NativeType{typ: TypeTimeUUID},
 							Order: ASC,
 						},
 						&ColumnMetadata{
 							Name:  "message_version",
-							Type:  TypeInfo{Type: TypeInt},
+							Type:  NativeType{typ: TypeInt},
 							Order: ASC,
 						},
 					},
 					Columns: map[string]*ColumnMetadata{
 						"target_id": &ColumnMetadata{
 							Name: "target_id",
-							Type: TypeInfo{Type: TypeUUID},
+							Type: NativeType{typ: TypeUUID},
 							Kind: PARTITION_KEY,
 						},
 						"hint_id": &ColumnMetadata{
 							Name:  "hint_id",
-							Type:  TypeInfo{Type: TypeTimeUUID},
+							Type:  NativeType{typ: TypeTimeUUID},
 							Order: ASC,
 							Kind:  CLUSTERING_KEY,
 						},
 						"message_version": &ColumnMetadata{
 							Name:  "message_version",
-							Type:  TypeInfo{Type: TypeInt},
+							Type:  NativeType{typ: TypeInt},
 							Order: ASC,
 							Kind:  CLUSTERING_KEY,
 						},
 						"mutation": &ColumnMetadata{
 							Name: "mutation",
-							Type: TypeInfo{Type: TypeBlob},
+							Type: NativeType{typ: TypeBlob},
 							Kind: REGULAR,
 						},
 					},
@@ -152,53 +152,53 @@ func TestCompileMetadata(t *testing.T) {
 					PartitionKey: []*ColumnMetadata{
 						&ColumnMetadata{
 							Name: "peer",
-							Type: TypeInfo{Type: TypeInet},
+							Type: NativeType{typ: TypeInet},
 						},
 					},
 					ClusteringColumns: []*ColumnMetadata{},
 					Columns: map[string]*ColumnMetadata{
 						"peer": &ColumnMetadata{
 							Name: "peer",
-							Type: TypeInfo{Type: TypeInet},
+							Type: NativeType{typ: TypeInet},
 							Kind: PARTITION_KEY,
 						},
-						"data_center":     &ColumnMetadata{Keyspace: "V1Keyspace", Table: "peers", Kind: REGULAR, Name: "data_center", ComponentIndex: 0, Validator: "org.apache.cassandra.db.marshal.UTF8Type", Type: TypeInfo{Type: TypeVarchar}},
-						"host_id":         &ColumnMetadata{Keyspace: "V1Keyspace", Table: "peers", Kind: REGULAR, Name: "host_id", ComponentIndex: 0, Validator: "org.apache.cassandra.db.marshal.UUIDType", Type: TypeInfo{Type: TypeUUID}},
-						"rack":            &ColumnMetadata{Keyspace: "V1Keyspace", Table: "peers", Kind: REGULAR, Name: "rack", ComponentIndex: 0, Validator: "org.apache.cassandra.db.marshal.UTF8Type", Type: TypeInfo{Type: TypeVarchar}},
-						"release_version": &ColumnMetadata{Keyspace: "V1Keyspace", Table: "peers", Kind: REGULAR, Name: "release_version", ComponentIndex: 0, Validator: "org.apache.cassandra.db.marshal.UTF8Type", Type: TypeInfo{Type: TypeVarchar}},
-						"rpc_address":     &ColumnMetadata{Keyspace: "V1Keyspace", Table: "peers", Kind: REGULAR, Name: "rpc_address", ComponentIndex: 0, Validator: "org.apache.cassandra.db.marshal.InetAddressType", Type: TypeInfo{Type: TypeInet}},
-						"schema_version":  &ColumnMetadata{Keyspace: "V1Keyspace", Table: "peers", Kind: REGULAR, Name: "schema_version", ComponentIndex: 0, Validator: "org.apache.cassandra.db.marshal.UUIDType", Type: TypeInfo{Type: TypeUUID}},
-						"tokens":          &ColumnMetadata{Keyspace: "V1Keyspace", Table: "peers", Kind: REGULAR, Name: "tokens", ComponentIndex: 0, Validator: "org.apache.cassandra.db.marshal.SetType(org.apache.cassandra.db.marshal.UTF8Type)", Type: TypeInfo{Type: TypeSet}},
+						"data_center":     &ColumnMetadata{Keyspace: "V1Keyspace", Table: "peers", Kind: REGULAR, Name: "data_center", ComponentIndex: 0, Validator: "org.apache.cassandra.db.marshal.UTF8Type", Type: NativeType{typ: TypeVarchar}},
+						"host_id":         &ColumnMetadata{Keyspace: "V1Keyspace", Table: "peers", Kind: REGULAR, Name: "host_id", ComponentIndex: 0, Validator: "org.apache.cassandra.db.marshal.UUIDType", Type: NativeType{typ: TypeUUID}},
+						"rack":            &ColumnMetadata{Keyspace: "V1Keyspace", Table: "peers", Kind: REGULAR, Name: "rack", ComponentIndex: 0, Validator: "org.apache.cassandra.db.marshal.UTF8Type", Type: NativeType{typ: TypeVarchar}},
+						"release_version": &ColumnMetadata{Keyspace: "V1Keyspace", Table: "peers", Kind: REGULAR, Name: "release_version", ComponentIndex: 0, Validator: "org.apache.cassandra.db.marshal.UTF8Type", Type: NativeType{typ: TypeVarchar}},
+						"rpc_address":     &ColumnMetadata{Keyspace: "V1Keyspace", Table: "peers", Kind: REGULAR, Name: "rpc_address", ComponentIndex: 0, Validator: "org.apache.cassandra.db.marshal.InetAddressType", Type: NativeType{typ: TypeInet}},
+						"schema_version":  &ColumnMetadata{Keyspace: "V1Keyspace", Table: "peers", Kind: REGULAR, Name: "schema_version", ComponentIndex: 0, Validator: "org.apache.cassandra.db.marshal.UUIDType", Type: NativeType{typ: TypeUUID}},
+						"tokens":          &ColumnMetadata{Keyspace: "V1Keyspace", Table: "peers", Kind: REGULAR, Name: "tokens", ComponentIndex: 0, Validator: "org.apache.cassandra.db.marshal.SetType(org.apache.cassandra.db.marshal.UTF8Type)", Type: CollectionType{NativeType: NativeType{typ: TypeSet}}},
 					},
 				},
 				"IndexInfo": &TableMetadata{
 					PartitionKey: []*ColumnMetadata{
 						&ColumnMetadata{
 							Name: "table_name",
-							Type: TypeInfo{Type: TypeVarchar},
+							Type: NativeType{typ: TypeVarchar},
 						},
 					},
 					ClusteringColumns: []*ColumnMetadata{
 						&ColumnMetadata{
 							Name:  "index_name",
-							Type:  TypeInfo{Type: TypeVarchar},
+							Type:  NativeType{typ: TypeVarchar},
 							Order: ASC,
 						},
 					},
 					Columns: map[string]*ColumnMetadata{
 						"table_name": &ColumnMetadata{
 							Name: "table_name",
-							Type: TypeInfo{Type: TypeVarchar},
+							Type: NativeType{typ: TypeVarchar},
 							Kind: PARTITION_KEY,
 						},
 						"index_name": &ColumnMetadata{
 							Name: "index_name",
-							Type: TypeInfo{Type: TypeVarchar},
+							Type: NativeType{typ: TypeVarchar},
 							Kind: CLUSTERING_KEY,
 						},
 						"value": &ColumnMetadata{
 							Name: "value",
-							Type: TypeInfo{Type: TypeBlob},
+							Type: NativeType{typ: TypeBlob},
 							Kind: REGULAR,
 						},
 					},
@@ -207,25 +207,25 @@ func TestCompileMetadata(t *testing.T) {
 					PartitionKey: []*ColumnMetadata{
 						&ColumnMetadata{
 							Name: "title",
-							Type: TypeInfo{Type: TypeVarchar},
+							Type: NativeType{typ: TypeVarchar},
 						},
 					},
 					ClusteringColumns: []*ColumnMetadata{
 						&ColumnMetadata{
 							Name:  "revid",
-							Type:  TypeInfo{Type: TypeTimeUUID},
+							Type:  NativeType{typ: TypeTimeUUID},
 							Order: ASC,
 						},
 					},
 					Columns: map[string]*ColumnMetadata{
 						"title": &ColumnMetadata{
 							Name: "title",
-							Type: TypeInfo{Type: TypeVarchar},
+							Type: NativeType{typ: TypeVarchar},
 							Kind: PARTITION_KEY,
 						},
 						"revid": &ColumnMetadata{
 							Name: "revid",
-							Type: TypeInfo{Type: TypeTimeUUID},
+							Type: NativeType{typ: TypeTimeUUID},
 							Kind: CLUSTERING_KEY,
 						},
 					},
@@ -289,14 +289,14 @@ func TestCompileMetadata(t *testing.T) {
 					PartitionKey: []*ColumnMetadata{
 						&ColumnMetadata{
 							Name: "Key1",
-							Type: TypeInfo{Type: TypeVarchar},
+							Type: NativeType{typ: TypeVarchar},
 						},
 					},
 					ClusteringColumns: []*ColumnMetadata{},
 					Columns: map[string]*ColumnMetadata{
 						"Key1": &ColumnMetadata{
 							Name: "Key1",
-							Type: TypeInfo{Type: TypeVarchar},
+							Type: NativeType{typ: TypeVarchar},
 							Kind: PARTITION_KEY,
 						},
 					},
@@ -305,29 +305,29 @@ func TestCompileMetadata(t *testing.T) {
 					PartitionKey: []*ColumnMetadata{
 						&ColumnMetadata{
 							Name: "Column1",
-							Type: TypeInfo{Type: TypeVarchar},
+							Type: NativeType{typ: TypeVarchar},
 						},
 					},
 					ClusteringColumns: []*ColumnMetadata{
 						&ColumnMetadata{
 							Name: "Column2",
-							Type: TypeInfo{Type: TypeVarchar},
+							Type: NativeType{typ: TypeVarchar},
 						},
 					},
 					Columns: map[string]*ColumnMetadata{
 						"Column1": &ColumnMetadata{
 							Name: "Column1",
-							Type: TypeInfo{Type: TypeVarchar},
+							Type: NativeType{typ: TypeVarchar},
 							Kind: PARTITION_KEY,
 						},
 						"Column2": &ColumnMetadata{
 							Name: "Column2",
-							Type: TypeInfo{Type: TypeVarchar},
+							Type: NativeType{typ: TypeVarchar},
 							Kind: CLUSTERING_KEY,
 						},
 						"Column3": &ColumnMetadata{
 							Name: "Column3",
-							Type: TypeInfo{Type: TypeVarchar},
+							Type: NativeType{typ: TypeVarchar},
 							Kind: REGULAR,
 						},
 					},
@@ -364,8 +364,8 @@ func assertKeyspaceMetadata(t *testing.T, actual, expected *KeyspaceMetadata) {
 					if keyT != at.PartitionKey[i].Table {
 						t.Errorf("Expected %s.Tables[%s].PartitionKey[%d].Table to be '%v' but was '%v'", expected.Name, keyT, i, keyT, at.PartitionKey[i].Table)
 					}
-					if et.PartitionKey[i].Type.Type != at.PartitionKey[i].Type.Type {
-						t.Errorf("Expected %s.Tables[%s].PartitionKey[%d].Type.Type to be %v but was %v", expected.Name, keyT, i, et.PartitionKey[i].Type.Type, at.PartitionKey[i].Type.Type)
+					if et.PartitionKey[i].Type.Type() != at.PartitionKey[i].Type.Type() {
+						t.Errorf("Expected %s.Tables[%s].PartitionKey[%d].Type.Type to be %v but was %v", expected.Name, keyT, i, et.PartitionKey[i].Type.Type(), at.PartitionKey[i].Type.Type())
 					}
 					if i != at.PartitionKey[i].ComponentIndex {
 						t.Errorf("Expected %s.Tables[%s].PartitionKey[%d].ComponentIndex to be %v but was %v", expected.Name, keyT, i, i, at.PartitionKey[i].ComponentIndex)
@@ -388,8 +388,8 @@ func assertKeyspaceMetadata(t *testing.T, actual, expected *KeyspaceMetadata) {
 					if keyT != at.ClusteringColumns[i].Table {
 						t.Errorf("Expected %s.Tables[%s].ClusteringColumns[%d].Table to be '%v' but was '%v'", expected.Name, keyT, i, keyT, at.ClusteringColumns[i].Table)
 					}
-					if et.ClusteringColumns[i].Type.Type != at.ClusteringColumns[i].Type.Type {
-						t.Errorf("Expected %s.Tables[%s].ClusteringColumns[%d].Type.Type to be %v but was %v", expected.Name, keyT, i, et.ClusteringColumns[i].Type.Type, at.ClusteringColumns[i].Type.Type)
+					if et.ClusteringColumns[i].Type.Type() != at.ClusteringColumns[i].Type.Type() {
+						t.Errorf("Expected %s.Tables[%s].ClusteringColumns[%d].Type.Type to be %v but was %v", expected.Name, keyT, i, et.ClusteringColumns[i].Type.Type(), at.ClusteringColumns[i].Type.Type())
 					}
 					if i != at.ClusteringColumns[i].ComponentIndex {
 						t.Errorf("Expected %s.Tables[%s].ClusteringColumns[%d].ComponentIndex to be %v but was %v", expected.Name, keyT, i, i, at.ClusteringColumns[i].ComponentIndex)
@@ -429,8 +429,8 @@ func assertKeyspaceMetadata(t *testing.T, actual, expected *KeyspaceMetadata) {
 						if keyT != ac.Table {
 							t.Errorf("Expected %s.Tables[%s].Columns[%s].Table to be '%v' but was '%v'", expected.Name, keyT, keyC, keyT, ac.Table)
 						}
-						if ec.Type.Type != ac.Type.Type {
-							t.Errorf("Expected %s.Tables[%s].Columns[%s].Type.Type to be %v but was %v", expected.Name, keyT, keyC, ec.Type.Type, ac.Type.Type)
+						if ec.Type.Type() != ac.Type.Type() {
+							t.Errorf("Expected %s.Tables[%s].Columns[%s].Type.Type to be %v but was %v", expected.Name, keyT, keyC, ec.Type.Type(), ac.Type.Type())
 						}
 						if ec.Order != ac.Order {
 							t.Errorf("Expected %s.Tables[%s].Columns[%s].Order to be %v but was %v", expected.Name, keyT, keyC, ec.Order, ac.Order)
@@ -633,38 +633,45 @@ func assertParseNonCompositeTypes(
 		}
 
 		// check the type
-		if typeActual.Type != typeExpected.Type {
-			t.Errorf("%s: Expected to parse Type to %s but was %s", context, typeExpected.Type, typeActual.Type)
+		if typeActual.Type() != typeExpected.Type {
+			t.Errorf("%s: Expected to parse Type to %s but was %s", context, typeExpected.Type, typeActual.Type())
 		}
 		// check the custom
-		if typeActual.Custom != typeExpected.Custom {
-			t.Errorf("%s: Expected to parse Custom %s but was %s", context, typeExpected.Custom, typeActual.Custom)
+		if typeActual.Custom() != typeExpected.Custom {
+			t.Errorf("%s: Expected to parse Custom %s but was %s", context, typeExpected.Custom, typeActual.Custom())
 		}
+
+		collection, _ := typeActual.(CollectionType)
 		// check the elem
-		if typeActual.Elem == nil && typeExpected.Elem != nil {
-			t.Errorf("%s: Expected to parse Elem, but was nil ", context)
-		} else if typeExpected.Elem == nil && typeActual.Elem != nil {
-			t.Errorf("%s: Expected to not parse Elem, but was %+v", context, typeActual.Elem)
-		} else if typeActual.Elem != nil && typeExpected.Elem != nil {
-			assertParseNonCompositeTypes(
-				t,
-				context+".Elem",
-				[]assertTypeInfo{*typeExpected.Elem},
-				[]TypeInfo{*typeActual.Elem},
-			)
+		if typeExpected.Elem != nil {
+			if collection.Elem == nil {
+				t.Errorf("%s: Expected to parse Elem, but was nil ", context)
+			} else {
+				assertParseNonCompositeTypes(
+					t,
+					context+".Elem",
+					[]assertTypeInfo{*typeExpected.Elem},
+					[]TypeInfo{collection.Elem},
+				)
+			}
+		} else if collection.Elem != nil {
+			t.Errorf("%s: Expected to not parse Elem, but was %+v", context, collection.Elem)
 		}
+
 		// check the key
-		if typeActual.Key == nil && typeExpected.Key != nil {
-			t.Errorf("%s: Expected to parse Key, but was nil ", context)
-		} else if typeExpected.Key == nil && typeActual.Key != nil {
-			t.Errorf("%s: Expected to not parse Key, but was %+v", context, typeActual.Key)
-		} else if typeActual.Key != nil && typeExpected.Key != nil {
-			assertParseNonCompositeTypes(
-				t,
-				context+".Key",
-				[]assertTypeInfo{*typeExpected.Key},
-				[]TypeInfo{*typeActual.Key},
-			)
+		if typeExpected.Key != nil {
+			if collection.Key == nil {
+				t.Errorf("%s: Expected to parse Key, but was nil ", context)
+			} else {
+				assertParseNonCompositeTypes(
+					t,
+					context+".Key",
+					[]assertTypeInfo{*typeExpected.Key},
+					[]TypeInfo{collection.Key},
+				)
+			}
+		} else if collection.Key != nil {
+			t.Errorf("%s: Expected to not parse Key, but was %+v", context, collection.Key)
 		}
 	}
 }

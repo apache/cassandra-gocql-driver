@@ -227,7 +227,7 @@ func compileV1Metadata(tables []TableMetadata) {
 		if comparatorParsed.isComposite {
 			if len(comparatorParsed.collections) != 0 ||
 				(len(table.ColumnAliases) == size-1 &&
-					comparatorParsed.types[size-1].Type == TypeVarchar) {
+					comparatorParsed.types[size-1].Type() == TypeVarchar) {
 				size = size - 1
 			}
 		} else {
@@ -603,9 +603,9 @@ func (t *typeParser) parse() typeParserResult {
 		return typeParserResult{
 			isComposite: false,
 			types: []TypeInfo{
-				TypeInfo{
-					Type:   TypeCustom,
-					Custom: t.input,
+				NativeType{
+					typ:    TypeCustom,
+					custom: t.input,
 				},
 			},
 			reversed:    []bool{false},
@@ -681,33 +681,39 @@ func (t *typeParser) parse() typeParserResult {
 func (class *typeParserClassNode) asTypeInfo() TypeInfo {
 	if strings.HasPrefix(class.name, LIST_TYPE) {
 		elem := class.params[0].class.asTypeInfo()
-		return TypeInfo{
-			Type: TypeList,
-			Elem: &elem,
+		return CollectionType{
+			NativeType: NativeType{
+				typ: TypeList,
+			},
+			Elem: elem,
 		}
 	}
 	if strings.HasPrefix(class.name, SET_TYPE) {
 		elem := class.params[0].class.asTypeInfo()
-		return TypeInfo{
-			Type: TypeSet,
-			Elem: &elem,
+		return CollectionType{
+			NativeType: NativeType{
+				typ: TypeSet,
+			},
+			Elem: elem,
 		}
 	}
 	if strings.HasPrefix(class.name, MAP_TYPE) {
 		key := class.params[0].class.asTypeInfo()
 		elem := class.params[1].class.asTypeInfo()
-		return TypeInfo{
-			Type: TypeMap,
-			Key:  &key,
-			Elem: &elem,
+		return CollectionType{
+			NativeType: NativeType{
+				typ: TypeMap,
+			},
+			Key:  key,
+			Elem: elem,
 		}
 	}
 
 	// must be a simple type or custom type
-	info := TypeInfo{Type: getApacheCassandraType(class.name)}
-	if info.Type == TypeCustom {
+	info := NativeType{typ: getApacheCassandraType(class.name)}
+	if info.typ == TypeCustom {
 		// add the entire class definition
-		info.Custom = class.input
+		info.custom = class.input
 	}
 	return info
 }

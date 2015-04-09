@@ -569,38 +569,52 @@ func (f *framer) writePrepareFrame(stream int, statement string) error {
 	return f.finishWrite()
 }
 
-func (f *framer) readTypeInfo() *TypeInfo {
+func (f *framer) readTypeInfo() TypeInfo {
+	// TODO: factor this out so the same code paths can be used to parse custom
+	// types and other types, as much of the logic will be duplicated.
 	id := f.readShort()
-	typ := &TypeInfo{
-		// we need to pass proto to the marshaller here
-		Proto: f.proto,
-		Type:  Type(id),
+
+	simple := NativeType{
+		proto: f.proto,
+		typ:   Type(id),
 	}
 
-	switch typ.Type {
-	case TypeCustom:
-		typ.Custom = f.readString()
-		if cassType := getApacheCassandraType(typ.Custom); cassType != TypeCustom {
-			typ = &TypeInfo{
-				Proto: f.proto,
-				Type:  cassType,
-			}
-			switch typ.Type {
-			case TypeMap:
-				typ.Key = f.readTypeInfo()
-				fallthrough
-			case TypeList, TypeSet:
-				typ.Elem = f.readTypeInfo()
-			}
+	if simple.typ == TypeCustom {
+		simple.custom = f.readString()
+		if cassType := getApacheCassandraType(simple.custom); cassType != TypeCustom {
+			simple.typ = cassType
 		}
-	case TypeMap:
-		typ.Key = f.readTypeInfo()
-		fallthrough
-	case TypeList, TypeSet:
-		typ.Elem = f.readTypeInfo()
 	}
 
-	return typ
+	switch simple.typ {
+	case TypeTuple:
+		n := f.readShort()
+		tuple := TupleTypeInfo{
+			NativeType: simple,
+			Elems:      make([]TypeInfo, n),
+		}
+
+		for i := 0; i < int(n); i++ {
+			tuple.Elems[i] = f.readTypeInfo()
+		}
+
+		return tuple
+
+	case TypeMap, TypeList, TypeSet:
+		collection := CollectionType{
+			NativeType: simple,
+		}
+
+		if simple.typ == TypeMap {
+			collection.Key = f.readTypeInfo()
+		}
+
+		collection.Elem = f.readTypeInfo()
+
+		return collection
+	}
+
+	return simple
 }
 
 type resultMetadata struct {
@@ -610,6 +624,11 @@ type resultMetadata struct {
 	pagingState []byte
 
 	columns []ColumnInfo
+
+	// this is a count of the total number of columns which can be scanned,
+	// it is at minimum len(columns) but may be larger, for instance when a column
+	// is a UDT or tuple.
+	actualColCount int
 }
 
 func (r resultMetadata) String() string {
@@ -622,6 +641,7 @@ func (f *framer) parseResultMetadata() resultMetadata {
 	}
 
 	colCount := f.readInt()
+	meta.actualColCount = colCount
 
 	if meta.flags&flagHasMorePages == flagHasMorePages {
 		meta.pagingState = f.readBytes()
@@ -653,6 +673,12 @@ func (f *framer) parseResultMetadata() resultMetadata {
 
 		col.Name = f.readString()
 		col.TypeInfo = f.readTypeInfo()
+		switch v := col.TypeInfo.(type) {
+		// maybe also UDT
+		case TupleTypeInfo:
+			// -1 because we already included the tuple column
+			meta.actualColCount += len(v.Elems) - 1
+		}
 	}
 
 	meta.columns = cols
