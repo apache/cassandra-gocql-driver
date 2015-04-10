@@ -297,11 +297,11 @@ func readHeader(r io.Reader, p []byte) (head frameHeader, err error) {
 
 	head.flags = p[1]
 	if version > protoVersion2 {
-		head.stream = int(readShort(p[2:]))
+		head.stream = int(int16(p[2])<<8 | int16(p[3]))
 		head.op = frameOp(p[4])
 		head.length = int(readInt(p[5:]))
 	} else {
-		head.stream = int(p[2])
+		head.stream = int(int8(p[2]))
 		head.op = frameOp(p[3])
 		head.length = int(readInt(p[4:]))
 	}
