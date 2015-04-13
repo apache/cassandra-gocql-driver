@@ -34,7 +34,7 @@ install:
 
 script:
   - set -e
-  - go test -v -tags unit
+  - go test -race -v -tags unit
   - PATH=$PATH:$HOME/.local/bin bash -x integration.sh $CASS $AUTH
   - go vet .
 
