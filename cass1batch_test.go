@@ -12,6 +12,7 @@ func TestProto1BatchInsert(t *testing.T) {
 	if err := session.Query("CREATE TABLE large (id int primary key)").Exec(); err != nil {
 		t.Fatal("create table:", err)
 	}
+	defer session.Close()
 
 	begin := "BEGIN BATCH"
 	end := "APPLY BATCH"
