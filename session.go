@@ -96,7 +96,7 @@ func (s *Session) Query(stmt string, values ...interface{}) *Query {
 	s.mu.RLock()
 	qry := &Query{stmt: stmt, values: values, cons: s.cons,
 		session: s, pageSize: s.pageSize, trace: s.trace,
-		prefetch: s.prefetch, rt: s.cfg.RetryPolicy}
+		prefetch: s.prefetch, rt: s.cfg.RetryPolicy, serialCons: s.cfg.SerialConsistency}
 	s.mu.RUnlock()
 	return qry
 }
@@ -372,6 +372,7 @@ type Query struct {
 	binding      func(q *QueryInfo) ([]interface{}, error)
 	attempts     int
 	totalLatency int64
+	serialCons   SerialConsistency
 }
 
 //Attempts returns the number of times the query was executed.
@@ -514,6 +515,16 @@ func (q *Query) RetryPolicy(r RetryPolicy) *Query {
 // to an existing query instance.
 func (q *Query) Bind(v ...interface{}) *Query {
 	q.values = v
+	return q
+}
+
+// SerialConsistency sets the consistencyc level for the
+// serial phase of conditional updates. That consitency can only be
+// either SERIAL or LOCAL_SERIAL and if not present, it defaults to
+// SERIAL. This option will be ignored for anything else that a
+// conditional update/insert.
+func (q *Query) SerialConsistency(cons SerialConsistency) *Query {
+	q.serialCons = cons
 	return q
 }
 
@@ -713,6 +724,7 @@ type Batch struct {
 	rt           RetryPolicy
 	attempts     int
 	totalLatency int64
+	serialCons   SerialConsistency
 }
 
 // NewBatch creates a new batch operation without defaults from the cluster
@@ -722,7 +734,7 @@ func NewBatch(typ BatchType) *Batch {
 
 // NewBatch creates a new batch operation using defaults defined in the cluster
 func (s *Session) NewBatch(typ BatchType) *Batch {
-	return &Batch{Type: typ, rt: s.cfg.RetryPolicy}
+	return &Batch{Type: typ, rt: s.cfg.RetryPolicy, serialCons: s.cfg.SerialConsistency}
 }
 
 // Attempts returns the number of attempts made to execute the batch.
@@ -765,6 +777,18 @@ func (b *Batch) RetryPolicy(r RetryPolicy) *Batch {
 // Size returns the number of batch statements to be executed by the batch operation.
 func (b *Batch) Size() int {
 	return len(b.Entries)
+}
+
+// SerialConsistency sets the consistencyc level for the
+// serial phase of conditional updates. That consitency can only be
+// either SERIAL or LOCAL_SERIAL and if not present, it defaults to
+// SERIAL. This option will be ignored for anything else that a
+// conditional update/insert.
+//
+// Only available for protocol 3 and above
+func (b *Batch) SerialConsistency(cons SerialConsistency) *Batch {
+	b.serialCons = cons
+	return b
 }
 
 type BatchType byte

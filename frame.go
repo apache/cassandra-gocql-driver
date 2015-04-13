@@ -135,16 +135,14 @@ type Consistency uint16
 
 const (
 	Any         Consistency = 0x00
-	One                     = 0x01
-	Two                     = 0x02
-	Three                   = 0x03
-	Quorum                  = 0x04
-	All                     = 0x05
-	LocalQuorum             = 0x06
-	EachQuorum              = 0x07
-	Serial                  = 0x08
-	LocalSerial             = 0x09
-	LocalOne                = 0x0A
+	One         Consistency = 0x01
+	Two         Consistency = 0x02
+	Three       Consistency = 0x03
+	Quorum      Consistency = 0x04
+	All         Consistency = 0x05
+	LocalQuorum Consistency = 0x06
+	EachQuorum  Consistency = 0x07
+	LocalOne    Consistency = 0x0A
 )
 
 func (c Consistency) String() string {
@@ -165,14 +163,28 @@ func (c Consistency) String() string {
 		return "LOCAL_QUORUM"
 	case EachQuorum:
 		return "EACH_QUORUM"
-	case Serial:
-		return "SERIAL"
-	case LocalSerial:
-		return "LOCAL_SERIAL"
 	case LocalOne:
 		return "LOCAL_ONE"
 	default:
 		return fmt.Sprintf("UNKNOWN_CONS_0x%x", uint16(c))
+	}
+}
+
+type SerialConsistency uint16
+
+const (
+	Serial      SerialConsistency = 0x08
+	LocalSerial SerialConsistency = 0x09
+)
+
+func (s SerialConsistency) String() string {
+	switch s {
+	case Serial:
+		return "SERIAL"
+	case LocalSerial:
+		return "LOCAL_SERIAL"
+	default:
+		return fmt.Sprintf("UNKNOWN_SERIAL_CONS_0x%x", uint16(s))
 	}
 }
 
@@ -904,7 +916,7 @@ type queryParams struct {
 	values            []queryValues
 	pageSize          int
 	pagingState       []byte
-	serialConsistency Consistency
+	serialConsistency SerialConsistency
 	// v3+
 	timestamp *time.Time
 }
@@ -972,7 +984,7 @@ func (f *framer) writeQueryParams(opts *queryParams) {
 	}
 
 	if opts.serialConsistency > 0 {
-		f.writeConsistency(opts.serialConsistency)
+		f.writeConsistency(Consistency(opts.serialConsistency))
 	}
 
 	if f.proto > protoVersion2 && opts.timestamp != nil {
@@ -1048,10 +1060,12 @@ type batchStatment struct {
 }
 
 type writeBatchFrame struct {
-	typ               BatchType
-	statements        []batchStatment
-	consistency       Consistency
-	serialConsistency Consistency
+	typ         BatchType
+	statements  []batchStatment
+	consistency Consistency
+
+	// v3+
+	serialConsistency SerialConsistency
 	defaultTimestamp  bool
 }
 
@@ -1104,7 +1118,7 @@ func (f *framer) writeBatchFrame(streamID int, w *writeBatchFrame) error {
 		f.writeByte(flags)
 
 		if w.serialConsistency > 0 {
-			f.writeConsistency(w.serialConsistency)
+			f.writeConsistency(Consistency(w.serialConsistency))
 		}
 		if w.defaultTimestamp {
 			now := time.Now().UnixNano() / 1000

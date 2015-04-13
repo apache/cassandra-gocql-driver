@@ -279,6 +279,7 @@ func TestCAS(t *testing.T) {
 
 	session := createSession(t)
 	defer session.Close()
+	session.cfg.SerialConsistency = LocalSerial
 
 	if err := createTable(session, `CREATE TABLE cas_table (
 			title         varchar,
