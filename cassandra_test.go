@@ -1132,6 +1132,8 @@ func TestPreparedCacheEviction(t *testing.T) {
 		t.Fatalf("insert into prepcachetest failed, error '%v'", err)
 	}
 
+	stmtsLRU.Lock()
+
 	//Make sure the cache size is maintained
 	if stmtsLRU.lru.Len() != stmtsLRU.lru.MaxEntries {
 		t.Fatalf("expected cache size of %v, got %v", stmtsLRU.lru.MaxEntries, stmtsLRU.lru.Len())
@@ -1154,8 +1156,10 @@ func TestPreparedCacheEviction(t *testing.T) {
 
 		_, ok = stmtsLRU.lru.Get(session.cfg.Hosts[i] + ":9042gocql_testSELECT id,mod FROM prepcachetest WHERE id = 0")
 		selEvict = selEvict || !ok
-
 	}
+
+	stmtsLRU.Unlock()
+
 	if !selEvict {
 		t.Fatalf("expected first select statement to be purged, but statement was found in the cache.")
 	}
