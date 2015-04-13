@@ -16,6 +16,7 @@ func TestSessionAPI(t *testing.T) {
 	}
 
 	s := NewSession(pool, cfg)
+	defer s.Close()
 
 	s.SetConsistency(All)
 	if s.cons != All {
@@ -161,6 +162,8 @@ func TestBatchBasicAPI(t *testing.T) {
 	}
 
 	s := NewSession(pool, cfg)
+	defer s.Close()
+
 	b := s.NewBatch(UnloggedBatch)
 	if b.Type != UnloggedBatch {
 		t.Fatalf("expceted batch.Type to be '%v', got '%v'", UnloggedBatch, b.Type)
