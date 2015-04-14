@@ -326,7 +326,6 @@ func (c *Conn) recv() error {
 	// once we get to here we know that the caller must be waiting and that there
 	// is no error.
 	call.resp <- nil
-	c.uniq <- head.stream
 
 	return nil
 }
@@ -337,9 +336,17 @@ type callReq struct {
 	framer *framer
 }
 
+func (c *Conn) releaseStream(stream int) {
+	select {
+	case c.uniq <- stream:
+	default:
+	}
+}
+
 func (c *Conn) exec(req frameWriter, tracer Tracer) (frame, error) {
 	// TODO: move tracer onto conn
 	stream := <-c.uniq
+	defer c.releaseStream(stream)
 
 	call := &c.calls[stream]
 	// resp is basically a waiting semaphore protecting the framer
