@@ -1087,11 +1087,11 @@ func (f *framer) writeBatchFrame(streamID int, w *writeBatchFrame) error {
 		if len(b.preparedID) == 0 {
 			f.writeByte(0)
 			f.writeLongString(b.statement)
-			continue
+		} else {
+			f.writeByte(1)
+			f.writeShortBytes(b.preparedID)
 		}
 
-		f.writeByte(1)
-		f.writeShortBytes(b.preparedID)
 		f.writeShort(uint16(len(b.values)))
 		for j := range b.values {
 			col := &b.values[j]
