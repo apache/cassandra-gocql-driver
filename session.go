@@ -660,8 +660,8 @@ func (iter *Iter) Scan(dest ...interface{}) bool {
 			continue
 		}
 
-		// how can we allow users to pass in a single struct to unmarshal into
-		if col.TypeInfo.Type() == TypeTuple {
+		switch col.TypeInfo.Type() {
+		case TypeTuple:
 			// this will panic, actually a bug, please report
 			tuple := col.TypeInfo.(TupleTypeInfo)
 
@@ -669,18 +669,15 @@ func (iter *Iter) Scan(dest ...interface{}) bool {
 			// here we pass in a slice of the struct which has the number number of
 			// values as elements in the tuple
 			iter.err = Unmarshal(col.TypeInfo, iter.rows[iter.pos][c], dest[i:i+count])
-			if iter.err != nil {
-				return false
-			}
 			i += count
-			continue
+		default:
+			iter.err = Unmarshal(col.TypeInfo, iter.rows[iter.pos][c], dest[i])
+			i++
 		}
 
-		iter.err = Unmarshal(col.TypeInfo, iter.rows[iter.pos][c], dest[i])
 		if iter.err != nil {
 			return false
 		}
-		i++
 	}
 
 	iter.pos++

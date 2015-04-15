@@ -612,6 +612,22 @@ func (f *framer) readTypeInfo() TypeInfo {
 
 		return tuple
 
+	case TypeUDT:
+		udt := UDTTypeInfo{
+			NativeType: simple,
+		}
+		udt.KeySpace = f.readString()
+		udt.Name = f.readString()
+
+		n := f.readShort()
+		udt.Elements = make([]UDTField, n)
+		for i := 0; i < int(n); i++ {
+			field := &udt.Elements[i]
+			field.Name = f.readString()
+			field.Type = f.readTypeInfo()
+		}
+
+		return udt
 	case TypeMap, TypeList, TypeSet:
 		collection := CollectionType{
 			NativeType: simple,

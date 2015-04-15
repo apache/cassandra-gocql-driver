@@ -83,6 +83,8 @@ func Marshal(info TypeInfo, value interface{}) ([]byte, error) {
 		return marshalVarint(info, value)
 	case TypeInet:
 		return marshalInet(info, value)
+	case TypeUDT:
+		return marshalUDT(info, value)
 	}
 	// TODO(tux21b): add the remaining types
 	return nil, fmt.Errorf("can not marshal %T into %s", value, info)
@@ -130,6 +132,8 @@ func Unmarshal(info TypeInfo, data []byte, value interface{}) error {
 		return unmarshalInet(info, data, value)
 	case TypeTuple:
 		return unmarshalTuple(info, data, value)
+	case TypeUDT:
+		return unmarshalUDT(info, data, value)
 	}
 	// TODO(tux21b): add the remaining types
 	return fmt.Errorf("can not unmarshal %s into %T", info, value)
@@ -1198,6 +1202,97 @@ func unmarshalTuple(info TypeInfo, data []byte, value interface{}) error {
 	return unmarshalErrorf("cannot unmarshal %s into %T", info, value)
 }
 
+// UDTMarshaler is an interface which should be implemented by users wishing to
+// handle encoding UDT types to sent to Cassandra.
+type UDTMarshaler interface {
+	EncodeUDTField(name string, info TypeInfo) ([]byte, error)
+}
+
+type UDTUnmarshaler interface {
+	DecodeUDTField(name string, info TypeInfo, data []byte) error
+}
+
+func marshalUDT(info TypeInfo, value interface{}) ([]byte, error) {
+	udt := info.(UDTTypeInfo)
+
+	switch v := value.(type) {
+	case UDTMarshaler:
+		var buf []byte
+		for _, e := range udt.Elements {
+			data, err := v.EncodeUDTField(e.Name, e.Type)
+			if err != nil {
+				return nil, err
+			}
+
+			n := len(data)
+			buf = append(buf, byte(n<<24),
+				byte(n<<16),
+				byte(n<<8),
+				byte(n))
+
+			buf = append(buf, data...)
+		}
+
+		return buf, nil
+	case map[string]interface{}:
+		var buf []byte
+		for _, e := range udt.Elements {
+			val, ok := v[e.Name]
+			if !ok {
+				return nil, marshalErrorf("missing UDT field in map: %s", e.Name)
+			}
+
+			data, err := Marshal(e.Type, val)
+			if err != nil {
+				return nil, err
+			}
+
+			n := len(data)
+			buf = append(buf, byte(n<<24),
+				byte(n<<16),
+				byte(n<<8),
+				byte(n))
+
+			buf = append(buf, data...)
+		}
+
+		return buf, nil
+	}
+
+	return nil, marshalErrorf("cannot marshal %T into %s", value, info)
+}
+
+func unmarshalUDT(info TypeInfo, data []byte, value interface{}) error {
+	switch v := value.(type) {
+	case Unmarshaler:
+		return v.UnmarshalCQL(info, data)
+	case UDTUnmarshaler:
+		udt := info.(UDTTypeInfo)
+
+		for _, e := range udt.Elements {
+			size := readInt(data[:4])
+			data = data[4:]
+
+			var err error
+			if size < 0 {
+				err = v.DecodeUDTField(e.Name, e.Type, nil)
+			} else {
+				err = v.DecodeUDTField(e.Name, e.Type, data[:size])
+				data = data[size:]
+
+			}
+
+			if err != nil {
+				return err
+			}
+		}
+
+		return nil
+	}
+
+	return unmarshalErrorf("cannot unmarshal %s into %T", info, value)
+}
+
 // TypeInfo describes a Cassandra specific data type.
 type TypeInfo interface {
 	Type() Type
@@ -1266,6 +1361,37 @@ func (c CollectionType) String() string {
 type TupleTypeInfo struct {
 	NativeType
 	Elems []TypeInfo
+}
+
+type UDTField struct {
+	Name string
+	Type TypeInfo
+}
+
+type UDTTypeInfo struct {
+	NativeType
+	KeySpace string
+	Name     string
+	Elements []UDTField
+}
+
+func (u UDTTypeInfo) String() string {
+	buf := &bytes.Buffer{}
+
+	fmt.Fprintf(buf, "%s.%s{", u.KeySpace, u.Name)
+	first := true
+	for _, e := range u.Elements {
+		if !first {
+			fmt.Fprint(buf, ",")
+		} else {
+			first = false
+		}
+
+		fmt.Fprintf(buf, "%s=%v", e.Name, e.Type)
+	}
+	fmt.Fprint(buf, "}")
+
+	return buf.String()
 }
 
 // String returns a human readable name for the Cassandra datatype
