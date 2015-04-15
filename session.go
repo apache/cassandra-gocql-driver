@@ -734,7 +734,10 @@ func NewBatch(typ BatchType) *Batch {
 
 // NewBatch creates a new batch operation using defaults defined in the cluster
 func (s *Session) NewBatch(typ BatchType) *Batch {
-	return &Batch{Type: typ, rt: s.cfg.RetryPolicy, serialCons: s.cfg.SerialConsistency}
+	s.mu.RLock()
+	batch := &Batch{Type: typ, rt: s.cfg.RetryPolicy, serialCons: s.cfg.SerialConsistency, Cons: s.cons}
+	s.mu.RUnlock()
+	return batch
 }
 
 // Attempts returns the number of attempts made to execute the batch.
