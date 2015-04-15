@@ -918,12 +918,12 @@ type queryParams struct {
 	pagingState       []byte
 	serialConsistency SerialConsistency
 	// v3+
-	timestamp *time.Time
+	defaultTimestamp bool
 }
 
 func (q queryParams) String() string {
-	return fmt.Sprintf("[query_params consistency=%v skip_meta=%v page_size=%d paging_state=%q serial_consistency=%v timestamp=%v values=%v]",
-		q.consistency, q.skipMeta, q.pageSize, q.pagingState, q.serialConsistency, q.timestamp, q.values)
+	return fmt.Sprintf("[query_params consistency=%v skip_meta=%v page_size=%d paging_state=%q serial_consistency=%v default_timestamp=%v values=%v]",
+		q.consistency, q.skipMeta, q.pageSize, q.pagingState, q.serialConsistency, q.defaultTimestamp, q.values)
 }
 
 func (f *framer) writeQueryParams(opts *queryParams) {
@@ -954,9 +954,10 @@ func (f *framer) writeQueryParams(opts *queryParams) {
 
 	// protoV3 specific things
 	if f.proto > protoVersion2 {
-		if opts.timestamp != nil {
+		if opts.defaultTimestamp {
 			flags |= flagDefaultTimestamp
 		}
+
 		if len(opts.values) > 0 && opts.values[0].name != "" {
 			flags |= flagWithNameValues
 			names = true
@@ -987,11 +988,9 @@ func (f *framer) writeQueryParams(opts *queryParams) {
 		f.writeConsistency(Consistency(opts.serialConsistency))
 	}
 
-	if f.proto > protoVersion2 && opts.timestamp != nil {
+	if f.proto > protoVersion2 && opts.defaultTimestamp {
 		// timestamp in microseconds
-		// TODO: should the timpestamp be set on the queryParams or should we set
-		// it here?
-		ts := opts.timestamp.UnixNano() / 1000
+		ts := time.Now().UnixNano() / 1000
 		f.writeLong(ts)
 	}
 }

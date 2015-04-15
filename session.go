@@ -96,7 +96,9 @@ func (s *Session) Query(stmt string, values ...interface{}) *Query {
 	s.mu.RLock()
 	qry := &Query{stmt: stmt, values: values, cons: s.cons,
 		session: s, pageSize: s.pageSize, trace: s.trace,
-		prefetch: s.prefetch, rt: s.cfg.RetryPolicy, serialCons: s.cfg.SerialConsistency}
+		prefetch: s.prefetch, rt: s.cfg.RetryPolicy, serialCons: s.cfg.SerialConsistency,
+		defaultTimestamp: s.cfg.DefaultTimestamp,
+	}
 	s.mu.RUnlock()
 	return qry
 }
@@ -359,20 +361,21 @@ func (s *Session) ExecuteBatch(batch *Batch) error {
 
 // Query represents a CQL statement that can be executed.
 type Query struct {
-	stmt         string
-	values       []interface{}
-	cons         Consistency
-	pageSize     int
-	routingKey   []byte
-	pageState    []byte
-	prefetch     float64
-	trace        Tracer
-	session      *Session
-	rt           RetryPolicy
-	binding      func(q *QueryInfo) ([]interface{}, error)
-	attempts     int
-	totalLatency int64
-	serialCons   SerialConsistency
+	stmt             string
+	values           []interface{}
+	cons             Consistency
+	pageSize         int
+	routingKey       []byte
+	pageState        []byte
+	prefetch         float64
+	trace            Tracer
+	session          *Session
+	rt               RetryPolicy
+	binding          func(q *QueryInfo) ([]interface{}, error)
+	attempts         int
+	totalLatency     int64
+	serialCons       SerialConsistency
+	defaultTimestamp bool
 }
 
 //Attempts returns the number of times the query was executed.
@@ -415,6 +418,17 @@ func (q *Query) Trace(trace Tracer) *Query {
 // available in Cassandra 2 and onwards.
 func (q *Query) PageSize(n int) *Query {
 	q.pageSize = n
+	return q
+}
+
+// DefaultTimestamp will enable the with default timestamp flag on the query.
+// If enable, this will replace the server side assigned
+// timestamp as default timestamp. Note that a timestamp in the query itself
+// will still override this timestamp. This is entirely optional.
+//
+// Only available on protocol >= 3
+func (q *Query) DefaultTimestamp(enable bool) *Query {
+	q.defaultTimestamp = enable
 	return q
 }
 
@@ -718,13 +732,14 @@ func (n *nextIter) fetch() *Iter {
 }
 
 type Batch struct {
-	Type         BatchType
-	Entries      []BatchEntry
-	Cons         Consistency
-	rt           RetryPolicy
-	attempts     int
-	totalLatency int64
-	serialCons   SerialConsistency
+	Type             BatchType
+	Entries          []BatchEntry
+	Cons             Consistency
+	rt               RetryPolicy
+	attempts         int
+	totalLatency     int64
+	serialCons       SerialConsistency
+	defaultTimestamp bool
 }
 
 // NewBatch creates a new batch operation without defaults from the cluster
@@ -735,7 +750,8 @@ func NewBatch(typ BatchType) *Batch {
 // NewBatch creates a new batch operation using defaults defined in the cluster
 func (s *Session) NewBatch(typ BatchType) *Batch {
 	s.mu.RLock()
-	batch := &Batch{Type: typ, rt: s.cfg.RetryPolicy, serialCons: s.cfg.SerialConsistency, Cons: s.cons}
+	batch := &Batch{Type: typ, rt: s.cfg.RetryPolicy, serialCons: s.cfg.SerialConsistency,
+		Cons: s.cons, defaultTimestamp: s.cfg.DefaultTimestamp}
 	s.mu.RUnlock()
 	return batch
 }
@@ -791,6 +807,17 @@ func (b *Batch) Size() int {
 // Only available for protocol 3 and above
 func (b *Batch) SerialConsistency(cons SerialConsistency) *Batch {
 	b.serialCons = cons
+	return b
+}
+
+// DefaultTimestamp will enable the with default timestamp flag on the query.
+// If enable, this will replace the server side assigned
+// timestamp as default timestamp. Note that a timestamp in the query itself
+// will still override this timestamp. This is entirely optional.
+//
+// Only available on protocol >= 3
+func (b *Batch) DefaultTimestamp(enable bool) *Batch {
+	b.defaultTimestamp = enable
 	return b
 }
 
