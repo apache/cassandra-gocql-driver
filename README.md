@@ -165,7 +165,8 @@ There are various ways to bind application level data structures to CQL statemen
 * The `Bind()` API provides a client app with a low level mechanism to introspect query meta data and extract appropriate field values from application level data structures.
 * Building on top of the gocql driver, [cqlr](https://github.com/relops/cqlr) adds the ability to auto-bind a CQL iterator to a struct or to bind a struct to an INSERT statement.
 * Another external project that layers on top of gocql is [cqlc](http://relops.com/cqlc) which generates gocql compliant code from your Cassandra schema so that you can write type safe CQL statements in Go with a natural query syntax.
-*  [gocassa](https://github.com/hailocab/gocassa) is an external project that layers on top of gocql to provide convenient query building and data binding.
+* [gocassa](https://github.com/hailocab/gocassa) is an external project that layers on top of gocql to provide convenient query building and data binding.
+* [gocqltable](https://github.com/elvtechnology/gocqltable) provides an ORM-style convenience layer to make CRUD operations with gocql easier.
 
 Ecosphere
 ---------
@@ -177,6 +178,7 @@ The following community maintained tools are known to integrate with gocql:
 * [cqlr](https://github.com/relops/cqlr) adds the ability to auto-bind a CQL iterator to a struct or to bind a struct to an INSERT statement.
 * [cqlc](http://relops.com/cqlc) which generates gocql compliant code from your Cassandra schema so that you can write type safe CQL statements in Go with a natural query syntax.
 * [gocassa](https://github.com/hailocab/gocassa) provides query building, adds data binding, and provides easy-to-use "recipe" tables for common query use-cases.
+* [gocqltable](https://github.com/elvtechnology/gocqltable) is a wrapper around gocql that aims to simplify common operations whilst working the library.
 
 Other Projects
 --------------
