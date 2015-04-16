@@ -1508,6 +1508,7 @@ func TestEmptyTimestamp(t *testing.T) {
 	}
 }
 
+// Integration test of just querying for data from the system.schema_keyspace table
 func TestGetKeyspaceMetadata(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
@@ -1541,6 +1542,7 @@ func TestGetKeyspaceMetadata(t *testing.T) {
 	}
 }
 
+// Integration test of just querying for data from the system.schema_columnfamilies table
 func TestGetTableMetadata(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
@@ -1622,6 +1624,7 @@ func TestGetTableMetadata(t *testing.T) {
 	}
 }
 
+// Integration test of just querying for data from the system.schema_columns table
 func TestGetColumnMetadata(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
@@ -1723,6 +1726,7 @@ func TestGetColumnMetadata(t *testing.T) {
 	}
 }
 
+// Integration test of querying and composition the keyspace metadata
 func TestKeyspaceMetadata(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
@@ -1785,6 +1789,7 @@ func TestKeyspaceMetadata(t *testing.T) {
 	}
 }
 
+// Integration test of the routing key calculation
 func TestRoutingKey(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
@@ -1903,6 +1908,7 @@ func TestRoutingKey(t *testing.T) {
 	}
 }
 
+// Integration test of the token-aware policy-based connection pool
 func TestTokenAwareConnPool(t *testing.T) {
 	cluster := createCluster()
 	cluster.ConnPoolType = NewTokenAwareConnPool
@@ -1946,4 +1952,6 @@ func TestTokenAwareConnPool(t *testing.T) {
 	if err := iter.Close(); err != nil {
 		t.Errorf("iter failed with err: %v", err)
 	}
+
+	// TODO add verification that the query went to the correct host
 }

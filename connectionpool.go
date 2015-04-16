@@ -1,3 +1,7 @@
+// Copyright (c) 2012 The gocql Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
 package gocql
 
 import (
@@ -776,7 +780,7 @@ func (pool *hostConnPool) fill() {
 }
 
 func (pool *hostConnPool) logConnectErr(err error) {
-	if opErr, ok := err.(*net.OpError); ok && (opErr.Op == "dial" || opErr.Op == "red") {
+	if opErr, ok := err.(*net.OpError); ok && (opErr.Op == "dial" || opErr.Op == "read") {
 		// connection refused
 		// these are typical during a node outage so avoid log spam.
 	} else if err != nil {
@@ -836,6 +840,11 @@ func (pool *hostConnPool) HandleError(conn *Conn, err error, closed bool) {
 
 	pool.mu.Lock()
 	defer pool.mu.Unlock()
+
+	if pool.closed {
+		// pool closed
+		return
+	}
 
 	// find the connection index
 	for i, candidate := range pool.conns {

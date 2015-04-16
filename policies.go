@@ -87,12 +87,16 @@ func (r *roundRobinHostPolicy) Pick(qry *Query) NextHost {
 	// to the number of hosts known to this policy
 	var i uint32 = 0
 	return func() *HostInfo {
+		if len(r.hosts) == 0 {
+			return nil
+		}
+
 		var host *HostInfo
 		r.mu.RLock()
 		// always increment pos to evenly distribute traffic in case of
 		// failures
 		pos := atomic.AddUint32(&r.pos, 1)
-		if len(r.hosts) > 0 && int(i) < len(r.hosts) {
+		if int(i) < len(r.hosts) {
 			host = &r.hosts[(pos)%uint32(len(r.hosts))]
 			i++
 		}
