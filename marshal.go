@@ -1225,6 +1225,8 @@ func marshalUDT(info TypeInfo, value interface{}) ([]byte, error) {
 	udt := info.(UDTTypeInfo)
 
 	switch v := value.(type) {
+	case Marshaler:
+		return v.MarshalCQL(info)
 	case UDTMarshaler:
 		var buf []byte
 		for _, e := range udt.Elements {
