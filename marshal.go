@@ -1203,13 +1203,22 @@ func unmarshalTuple(info TypeInfo, data []byte, value interface{}) error {
 }
 
 // UDTMarshaler is an interface which should be implemented by users wishing to
-// handle encoding UDT types to sent to Cassandra.
+// handle encoding UDT types to sent to Cassandra. Note: due to current implentations
+// methods defined for this interface must be value receivers not pointer receivers.
 type UDTMarshaler interface {
-	EncodeUDTField(name string, info TypeInfo) ([]byte, error)
+	// MarshalUDT will be called for each field in the the UDT returned by Cassandra,
+	// the implementor should marshal the type to return by for example calling
+	// Marshal.
+	MarshalUDT(name string, info TypeInfo) ([]byte, error)
 }
 
+// UDTUnmarshaler should be implemented by users wanting to implement custom
+// UDT unmarshaling.
 type UDTUnmarshaler interface {
-	DecodeUDTField(name string, info TypeInfo, data []byte) error
+	// UnmarshalUDT will be called for each field in the UDT return by Cassandra,
+	// the implementor should unmarshal the data into the value of their chosing,
+	// for example by calling Unmarshal.
+	UnmarshalUDT(name string, info TypeInfo, data []byte) error
 }
 
 func marshalUDT(info TypeInfo, value interface{}) ([]byte, error) {
@@ -1219,7 +1228,7 @@ func marshalUDT(info TypeInfo, value interface{}) ([]byte, error) {
 	case UDTMarshaler:
 		var buf []byte
 		for _, e := range udt.Elements {
-			data, err := v.EncodeUDTField(e.Name, e.Type)
+			data, err := v.MarshalUDT(e.Name, e.Type)
 			if err != nil {
 				return nil, err
 			}
@@ -1275,11 +1284,10 @@ func unmarshalUDT(info TypeInfo, data []byte, value interface{}) error {
 
 			var err error
 			if size < 0 {
-				err = v.DecodeUDTField(e.Name, e.Type, nil)
+				err = v.UnmarshalUDT(e.Name, e.Type, nil)
 			} else {
-				err = v.DecodeUDTField(e.Name, e.Type, data[:size])
+				err = v.UnmarshalUDT(e.Name, e.Type, data[:size])
 				data = data[size:]
-
 			}
 
 			if err != nil {

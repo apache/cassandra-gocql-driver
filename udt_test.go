@@ -8,35 +8,35 @@ import (
 )
 
 type position struct {
-	lat int
-	lon int
+	Lat int
+	Lon int
 }
 
 // NOTE: due to current implementation details it is not currently possible to use
 // a pointer receiver type for the UDTMarshaler interface to handle UDT's
-func (p position) EncodeUDTField(name string, info TypeInfo) ([]byte, error) {
+func (p position) MarshalUDT(name string, info TypeInfo) ([]byte, error) {
 	switch name {
 	case "lat":
-		return Marshal(info, p.lat)
+		return Marshal(info, p.Lat)
 	case "lon":
-		return Marshal(info, p.lon)
+		return Marshal(info, p.Lon)
 	default:
 		return nil, fmt.Errorf("unknown column for position: %q", name)
 	}
 }
 
-func (p *position) DecodeUDTField(name string, info TypeInfo, data []byte) error {
+func (p *position) UnmarshalUDT(name string, info TypeInfo, data []byte) error {
 	switch name {
 	case "lat":
-		return Unmarshal(info, data, &p.lat)
+		return Unmarshal(info, data, &p.Lat)
 	case "lon":
-		return Unmarshal(info, data, &p.lon)
+		return Unmarshal(info, data, &p.Lon)
 	default:
 		return fmt.Errorf("unknown column for position: %q", name)
 	}
 }
 
-func TestUDT(t *testing.T) {
+func TestUDT_Marshaler(t *testing.T) {
 	if *flagProto < protoVersion3 {
 		t.Skip("UDT are only available on protocol >= 3")
 	}
@@ -79,10 +79,10 @@ func TestUDT(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if pos.lat != expLat {
-		t.Errorf("expeceted lat to be be %d got %d", expLat, pos.lat)
+	if pos.Lat != expLat {
+		t.Errorf("expeceted lat to be be %d got %d", expLat, pos.Lat)
 	}
-	if pos.lon != expLon {
-		t.Errorf("expeceted lon to be be %d got %d", expLon, pos.lon)
+	if pos.Lon != expLon {
+		t.Errorf("expeceted lon to be be %d got %d", expLon, pos.Lon)
 	}
 }
