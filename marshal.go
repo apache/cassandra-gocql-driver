@@ -13,6 +13,7 @@ import (
 	"net"
 	"reflect"
 	"strconv"
+	"strings"
 	"time"
 
 	"speter.net/go/exp/math/dec/inf"
@@ -1270,7 +1271,43 @@ func marshalUDT(info TypeInfo, value interface{}) ([]byte, error) {
 		return buf, nil
 	}
 
-	return nil, marshalErrorf("cannot marshal %T into %s", value, info)
+	k := reflect.ValueOf(value)
+	if k.Kind() == reflect.Ptr {
+		if k.IsNil() {
+			return nil, marshalErrorf("cannot marshal %T into %s", value, info)
+		}
+		k = k.Elem()
+	}
+
+	if k.Kind() != reflect.Struct || !k.IsValid() {
+		return nil, marshalErrorf("cannot marshal %T into %s", value, info)
+	}
+
+	var buf []byte
+	for _, e := range udt.Elements {
+		f := k.FieldByName(strings.Title(e.Name))
+		if !f.IsValid() {
+			return nil, marshalErrorf("cannot marshal %T into %s", value, info)
+		} else if f.Kind() == reflect.Ptr {
+			f = f.Elem()
+		}
+
+		data, err := Marshal(e.Type, f.Interface())
+		if err != nil {
+			return nil, err
+		}
+
+		n := len(data)
+		buf = append(buf, byte(n<<24),
+			byte(n<<16),
+			byte(n<<8),
+			byte(n))
+
+		buf = append(buf, data...)
+	}
+
+	return buf, nil
+
 }
 
 func unmarshalUDT(info TypeInfo, data []byte, value interface{}) error {
@@ -1300,7 +1337,37 @@ func unmarshalUDT(info TypeInfo, data []byte, value interface{}) error {
 		return nil
 	}
 
-	return unmarshalErrorf("cannot unmarshal %s into %T", info, value)
+	k := reflect.ValueOf(value).Elem()
+	if k.Kind() != reflect.Struct || !k.IsValid() {
+		return unmarshalErrorf("cannot unmarshal %s into %T", info, value)
+	}
+
+	udt := info.(UDTTypeInfo)
+
+	for _, e := range udt.Elements {
+		size := readInt(data[:4])
+		data = data[4:]
+
+		var err error
+		if size >= 0 {
+			f := k.FieldByName(strings.Title(e.Name))
+			if !f.IsValid() || !f.CanAddr() {
+				return unmarshalErrorf("cannot unmarshal %s into %T", info, value)
+			}
+
+			fk := f.Addr().Interface()
+			if err := Unmarshal(e.Type, data[:size], fk); err != nil {
+				return err
+			}
+			data = data[size:]
+		}
+
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 // TypeInfo describes a Cassandra specific data type.
