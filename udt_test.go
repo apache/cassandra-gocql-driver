@@ -86,3 +86,54 @@ func TestUDT_Marshaler(t *testing.T) {
 		t.Errorf("expeceted lon to be be %d got %d", expLon, pos.Lon)
 	}
 }
+func TestUDT_Reflect(t *testing.T) {
+	// Uses reflection instead of implementing the marshaling type
+	if *flagProto < protoVersion3 {
+		t.Skip("UDT are only available on protocol >= 3")
+	}
+
+	session := createSession(t)
+	defer session.Close()
+
+	err := createTable(session, `CREATE TYPE horse(
+		name text,
+		owner text);`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = createTable(session, `CREATE TABLE horse_race(
+		position int,
+		horse frozen<horse>,
+
+		primary key(position)
+	);`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	type horse struct {
+		Name  string
+		Owner string
+	}
+
+	insertedHorse := &horse{
+		Name:  "pony",
+		Owner: "jim",
+	}
+
+	err = session.Query("INSERT INTO horse_race(position, horse) VALUES(?, ?)", 1, insertedHorse).Exec()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	retrievedHorse := &horse{}
+	err = session.Query("SELECT horse FROM horse_race WHERE position = ?", 1).Scan(retrievedHorse)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if *retrievedHorse != *insertedHorse {
+		t.Fatal("exepcted to get %+v got %+v", insertedHorse, retrievedHorse)
+	}
+}
