@@ -13,7 +13,6 @@ import (
 	"net"
 	"reflect"
 	"strconv"
-	"strings"
 	"time"
 
 	"speter.net/go/exp/math/dec/inf"
@@ -1283,9 +1282,23 @@ func marshalUDT(info TypeInfo, value interface{}) ([]byte, error) {
 		return nil, marshalErrorf("cannot marshal %T into %s", value, info)
 	}
 
+	fields := make(map[string]reflect.Value)
+	t := reflect.TypeOf(value)
+	for i := 0; i < t.NumField(); i++ {
+		sf := t.Field(i)
+
+		if tag := sf.Tag.Get("cql"); tag != "" {
+			fields[tag] = k.Field(i)
+		}
+	}
+
 	var buf []byte
 	for _, e := range udt.Elements {
-		f := k.FieldByName(strings.Title(e.Name))
+		f, ok := fields[e.Name]
+		if !ok {
+			f = k.FieldByName(e.Name)
+		}
+
 		if !f.IsValid() {
 			return nil, marshalErrorf("cannot marshal %T into %s", value, info)
 		} else if f.Kind() == reflect.Ptr {
@@ -1342,6 +1355,16 @@ func unmarshalUDT(info TypeInfo, data []byte, value interface{}) error {
 		return unmarshalErrorf("cannot unmarshal %s into %T", info, value)
 	}
 
+	fields := make(map[string]reflect.Value)
+	t := k.Type()
+	for i := 0; i < t.NumField(); i++ {
+		sf := t.Field(i)
+
+		if tag := sf.Tag.Get("cql"); tag != "" {
+			fields[tag] = k.Field(i)
+		}
+	}
+
 	udt := info.(UDTTypeInfo)
 
 	for _, e := range udt.Elements {
@@ -1350,7 +1373,11 @@ func unmarshalUDT(info TypeInfo, data []byte, value interface{}) error {
 
 		var err error
 		if size >= 0 {
-			f := k.FieldByName(strings.Title(e.Name))
+			f, ok := fields[e.Name]
+			if !ok {
+				f = k.FieldByName(e.Name)
+			}
+
 			if !f.IsValid() || !f.CanAddr() {
 				return unmarshalErrorf("cannot unmarshal %s into %T", info, value)
 			}

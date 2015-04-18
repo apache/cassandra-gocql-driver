@@ -113,8 +113,8 @@ func TestUDT_Reflect(t *testing.T) {
 	}
 
 	type horse struct {
-		Name  string
-		Owner string
+		Name  string `cql:"name"`
+		Owner string `cql:"owner"`
 	}
 
 	insertedHorse := &horse{
