@@ -83,6 +83,8 @@ func Marshal(info TypeInfo, value interface{}) ([]byte, error) {
 		return marshalVarint(info, value)
 	case TypeInet:
 		return marshalInet(info, value)
+	case TypeUDT:
+		return marshalUDT(info, value)
 	}
 	// TODO(tux21b): add the remaining types
 	return nil, fmt.Errorf("can not marshal %T into %s", value, info)
@@ -130,6 +132,8 @@ func Unmarshal(info TypeInfo, data []byte, value interface{}) error {
 		return unmarshalInet(info, data, value)
 	case TypeTuple:
 		return unmarshalTuple(info, data, value)
+	case TypeUDT:
+		return unmarshalUDT(info, data, value)
 	}
 	// TODO(tux21b): add the remaining types
 	return fmt.Errorf("can not unmarshal %s into %T", info, value)
@@ -1198,6 +1202,201 @@ func unmarshalTuple(info TypeInfo, data []byte, value interface{}) error {
 	return unmarshalErrorf("cannot unmarshal %s into %T", info, value)
 }
 
+// UDTMarshaler is an interface which should be implemented by users wishing to
+// handle encoding UDT types to sent to Cassandra. Note: due to current implentations
+// methods defined for this interface must be value receivers not pointer receivers.
+type UDTMarshaler interface {
+	// MarshalUDT will be called for each field in the the UDT returned by Cassandra,
+	// the implementor should marshal the type to return by for example calling
+	// Marshal.
+	MarshalUDT(name string, info TypeInfo) ([]byte, error)
+}
+
+// UDTUnmarshaler should be implemented by users wanting to implement custom
+// UDT unmarshaling.
+type UDTUnmarshaler interface {
+	// UnmarshalUDT will be called for each field in the UDT return by Cassandra,
+	// the implementor should unmarshal the data into the value of their chosing,
+	// for example by calling Unmarshal.
+	UnmarshalUDT(name string, info TypeInfo, data []byte) error
+}
+
+func marshalUDT(info TypeInfo, value interface{}) ([]byte, error) {
+	udt := info.(UDTTypeInfo)
+
+	switch v := value.(type) {
+	case Marshaler:
+		return v.MarshalCQL(info)
+	case UDTMarshaler:
+		var buf []byte
+		for _, e := range udt.Elements {
+			data, err := v.MarshalUDT(e.Name, e.Type)
+			if err != nil {
+				return nil, err
+			}
+
+			n := len(data)
+			buf = append(buf, byte(n<<24),
+				byte(n<<16),
+				byte(n<<8),
+				byte(n))
+
+			buf = append(buf, data...)
+		}
+
+		return buf, nil
+	case map[string]interface{}:
+		var buf []byte
+		for _, e := range udt.Elements {
+			val, ok := v[e.Name]
+			if !ok {
+				return nil, marshalErrorf("missing UDT field in map: %s", e.Name)
+			}
+
+			data, err := Marshal(e.Type, val)
+			if err != nil {
+				return nil, err
+			}
+
+			n := len(data)
+			buf = append(buf, byte(n<<24),
+				byte(n<<16),
+				byte(n<<8),
+				byte(n))
+
+			buf = append(buf, data...)
+		}
+
+		return buf, nil
+	}
+
+	k := reflect.ValueOf(value)
+	if k.Kind() == reflect.Ptr {
+		if k.IsNil() {
+			return nil, marshalErrorf("cannot marshal %T into %s", value, info)
+		}
+		k = k.Elem()
+	}
+
+	if k.Kind() != reflect.Struct || !k.IsValid() {
+		return nil, marshalErrorf("cannot marshal %T into %s", value, info)
+	}
+
+	fields := make(map[string]reflect.Value)
+	t := reflect.TypeOf(value)
+	for i := 0; i < t.NumField(); i++ {
+		sf := t.Field(i)
+
+		if tag := sf.Tag.Get("cql"); tag != "" {
+			fields[tag] = k.Field(i)
+		}
+	}
+
+	var buf []byte
+	for _, e := range udt.Elements {
+		f, ok := fields[e.Name]
+		if !ok {
+			f = k.FieldByName(e.Name)
+		}
+
+		if !f.IsValid() {
+			return nil, marshalErrorf("cannot marshal %T into %s", value, info)
+		} else if f.Kind() == reflect.Ptr {
+			f = f.Elem()
+		}
+
+		data, err := Marshal(e.Type, f.Interface())
+		if err != nil {
+			return nil, err
+		}
+
+		n := len(data)
+		buf = append(buf, byte(n<<24),
+			byte(n<<16),
+			byte(n<<8),
+			byte(n))
+
+		buf = append(buf, data...)
+	}
+
+	return buf, nil
+
+}
+
+func unmarshalUDT(info TypeInfo, data []byte, value interface{}) error {
+	switch v := value.(type) {
+	case Unmarshaler:
+		return v.UnmarshalCQL(info, data)
+	case UDTUnmarshaler:
+		udt := info.(UDTTypeInfo)
+
+		for _, e := range udt.Elements {
+			size := readInt(data[:4])
+			data = data[4:]
+
+			var err error
+			if size < 0 {
+				err = v.UnmarshalUDT(e.Name, e.Type, nil)
+			} else {
+				err = v.UnmarshalUDT(e.Name, e.Type, data[:size])
+				data = data[size:]
+			}
+
+			if err != nil {
+				return err
+			}
+		}
+
+		return nil
+	}
+
+	k := reflect.ValueOf(value).Elem()
+	if k.Kind() != reflect.Struct || !k.IsValid() {
+		return unmarshalErrorf("cannot unmarshal %s into %T", info, value)
+	}
+
+	fields := make(map[string]reflect.Value)
+	t := k.Type()
+	for i := 0; i < t.NumField(); i++ {
+		sf := t.Field(i)
+
+		if tag := sf.Tag.Get("cql"); tag != "" {
+			fields[tag] = k.Field(i)
+		}
+	}
+
+	udt := info.(UDTTypeInfo)
+
+	for _, e := range udt.Elements {
+		size := readInt(data[:4])
+		data = data[4:]
+
+		var err error
+		if size >= 0 {
+			f, ok := fields[e.Name]
+			if !ok {
+				f = k.FieldByName(e.Name)
+			}
+
+			if !f.IsValid() || !f.CanAddr() {
+				return unmarshalErrorf("cannot unmarshal %s into %T", info, value)
+			}
+
+			fk := f.Addr().Interface()
+			if err := Unmarshal(e.Type, data[:size], fk); err != nil {
+				return err
+			}
+			data = data[size:]
+		}
+
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 // TypeInfo describes a Cassandra specific data type.
 type TypeInfo interface {
 	Type() Type
@@ -1266,6 +1465,37 @@ func (c CollectionType) String() string {
 type TupleTypeInfo struct {
 	NativeType
 	Elems []TypeInfo
+}
+
+type UDTField struct {
+	Name string
+	Type TypeInfo
+}
+
+type UDTTypeInfo struct {
+	NativeType
+	KeySpace string
+	Name     string
+	Elements []UDTField
+}
+
+func (u UDTTypeInfo) String() string {
+	buf := &bytes.Buffer{}
+
+	fmt.Fprintf(buf, "%s.%s{", u.KeySpace, u.Name)
+	first := true
+	for _, e := range u.Elements {
+		if !first {
+			fmt.Fprint(buf, ",")
+		} else {
+			first = false
+		}
+
+		fmt.Fprintf(buf, "%s=%v", e.Name, e.Type)
+	}
+	fmt.Fprint(buf, "}")
+
+	return buf.String()
 }
 
 // String returns a human readable name for the Cassandra datatype
