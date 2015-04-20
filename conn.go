@@ -443,8 +443,8 @@ func (c *Conn) executeQuery(qry *Query) *Iter {
 
 	// frame checks that it is not 0
 	params.serialConsistency = qry.serialCons
+	params.defaultTimestamp = qry.defaultTimestamp
 
-	// TODO: Add DefaultTimestamp
 	if len(qry.pageState) > 0 {
 		params.pagingState = qry.pageState
 	}
@@ -616,6 +616,7 @@ func (c *Conn) executeBatch(batch *Batch) error {
 		statements:        make([]batchStatment, n),
 		consistency:       batch.Cons,
 		serialConsistency: batch.serialCons,
+		defaultTimestamp:  batch.defaultTimestamp,
 	}
 
 	stmts := make(map[string]string)

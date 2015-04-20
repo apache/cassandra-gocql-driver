@@ -76,6 +76,7 @@ type ClusterConfig struct {
 	SerialConsistency SerialConsistency // Sets the consistency for the serial part of queries, values can be either SERIAL or LOCAL_SERIAL (default: unset)
 	Discovery         DiscoveryConfig
 	SslOpts           *SslOptions
+	DefaultTimestamp  bool // Sends a client side timestamp for all requests which overrides the timestamp at which it arrives at the server. (default: true, only enabled for protocol 3 and above)
 }
 
 // NewCluster generates a new config for the default cluster implementation.
@@ -92,6 +93,7 @@ func NewCluster(hosts ...string) *ClusterConfig {
 		DiscoverHosts:     false,
 		MaxPreparedStmts:  defaultMaxPreparedStmts,
 		MaxRoutingKeyInfo: 1000,
+		DefaultTimestamp:  true,
 	}
 	return cfg
 }
