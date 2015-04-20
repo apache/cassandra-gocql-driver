@@ -64,6 +64,7 @@ Features
 * Experimental support for CQL protocol version 3
   * Support for up to 32768 streams
   * Support for tuple types
+  * Support for client side timestamps by default
 * An API to access the schema metadata of a given keyspace
 
 Please visit the [Roadmap](https://github.com/gocql/gocql/wiki/Roadmap) page to see what is on the horizion.
