@@ -65,6 +65,7 @@ Features
   * Support for up to 32768 streams
   * Support for tuple types
   * Support for client side timestamps by default
+  * Support for UDTs via a custom marshaller or struct tags
 * An API to access the schema metadata of a given keyspace
 
 Please visit the [Roadmap](https://github.com/gocql/gocql/wiki/Roadmap) page to see what is on the horizion.
