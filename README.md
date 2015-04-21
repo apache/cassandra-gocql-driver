@@ -55,6 +55,7 @@ Features
   * Each connection can execute up to n concurrent queries (whereby n is the limit set by the protocol version the client chooses to use)
   * Optional automatic discovery of nodes
   * Optional support for periodic node discovery via system.peers
+  * Policy based connection pool with token aware and round-robin policy implementations
 * Support for password authentication
 * Iteration over paged results with configurable page size
 * Support for TLS/SSL
