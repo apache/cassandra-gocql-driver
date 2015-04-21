@@ -16,28 +16,33 @@ type HostInfo struct {
 
 // Polls system.peers at a specific interval to find new hosts
 type ringDescriber struct {
-	dcFilter   string
-	rackFilter string
-	previous   []HostInfo
-	session    *Session
+	dcFilter        string
+	rackFilter      string
+	prevHosts       []HostInfo
+	prevPartitioner string
+	session         *Session
 }
 
-func (r *ringDescriber) GetHosts() ([]HostInfo, error) {
+func (r *ringDescriber) GetHosts() (
+	hosts []HostInfo,
+	partitioner string,
+	err error,
+) {
 	// we need conn to be the same because we need to query system.peers and system.local
 	// on the same node to get the whole cluster
 	conn := r.session.Pool.Pick(nil)
 	if conn == nil {
-		return r.previous, nil
+		return r.prevHosts, r.prevPartitioner, nil
 	}
 
-	query := r.session.Query("SELECT data_center, rack, host_id, tokens FROM system.local")
+	query := r.session.Query("SELECT data_center, rack, host_id, tokens, partitioner FROM system.local")
 	iter := conn.executeQuery(query)
 
-	host := &HostInfo{}
-	iter.Scan(&host.DataCenter, &host.Rack, &host.HostId, &host.Tokens)
+	host := HostInfo{}
+	iter.Scan(&host.DataCenter, &host.Rack, &host.HostId, &host.Tokens, &partitioner)
 
-	if err := iter.Close(); err != nil {
-		return nil, err
+	if err = iter.Close(); err != nil {
+		return nil, "", err
 	}
 
 	addr, _, err := net.SplitHostPort(conn.Address())
@@ -49,24 +54,27 @@ func (r *ringDescriber) GetHosts() ([]HostInfo, error) {
 
 	host.Peer = addr
 
-	hosts := []HostInfo{*host}
+	hosts = []HostInfo{host}
 
 	query = r.session.Query("SELECT peer, data_center, rack, host_id, tokens FROM system.peers")
 	iter = conn.executeQuery(query)
 
+	host = HostInfo{}
 	for iter.Scan(&host.Peer, &host.DataCenter, &host.Rack, &host.HostId, &host.Tokens) {
-		if r.matchFilter(host) {
-			hosts = append(hosts, *host)
+		if r.matchFilter(&host) {
+			hosts = append(hosts, host)
 		}
+		host = HostInfo{}
 	}
 
-	if err := iter.Close(); err != nil {
-		return nil, err
+	if err = iter.Close(); err != nil {
+		return nil, "", err
 	}
 
-	r.previous = hosts
+	r.prevHosts = hosts
+	r.prevPartitioner = partitioner
 
-	return hosts, nil
+	return hosts, partitioner, nil
 }
 
 func (r *ringDescriber) matchFilter(host *HostInfo) bool {
@@ -92,11 +100,14 @@ func (h *ringDescriber) run(sleep time.Duration) {
 		// attempt to reconnect to the cluster otherwise we would never find
 		// downed hosts again, could possibly have an optimisation to only
 		// try to add new hosts if GetHosts didnt error and the hosts didnt change.
-		hosts, err := h.GetHosts()
+		hosts, partitioner, err := h.GetHosts()
 		if err != nil {
 			log.Println("RingDescriber: unable to get ring topology:", err)
 		} else {
 			h.session.Pool.SetHosts(hosts)
+			if v, ok := h.session.Pool.(SetPartitioner); ok {
+				v.SetPartitioner(partitioner)
+			}
 		}
 
 		time.Sleep(sleep)

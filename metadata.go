@@ -87,6 +87,8 @@ type schemaDescriber struct {
 	cache map[string]*KeyspaceMetadata
 }
 
+// creates a session bound schema describer which will query and cache
+// keyspace metadata
 func newSchemaDescriber(session *Session) *schemaDescriber {
 	return &schemaDescriber{
 		session: session,
@@ -94,6 +96,8 @@ func newSchemaDescriber(session *Session) *schemaDescriber {
 	}
 }
 
+// returns the cached KeyspaceMetadata held by the describer for the named
+// keyspace.
 func (s *schemaDescriber) getSchema(keyspaceName string) (*KeyspaceMetadata, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -114,6 +118,8 @@ func (s *schemaDescriber) getSchema(keyspaceName string) (*KeyspaceMetadata, err
 	return metadata, nil
 }
 
+// forcibly updates the current KeyspaceMetadata held by the schema describer
+// for a given named keyspace.
 func (s *schemaDescriber) refreshSchema(keyspaceName string) error {
 	var err error
 
@@ -141,9 +147,11 @@ func (s *schemaDescriber) refreshSchema(keyspaceName string) error {
 	return nil
 }
 
-// "compiles" keyspace, table, and column metadata for a keyspace together
-// linking the metadata objects together and calculating the partition key
-// and clustering key.
+// "compiles" derived information about keyspace, table, and column metadata
+// for a keyspace from the basic queried metadata objects returned by
+// getKeyspaceMetadata, getTableMetadata, and getColumnMetadata respectively;
+// Links the metadata objects together and derives the column composition of
+// the partition key and clustering key for a table.
 func compileMetadata(
 	protoVersion int,
 	keyspace *KeyspaceMetadata,
@@ -178,8 +186,11 @@ func compileMetadata(
 	}
 }
 
-// V1 protocol does not return as much column metadata as V2+ so determining
-// PartitionKey and ClusterColumns is more complex
+// Compiles derived information from TableMetadata which have had
+// ColumnMetadata added already. V1 protocol does not return as much
+// column metadata as V2+ (because V1 doesn't support the "type" column in the
+// system.schema_columns table) so determining PartitionKey and ClusterColumns
+// is more complex.
 func compileV1Metadata(tables []TableMetadata) {
 	for i := range tables {
 		table := &tables[i]
@@ -308,6 +319,7 @@ func compileV2Metadata(tables []TableMetadata) {
 	}
 }
 
+// returns the count of coluns with the given "kind" value.
 func countColumnsOfKind(columns map[string]*ColumnMetadata, kind string) int {
 	count := 0
 	for _, column := range columns {
@@ -318,7 +330,7 @@ func countColumnsOfKind(columns map[string]*ColumnMetadata, kind string) int {
 	return count
 }
 
-// query only for the keyspace metadata for the specified keyspace
+// query only for the keyspace metadata for the specified keyspace from system.schema_keyspace
 func getKeyspaceMetadata(
 	session *Session,
 	keyspaceName string,
@@ -358,7 +370,7 @@ func getKeyspaceMetadata(
 	return keyspace, nil
 }
 
-// query for only the table metadata in the specified keyspace
+// query for only the table metadata in the specified keyspace from system.schema_columnfamilies
 func getTableMetadata(
 	session *Session,
 	keyspaceName string,
@@ -437,7 +449,7 @@ func getTableMetadata(
 	return tables, nil
 }
 
-// query for only the table metadata in the specified keyspace
+// query for only the column metadata in the specified keyspace from system.schema_columns
 func getColumnMetadata(
 	session *Session,
 	keyspaceName string,

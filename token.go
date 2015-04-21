@@ -17,6 +17,7 @@ import (
 
 // a token partitioner
 type partitioner interface {
+	Name() string
 	Hash([]byte) token
 	ParseString(string) token
 }
@@ -30,6 +31,10 @@ type token interface {
 // murmur3 partitioner and token
 type murmur3Partitioner struct{}
 type murmur3Token int64
+
+func (p murmur3Partitioner) Name() string {
+	return "Murmur3Partitioner"
+}
 
 func (p murmur3Partitioner) Hash(partitionKey []byte) token {
 	h1 := murmur3H1(partitionKey)
@@ -183,29 +188,37 @@ func (m murmur3Token) Less(token token) bool {
 }
 
 // order preserving partitioner and token
-type orderPreservingPartitioner struct{}
-type orderPreservingToken []byte
+type orderedPartitioner struct{}
+type orderedToken []byte
 
-func (p orderPreservingPartitioner) Hash(partitionKey []byte) token {
+func (p orderedPartitioner) Name() string {
+	return "OrderedPartitioner"
+}
+
+func (p orderedPartitioner) Hash(partitionKey []byte) token {
 	// the partition key is the token
-	return orderPreservingToken(partitionKey)
+	return orderedToken(partitionKey)
 }
 
-func (p orderPreservingPartitioner) ParseString(str string) token {
-	return orderPreservingToken([]byte(str))
+func (p orderedPartitioner) ParseString(str string) token {
+	return orderedToken([]byte(str))
 }
 
-func (o orderPreservingToken) String() string {
+func (o orderedToken) String() string {
 	return string([]byte(o))
 }
 
-func (o orderPreservingToken) Less(token token) bool {
-	return -1 == bytes.Compare(o, token.(orderPreservingToken))
+func (o orderedToken) Less(token token) bool {
+	return -1 == bytes.Compare(o, token.(orderedToken))
 }
 
 // random partitioner and token
 type randomPartitioner struct{}
 type randomToken big.Int
+
+func (r randomPartitioner) Name() string {
+	return "RandomPartitioner"
+}
 
 func (p randomPartitioner) Hash(partitionKey []byte) token {
 	hash := md5.New()
@@ -239,7 +252,7 @@ type tokenRing struct {
 	hosts       []*HostInfo
 }
 
-func newTokenRing(partitioner string, hosts []*HostInfo) (*tokenRing, error) {
+func newTokenRing(partitioner string, hosts []HostInfo) (*tokenRing, error) {
 	tokenRing := &tokenRing{
 		tokens: []token{},
 		hosts:  []*HostInfo{},
@@ -248,14 +261,15 @@ func newTokenRing(partitioner string, hosts []*HostInfo) (*tokenRing, error) {
 	if strings.HasSuffix(partitioner, "Murmur3Partitioner") {
 		tokenRing.partitioner = murmur3Partitioner{}
 	} else if strings.HasSuffix(partitioner, "OrderedPartitioner") {
-		tokenRing.partitioner = orderPreservingPartitioner{}
+		tokenRing.partitioner = orderedPartitioner{}
 	} else if strings.HasSuffix(partitioner, "RandomPartitioner") {
 		tokenRing.partitioner = randomPartitioner{}
 	} else {
 		return nil, fmt.Errorf("Unsupported partitioner '%s'", partitioner)
 	}
 
-	for _, host := range hosts {
+	for i := range hosts {
+		host := &hosts[i]
 		for _, strToken := range host.Tokens {
 			token := tokenRing.partitioner.ParseString(strToken)
 			tokenRing.tokens = append(tokenRing.tokens, token)
@@ -282,8 +296,13 @@ func (t *tokenRing) Swap(i, j int) {
 }
 
 func (t *tokenRing) String() string {
+
 	buf := &bytes.Buffer{}
-	buf.WriteString("TokenRing={")
+	buf.WriteString("TokenRing(")
+	if t.partitioner != nil {
+		buf.WriteString(t.partitioner.Name())
+	}
+	buf.WriteString("){")
 	sep := ""
 	for i := range t.tokens {
 		buf.WriteString(sep)
@@ -300,12 +319,20 @@ func (t *tokenRing) String() string {
 }
 
 func (t *tokenRing) GetHostForPartitionKey(partitionKey []byte) *HostInfo {
+	if t == nil {
+		return nil
+	}
+
 	token := t.partitioner.Hash(partitionKey)
 	return t.GetHostForToken(token)
 }
 
 func (t *tokenRing) GetHostForToken(token token) *HostInfo {
-	// find the primary repica
+	if t == nil {
+		return nil
+	}
+
+	// find the primary replica
 	ringIndex := sort.Search(
 		len(t.tokens),
 		func(i int) bool {

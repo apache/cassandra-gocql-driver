@@ -1,3 +1,6 @@
+// Copyright (c) 2012 The gocql Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
 // +build all unit
 
 package gocql
@@ -177,7 +180,7 @@ func TestSlowQuery(t *testing.T) {
 	}
 }
 
-func TestRoundRobin(t *testing.T) {
+func TestSimplePoolRoundRobin(t *testing.T) {
 	servers := make([]*TestServer, 5)
 	addrs := make([]string, len(servers))
 	for n := 0; n < len(servers); n++ {
@@ -223,7 +226,7 @@ func TestRoundRobin(t *testing.T) {
 	}
 
 	if diff > 0 {
-		t.Fatal("diff:", diff)
+		t.Errorf("Expected 0 difference in usage but was %d", diff)
 	}
 }
 
@@ -258,7 +261,7 @@ func TestConnClosing(t *testing.T) {
 	conns := pool.Size()
 
 	if conns != numConns {
-		t.Fatalf("Expected to have %d connections but have %d", numConns, conns)
+		t.Errorf("Expected to have %d connections but have %d", numConns, conns)
 	}
 }
 
@@ -370,6 +373,99 @@ func BenchmarkProtocolV3(b *testing.B) {
 		if err = db.Query("void").Exec(); err != nil {
 			b.Fatal(err)
 		}
+	}
+}
+
+func TestRoundRobinConnPoolRoundRobin(t *testing.T) {
+	// create 5 test servers
+	servers := make([]*TestServer, 5)
+	addrs := make([]string, len(servers))
+	for n := 0; n < len(servers); n++ {
+		servers[n] = NewTestServer(t, defaultProto)
+		addrs[n] = servers[n].Address
+		defer servers[n].Stop()
+	}
+
+	// create a new cluster using the policy-based round robin conn pool
+	cluster := NewCluster(addrs...)
+	cluster.ConnPoolType = NewRoundRobinConnPool
+
+	db, err := cluster.CreateSession()
+	if err != nil {
+		t.Fatalf("failed to create a new session: %v", err)
+	}
+
+	// Sleep to allow the pool to fill
+	time.Sleep(100 * time.Millisecond)
+
+	// run concurrent queries against the pool, server usage should
+	// be even
+	var wg sync.WaitGroup
+	wg.Add(5)
+	for n := 0; n < 5; n++ {
+		go func() {
+			for j := 0; j < 5; j++ {
+				if err := db.Query("void").Exec(); err != nil {
+					t.Errorf("Query failed with error: %v", err)
+				}
+			}
+			wg.Done()
+		}()
+	}
+	wg.Wait()
+
+	db.Close()
+
+	// wait for the pool to drain
+	time.Sleep(100 * time.Millisecond)
+	size := db.Pool.Size()
+	if size != 0 {
+		t.Errorf("connection pool did not drain, still contains %d connections", size)
+	}
+
+	// verify that server usage is even
+	diff := 0
+	for n := 1; n < len(servers); n++ {
+		d := 0
+		if servers[n].nreq > servers[n-1].nreq {
+			d = int(servers[n].nreq - servers[n-1].nreq)
+		} else {
+			d = int(servers[n-1].nreq - servers[n].nreq)
+		}
+		if d > diff {
+			diff = d
+		}
+	}
+
+	if diff > 0 {
+		t.Errorf("expected 0 difference in usage but was %d", diff)
+	}
+}
+
+// This tests that the policy connection pool handles SSL correctly
+func TestPolicyConnPoolSSL(t *testing.T) {
+	srv := NewSSLTestServer(t, defaultProto)
+	defer srv.Stop()
+
+	cluster := createTestSslCluster(srv.Address, defaultProto)
+	cluster.ConnPoolType = NewRoundRobinConnPool
+
+	db, err := cluster.CreateSession()
+	if err != nil {
+		t.Fatalf("failed to create new session: %v", err)
+	}
+
+	if err := db.Query("void").Exec(); err != nil {
+		t.Errorf("query failed due to error: %v", err)
+	}
+
+	db.Close()
+
+	// wait for the pool to drain
+	time.Sleep(100 * time.Millisecond)
+	size := db.Pool.Size()
+	if size != 0 {
+		t.Errorf("connection pool did not drain, still contains %d connections", size)
 	}
 }
 

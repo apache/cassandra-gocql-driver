@@ -75,6 +75,10 @@ type ConnConfig struct {
 	tlsConfig     *tls.Config
 }
 
+type ConnErrorHandler interface {
+	HandleError(conn *Conn, err error, closed bool)
+}
+
 // Conn is a single connection to a Cassandra node. It can be used to execute
 // queries, but users are usually advised to use a more reliable, higher
 // level API.
@@ -88,7 +92,7 @@ type Conn struct {
 	uniq  chan int
 	calls []callReq
 
-	pool            ConnectionPool
+	errorHandler    ConnErrorHandler
 	compressor      Compressor
 	auth            Authenticator
 	addr            string
@@ -102,7 +106,7 @@ type Conn struct {
 
 // Connect establishes a connection to a Cassandra node.
 // You must also call the Serve method before you can execute any queries.
-func Connect(addr string, cfg ConnConfig, pool ConnectionPool) (*Conn, error) {
+func Connect(addr string, cfg ConnConfig, errorHandler ConnErrorHandler) (*Conn, error) {
 	var (
 		err  error
 		conn net.Conn
@@ -137,18 +141,17 @@ func Connect(addr string, cfg ConnConfig, pool ConnectionPool) (*Conn, error) {
 	}
 
 	c := &Conn{
-		conn:       conn,
-		r:          bufio.NewReader(conn),
-		uniq:       make(chan int, cfg.NumStreams),
-		calls:      make([]callReq, cfg.NumStreams),
-		timeout:    cfg.Timeout,
-		version:    uint8(cfg.ProtoVersion),
-		addr:       conn.RemoteAddr().String(),
-		pool:       pool,
-		compressor: cfg.Compressor,
-		auth:       cfg.Authenticator,
-
-		headerBuf: make([]byte, headerSize),
+		conn:         conn,
+		r:            bufio.NewReader(conn),
+		uniq:         make(chan int, cfg.NumStreams),
+		calls:        make([]callReq, cfg.NumStreams),
+		timeout:      cfg.Timeout,
+		version:      uint8(cfg.ProtoVersion),
+		addr:         conn.RemoteAddr().String(),
+		errorHandler: errorHandler,
+		compressor:   cfg.Compressor,
+		auth:         cfg.Authenticator,
+		headerBuf:    make([]byte, headerSize),
 	}
 
 	if cfg.Keepalive > 0 {
@@ -298,7 +301,7 @@ func (c *Conn) serve() {
 	}
 
 	if c.started {
-		c.pool.HandleError(c, err, true)
+		c.errorHandler.HandleError(c, err, true)
 	}
 }
 
