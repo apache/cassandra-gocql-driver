@@ -473,6 +473,30 @@ func TestBatchLimit(t *testing.T) {
 
 }
 
+func TestWhereIn(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+
+	if err := createTable(session, `CREATE TABLE where_in_table (id int, cluster int, primary key (id,cluster))`); err != nil {
+		t.Fatal("create table:", err)
+	}
+
+	if err := session.Query("INSERT INTO where_in_table (id, cluster) VALUES (?,?)", 100, 200).Exec(); err != nil {
+		t.Fatal("insert:", err)
+	}
+
+	iter := session.Query("SELECT * FROM where_in_table WHERE id = ? AND cluster IN (?)", 100, 200).Iter()
+	var id, cluster int
+	count := 0
+	for iter.Scan(&id, &cluster) {
+		count++
+	}
+
+	if id != 100 || cluster != 200 {
+		t.Fatalf("Was expecting id and cluster to be (100,200) but were (%d,%d)", id, cluster)
+	}
+}
+
 // TestTooManyQueryArgs tests to make sure the library correctly handles the application level bug
 // whereby too many query arguments are passed to a query
 func TestTooManyQueryArgs(t *testing.T) {
