@@ -9,13 +9,18 @@ import (
 
 func TestSessionAPI(t *testing.T) {
 
-	cfg := ClusterConfig{}
-	pool, err := NewSimplePool(&cfg)
+	cfg := &ClusterConfig{}
+	pool, err := NewSimplePool(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	s := NewSession(pool, cfg)
+	s := &Session{
+		Pool: pool,
+		cfg:  *cfg,
+		cons: Quorum,
+	}
+
 	defer s.Close()
 
 	s.SetConsistency(All)
@@ -154,14 +159,13 @@ func TestQueryShouldPrepare(t *testing.T) {
 
 func TestBatchBasicAPI(t *testing.T) {
 
-	cfg := ClusterConfig{}
+	cfg := NewCluster("127.0.0.1")
 	cfg.RetryPolicy = &SimpleRetryPolicy{NumRetries: 2}
-	pool, err := NewSimplePool(&cfg)
+
+	s, err := cfg.CreateSession()
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	s := NewSession(pool, cfg)
 	defer s.Close()
 
 	b := s.NewBatch(UnloggedBatch)
