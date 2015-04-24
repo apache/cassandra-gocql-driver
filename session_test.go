@@ -159,12 +159,16 @@ func TestQueryShouldPrepare(t *testing.T) {
 
 func TestBatchBasicAPI(t *testing.T) {
 
-	cfg := NewCluster("127.0.0.1")
-	cfg.RetryPolicy = &SimpleRetryPolicy{NumRetries: 2}
-
-	s, err := cfg.CreateSession()
+	cfg := &ClusterConfig{RetryPolicy: &SimpleRetryPolicy{NumRetries: 2}}
+	pool, err := NewSimplePool(cfg)
 	if err != nil {
 		t.Fatal(err)
+	}
+
+	s := &Session{
+		Pool: pool,
+		cfg:  *cfg,
+		cons: Quorum,
 	}
 	defer s.Close()
 
