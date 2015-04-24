@@ -762,6 +762,18 @@ func (pool *hostConnPool) fill() {
 
 		// filled one
 		fillCount--
+
+		// connect all connections to this host in sync
+		for fillCount > 0 {
+			err := pool.connect()
+			pool.logConnectErr(err)
+
+			// decrement, even on error
+			fillCount--
+		}
+
+		go pool.fillingStopped()
+		return
 	}
 
 	// fill the rest of the pool asynchronously
