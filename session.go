@@ -223,7 +223,9 @@ func (s *Session) routingKeyInfo(stmt string) (*routingKeyInfo, error) {
 			return nil, inflight.err
 		}
 
-		return inflight.value.(*routingKeyInfo), nil
+		key, _ := inflight.value.(*routingKeyInfo)
+
+		return key, nil
 	}
 
 	// create a new inflight entry while the data is created
