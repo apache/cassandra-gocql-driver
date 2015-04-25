@@ -14,6 +14,7 @@ import (
 	"math/rand"
 	"net"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -476,6 +477,7 @@ type policyConnPool struct {
 	numConns int
 	connCfg  ConnConfig
 	keyspace string
+	filling  int32
 
 	mu            sync.RWMutex
 	hostPolicy    HostSelectionPolicy
@@ -534,7 +536,18 @@ func NewPolicyConnPool(
 }
 
 func (p *policyConnPool) SetHosts(hosts []HostInfo) {
-	p.mu.Lock()
+	const (
+		notFilling = 0
+		filling    = 1
+	)
+
+	if !atomic.CompareAndSwapInt32(&p.filling, notFilling, filling) {
+		return
+	}
+	defer atomic.StoreInt32(&p.filling, notFilling)
+
+	// SetHosts calcuates the new set of hosts which should be inside the pool
+	p.mu.RLock()
 
 	toRemove := make(map[string]struct{})
 	for addr := range p.hostConnPools {
@@ -544,35 +557,50 @@ func (p *policyConnPool) SetHosts(hosts []HostInfo) {
 	// TODO connect to hosts in parallel, but wait for pools to be
 	// created before returning
 
+	// the old pool, retain a reference because we will replace this with the
+	// new pool later. This is essential now a copy on write map, when we drop
+	// support for 1.3 we can use atomic.Value to implement this without locks.
+	existingPool := p.hostConnPools
+
+	// new host pool which will be set once it has connected to the hosts
+	hostPool := make(map[string]*hostConnPool)
+
 	for i := range hosts {
-		pool, exists := p.hostConnPools[hosts[i].Peer]
+		addr := hosts[i].Peer
+		pool, exists := p.hostConnPools[addr]
 		if !exists {
+			// TODO: do this async
 			// create a connection pool for the host
 			pool = newHostConnPool(
-				hosts[i].Peer,
+				addr,
 				p.port,
 				p.numConns,
 				p.connCfg,
 				p.keyspace,
 				p.connPolicy(),
 			)
-			p.hostConnPools[hosts[i].Peer] = pool
+			hostPool[addr] = pool
 		} else {
+			hostPool[addr] = pool
 			// still have this host, so don't remove it
-			delete(toRemove, hosts[i].Peer)
+			delete(toRemove, addr)
 		}
 	}
+	p.mu.RUnlock()
 
+	p.mu.Lock()
+	p.hostConnPools = hostPool
+	p.mu.Unlock()
+
+	// we dont need to hold a lock to this pool as we are the only one with a refernce
+	// to it.
 	for addr := range toRemove {
-		pool := p.hostConnPools[addr]
-		delete(p.hostConnPools, addr)
+		pool := existingPool[addr]
 		pool.Close()
 	}
 
 	// update the policy
 	p.hostPolicy.SetHosts(hosts)
-
-	p.mu.Unlock()
 }
 
 func (p *policyConnPool) SetPartitioner(partitioner string) {
