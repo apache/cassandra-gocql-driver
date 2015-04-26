@@ -101,52 +101,7 @@ func NewCluster(hosts ...string) *ClusterConfig {
 // CreateSession initializes the cluster based on this config and returns a
 // session object that can be used to interact with the database.
 func (cfg *ClusterConfig) CreateSession() (*Session, error) {
-
-	//Check that hosts in the ClusterConfig is not empty
-	if len(cfg.Hosts) < 1 {
-		return nil, ErrNoHosts
-	}
-
-	maxStreams := 128
-	if cfg.ProtoVersion > protoVersion2 {
-		maxStreams = 32768
-	}
-
-	if cfg.NumStreams <= 0 || cfg.NumStreams > maxStreams {
-		cfg.NumStreams = maxStreams
-	}
-
-	pool, err := cfg.ConnPoolType(cfg)
-	if err != nil {
-		return nil, err
-	}
-
-	//Adjust the size of the prepared statements cache to match the latest configuration
-	stmtsLRU.Lock()
-	initStmtsLRU(cfg.MaxPreparedStmts)
-	stmtsLRU.Unlock()
-
-	//See if there are any connections in the pool
-	if pool.Size() > 0 {
-		s := NewSession(pool, *cfg)
-		s.SetConsistency(cfg.Consistency)
-		s.SetPageSize(cfg.PageSize)
-
-		if cfg.DiscoverHosts {
-			hostSource := &ringDescriber{
-				session:    s,
-				dcFilter:   cfg.Discovery.DcFilter,
-				rackFilter: cfg.Discovery.RackFilter,
-			}
-
-			go hostSource.run(cfg.Discovery.Sleep)
-		}
-
-		return s, nil
-	}
-
-	pool.Close()
-	return nil, ErrNoConnectionsStarted
+	return NewSession(*cfg)
 }
 
 var (

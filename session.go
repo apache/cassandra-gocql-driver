@@ -44,13 +44,61 @@ type Session struct {
 }
 
 // NewSession wraps an existing Node.
-func NewSession(p ConnectionPool, c ClusterConfig) *Session {
-	session := &Session{Pool: p, cons: c.Consistency, prefetch: 0.25, cfg: c}
+func NewSession(cfg ClusterConfig) (*Session, error) {
+	//Check that hosts in the ClusterConfig is not empty
+	if len(cfg.Hosts) < 1 {
+		return nil, ErrNoHosts
+	}
 
-	// create the query info cache
-	session.routingKeyInfoCache.lru = lru.New(c.MaxRoutingKeyInfo)
+	maxStreams := 128
+	if cfg.ProtoVersion > protoVersion2 {
+		maxStreams = 32768
+	}
 
-	return session
+	if cfg.NumStreams <= 0 || cfg.NumStreams > maxStreams {
+		cfg.NumStreams = maxStreams
+	}
+
+	pool, err := cfg.ConnPoolType(&cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	//Adjust the size of the prepared statements cache to match the latest configuration
+	stmtsLRU.Lock()
+	initStmtsLRU(cfg.MaxPreparedStmts)
+	stmtsLRU.Unlock()
+
+	s := &Session{
+		Pool:     pool,
+		cons:     cfg.Consistency,
+		prefetch: 0.25,
+		cfg:      cfg,
+	}
+
+	//See if there are any connections in the pool
+	if pool.Size() > 0 {
+		s.routingKeyInfoCache.lru = lru.New(cfg.MaxRoutingKeyInfo)
+
+		s.SetConsistency(cfg.Consistency)
+		s.SetPageSize(cfg.PageSize)
+
+		if cfg.DiscoverHosts {
+			hostSource := &ringDescriber{
+				session:    s,
+				dcFilter:   cfg.Discovery.DcFilter,
+				rackFilter: cfg.Discovery.RackFilter,
+			}
+
+			go hostSource.run(cfg.Discovery.Sleep)
+		}
+
+		return s, nil
+	}
+
+	s.Close()
+
+	return nil, ErrNoConnectionsStarted
 }
 
 // SetConsistency sets the default consistency level for this session. This
