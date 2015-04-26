@@ -536,15 +536,10 @@ func NewPolicyConnPool(
 }
 
 func (p *policyConnPool) SetHosts(hosts []HostInfo) {
-	const (
-		notFilling = 0
-		filling    = 1
-	)
-
-	if !atomic.CompareAndSwapInt32(&p.filling, notFilling, filling) {
+	if !atomic.CompareAndSwapInt32(&p.filling, 0, 1) {
 		return
 	}
-	defer atomic.StoreInt32(&p.filling, notFilling)
+	defer atomic.StoreInt32(&p.filling, 0)
 
 	// SetHosts calcuates the new set of hosts which should be inside the pool
 	p.mu.RLock()
@@ -622,15 +617,20 @@ func (p *policyConnPool) Pick(qry *Query) *Conn {
 	nextHost := p.hostPolicy.Pick(qry)
 
 	p.mu.RLock()
-	var host *HostInfo
-	var conn *Conn
+	var (
+		host *HostInfo
+		conn *Conn
+	)
+
 	for conn == nil {
 		host = nextHost()
 		if host == nil {
 			break
 		}
+
 		conn = p.hostConnPools[host.Peer].Pick(qry)
 	}
+
 	p.mu.RUnlock()
 	return conn
 }
@@ -663,7 +663,7 @@ type hostConnPool struct {
 	mu      sync.RWMutex
 	conns   []*Conn
 	closed  bool
-	filling bool
+	filling int32
 }
 
 func newHostConnPool(
@@ -684,7 +684,6 @@ func newHostConnPool(
 		keyspace: keyspace,
 		policy:   policy,
 		conns:    make([]*Conn, 0, size),
-		filling:  false,
 		closed:   false,
 	}
 
@@ -738,9 +737,17 @@ func (pool *hostConnPool) Close() {
 
 // Fill the connection pool
 func (pool *hostConnPool) fill() {
+	if !atomic.CompareAndSwapInt32(&pool.filling, 0, 1) {
+		// already filling
+		return
+	}
+	defer func() {
+		go pool.fillingStopped()
+	}()
+
 	pool.mu.RLock()
-	// avoid filling a closed pool, or concurrent filling
-	if pool.closed || pool.filling {
+	// avoid filling a closed pool
+	if pool.closed {
 		pool.mu.RUnlock()
 		return
 	}
@@ -748,76 +755,26 @@ func (pool *hostConnPool) fill() {
 	// determine the filling work to be done
 	startCount := len(pool.conns)
 	fillCount := pool.size - startCount
+	pool.mu.RUnlock()
 
 	// avoid filling a full (or overfull) pool
 	if fillCount <= 0 {
-		pool.mu.RUnlock()
 		return
 	}
 
-	// switch from read to write lock
-	pool.mu.RUnlock()
-	pool.mu.Lock()
-
-	// double check everything since the lock was released
-	startCount = len(pool.conns)
-	fillCount = pool.size - startCount
-	if pool.closed || pool.filling || fillCount <= 0 {
-		// looks like another goroutine already beat this
-		// goroutine to the filling
-		pool.mu.Unlock()
-		return
-	}
-
-	// ok fill the pool
-	pool.filling = true
-
-	// allow others to access the pool while filling
-	pool.mu.Unlock()
 	// only this goroutine should make calls to fill/empty the pool at this
 	// point until after this routine or its subordinates calls
 	// fillingStopped
 
-	// fill only the first connection synchronously
-	if startCount == 0 {
+	for fillCount > 0 {
 		err := pool.connect()
+		// TODO(zariel): if err != nil mark host DOWN so that we dont try to connect again
+		// for a period of time.
 		pool.logConnectErr(err)
 
-		if err != nil {
-			// probably unreachable host
-			go pool.fillingStopped()
-			return
-		}
-
-		// filled one
+		// decrement, even on error
 		fillCount--
-
-		// connect all connections to this host in sync
-		for fillCount > 0 {
-			err := pool.connect()
-			pool.logConnectErr(err)
-
-			// decrement, even on error
-			fillCount--
-		}
-
-		go pool.fillingStopped()
-		return
 	}
-
-	// fill the rest of the pool asynchronously
-	go func() {
-		for fillCount > 0 {
-			err := pool.connect()
-			pool.logConnectErr(err)
-
-			// decrement, even on error
-			fillCount--
-		}
-
-		// mark the end of filling
-		pool.fillingStopped()
-	}()
 }
 
 func (pool *hostConnPool) logConnectErr(err error) {
@@ -836,10 +793,7 @@ func (pool *hostConnPool) fillingStopped() {
 	// this provides some time between failed attempts
 	// to fill the pool for the host to recover
 	time.Sleep(time.Duration(rand.Int31n(100)+31) * time.Millisecond)
-
-	pool.mu.Lock()
-	pool.filling = false
-	pool.mu.Unlock()
+	atomic.StoreInt32(&pool.filling, 0)
 }
 
 // create a new connection to the host and add it to the pool
