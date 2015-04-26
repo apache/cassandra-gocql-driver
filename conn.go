@@ -112,13 +112,19 @@ func Connect(addr string, cfg ConnConfig, errorHandler ConnErrorHandler) (*Conn,
 		conn net.Conn
 	)
 
+	dialer := &net.Dialer{
+		Timeout: cfg.Timeout,
+	}
+
 	if cfg.tlsConfig != nil {
 		// the TLS config is safe to be reused by connections but it must not
 		// be modified after being used.
-		if conn, err = tls.Dial("tcp", addr, cfg.tlsConfig); err != nil {
-			return nil, err
-		}
-	} else if conn, err = net.DialTimeout("tcp", addr, cfg.Timeout); err != nil {
+		conn, err = tls.DialWithDialer(dialer, "tcp", addr, cfg.tlsConfig)
+	} else {
+		conn, err = dialer.Dial("tcp", addr)
+	}
+
+	if err != nil {
 		return nil, err
 	}
 
