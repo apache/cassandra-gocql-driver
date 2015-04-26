@@ -707,7 +707,8 @@ func (pool *hostConnPool) Pick(qry *Query) *Conn {
 
 	if empty {
 		// try to fill the empty pool
-		pool.fill()
+		go pool.fill()
+		return nil
 	}
 
 	return pool.policy.Pick(qry)
