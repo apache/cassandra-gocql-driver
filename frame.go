@@ -328,6 +328,10 @@ func (f *framer) trace() {
 
 // reads a frame form the wire into the framers buffer
 func (f *framer) readFrame(head *frameHeader) error {
+	if head.length < 0 {
+		return fmt.Errorf("frame body length can not be less than 0: %d", head.length)
+	}
+
 	if cap(f.readBuffer) >= head.length {
 		f.rbuf = f.readBuffer[:head.length]
 	} else {
