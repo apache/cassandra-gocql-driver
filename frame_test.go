@@ -8,18 +8,16 @@ import (
 func TestFuzzBugs(t *testing.T) {
 	// these inputs are found using go-fuzz (https://github.com/dvyukov/go-fuzz)
 	// and should cause a panic unless fixed.
-	tests := []struct {
-		input []byte
-	}{
-		{input: []byte("00000\xa0000")},
+	tests := [][]byte{
+		[]byte("00000\xa0000"),
 	}
 
 	for i, test := range tests {
-		t.Logf("test %d input: %q", i, test.input)
+		t.Logf("test %d input: %q", i, test)
 
 		var bw bytes.Buffer
 
-		r := bytes.NewReader(test.input)
+		r := bytes.NewReader(test)
 
 		head, err := readHeader(r, make([]byte, 9))
 		if err != nil {
@@ -37,6 +35,6 @@ func TestFuzzBugs(t *testing.T) {
 			continue
 		}
 
-		t.Errorf("(%d) expected to fail for input %q", i, test.input)
+		t.Errorf("(%d) expected to fail for input %q", i, test)
 	}
 }
