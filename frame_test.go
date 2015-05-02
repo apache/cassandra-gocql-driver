@@ -10,6 +10,8 @@ func TestFuzzBugs(t *testing.T) {
 	// and should cause a panic unless fixed.
 	tests := [][]byte{
 		[]byte("00000\xa0000"),
+		[]byte("\x8000\x0e\x00\x00\x00\x000"),
+		[]byte("\x8000\x00\x00\x00\x00\t0000000000"),
 	}
 
 	for i, test := range tests {
