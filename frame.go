@@ -360,7 +360,7 @@ func (f *framer) readFrame(head *frameHeader) error {
 	return nil
 }
 
-func (f *framer) parseFrame() (frame, error) {
+func (f *framer) parseFrame() (frame frame, err error) {
 	if f.header.version.request() {
 		return nil, NewErrProtocol("got a request frame from server: %v", f.header.version)
 	}
@@ -369,10 +369,16 @@ func (f *framer) parseFrame() (frame, error) {
 		f.readTrace()
 	}
 
-	var (
-		frame frame
-		err   error
-	)
+	defer func() {
+		if r := recover(); r != nil {
+			if perr, ok := r.(error); ok {
+				err = perr
+				return
+			}
+
+			panic(r)
+		}
+	}()
 
 	// asumes that the frame body has been read into rbuf
 	switch f.header.op {
@@ -394,7 +400,7 @@ func (f *framer) parseFrame() (frame, error) {
 		return nil, NewErrProtocol("unknown op in frame header: %s", f.header.op)
 	}
 
-	return frame, err
+	return
 }
 
 func (f *framer) parseErrorFrame() frame {
