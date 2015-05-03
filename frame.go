@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"runtime"
 	"sync"
 	"time"
 )
@@ -328,6 +329,10 @@ func (f *framer) trace() {
 
 // reads a frame form the wire into the framers buffer
 func (f *framer) readFrame(head *frameHeader) error {
+	if head.length < 0 {
+		return fmt.Errorf("frame body length can not be less than 0: %d", head.length)
+	}
+
 	if cap(f.readBuffer) >= head.length {
 		f.rbuf = f.readBuffer[:head.length]
 	} else {
@@ -356,7 +361,7 @@ func (f *framer) readFrame(head *frameHeader) error {
 	return nil
 }
 
-func (f *framer) parseFrame() (frame, error) {
+func (f *framer) parseFrame() (frame frame, err error) {
 	if f.header.version.request() {
 		return nil, NewErrProtocol("got a request frame from server: %v", f.header.version)
 	}
@@ -365,10 +370,14 @@ func (f *framer) parseFrame() (frame, error) {
 		f.readTrace()
 	}
 
-	var (
-		frame frame
-		err   error
-	)
+	defer func() {
+		if r := recover(); r != nil {
+			if _, ok := r.(runtime.Error); ok {
+				panic(r)
+			}
+			err = r.(error)
+		}
+	}()
 
 	// asumes that the frame body has been read into rbuf
 	switch f.header.op {
@@ -390,7 +399,7 @@ func (f *framer) parseFrame() (frame, error) {
 		return nil, NewErrProtocol("unknown op in frame header: %s", f.header.op)
 	}
 
-	return frame, err
+	return
 }
 
 func (f *framer) parseErrorFrame() frame {
@@ -1151,18 +1160,28 @@ func (f *framer) readByte() byte {
 }
 
 func (f *framer) readInt() (n int) {
+	if len(f.rbuf) < 4 {
+		panic(fmt.Errorf("not enough bytes in buffer to read int require 4 got: %d", len(f.rbuf)))
+	}
+
 	n = int(int32(f.rbuf[0])<<24 | int32(f.rbuf[1])<<16 | int32(f.rbuf[2])<<8 | int32(f.rbuf[3]))
 	f.rbuf = f.rbuf[4:]
 	return
 }
 
 func (f *framer) readShort() (n uint16) {
+	if len(f.rbuf) < 2 {
+		panic(fmt.Errorf("not enough bytes in buffer to read short require 2 got: %d", len(f.rbuf)))
+	}
 	n = uint16(f.rbuf[0])<<8 | uint16(f.rbuf[1])
 	f.rbuf = f.rbuf[2:]
 	return
 }
 
 func (f *framer) readLong() (n int64) {
+	if len(f.rbuf) < 8 {
+		panic(fmt.Errorf("not enough bytes in buffer to read long require 8 got: %d", len(f.rbuf)))
+	}
 	n = int64(f.rbuf[0])<<56 | int64(f.rbuf[1])<<48 | int64(f.rbuf[2])<<40 | int64(f.rbuf[3])<<32 |
 		int64(f.rbuf[4])<<24 | int64(f.rbuf[5])<<16 | int64(f.rbuf[6])<<8 | int64(f.rbuf[7])
 	f.rbuf = f.rbuf[8:]
@@ -1171,6 +1190,11 @@ func (f *framer) readLong() (n int64) {
 
 func (f *framer) readString() (s string) {
 	size := f.readShort()
+
+	if len(f.rbuf) < int(size) {
+		panic(fmt.Errorf("not enough bytes in buffer to read string require %d got: %d", size, len(f.rbuf)))
+	}
+
 	s = string(f.rbuf[:size])
 	f.rbuf = f.rbuf[size:]
 	return
@@ -1178,12 +1202,21 @@ func (f *framer) readString() (s string) {
 
 func (f *framer) readLongString() (s string) {
 	size := f.readInt()
+
+	if len(f.rbuf) < size {
+		panic(fmt.Errorf("not enough bytes in buffer to read long string require %d got: %d", size, len(f.rbuf)))
+	}
+
 	s = string(f.rbuf[:size])
 	f.rbuf = f.rbuf[size:]
 	return
 }
 
 func (f *framer) readUUID() *UUID {
+	if len(f.rbuf) < 16 {
+		panic(fmt.Errorf("not enough bytes in buffer to read uuid require %d got: %d", 16, len(f.rbuf)))
+	}
+
 	// TODO: how to handle this error, if it is a uuid, then sureley, problems?
 	u, _ := UUIDFromBytes(f.rbuf[:16])
 	f.rbuf = f.rbuf[16:]
@@ -1205,6 +1238,10 @@ func (f *framer) readBytes() []byte {
 	size := f.readInt()
 	if size < 0 {
 		return nil
+	}
+
+	if len(f.rbuf) < size {
+		panic(fmt.Errorf("not enough bytes in buffer to read bytes require %d got: %d", size, len(f.rbuf)))
 	}
 
 	// we cant make assumptions about the length of the life of the supplied byte
@@ -1230,11 +1267,19 @@ func (f *framer) readShortBytes() []byte {
 }
 
 func (f *framer) readInet() (net.IP, int) {
+	if len(f.rbuf) < 1 {
+		panic(fmt.Errorf("not enough bytes in buffer to read inet size require %d got: %d", 1, len(f.rbuf)))
+	}
+
 	size := f.rbuf[0]
 	f.rbuf = f.rbuf[1:]
 
 	if !(size == 4 || size == 16) {
-		panic(fmt.Sprintf("invalid IP size: %d", size))
+		panic(fmt.Errorf("invalid IP size: %d", size))
+	}
+
+	if len(f.rbuf) < 1 {
+		panic(fmt.Errorf("not enough bytes in buffer to read inet require %d got: %d", size, len(f.rbuf)))
 	}
 
 	ip := make([]byte, size)
