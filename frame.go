@@ -779,6 +779,10 @@ func (f *framer) parseResultRows() frame {
 	meta := f.parseResultMetadata()
 
 	numRows := f.readInt()
+	if numRows < 0 {
+		panic(fmt.Errorf("invalid row_count in result frame: %d", numRows))
+	}
+
 	colCount := len(meta.columns)
 
 	rows := make([][][]byte, numRows)
