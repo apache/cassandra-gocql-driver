@@ -376,14 +376,6 @@ func (f *framer) readFrame(head *frameHeader) error {
 }
 
 func (f *framer) parseFrame() (frame frame, err error) {
-	if f.header.version.request() {
-		return nil, NewErrProtocol("got a request frame from server: %v", f.header.version)
-	}
-
-	if f.header.flags&flagTracing == flagTracing {
-		f.readTrace()
-	}
-
 	defer func() {
 		if r := recover(); r != nil {
 			if _, ok := r.(runtime.Error); ok {
@@ -392,6 +384,14 @@ func (f *framer) parseFrame() (frame frame, err error) {
 			err = r.(error)
 		}
 	}()
+
+	if f.header.version.request() {
+		return nil, NewErrProtocol("got a request frame from server: %v", f.header.version)
+	}
+
+	if f.header.flags&flagTracing == flagTracing {
+		f.readTrace()
+	}
 
 	// asumes that the frame body has been read into rbuf
 	switch f.header.op {
