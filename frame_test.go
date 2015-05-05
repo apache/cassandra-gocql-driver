@@ -12,6 +12,7 @@ func TestFuzzBugs(t *testing.T) {
 		[]byte("00000\xa0000"),
 		[]byte("\x8000\x0e\x00\x00\x00\x000"),
 		[]byte("\x8000\x00\x00\x00\x00\t0000000000"),
+		[]byte("\xa0\xff\x01\xae\xefqE\xf2\x1a"),
 	}
 
 	for i, test := range tests {

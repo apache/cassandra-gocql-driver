@@ -306,14 +306,28 @@ func readHeader(r io.Reader, p []byte) (head frameHeader, err error) {
 	}
 
 	version := p[0] & protoVersionMask
-	head.version = protoVersion(p[0])
 
+	if version < protoVersion1 || version > protoVersion3 {
+		err = fmt.Errorf("invalid version: %x", version)
+		return
+	}
+
+	head.version = protoVersion(p[0])
 	head.flags = p[1]
+
 	if version > protoVersion2 {
+		if len(p) < 9 {
+			return frameHeader{}, fmt.Errorf("not enough bytes to read header require 9 got: %d", len(p))
+		}
+
 		head.stream = int(int16(p[2])<<8 | int16(p[3]))
 		head.op = frameOp(p[4])
 		head.length = int(readInt(p[5:]))
 	} else {
+		if len(p) < 8 {
+			return frameHeader{}, fmt.Errorf("not enough bytes to read header require 8 got: %d", len(p))
+		}
+
 		head.stream = int(int8(p[2]))
 		head.op = frameOp(p[3])
 		head.length = int(readInt(p[4:]))
