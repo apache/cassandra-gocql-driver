@@ -5,8 +5,10 @@
 package gocql
 
 import (
+	"errors"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net"
 	"runtime"
 	"sync"
@@ -19,6 +21,8 @@ const (
 	protoVersion1      = 0x01
 	protoVersion2      = 0x02
 	protoVersion3      = 0x03
+
+	maxFrameSize = 256 * 1024 * 1024
 )
 
 type protoVersion byte
@@ -193,6 +197,10 @@ const (
 	apacheCassandraTypePrefix = "org.apache.cassandra.db.marshal."
 )
 
+var (
+	ErrFrameTooBig = errors.New("frame length is bigger than the maximum alowed")
+)
+
 func writeInt(p []byte, n int32) {
 	p[0] = byte(n >> 24)
 	p[1] = byte(n >> 16)
@@ -345,6 +353,13 @@ func (f *framer) trace() {
 func (f *framer) readFrame(head *frameHeader) error {
 	if head.length < 0 {
 		return fmt.Errorf("frame body length can not be less than 0: %d", head.length)
+	} else if head.length > maxFrameSize {
+		// need to free up the connection to be used again
+		_, err := io.CopyN(ioutil.Discard, f.r, int64(head.length))
+		if err != nil {
+			return fmt.Errorf("error whilst trying to discard frame with invalid length: %v", err)
+		}
+		return ErrFrameTooBig
 	}
 
 	if cap(f.readBuffer) >= head.length {
@@ -521,6 +536,12 @@ func (f *framer) setLength(length int) {
 }
 
 func (f *framer) finishWrite() error {
+	if len(f.wbuf) > maxFrameSize {
+		// huge app frame, lets remove it so it doesnt bloat the heap
+		f.wbuf = make([]byte, defaultBufSize)
+		return ErrFrameTooBig
+	}
+
 	if f.wbuf[1]&flagCompress == flagCompress {
 		if f.compres == nil {
 			panic("compress flag set with no compressor")
