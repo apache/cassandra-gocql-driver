@@ -15,8 +15,8 @@ env:
   matrix:
     - CASS=1.2.19 AUTH=false
     - CASS=2.0.14 AUTH=false
-    - CASS=2.1.4  AUTH=false
-    - CASS=2.1.4  AUTH=true
+    - CASS=2.1.5  AUTH=false
+    - CASS=2.1.5  AUTH=true
 
 go:
   - 1.3
