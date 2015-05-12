@@ -86,12 +86,13 @@ func TestUDT_Marshaler(t *testing.T) {
 		t.Errorf("expeceted lon to be be %d got %d", expLon, pos.Lon)
 	}
 }
+
 func TestUDT_Reflect(t *testing.T) {
-	// Uses reflection instead of implementing the marshaling type
 	if *flagProto < protoVersion3 {
 		t.Skip("UDT are only available on protocol >= 3")
 	}
 
+	// Uses reflection instead of implementing the marshaling type
 	session := createSession(t)
 	defer session.Close()
 
@@ -135,5 +136,54 @@ func TestUDT_Reflect(t *testing.T) {
 
 	if *retrievedHorse != *insertedHorse {
 		t.Fatal("exepcted to get %+v got %+v", insertedHorse, retrievedHorse)
+	}
+}
+
+func TestUDT_Proto2error(t *testing.T) {
+	if *flagProto < protoVersion3 {
+		t.Skip("UDT are only available on protocol >= 3")
+	}
+
+	cluster := createCluster()
+	cluster.ProtoVersion = 2
+	cluster.Keyspace = "gocql_test"
+
+	// Uses reflection instead of implementing the marshaling type
+	session, err := cluster.CreateSession()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close()
+
+	err = createTable(session, `CREATE TYPE fish(
+		name text,
+		owner text);`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = createTable(session, `CREATE TABLE fish_race(
+		position int,
+		fish frozen<fish>,
+
+		primary key(position)
+	);`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	type fish struct {
+		Name  string `cql:"name"`
+		Owner string `cql:"owner"`
+	}
+
+	insertedFish := &fish{
+		Name:  "pony",
+		Owner: "jim",
+	}
+
+	err = session.Query("INSERT INTO fish_race(position, fish) VALUES(?, ?)", 1, insertedFish).Exec()
+	if err != ErrorUDTUnavailable {
+		t.Fatalf("expected to get %v got %v", ErrorUDTUnavailable, err)
 	}
 }
