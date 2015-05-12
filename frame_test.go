@@ -29,12 +29,12 @@ func TestFuzzBugs(t *testing.T) {
 
 		r := bytes.NewReader(test)
 
-		head, err := readHeader(r, make([]byte, 9))
+		head, err := readHeader(r, make([]byte, 8))
 		if err != nil {
 			continue
 		}
 
-		framer := newFramer(r, &bw, nil, 3)
+		framer := newFramer(r, &bw, nil, 2)
 		err = framer.readFrame(&head)
 		if err != nil {
 			continue
@@ -46,5 +46,45 @@ func TestFuzzBugs(t *testing.T) {
 		}
 
 		t.Errorf("(%d) expected to fail for input %q", i, test)
+	}
+}
+
+func TestFrameWriteTooLong(t *testing.T) {
+	w := &bytes.Buffer{}
+	framer := newFramer(nil, w, nil, 2)
+
+	framer.writeHeader(0, opStartup, 1)
+	framer.writeBytes(make([]byte, maxFrameSize+1))
+	err := framer.finishWrite()
+	if err != ErrFrameTooBig {
+		t.Fatalf("expected to get %v got %v", ErrFrameTooBig, err)
+	}
+}
+
+func TestFrameReadTooLong(t *testing.T) {
+	r := &bytes.Buffer{}
+	r.Write(make([]byte, maxFrameSize+1))
+	// write a new header right after this frame to verify that we can read it
+	r.Write([]byte{0x02, 0x00, 0x00, opReady, 0x00, 0x00, 0x00, 0x00})
+
+	framer := newFramer(r, nil, nil, 2)
+
+	head := frameHeader{
+		version: 2,
+		op:      opReady,
+		length:  r.Len() - 8,
+	}
+
+	err := framer.readFrame(&head)
+	if err != ErrFrameTooBig {
+		t.Fatalf("expected to get %v got %v", ErrFrameTooBig, err)
+	}
+
+	head, err = readHeader(r, make([]byte, 8))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if head.op != opReady {
+		t.Fatalf("expected to get header %v got %v", opReady, head.op)
 	}
 }
