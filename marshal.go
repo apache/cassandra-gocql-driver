@@ -7,12 +7,14 @@ package gocql
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"math"
 	"math/big"
 	"net"
 	"reflect"
 	"strconv"
+	"strings"
 	"time"
 
 	"speter.net/go/exp/math/dec/inf"
@@ -20,6 +22,10 @@ import (
 
 var (
 	bigOne = big.NewInt(1)
+)
+
+var (
+	ErrorUDTUnavailable = errors.New("UDT are not available on protocols less than 3, please update config")
 )
 
 // Marshaler is the interface implemented by objects that can marshal
@@ -86,6 +92,12 @@ func Marshal(info TypeInfo, value interface{}) ([]byte, error) {
 	case TypeUDT:
 		return marshalUDT(info, value)
 	}
+
+	// detect protocol 2 UDT
+	if strings.HasPrefix(info.Custom(), "org.apache.cassandra.db.marshal.UserType") && info.Version() < 3 {
+		return nil, ErrorUDTUnavailable
+	}
+
 	// TODO(tux21b): add the remaining types
 	return nil, fmt.Errorf("can not marshal %T into %s", value, info)
 }
@@ -135,6 +147,12 @@ func Unmarshal(info TypeInfo, data []byte, value interface{}) error {
 	case TypeUDT:
 		return unmarshalUDT(info, data, value)
 	}
+
+	// detect protocol 2 UDT
+	if strings.HasPrefix(info.Custom(), "org.apache.cassandra.db.marshal.UserType") && info.Version() < 3 {
+		return ErrorUDTUnavailable
+	}
+
 	// TODO(tux21b): add the remaining types
 	return fmt.Errorf("can not unmarshal %s into %T", info, value)
 }
