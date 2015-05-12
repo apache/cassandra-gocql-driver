@@ -140,24 +140,31 @@ func TestUDT_Reflect(t *testing.T) {
 }
 
 func TestUDT_Proto2error(t *testing.T) {
-	if *flagProto > protoVersion2 {
-		t.Skip("protocol less than 3 required to check erorr")
+	if *flagProto < protoVersion3 {
+		t.Skip("UDT are only available on protocol >= 3")
 	}
 
+	cluster := createCluster()
+	cluster.ProtoVersion = 2
+	cluster.Keyspace = "gocql_test"
+
 	// Uses reflection instead of implementing the marshaling type
-	session := createSession(t)
+	session, err := cluster.CreateSession()
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer session.Close()
 
-	err := createTable(session, `CREATE TYPE horse(
+	err = createTable(session, `CREATE TYPE fish(
 		name text,
 		owner text);`)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	err = createTable(session, `CREATE TABLE horse_race(
+	err = createTable(session, `CREATE TABLE fish_race(
 		position int,
-		horse frozen<horse>,
+		fish frozen<fish>,
 
 		primary key(position)
 	);`)
@@ -165,17 +172,17 @@ func TestUDT_Proto2error(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	type horse struct {
+	type fish struct {
 		Name  string `cql:"name"`
 		Owner string `cql:"owner"`
 	}
 
-	insertedHorse := &horse{
+	insertedFish := &fish{
 		Name:  "pony",
 		Owner: "jim",
 	}
 
-	err = session.Query("INSERT INTO horse_race(position, horse) VALUES(?, ?)", 1, insertedHorse).Exec()
+	err = session.Query("INSERT INTO fish_race(position, fish) VALUES(?, ?)", 1, insertedFish).Exec()
 	if err != ErrorUDTUnavailable {
 		t.Fatalf("expected to get %v got %v", ErrorUDTUnavailable, err)
 	}
