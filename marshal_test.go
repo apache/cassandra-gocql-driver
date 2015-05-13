@@ -527,6 +527,19 @@ var marshalTests = []struct {
 		[]byte(nil),
 		(*map[string]int)(nil),
 	},
+	{
+		NativeType{ proto: 2, typ: TypeVarchar},
+		[]byte("HELLO WORLD"),
+		func() *CustomString {
+			customString := CustomString("hello world")
+			return &customString
+		}(),
+	},
+	{
+		NativeType{ proto: 2, typ: TypeVarchar},
+		[]byte(nil),
+		(*CustomString)(nil),
+	},
 }
 
 func decimalize(s string) *inf.Dec {

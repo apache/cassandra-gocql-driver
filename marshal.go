@@ -50,16 +50,16 @@ func Marshal(info TypeInfo, value interface{}) ([]byte, error) {
 		panic("protocol version not set")
 	}
 
-	if v, ok := value.(Marshaler); ok {
-		return v.MarshalCQL(info)
-	}
-
 	if valueRef := reflect.ValueOf(value); valueRef.Kind() == reflect.Ptr {
 		if valueRef.IsNil() {
 			return nil, nil
 		} else {
 			return Marshal(info, valueRef.Elem().Interface())
 		}
+	}
+
+	if v, ok := value.(Marshaler); ok {
+		return v.MarshalCQL(info)
 	}
 
 	switch info.Type() {
