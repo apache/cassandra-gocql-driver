@@ -657,6 +657,59 @@ func TestMarshalVarint(t *testing.T) {
 	}
 }
 
+func equalStringSlice(leftList, rightList []string) bool {
+	if len(leftList) != len(rightList) {
+		return false
+	}
+	for index := range leftList {
+		if rightList[index] != leftList[index] {
+			return false
+		}
+	}
+	return true
+}
+
+func TestMarshalList(t *testing.T) {
+	typeInfo := CollectionType {
+		NativeType: NativeType { proto: 2, typ: TypeList },
+		Elem: NativeType{ proto: 2, typ: TypeVarchar },
+	}
+
+	sourceLists := [][]string {
+		[]string{ "valueA" },
+		[]string{ "valueA", "valueB" },
+		[]string{ "valueB" },
+	}
+
+	listDatas := [][]byte{}
+
+	for _, list := range sourceLists {
+		listData, marshalErr := Marshal(typeInfo, list)
+		if nil != marshalErr {
+			t.Errorf("Error marshal %+v of type %+v: %s", list, typeInfo, marshalErr)
+		}
+		listDatas = append(listDatas, listData)
+	}
+
+	outputLists := [][]string{}
+
+	var outputList []string
+
+	for _, listData := range listDatas {
+		if unmarshalErr := Unmarshal(typeInfo, listData, &outputList); nil != unmarshalErr {
+			t.Error(unmarshalErr)
+		}
+		outputLists = append(outputLists, outputList)
+	}
+
+	for index, sourceList := range sourceLists {
+		outputList := outputLists[index]
+		if !equalStringSlice(sourceList, outputList) {
+			t.Errorf("Lists %+v not equal to lists %+v, but should", sourceList, outputList)
+		}
+	}
+}
+
 type CustomString string
 
 func (c CustomString) MarshalCQL(info TypeInfo) ([]byte, error) {
