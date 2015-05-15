@@ -8,8 +8,9 @@ import (
 )
 
 type position struct {
-	Lat int
-	Lon int
+	Lat     int    `cql:"lat"`
+	Lon     int    `cql:"lon"`
+	Padding string `json:"padding"`
 }
 
 // NOTE: due to current implementation details it is not currently possible to use
@@ -20,6 +21,8 @@ func (p position) MarshalUDT(name string, info TypeInfo) ([]byte, error) {
 		return Marshal(info, p.Lat)
 	case "lon":
 		return Marshal(info, p.Lon)
+	case "padding":
+		return Marshal(info, p.Padding)
 	default:
 		return nil, fmt.Errorf("unknown column for position: %q", name)
 	}
@@ -31,6 +34,8 @@ func (p *position) UnmarshalUDT(name string, info TypeInfo, data []byte) error {
 		return Unmarshal(info, data, &p.Lat)
 	case "lon":
 		return Unmarshal(info, data, &p.Lon)
+	case "padding":
+		return Unmarshal(info, data, &p.Padding)
 	default:
 		return fmt.Errorf("unknown column for position: %q", name)
 	}
@@ -46,7 +51,8 @@ func TestUDT_Marshaler(t *testing.T) {
 
 	err := createTable(session, `CREATE TYPE position(
 		lat int,
-		lon int);`)
+		lon int,
+		padding text);`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,7 +73,7 @@ func TestUDT_Marshaler(t *testing.T) {
 		expLon = 2
 	)
 
-	err = session.Query("INSERT INTO houses(id, name, loc) VALUES(?, ?, ?)", 1, "test", &position{expLat, expLon}).Exec()
+	err = session.Query("INSERT INTO houses(id, name, loc) VALUES(?, ?, ?)", 1, "test", &position{expLat, expLon, fmt.Sprintf("%X", make([]byte, 300))}).Exec()
 	if err != nil {
 		t.Fatal(err)
 	}

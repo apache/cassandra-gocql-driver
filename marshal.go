@@ -1252,9 +1252,9 @@ func marshalUDT(info TypeInfo, value interface{}) ([]byte, error) {
 			}
 
 			n := len(data)
-			buf = append(buf, byte(n<<24),
-				byte(n<<16),
-				byte(n<<8),
+			buf = append(buf, byte(n>>24),
+				byte(n>>16),
+				byte(n>>8),
 				byte(n))
 
 			buf = append(buf, data...)
@@ -1275,9 +1275,9 @@ func marshalUDT(info TypeInfo, value interface{}) ([]byte, error) {
 			}
 
 			n := len(data)
-			buf = append(buf, byte(n<<24),
-				byte(n<<16),
-				byte(n<<8),
+			buf = append(buf, byte(n>>24),
+				byte(n>>16),
+				byte(n>>8),
 				byte(n))
 
 			buf = append(buf, data...)
@@ -1327,9 +1327,9 @@ func marshalUDT(info TypeInfo, value interface{}) ([]byte, error) {
 		}
 
 		n := len(data)
-		buf = append(buf, byte(n<<24),
-			byte(n<<16),
-			byte(n<<8),
+		buf = append(buf, byte(n>>24),
+			byte(n>>16),
+			byte(n>>8),
 			byte(n))
 
 		buf = append(buf, data...)
