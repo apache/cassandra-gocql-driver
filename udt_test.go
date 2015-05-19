@@ -193,3 +193,57 @@ func TestUDT_Proto2error(t *testing.T) {
 		t.Fatalf("expected to get %v got %v", ErrorUDTUnavailable, err)
 	}
 }
+
+func TestUDT_NullObject(t *testing.T) {
+	if *flagProto < protoVersion3 {
+		t.Skip("UDT are only available on protocol >= 3")
+	}
+
+	session := createSession(t)
+	defer session.Close()
+
+	err := createTable(session, `CREATE TYPE udt_null_type(
+		name text,
+		owner text);`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = createTable(session, `CREATE TABLE udt_null_table(
+		id uuid,
+		udt_col frozen<udt_null_type>,
+
+		primary key(id)
+	);`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	type col struct {
+		Name  string `cql:"name"`
+		Owner string `cql:"owner"`
+	}
+
+	id := TimeUUID()
+	err = session.Query("INSERT INTO udt_null_table(id) VALUES(?)", id).Exec()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	readCol := &col{
+		Name:  "temp",
+		Owner: "temp",
+	}
+
+	err = session.Query("SELECT udt_col FROM udt_null_table WHERE id = ?", id).Scan(readCol)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if readCol.Name != "" {
+		t.Errorf("expected empty string to be returned for null udt: got %q", readCol.Name)
+	}
+	if readCol.Owner != "" {
+		t.Errorf("expected empty string to be returned for null udt: got %q", readCol.Owner)
+	}
+}
