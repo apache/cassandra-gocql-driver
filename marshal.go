@@ -1381,8 +1381,15 @@ func unmarshalUDT(info TypeInfo, data []byte, value interface{}) error {
 		}
 	}
 
-	udt := info.(UDTTypeInfo)
+	if len(data) == 0 {
+		if k.CanSet() {
+			k.Set(reflect.Zero(k.Type()))
+		}
 
+		return nil
+	}
+
+	udt := info.(UDTTypeInfo)
 	for _, e := range udt.Elements {
 		size := readInt(data[:4])
 		data = data[4:]
