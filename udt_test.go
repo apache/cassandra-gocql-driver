@@ -4,6 +4,7 @@ package gocql
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 )
 
@@ -72,8 +73,9 @@ func TestUDT_Marshaler(t *testing.T) {
 		expLat = -1
 		expLon = 2
 	)
+	pad := strings.Repeat("X", 1000)
 
-	err = session.Query("INSERT INTO houses(id, name, loc) VALUES(?, ?, ?)", 1, "test", &position{expLat, expLon, fmt.Sprintf("%X", make([]byte, 300))}).Exec()
+	err = session.Query("INSERT INTO houses(id, name, loc) VALUES(?, ?, ?)", 1, "test", &position{expLat, expLon, pad}).Exec()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,6 +92,9 @@ func TestUDT_Marshaler(t *testing.T) {
 	}
 	if pos.Lon != expLon {
 		t.Errorf("expeceted lon to be be %d got %d", expLon, pos.Lon)
+	}
+	if pos.Padding != pad {
+		t.Errorf("expected to get padding %q got %q\n", pad, pos.Padding)
 	}
 }
 
