@@ -153,13 +153,17 @@ func setupTLSConfig(sslOpts *SslOptions) (*tls.Config, error) {
 		}
 	}
 
-	mycert, err := tls.LoadX509KeyPair(sslOpts.CertPath, sslOpts.KeyPath)
-	if err != nil {
-		return nil, fmt.Errorf("connectionpool: unable to load X509 key pair: %v", err)
+	mycerts := make([]tls.Certificate, 0)
+	if sslOpts.CertPath != "" || sslOpts.KeyPath != "" {
+		mycert, err := tls.LoadX509KeyPair(sslOpts.CertPath, sslOpts.KeyPath)
+		if err != nil {
+			return nil, fmt.Errorf("connectionpool: unable to load X509 key pair: %v", err)
+		}
+		mycerts = append(mycerts, mycert)
 	}
 
 	config := &tls.Config{
-		Certificates: []tls.Certificate{mycert},
+		Certificates: mycerts,
 		RootCAs:      certPool,
 	}
 
