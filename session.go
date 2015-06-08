@@ -35,6 +35,7 @@ type Session struct {
 	routingKeyInfoCache routingKeyInfoLRU
 	schemaDescriber     *schemaDescriber
 	trace               Tracer
+	hostSource          *ringDescriber
 	mu                  sync.RWMutex
 
 	cfg ClusterConfig
@@ -84,13 +85,14 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 		s.SetPageSize(cfg.PageSize)
 
 		if cfg.DiscoverHosts {
-			hostSource := &ringDescriber{
+			s.hostSource = &ringDescriber{
 				session:    s,
 				dcFilter:   cfg.Discovery.DcFilter,
 				rackFilter: cfg.Discovery.RackFilter,
+				closeChan:  make(chan bool),
 			}
 
-			go hostSource.run(cfg.Discovery.Sleep)
+			go s.hostSource.run(cfg.Discovery.Sleep)
 		}
 
 		return s, nil
@@ -184,6 +186,10 @@ func (s *Session) Close() {
 	s.isClosed = true
 
 	s.Pool.Close()
+
+	if s.hostSource != nil {
+		close(s.hostSource.closeChan)
+	}
 }
 
 func (s *Session) Closed() bool {
