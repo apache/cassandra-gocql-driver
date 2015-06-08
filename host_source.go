@@ -97,10 +97,6 @@ func (h *ringDescriber) run(sleep time.Duration) {
 	}
 
 	for {
-		select {
-		case <-h.closeChan:
-			return
-		}
 		// if we have 0 hosts this will return the previous list of hosts to
 		// attempt to reconnect to the cluster otherwise we would never find
 		// downed hosts again, could possibly have an optimisation to only
@@ -116,5 +112,10 @@ func (h *ringDescriber) run(sleep time.Duration) {
 		}
 
 		time.Sleep(sleep)
+
+		select {
+		case <-h.closeChan:
+			return
+		}
 	}
 }
