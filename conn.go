@@ -55,6 +55,9 @@ func (p PasswordAuthenticator) Success(data []byte) error {
 }
 
 type SslOptions struct {
+	// CertPath and KeyPath are optional depending on server
+	// config, but both fields must be omitted to avoid using a
+	// client certificate
 	CertPath string
 	KeyPath  string
 	CaPath   string //optional depending on server config
