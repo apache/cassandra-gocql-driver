@@ -21,6 +21,7 @@ type ringDescriber struct {
 	prevHosts       []HostInfo
 	prevPartitioner string
 	session         *Session
+	closeChan       chan bool
 }
 
 func (r *ringDescriber) GetHosts() (
@@ -96,20 +97,23 @@ func (h *ringDescriber) run(sleep time.Duration) {
 	}
 
 	for {
-		// if we have 0 hosts this will return the previous list of hosts to
-		// attempt to reconnect to the cluster otherwise we would never find
-		// downed hosts again, could possibly have an optimisation to only
-		// try to add new hosts if GetHosts didnt error and the hosts didnt change.
-		hosts, partitioner, err := h.GetHosts()
-		if err != nil {
-			log.Println("RingDescriber: unable to get ring topology:", err)
-		} else {
-			h.session.Pool.SetHosts(hosts)
-			if v, ok := h.session.Pool.(SetPartitioner); ok {
-				v.SetPartitioner(partitioner)
+		select {
+		case <-time.After(sleep):
+			// if we have 0 hosts this will return the previous list of hosts to
+			// attempt to reconnect to the cluster otherwise we would never find
+			// downed hosts again, could possibly have an optimisation to only
+			// try to add new hosts if GetHosts didnt error and the hosts didnt change.
+			hosts, partitioner, err := h.GetHosts()
+			if err != nil {
+				log.Println("RingDescriber: unable to get ring topology:", err)
+			} else {
+				h.session.Pool.SetHosts(hosts)
+				if v, ok := h.session.Pool.(SetPartitioner); ok {
+					v.SetPartitioner(partitioner)
+				}
 			}
+		case <-h.closeChan:
+			return
 		}
-
-		time.Sleep(sleep)
 	}
 }
