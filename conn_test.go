@@ -12,6 +12,7 @@ import (
 	"io"
 	"io/ioutil"
 	"net"
+	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -70,12 +71,15 @@ func TestSSLSimple(t *testing.T) {
 
 func createTestSslCluster(hosts string, proto uint8) *ClusterConfig {
 	cluster := NewCluster(hosts)
-	cluster.SslOpts = &SslOptions{
-		CertPath:               "testdata/pki/gocql.crt",
-		KeyPath:                "testdata/pki/gocql.key",
+	sslOpts := &SslOptions{
 		CaPath:                 "testdata/pki/ca.crt",
 		EnableHostVerification: false,
 	}
+	if os.Getenv("REQ_CLIENT_AUTH") != "false" {
+		sslOpts.CertPath = "testdata/pki/gocql.crt"
+		sslOpts.KeyPath = "testdata/pki/gocql.key"
+	}
+	cluster.SslOpts = sslOpts
 	cluster.ProtoVersion = int(proto)
 	return cluster
 }
