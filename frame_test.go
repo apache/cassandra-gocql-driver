@@ -29,13 +29,12 @@ func TestFuzzBugs(t *testing.T) {
 		var bw bytes.Buffer
 
 		r := bytes.NewReader(test)
-
-		head, err := readHeader(r, make([]byte, 8))
+		head, err := readHeader(r, make([]byte, 9))
 		if err != nil {
 			continue
 		}
 
-		framer := newFramer(r, &bw, nil, 2)
+		framer := newFramer(r, &bw, nil, byte(head.version))
 		err = framer.readFrame(&head)
 		if err != nil {
 			continue
