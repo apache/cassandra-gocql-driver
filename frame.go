@@ -1193,6 +1193,10 @@ func (f *framer) writeBatchFrame(streamID int, w *writeBatchFrame) error {
 }
 
 func (f *framer) readByte() byte {
+	if len(f.rbuf) < 1 {
+		panic(fmt.Errorf("not enough bytes in buffer to read byte require 1 got: %d", len(f.rbuf)))
+	}
+
 	b := f.rbuf[0]
 	f.rbuf = f.rbuf[1:]
 	return b
