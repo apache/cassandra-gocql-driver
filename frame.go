@@ -707,6 +707,25 @@ func (r resultMetadata) String() string {
 	return fmt.Sprintf("[metadata flags=0x%x paging_state=% X columns=%v]", r.flags, r.pagingState, r.columns)
 }
 
+func (f *framer) readCol(col *ColumnInfo, meta *resultMetadata, globalSpec bool, keyspace, table string) {
+	if !globalSpec {
+		col.Keyspace = f.readString()
+		col.Table = f.readString()
+	} else {
+		col.Keyspace = keyspace
+		col.Table = table
+	}
+
+	col.Name = f.readString()
+	col.TypeInfo = f.readTypeInfo()
+	switch v := col.TypeInfo.(type) {
+	// maybe also UDT
+	case TupleTypeInfo:
+		// -1 because we already included the tuple column
+		meta.actualColCount += len(v.Elems) - 1
+	}
+}
+
 func (f *framer) parseResultMetadata() resultMetadata {
 	meta := resultMetadata{
 		flags: f.readInt(),
@@ -731,28 +750,21 @@ func (f *framer) parseResultMetadata() resultMetadata {
 	}
 
 	var cols []ColumnInfo
-
-	for i := 0; i < colCount; i++ {
-		var col ColumnInfo
-
-		if !globalSpec {
-			col.Keyspace = f.readString()
-			col.Table = f.readString()
-		} else {
-			col.Keyspace = keyspace
-			col.Table = table
+	if colCount < 1000 {
+		// preallocate columninfo to avoid excess copying
+		cols = make([]ColumnInfo, colCount)
+		for i := 0; i < colCount; i++ {
+			f.readCol(&cols[i], &meta, globalSpec, keyspace, table)
 		}
 
-		col.Name = f.readString()
-		col.TypeInfo = f.readTypeInfo()
-		switch v := col.TypeInfo.(type) {
-		// maybe also UDT
-		case TupleTypeInfo:
-			// -1 because we already included the tuple column
-			meta.actualColCount += len(v.Elems) - 1
+	} else {
+		// use append, huge number of columns usually indicates a corrupt frame or
+		// just a huge row.
+		for i := 0; i < colCount; i++ {
+			var col ColumnInfo
+			f.readCol(&col, &meta, globalSpec, keyspace, table)
+			cols = append(cols, col)
 		}
-
-		cols = append(cols, col)
 	}
 
 	meta.columns = cols
