@@ -732,6 +732,9 @@ func (f *framer) parseResultMetadata() resultMetadata {
 	}
 
 	colCount := f.readInt()
+	if colCount < 0 {
+		panic(fmt.Errorf("received negative column count: %d", colCount))
+	}
 	meta.actualColCount = colCount
 
 	if meta.flags&flagHasMorePages == flagHasMorePages {
