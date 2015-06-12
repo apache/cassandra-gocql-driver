@@ -730,10 +730,10 @@ func (f *framer) parseResultMetadata() resultMetadata {
 		table = f.readString()
 	}
 
-	cols := make([]ColumnInfo, colCount)
+	var cols []ColumnInfo
 
 	for i := 0; i < colCount; i++ {
-		col := &cols[i]
+		var col ColumnInfo
 
 		if !globalSpec {
 			col.Keyspace = f.readString()
@@ -751,6 +751,8 @@ func (f *framer) parseResultMetadata() resultMetadata {
 			// -1 because we already included the tuple column
 			meta.actualColCount += len(v.Elems) - 1
 		}
+
+		cols = append(cols, col)
 	}
 
 	meta.columns = cols
