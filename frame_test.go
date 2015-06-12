@@ -20,6 +20,7 @@ func TestFuzzBugs(t *testing.T) {
 			"\xff0000000000000000000" +
 			"0000000"),
 		[]byte("\x82\xe600\x00\x00\x00\x000"),
+		[]byte("\x8200\b\x00\x00\x00\b0\x00\x00\x00\x040000"),
 	}
 
 	for i, test := range tests {

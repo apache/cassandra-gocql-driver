@@ -1297,6 +1297,9 @@ func (f *framer) readBytes() []byte {
 
 func (f *framer) readShortBytes() []byte {
 	size := f.readShort()
+	if len(f.rbuf) < int(size) {
+		panic(fmt.Errorf("not enough bytes in buffer to read short bytes: require %d got %d", size, len(f.rbuf)))
+	}
 
 	l := make([]byte, size)
 	copy(l, f.rbuf[:size])
