@@ -12,7 +12,6 @@ import (
 	"io"
 	"io/ioutil"
 	"net"
-	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
