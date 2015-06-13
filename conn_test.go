@@ -58,7 +58,7 @@ func TestSSLSimple(t *testing.T) {
 	srv := NewSSLTestServer(t, defaultProto)
 	defer srv.Stop()
 
-	db, err := createTestSslCluster(srv.Address, defaultProto).CreateSession()
+	db, err := createTestSslCluster(srv.Address, defaultProto, true).CreateSession()
 	if err != nil {
 		t.Fatalf("0x%x: NewCluster: %v", defaultProto, err)
 	}
@@ -68,14 +68,31 @@ func TestSSLSimple(t *testing.T) {
 	}
 }
 
-func createTestSslCluster(hosts string, proto uint8) *ClusterConfig {
+func TestSSLSimpleNoClientCert(t *testing.T) {
+	srv := NewSSLTestServer(t, defaultProto)
+	defer srv.Stop()
+
+	db, err := createTestSslCluster(srv.Address, defaultProto, false).CreateSession()
+	if err != nil {
+		t.Fatalf("0x%x: NewCluster: %v", defaultProto, err)
+	}
+
+	if err := db.Query("void").Exec(); err != nil {
+		t.Fatalf("0x%x: %v", defaultProto, err)
+	}
+}
+
+func createTestSslCluster(hosts string, proto uint8, useClientCert bool) *ClusterConfig {
 	cluster := NewCluster(hosts)
-	cluster.SslOpts = &SslOptions{
-		CertPath:               "testdata/pki/gocql.crt",
-		KeyPath:                "testdata/pki/gocql.key",
+	sslOpts := &SslOptions{
 		CaPath:                 "testdata/pki/ca.crt",
 		EnableHostVerification: false,
 	}
+	if useClientCert {
+		sslOpts.CertPath = "testdata/pki/gocql.crt"
+		sslOpts.KeyPath = "testdata/pki/gocql.key"
+	}
+	cluster.SslOpts = sslOpts
 	cluster.ProtoVersion = int(proto)
 	return cluster
 }
@@ -447,7 +464,7 @@ func TestPolicyConnPoolSSL(t *testing.T) {
 	srv := NewSSLTestServer(t, defaultProto)
 	defer srv.Stop()
 
-	cluster := createTestSslCluster(srv.Address, defaultProto)
+	cluster := createTestSslCluster(srv.Address, defaultProto, true)
 	cluster.ConnPoolType = NewRoundRobinConnPool
 
 	db, err := cluster.CreateSession()
