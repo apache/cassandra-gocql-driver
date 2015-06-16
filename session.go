@@ -432,6 +432,8 @@ type Query struct {
 	totalLatency     int64
 	serialCons       SerialConsistency
 	defaultTimestamp bool
+
+	disableAutoPage bool
 }
 
 // String implements the stringer interface.
@@ -608,6 +610,15 @@ func (q *Query) Bind(v ...interface{}) *Query {
 // conditional update/insert.
 func (q *Query) SerialConsistency(cons SerialConsistency) *Query {
 	q.serialCons = cons
+	return q
+}
+
+// PageState sets the paging state for the query to resume paging from a specific
+// point in time. Setting this will disable to query paging for this query, and
+// must be used for all subsequent pages.
+func (q *Query) PageState(state []byte) *Query {
+	q.pageState = state
+	q.disableAutoPage = true
 	return q
 }
 
@@ -789,6 +800,12 @@ func (iter *Iter) checkErrAndNotFound() error {
 		return ErrNotFound
 	}
 	return nil
+}
+
+// PageState return the current paging state for a query which can be used for
+// subsequent quries to resume paging this point.
+func (iter *Iter) PageState() []byte {
+	return iter.meta.pagingState
 }
 
 type nextIter struct {

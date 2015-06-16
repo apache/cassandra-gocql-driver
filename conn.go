@@ -640,7 +640,7 @@ func (c *Conn) executeQuery(qry *Query) *Iter {
 			rows: x.rows,
 		}
 
-		if len(x.meta.pagingState) > 0 {
+		if len(x.meta.pagingState) > 0 && !qry.disableAutoPage {
 			iter.next = &nextIter{
 				qry: *qry,
 				pos: int((1 - qry.prefetch) * float64(len(iter.rows))),
