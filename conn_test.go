@@ -182,21 +182,6 @@ func TestQueryRetry(t *testing.T) {
 	}
 }
 
-func TestSlowQuery(t *testing.T) {
-	srv := NewTestServer(t, defaultProto)
-	defer srv.Stop()
-
-	db, err := newTestSession(srv.Address, defaultProto)
-	if err != nil {
-		t.Errorf("NewCluster: %v", err)
-		return
-	}
-
-	if err := db.Query("slow").Exec(); err != nil {
-		t.Fatal(err)
-	}
-}
-
 func TestSimplePoolRoundRobin(t *testing.T) {
 	servers := make([]*TestServer, 5)
 	addrs := make([]string, len(servers))
@@ -661,18 +646,6 @@ func (srv *TestServer) process(f *framer) {
 			f.writeHeader(0, opError, head.stream)
 			f.writeInt(0x1001)
 			f.writeString("query killed")
-		case "slow":
-			go func() {
-				<-time.After(1 * time.Second)
-				f.writeHeader(0, opResult, head.stream)
-				f.wbuf[0] = srv.protocol | 0x80
-				f.writeInt(resultKindVoid)
-				if err := f.finishWrite(); err != nil {
-					srv.t.Error(err)
-				}
-			}()
-
-			return
 		case "use":
 			f.writeInt(resultKindKeyspace)
 			f.writeString(strings.TrimSpace(query[3:]))
