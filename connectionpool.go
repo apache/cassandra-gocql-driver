@@ -140,36 +140,33 @@ type SimplePool struct {
 }
 
 func setupTLSConfig(sslOpts *SslOptions) (*tls.Config, error) {
-	certPool := x509.NewCertPool()
 	// ca cert is optional
 	if sslOpts.CaPath != "" {
+		if sslOpts.RootCAs == nil {
+			sslOpts.RootCAs = x509.NewCertPool()
+		}
+
 		pem, err := ioutil.ReadFile(sslOpts.CaPath)
 		if err != nil {
 			return nil, fmt.Errorf("connectionpool: unable to open CA certs: %v", err)
 		}
 
-		if !certPool.AppendCertsFromPEM(pem) {
+		if !sslOpts.RootCAs.AppendCertsFromPEM(pem) {
 			return nil, errors.New("connectionpool: failed parsing or CA certs")
 		}
 	}
 
-	mycerts := make([]tls.Certificate, 0)
 	if sslOpts.CertPath != "" || sslOpts.KeyPath != "" {
 		mycert, err := tls.LoadX509KeyPair(sslOpts.CertPath, sslOpts.KeyPath)
 		if err != nil {
 			return nil, fmt.Errorf("connectionpool: unable to load X509 key pair: %v", err)
 		}
-		mycerts = append(mycerts, mycert)
+		sslOpts.Certificates = append(sslOpts.Certificates, mycert)
 	}
 
-	config := &tls.Config{
-		Certificates: mycerts,
-		RootCAs:      certPool,
-	}
+	sslOpts.InsecureSkipVerify = !sslOpts.EnableHostVerification
 
-	config.InsecureSkipVerify = !sslOpts.EnableHostVerification
-
-	return config, nil
+	return &sslOpts.Config, nil
 }
 
 //NewSimplePool is the function used by gocql to create the simple connection pool.
