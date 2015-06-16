@@ -486,6 +486,43 @@ func TestPolicyConnPoolSSL(t *testing.T) {
 	}
 }
 
+func TestQueryTimeout(t *testing.T) {
+	srv := NewTestServer(t, protoVersion2)
+	defer srv.Stop()
+
+	cluster := NewCluster(srv.Address)
+	// Set the timeout arbitrarily low so that the query hits the timeout in a
+	// timely manner.
+	cluster.Timeout = 1 * time.Millisecond
+
+	db, err := cluster.CreateSession()
+	if err != nil {
+		t.Errorf("NewCluster: %v", err)
+	}
+	defer db.Close()
+
+	ch := make(chan error, 1)
+
+	go func() {
+		err := db.Query("timeout").Exec()
+		if err != nil {
+			ch <- err
+			return
+		}
+		t.Errorf("err was nil, expected to get a timeout after %v", db.cfg.Timeout)
+	}()
+
+	select {
+	case err := <-ch:
+		if err != ErrTimeoutNoResponse {
+			t.Fatalf("expected to get %v for timeout got %v", ErrTimeoutNoResponse, err)
+		}
+	case <-time.After(10*time.Millisecond + db.cfg.Timeout):
+		// ensure that the query goroutines have been scheduled
+		t.Fatalf("query did not timeout after %v", db.cfg.Timeout)
+	}
+}
+
 func NewTestServer(t testing.TB, protocol uint8) *TestServer {
 	laddr, err := net.ResolveTCPAddr("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -508,6 +545,7 @@ func NewTestServer(t testing.TB, protocol uint8) *TestServer {
 		t:          t,
 		protocol:   protocol,
 		headerSize: headerSize,
+		quit:       make(chan struct{}),
 	}
 
 	go srv.serve()
@@ -545,6 +583,7 @@ func NewSSLTestServer(t testing.TB, protocol uint8) *TestServer {
 		t:          t,
 		protocol:   protocol,
 		headerSize: headerSize,
+		quit:       make(chan struct{}),
 	}
 	go srv.serve()
 	return srv
@@ -560,6 +599,8 @@ type TestServer struct {
 
 	protocol   byte
 	headerSize int
+
+	quit chan struct{}
 }
 
 func (srv *TestServer) serve() {
@@ -592,6 +633,7 @@ func (srv *TestServer) serve() {
 
 func (srv *TestServer) Stop() {
 	srv.listen.Close()
+	close(srv.quit)
 }
 
 func (srv *TestServer) process(f *framer) {
@@ -637,6 +679,9 @@ func (srv *TestServer) process(f *framer) {
 		case "void":
 			f.writeHeader(0, opResult, head.stream)
 			f.writeInt(resultKindVoid)
+		case "timeout":
+			<-srv.quit
+			return
 		default:
 			f.writeHeader(0, opResult, head.stream)
 			f.writeInt(resultKindVoid)
