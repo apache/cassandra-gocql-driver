@@ -182,21 +182,6 @@ func TestQueryRetry(t *testing.T) {
 	}
 }
 
-func TestSlowQuery(t *testing.T) {
-	srv := NewTestServer(t, defaultProto)
-	defer srv.Stop()
-
-	db, err := newTestSession(srv.Address, defaultProto)
-	if err != nil {
-		t.Errorf("NewCluster: %v", err)
-		return
-	}
-
-	if err := db.Query("slow").Exec(); err != nil {
-		t.Fatal(err)
-	}
-}
-
 func TestSimplePoolRoundRobin(t *testing.T) {
 	servers := make([]*TestServer, 5)
 	addrs := make([]string, len(servers))
@@ -486,6 +471,43 @@ func TestPolicyConnPoolSSL(t *testing.T) {
 	}
 }
 
+func TestQueryTimeout(t *testing.T) {
+	srv := NewTestServer(t, protoVersion2)
+	defer srv.Stop()
+
+	cluster := NewCluster(srv.Address)
+	// Set the timeout arbitrarily low so that the query hits the timeout in a
+	// timely manner.
+	cluster.Timeout = 1 * time.Millisecond
+
+	db, err := cluster.CreateSession()
+	if err != nil {
+		t.Errorf("NewCluster: %v", err)
+	}
+	defer db.Close()
+
+	ch := make(chan error, 1)
+
+	go func() {
+		err := db.Query("timeout").Exec()
+		if err != nil {
+			ch <- err
+			return
+		}
+		t.Errorf("err was nil, expected to get a timeout after %v", db.cfg.Timeout)
+	}()
+
+	select {
+	case err := <-ch:
+		if err != ErrTimeoutNoResponse {
+			t.Fatalf("expected to get %v for timeout got %v", ErrTimeoutNoResponse, err)
+		}
+	case <-time.After(10*time.Millisecond + db.cfg.Timeout):
+		// ensure that the query goroutines have been scheduled
+		t.Fatalf("query did not timeout after %v", db.cfg.Timeout)
+	}
+}
+
 func NewTestServer(t testing.TB, protocol uint8) *TestServer {
 	laddr, err := net.ResolveTCPAddr("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -508,6 +530,7 @@ func NewTestServer(t testing.TB, protocol uint8) *TestServer {
 		t:          t,
 		protocol:   protocol,
 		headerSize: headerSize,
+		quit:       make(chan struct{}),
 	}
 
 	go srv.serve()
@@ -545,6 +568,7 @@ func NewSSLTestServer(t testing.TB, protocol uint8) *TestServer {
 		t:          t,
 		protocol:   protocol,
 		headerSize: headerSize,
+		quit:       make(chan struct{}),
 	}
 	go srv.serve()
 	return srv
@@ -560,6 +584,8 @@ type TestServer struct {
 
 	protocol   byte
 	headerSize int
+
+	quit chan struct{}
 }
 
 func (srv *TestServer) serve() {
@@ -592,6 +618,7 @@ func (srv *TestServer) serve() {
 
 func (srv *TestServer) Stop() {
 	srv.listen.Close()
+	close(srv.quit)
 }
 
 func (srv *TestServer) process(f *framer) {
@@ -619,24 +646,15 @@ func (srv *TestServer) process(f *framer) {
 			f.writeHeader(0, opError, head.stream)
 			f.writeInt(0x1001)
 			f.writeString("query killed")
-		case "slow":
-			go func() {
-				<-time.After(1 * time.Second)
-				f.writeHeader(0, opResult, head.stream)
-				f.wbuf[0] = srv.protocol | 0x80
-				f.writeInt(resultKindVoid)
-				if err := f.finishWrite(); err != nil {
-					srv.t.Error(err)
-				}
-			}()
-
-			return
 		case "use":
 			f.writeInt(resultKindKeyspace)
 			f.writeString(strings.TrimSpace(query[3:]))
 		case "void":
 			f.writeHeader(0, opResult, head.stream)
 			f.writeInt(resultKindVoid)
+		case "timeout":
+			<-srv.quit
+			return
 		default:
 			f.writeHeader(0, opResult, head.stream)
 			f.writeInt(resultKindVoid)

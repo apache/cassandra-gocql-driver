@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -84,6 +85,12 @@ type ConnErrorHandler interface {
 	HandleError(conn *Conn, err error, closed bool)
 }
 
+// How many timeouts we will allow to occur before the connection is closed
+// and restarted. This is to prevent a single query timeout from killing a connection
+// which may be serving more queries just fine.
+// Default is 10, should not be changed concurrently with queries.
+var TimeoutLimit int64 = 10
+
 // Conn is a single connection to a Cassandra node. It can be used to execute
 // queries, but users are usually advised to use a more reliable, higher
 // level API.
@@ -107,6 +114,8 @@ type Conn struct {
 
 	closedMu sync.RWMutex
 	isClosed bool
+
+	timeouts int64
 }
 
 // Connect establishes a connection to a Cassandra node.
@@ -298,7 +307,16 @@ func (c *Conn) serve() {
 		}
 	}
 
+	c.closeWithError(err)
+}
+
+func (c *Conn) closeWithError(err error) {
+	if c.Closed() {
+		return
+	}
+
 	c.Close()
+
 	for id := 0; id < len(c.calls); id++ {
 		req := &c.calls[id]
 		// we need to send the error to all waiting queries, put the state
@@ -339,7 +357,11 @@ func (c *Conn) recv() error {
 
 	// once we get to here we know that the caller must be waiting and that there
 	// is no error.
-	call.resp <- nil
+	select {
+	case call.resp <- nil:
+	default:
+		// in case the caller timedout
+	}
 
 	return nil
 }
@@ -354,6 +376,12 @@ func (c *Conn) releaseStream(stream int) {
 	select {
 	case c.uniq <- stream:
 	default:
+	}
+}
+
+func (c *Conn) handleTimeout() {
+	if atomic.AddInt64(&c.timeouts, 1) > TimeoutLimit {
+		c.closeWithError(ErrTooManyTimeouts)
 	}
 }
 
@@ -376,7 +404,13 @@ func (c *Conn) exec(req frameWriter, tracer Tracer) (frame, error) {
 		return nil, err
 	}
 
-	err = <-call.resp
+	select {
+	case err = <-call.resp:
+	case <-time.After(c.timeout):
+		c.handleTimeout()
+		return nil, ErrTimeoutNoResponse
+	}
+
 	if err != nil {
 		return nil, err
 	}
@@ -730,5 +764,7 @@ type inflightPrepare struct {
 }
 
 var (
-	ErrQueryArgLength = errors.New("query argument length mismatch")
+	ErrQueryArgLength    = errors.New("query argument length mismatch")
+	ErrTimeoutNoResponse = errors.New("gocql: no response recieved from cassandra within timeout period")
+	ErrTooManyTimeouts   = errors.New("gocql: too many query timeouts on the connection")
 )
