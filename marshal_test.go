@@ -774,3 +774,23 @@ func TestLookupCassType(t *testing.T) {
 		testType(t, lookupTest.TypeName, lookupTest.ExpectedType)
 	}
 }
+
+type MyPointerMarshaler struct{}
+
+func (m *MyPointerMarshaler) MarshalCQL(_ TypeInfo) ([]byte, error) {
+	return []byte{42}, nil
+}
+
+func TestMarshalPointer(t *testing.T) {
+	m := &MyPointerMarshaler{}
+	typ := NativeType{proto: 2, typ: TypeInt}
+
+	data, err := Marshal(typ, m)
+
+	if err != nil {
+		t.Errorf("Pointer marshaling failed. Error: %s", err)
+	}
+	if len(data) != 1 || data[0] != 42 {
+		t.Errorf("Pointer marshaling failed. Expected %+v, got %+v", []byte{42}, data)
+	}
+}

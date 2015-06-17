@@ -53,6 +53,8 @@ func Marshal(info TypeInfo, value interface{}) ([]byte, error) {
 	if valueRef := reflect.ValueOf(value); valueRef.Kind() == reflect.Ptr {
 		if valueRef.IsNil() {
 			return nil, nil
+		} else if v, ok := value.(Marshaler); ok {
+			return v.MarshalCQL(info)
 		} else {
 			return Marshal(info, valueRef.Elem().Interface())
 		}
