@@ -528,7 +528,7 @@ var marshalTests = []struct {
 		(*map[string]int)(nil),
 	},
 	{
-		NativeType{ proto: 2, typ: TypeVarchar},
+		NativeType{proto: 2, typ: TypeVarchar},
 		[]byte("HELLO WORLD"),
 		func() *CustomString {
 			customString := CustomString("hello world")
@@ -536,7 +536,7 @@ var marshalTests = []struct {
 		}(),
 	},
 	{
-		NativeType{ proto: 2, typ: TypeVarchar},
+		NativeType{proto: 2, typ: TypeVarchar},
 		[]byte(nil),
 		(*CustomString)(nil),
 	},
@@ -683,15 +683,15 @@ func equalStringSlice(leftList, rightList []string) bool {
 }
 
 func TestMarshalList(t *testing.T) {
-	typeInfo := CollectionType {
-		NativeType: NativeType { proto: 2, typ: TypeList },
-		Elem: NativeType{ proto: 2, typ: TypeVarchar },
+	typeInfo := CollectionType{
+		NativeType: NativeType{proto: 2, typ: TypeList},
+		Elem:       NativeType{proto: 2, typ: TypeVarchar},
 	}
 
-	sourceLists := [][]string {
-		[]string{ "valueA" },
-		[]string{ "valueA", "valueB" },
-		[]string{ "valueB" },
+	sourceLists := [][]string{
+		[]string{"valueA"},
+		[]string{"valueA", "valueB"},
+		[]string{"valueB"},
 	}
 
 	listDatas := [][]byte{}
