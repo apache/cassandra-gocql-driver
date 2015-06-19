@@ -28,17 +28,16 @@ type RetryPolicy interface {
 	Attempt(RetryableQuery) bool
 }
 
-/*
-SimpleRetryPolicy has simple logic for attempting a query a fixed number of times.
-
-See below for examples of usage:
-
-	//Assign to the cluster
-	cluster.RetryPolicy = &gocql.SimpleRetryPolicy{NumRetries: 3}
-
-	//Assign to a query
- 	query.RetryPolicy(&gocql.SimpleRetryPolicy{NumRetries: 1})
-*/
+// SimpleRetryPolicy has simple logic for attempting a query a fixed number of times.
+//
+// See below for examples of usage:
+//
+//     //Assign to the cluster
+//     cluster.RetryPolicy = &gocql.SimpleRetryPolicy{NumRetries: 3}
+//
+//     //Assign to a query
+//     query.RetryPolicy(&gocql.SimpleRetryPolicy{NumRetries: 1})
+//
 type SimpleRetryPolicy struct {
 	NumRetries int //Number of times to retry a query
 }
