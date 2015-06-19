@@ -17,7 +17,7 @@ type RetryableQuery interface {
 	GetConsistency() Consistency
 }
 
-// RetryPolicy interace is used by gocql to determine if a query can be attempted
+// RetryPolicy interface is used by gocql to determine if a query can be attempted
 // again after a retryable error has been received. The interface allows gocql
 // users to implement their own logic to determine if a query can be attempted
 // again.
