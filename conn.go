@@ -327,13 +327,15 @@ func (c *Conn) recv() error {
 	call := &c.calls[head.stream]
 	err = call.framer.readFrame(&head)
 	if err != nil {
-		return err
+		// only net errors should cause the connection to be closed. Though
+		// cassandra returning corrupt frames will be returned here as well.
+		if _, ok := err.(net.Error); ok {
+			return err
+		}
 	}
 
-	// once we get to here we know that the caller must be waiting and that there
-	// is no error.
 	select {
-	case call.resp <- nil:
+	case call.resp <- err:
 	default:
 		// in case the caller timedout
 	}
