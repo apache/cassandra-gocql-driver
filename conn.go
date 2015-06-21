@@ -327,14 +327,17 @@ func (c *Conn) recv() error {
 	call := &c.calls[head.stream]
 	err = call.framer.readFrame(&head)
 	if err != nil {
-		return err
+		// only net errors should cause the connection to be closed. Though
+		// cassandra returning corrupt frames will be returned here as well.
+		if _, ok := err.(net.Error); ok {
+			return err
+		}
 	}
 
-	// once we get to here we know that the caller must be waiting and that there
-	// is no error.
 	select {
-	case call.resp <- nil:
+	case call.resp <- err:
 	default:
+		c.releaseStream(stream)
 		// in case the caller timedout
 	}
 
@@ -363,7 +366,6 @@ func (c *Conn) handleTimeout() {
 func (c *Conn) exec(req frameWriter, tracer Tracer) (frame, error) {
 	// TODO: move tracer onto conn
 	stream := <-c.uniq
-	defer c.releaseStream(stream)
 
 	call := &c.calls[stream]
 	// resp is basically a waiting semaphore protecting the framer
@@ -385,6 +387,11 @@ func (c *Conn) exec(req frameWriter, tracer Tracer) (frame, error) {
 		c.handleTimeout()
 		return nil, ErrTimeoutNoResponse
 	}
+
+	// dont release the stream if detect a timeout as another request can reuse
+	// that stream and get a response for the old request, which we have no
+	// easy way of detecting.
+	defer c.releaseStream(stream)
 
 	if err != nil {
 		return nil, err
