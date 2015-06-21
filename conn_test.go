@@ -472,6 +472,7 @@ func TestPolicyConnPoolSSL(t *testing.T) {
 }
 
 func TestQueryTimeout(t *testing.T) {
+	t.Skip("skipping until query timeouts are enabled")
 	srv := NewTestServer(t, protoVersion2)
 	defer srv.Stop()
 

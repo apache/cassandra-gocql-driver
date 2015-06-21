@@ -379,12 +379,7 @@ func (c *Conn) exec(req frameWriter, tracer Tracer) (frame, error) {
 		return nil, err
 	}
 
-	select {
-	case err = <-call.resp:
-	case <-time.After(c.timeout):
-		c.handleTimeout()
-		return nil, ErrTimeoutNoResponse
-	}
+	err = <-call.resp
 
 	if err != nil {
 		return nil, err
