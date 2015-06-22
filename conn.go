@@ -376,6 +376,7 @@ func (c *Conn) handleTimeout() {
 
 func (c *Conn) exec(req frameWriter, tracer Tracer) (frame, error) {
 	// TODO: move tracer onto conn
+	start := time.Now()
 	stream := <-c.uniq
 
 	call := &c.calls[stream]
@@ -407,6 +408,7 @@ func (c *Conn) exec(req frameWriter, tracer Tracer) (frame, error) {
 		}
 	case <-time.After(c.timeout):
 		c.handleTimeout()
+		log.Printf("querytime=%v\n", time.Now().Sub(start))
 		return nil, ErrTimeoutNoResponse
 	}
 
