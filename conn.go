@@ -113,6 +113,7 @@ type Conn struct {
 	started         bool
 
 	closed int32
+	quit   chan struct{}
 
 	timeouts int64
 }
@@ -171,6 +172,7 @@ func Connect(addr string, cfg ConnConfig, errorHandler ConnErrorHandler) (*Conn,
 		compressor:   cfg.Compressor,
 		auth:         cfg.Authenticator,
 		headerBuf:    make([]byte, headerSize),
+		quit:         make(chan struct{}),
 	}
 
 	if cfg.Keepalive > 0 {
@@ -178,7 +180,7 @@ func Connect(addr string, cfg ConnConfig, errorHandler ConnErrorHandler) (*Conn,
 	}
 
 	for i := 0; i < cfg.NumStreams; i++ {
-		c.calls[i].resp = make(chan error, 1)
+		c.calls[i].resp = make(chan error)
 		c.uniq <- i
 	}
 
@@ -327,15 +329,27 @@ func (c *Conn) recv() error {
 	call := &c.calls[head.stream]
 	err = call.framer.readFrame(&head)
 	if err != nil {
-		return err
+		// only net errors should cause the connection to be closed. Though
+		// cassandra returning corrupt frames will be returned here as well.
+		if _, ok := err.(net.Error); ok {
+			return err
+		}
 	}
 
-	// once we get to here we know that the caller must be waiting and that there
-	// is no error.
+	if !atomic.CompareAndSwapInt32(&call.waiting, 1, 0) {
+		// the waiting thread timed out and is no longer waiting, the stream has
+		// not yet been readded to the chan so it cant be used again,
+		c.releaseStream(head.stream)
+		return nil
+	}
+
+	// we either, return a response to the caller, the caller timedout, or the
+	// connection has closed. Either way we should never block indefinatly here
 	select {
-	case call.resp <- nil:
-	default:
-		// in case the caller timedout
+	case call.resp <- err:
+	case <-call.timeout:
+		c.releaseStream(head.stream)
+	case <-c.quit:
 	}
 
 	return nil
@@ -343,11 +357,17 @@ func (c *Conn) recv() error {
 
 type callReq struct {
 	// could use a waitgroup but this allows us to do timeouts on the read/send
-	resp   chan error
-	framer *framer
+	resp    chan error
+	framer  *framer
+	waiting int32
+	timeout chan struct{} // indicates to recv() that a call has timedout
 }
 
 func (c *Conn) releaseStream(stream int) {
+	call := &c.calls[stream]
+	framerPool.Put(call.framer)
+	call.framer = nil
+
 	select {
 	case c.uniq <- stream:
 	default:
@@ -362,27 +382,49 @@ func (c *Conn) handleTimeout() {
 
 func (c *Conn) exec(req frameWriter, tracer Tracer) (frame, error) {
 	// TODO: move tracer onto conn
-	stream := <-c.uniq
-	defer c.releaseStream(stream)
+	var stream int
+	select {
+	case stream = <-c.uniq:
+	case <-c.quit:
+		return nil, ErrConnectionClosed
+	}
 
 	call := &c.calls[stream]
 	// resp is basically a waiting semaphore protecting the framer
 	framer := newFramer(c, c, c.compressor, c.version)
 	call.framer = framer
+	call.timeout = make(chan struct{})
 
 	if tracer != nil {
 		framer.trace()
 	}
+
+	if !atomic.CompareAndSwapInt32(&call.waiting, 0, 1) {
+		return nil, errors.New("gocql: stream is busy or closed")
+	}
+	defer atomic.StoreInt32(&call.waiting, 0)
 
 	err := req.writeFrame(framer, stream)
 	if err != nil {
 		return nil, err
 	}
 
-	err = <-call.resp
+	select {
+	case err := <-call.resp:
+		// dont release the stream if detect a timeout as another request can reuse
+		// that stream and get a response for the old request, which we have no
+		// easy way of detecting.
+		defer c.releaseStream(stream)
 
-	if err != nil {
-		return nil, err
+		if err != nil {
+			return nil, err
+		}
+	case <-time.After(c.timeout):
+		close(call.timeout)
+		c.handleTimeout()
+		return nil, ErrTimeoutNoResponse
+	case <-c.quit:
+		return nil, ErrConnectionClosed
 	}
 
 	if v := framer.header.version.version(); v != c.version {
@@ -397,9 +439,6 @@ func (c *Conn) exec(req frameWriter, tracer Tracer) (frame, error) {
 	if len(framer.traceID) > 0 {
 		tracer.Trace(framer.traceID)
 	}
-
-	framerPool.Put(framer)
-	call.framer = nil
 
 	return frame, nil
 }
@@ -583,16 +622,13 @@ func (c *Conn) closeWithError(err error) {
 		return
 	}
 
+	close(c.quit)
+
 	for id := 0; id < len(c.calls); id++ {
 		req := &c.calls[id]
 		// we need to send the error to all waiting queries, put the state
 		// of this conn into not active so that it can not execute any queries.
-		select {
-		case req.resp <- err:
-		default:
-		}
-
-		close(req.resp)
+		atomic.StoreInt32(&req.waiting, -1)
 	}
 
 	c.conn.Close()
@@ -747,7 +783,8 @@ type inflightPrepare struct {
 }
 
 var (
-	ErrQueryArgLength    = errors.New("query argument length mismatch")
+	ErrQueryArgLength    = errors.New("gocql: query argument length mismatch")
 	ErrTimeoutNoResponse = errors.New("gocql: no response recieved from cassandra within timeout period")
 	ErrTooManyTimeouts   = errors.New("gocql: too many query timeouts on the connection")
+	ErrConnectionClosed  = errors.New("gocql: connection closed waiting for response")
 )
