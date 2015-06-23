@@ -381,7 +381,12 @@ func (c *Conn) handleTimeout() {
 
 func (c *Conn) exec(req frameWriter, tracer Tracer) (frame, error) {
 	// TODO: move tracer onto conn
-	stream := <-c.uniq
+	var stream int
+	select {
+	case stream = <-c.uniq:
+	case <-c.quit:
+		return nil, ErrConnectionClosed
+	}
 
 	call := &c.calls[stream]
 	// resp is basically a waiting semaphore protecting the framer
