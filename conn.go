@@ -348,6 +348,7 @@ func (c *Conn) recv() error {
 	select {
 	case call.resp <- err:
 	case <-call.timeout:
+		c.releaseStream(head.stream)
 	case <-c.quit:
 	}
 
