@@ -63,7 +63,7 @@ Features
 * Optional frame compression (using snappy)
 * Automatic query preparation
 * Support for query tracing
-* Experimental support for CQL protocol version 3
+* Experimental support for [binary protocol version 3](https://github.com/apache/cassandra/blob/trunk/doc/native_protocol_v3.spec)
   * Support for up to 32768 streams
   * Support for tuple types
   * Support for client side timestamps by default
