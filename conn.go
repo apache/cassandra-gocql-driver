@@ -611,12 +611,11 @@ func (c *Conn) closeWithError(err error) {
 		req := &c.calls[id]
 		// we need to send the error to all waiting queries, put the state
 		// of this conn into not active so that it can not execute any queries.
+		atomic.StoreInt32(&req.waiting, 0)
 		select {
 		case req.resp <- err:
 		default:
 		}
-
-		close(req.resp)
 	}
 
 	c.conn.Close()
