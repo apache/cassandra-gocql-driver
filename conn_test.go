@@ -533,6 +533,42 @@ func TestQueryTimeoutReuseStream(t *testing.T) {
 	}
 }
 
+func TestQueryTimeoutClose(t *testing.T) {
+	srv := NewTestServer(t, defaultProto)
+	defer srv.Stop()
+
+	cluster := NewCluster(srv.Address)
+	// Set the timeout arbitrarily low so that the query hits the timeout in a
+	// timely manner.
+	cluster.Timeout = 1000 * time.Millisecond
+	cluster.NumConns = 1
+	cluster.NumStreams = 1
+
+	db, err := cluster.CreateSession()
+	if err != nil {
+		t.Fatalf("NewCluster: %v", err)
+	}
+
+	ch := make(chan error)
+	go func() {
+		err := db.Query("timeout").Exec()
+		ch <- err
+	}()
+	// ensure that the above goroutine gets sheduled
+	time.Sleep(50 * time.Millisecond)
+
+	db.Close()
+	select {
+	case err = <-ch:
+	case <-time.After(1 * time.Second):
+		t.Fatal("timedout waiting to get a response once cluster is closed")
+	}
+
+	if err != ErrConnectionClosed {
+		t.Fatalf("expected to get %v got %v", ErrConnectionClosed, err)
+	}
+}
+
 func NewTestServer(t testing.TB, protocol uint8) *TestServer {
 	laddr, err := net.ResolveTCPAddr("tcp", "127.0.0.1:0")
 	if err != nil {
