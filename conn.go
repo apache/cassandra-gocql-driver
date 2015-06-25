@@ -180,7 +180,7 @@ func Connect(addr string, cfg ConnConfig, errorHandler ConnErrorHandler) (*Conn,
 	}
 
 	for i := 0; i < cfg.NumStreams; i++ {
-		c.calls[i].resp = make(chan error)
+		c.calls[i].resp = make(chan error, 1)
 		c.uniq <- i
 	}
 
