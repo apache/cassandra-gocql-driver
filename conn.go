@@ -790,7 +790,7 @@ type inflightPrepare struct {
 
 var (
 	ErrQueryArgLength    = errors.New("gocql: query argument length mismatch")
-	ErrTimeoutNoResponse = errors.New("gocql: no response recieved from cassandra within timeout period")
+	ErrTimeoutNoResponse = errors.New("gocql: no response received from cassandra within timeout period")
 	ErrTooManyTimeouts   = errors.New("gocql: too many query timeouts on the connection")
 	ErrConnectionClosed  = errors.New("gocql: connection closed waiting for response")
 )
