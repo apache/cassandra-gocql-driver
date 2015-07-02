@@ -180,7 +180,7 @@ func Connect(addr string, cfg ConnConfig, errorHandler ConnErrorHandler) (*Conn,
 	}
 
 	for i := 0; i < cfg.NumStreams; i++ {
-		c.calls[i].resp = make(chan error, 1)
+		c.calls[i].resp = make(chan error)
 		c.uniq <- i
 	}
 
@@ -622,20 +622,25 @@ func (c *Conn) closeWithError(err error) {
 		return
 	}
 
-	for id := 0; id < len(c.calls); id++ {
-		req := &c.calls[id]
-		// we need to send the error to all waiting queries, put the state
-		// of this conn into not active so that it can not execute any queries.
-		atomic.StoreInt32(&req.waiting, -1)
+	if err != nil {
+		// we should attempt to deliver the error back to the caller if it
+		// exists
+		for id := 0; id < len(c.calls); id++ {
+			req := &c.calls[id]
+			// we need to send the error to all waiting queries, put the state
+			// of this conn into not active so that it can not execute any queries.
+			atomic.StoreInt32(&req.waiting, -1)
 
-		if err != nil {
-			select {
-			case req.resp <- err:
-			default:
+			if err != nil {
+				select {
+				case req.resp <- err:
+				default:
+				}
 			}
 		}
 	}
 
+	// if error was nil then unblock the quit channel
 	close(c.quit)
 	c.conn.Close()
 
