@@ -839,6 +839,12 @@ func TestMarshalTimestamp(t *testing.T) {
 			[]byte("\xff\xff\xf7\x9c\x84\x2f\xa5\x09"),
 			time.Date(1677, time.September, 21, 00, 12, 43, 145224191, time.UTC),
 		},
+		{
+			// Store the zero time as a blank slice
+			NativeType{proto: 2, typ: TypeTimestamp},
+			[]byte{},
+			time.Time{},
+		},
 	}
 
 	for i, test := range marshalTimestampTests {

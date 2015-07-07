@@ -802,6 +802,9 @@ func marshalTimestamp(info TypeInfo, value interface{}) ([]byte, error) {
 	case int64:
 		return encBigInt(v), nil
 	case time.Time:
+		if v.IsZero() {
+			return []byte{}, nil
+		}
 		x := int64(v.UTC().Unix()*1e3) + int64(v.UTC().Nanosecond()/1e6)
 		return encBigInt(x), nil
 	}
