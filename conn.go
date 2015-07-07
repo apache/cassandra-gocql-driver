@@ -293,6 +293,40 @@ func (c *Conn) authenticateHandshake(authFrame *authenticateFrame) error {
 	}
 }
 
+func (c *Conn) closeWithError(err error) {
+	if !atomic.CompareAndSwapInt32(&c.closed, 0, 1) {
+		return
+	}
+
+	if err != nil {
+		// we should attempt to deliver the error back to the caller if it
+		// exists
+		for id := 0; id < len(c.calls); id++ {
+			req := &c.calls[id]
+			// we need to send the error to all waiting queries, put the state
+			// of this conn into not active so that it can not execute any queries.
+			if err != nil {
+				select {
+				case req.resp <- err:
+				default:
+				}
+			}
+		}
+	}
+
+	// if error was nil then unblock the quit channel
+	close(c.quit)
+	c.conn.Close()
+
+	if c.started && err != nil {
+		c.errorHandler.HandleError(c, err, true)
+	}
+}
+
+func (c *Conn) Close() {
+	c.closeWithError(nil)
+}
+
 // Serve starts the stream multiplexer for this connection, which is required
 // to execute any queries. This method runs as long as the connection is
 // open and is therefore usually called in a separate goroutine.
@@ -336,13 +370,6 @@ func (c *Conn) recv() error {
 		}
 	}
 
-	if !atomic.CompareAndSwapInt32(&call.waiting, 1, 0) {
-		// the waiting thread timed out and is no longer waiting, the stream has
-		// not yet been readded to the chan so it cant be used again,
-		c.releaseStream(head.stream)
-		return nil
-	}
-
 	// we either, return a response to the caller, the caller timedout, or the
 	// connection has closed. Either way we should never block indefinatly here
 	select {
@@ -359,7 +386,6 @@ type callReq struct {
 	// could use a waitgroup but this allows us to do timeouts on the read/send
 	resp    chan error
 	framer  *framer
-	waiting int32
 	timeout chan struct{} // indicates to recv() that a call has timedout
 }
 
@@ -370,7 +396,7 @@ func (c *Conn) releaseStream(stream int) {
 
 	select {
 	case c.uniq <- stream:
-	default:
+	case <-c.quit:
 	}
 }
 
@@ -389,20 +415,15 @@ func (c *Conn) exec(req frameWriter, tracer Tracer) (frame, error) {
 		return nil, ErrConnectionClosed
 	}
 
-	call := &c.calls[stream]
 	// resp is basically a waiting semaphore protecting the framer
 	framer := newFramer(c, c, c.compressor, c.version)
+	call := &c.calls[stream]
 	call.framer = framer
 	call.timeout = make(chan struct{})
 
 	if tracer != nil {
 		framer.trace()
 	}
-
-	if !atomic.CompareAndSwapInt32(&call.waiting, 0, 1) {
-		return nil, errors.New("gocql: stream is busy or closed")
-	}
-	defer atomic.StoreInt32(&call.waiting, 0)
 
 	err := req.writeFrame(framer, stream)
 	if err != nil {
@@ -615,42 +636,6 @@ func (c *Conn) Pick(qry *Query) *Conn {
 
 func (c *Conn) Closed() bool {
 	return atomic.LoadInt32(&c.closed) == 1
-}
-
-func (c *Conn) closeWithError(err error) {
-	if !atomic.CompareAndSwapInt32(&c.closed, 0, 1) {
-		return
-	}
-
-	if err != nil {
-		// we should attempt to deliver the error back to the caller if it
-		// exists
-		for id := 0; id < len(c.calls); id++ {
-			req := &c.calls[id]
-			// we need to send the error to all waiting queries, put the state
-			// of this conn into not active so that it can not execute any queries.
-			atomic.StoreInt32(&req.waiting, -1)
-
-			if err != nil {
-				select {
-				case req.resp <- err:
-				default:
-				}
-			}
-		}
-	}
-
-	// if error was nil then unblock the quit channel
-	close(c.quit)
-	c.conn.Close()
-
-	if c.started && err != nil {
-		c.errorHandler.HandleError(c, err, true)
-	}
-}
-
-func (c *Conn) Close() {
-	c.closeWithError(nil)
 }
 
 func (c *Conn) Address() string {

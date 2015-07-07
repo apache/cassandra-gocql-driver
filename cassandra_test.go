@@ -105,9 +105,7 @@ func createKeyspace(tb testing.TB, cluster *ClusterConfig, keyspace string) {
 	tb.Logf("Created keyspace %s", keyspace)
 }
 
-func createSession(tb testing.TB) *Session {
-	cluster := createCluster()
-
+func createSessionFromCluster(cluster *ClusterConfig, tb testing.TB) *Session {
 	// Drop and re-create the keyspace once. Different tests should use their own
 	// individual tables, but can assume that the table does not exist before.
 	initOnce.Do(func() {
@@ -121,6 +119,11 @@ func createSession(tb testing.TB) *Session {
 	}
 
 	return session
+}
+
+func createSession(tb testing.TB) *Session {
+	cluster := createCluster()
+	return createSessionFromCluster(cluster, tb)
 }
 
 // TestAuthentication verifies that gocql will work with a host configured to only accept authenticated connections
