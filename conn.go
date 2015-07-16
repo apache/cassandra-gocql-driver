@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"log"
 	"net"
 	"strconv"
@@ -358,6 +359,17 @@ func (c *Conn) recv() error {
 	head, err := readHeader(c.r, c.headerBuf)
 	if err != nil {
 		return err
+	}
+
+	if head.stream > len(c.calls) {
+		return fmt.Errorf("gocql: frame header stream is beyond call exepected bounds: %d", head.stream)
+	} else if head.stream < 0 {
+		// TODO: handle cassandra event frames, we shouldnt get any currently
+		_, err := io.CopyN(ioutil.Discard, c, int64(head.length))
+		if err != nil {
+			return err
+		}
+		return nil
 	}
 
 	call := &c.calls[head.stream]
