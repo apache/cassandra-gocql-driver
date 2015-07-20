@@ -444,11 +444,6 @@ func (c *Conn) exec(req frameWriter, tracer Tracer) (frame, error) {
 
 	select {
 	case err := <-call.resp:
-		// dont release the stream if detect a timeout as another request can reuse
-		// that stream and get a response for the old request, which we have no
-		// easy way of detecting.
-		defer c.releaseStream(stream)
-
 		if err != nil {
 			return nil, err
 		}
@@ -459,6 +454,14 @@ func (c *Conn) exec(req frameWriter, tracer Tracer) (frame, error) {
 	case <-c.quit:
 		return nil, ErrConnectionClosed
 	}
+
+	// dont release the stream if detect a timeout as another request can reuse
+	// that stream and get a response for the old request, which we have no
+	// easy way of detecting.
+	//
+	// Ensure that the stream is not released if there are potentially outstanding
+	// requests on the stream to prevent nil pointer dereferences in recv().
+	defer c.releaseStream(stream)
 
 	if v := framer.header.version.version(); v != c.version {
 		return nil, NewErrProtocol("unexpected protocol version in response: got %d expected %d", v, c.version)
