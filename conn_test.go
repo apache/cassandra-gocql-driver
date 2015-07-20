@@ -569,6 +569,53 @@ func TestQueryTimeoutClose(t *testing.T) {
 	}
 }
 
+func TestExecPanic(t *testing.T) {
+	srv := NewTestServer(t, defaultProto)
+	defer srv.Stop()
+
+	cluster := NewCluster(srv.Address)
+	// Set the timeout arbitrarily low so that the query hits the timeout in a
+	// timely manner.
+	cluster.Timeout = 5 * time.Millisecond
+	cluster.NumConns = 1
+	// cluster.NumStreams = 1
+
+	db, err := cluster.CreateSession()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	streams := db.cfg.NumStreams
+
+	wg := &sync.WaitGroup{}
+	wg.Add(streams)
+	for i := 0; i < streams; i++ {
+		go func() {
+			defer wg.Done()
+			q := db.Query("void")
+			for {
+				if err := q.Exec(); err != nil {
+					return
+				}
+			}
+		}()
+	}
+
+	wg.Add(1)
+
+	go func() {
+		defer wg.Done()
+		for i := 0; i < int(TimeoutLimit); i++ {
+			db.Query("timeout").Exec()
+		}
+	}()
+
+	wg.Wait()
+
+	time.Sleep(500 * time.Millisecond)
+}
+
 func NewTestServer(t testing.TB, protocol uint8) *TestServer {
 	laddr, err := net.ResolveTCPAddr("tcp", "127.0.0.1:0")
 	if err != nil {
