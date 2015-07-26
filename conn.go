@@ -157,7 +157,7 @@ func Connect(addr string, cfg ConnConfig, errorHandler ConnErrorHandler) (*Conn,
 		headerSize = 9
 	}
 
-	if cfg.NumStreams <= 0 || cfg.NumStreams > maxStreams {
+	if cfg.NumStreams <= 0 || cfg.NumStreams >= maxStreams {
 		cfg.NumStreams = maxStreams
 	} else {
 		cfg.NumStreams++
