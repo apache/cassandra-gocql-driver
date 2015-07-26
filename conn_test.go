@@ -284,7 +284,7 @@ func TestStreams_Protocol1(t *testing.T) {
 	defer db.Close()
 
 	var wg sync.WaitGroup
-	for i := 0; i < db.cfg.NumStreams; i++ {
+	for i := 1; i < db.cfg.NumStreams; i++ {
 		// here were just validating that if we send NumStream request we get
 		// a response for every stream and the lengths for the queries are set
 		// correctly.
@@ -315,7 +315,7 @@ func TestStreams_Protocol2(t *testing.T) {
 	}
 	defer db.Close()
 
-	for i := 0; i < db.cfg.NumStreams; i++ {
+	for i := 1; i < db.cfg.NumStreams; i++ {
 		// the test server processes each conn synchronously
 		// here were just validating that if we send NumStream request we get
 		// a response for every stream and the lengths for the queries are set
@@ -342,7 +342,7 @@ func TestStreams_Protocol3(t *testing.T) {
 	}
 	defer db.Close()
 
-	for i := 0; i < db.cfg.NumStreams; i++ {
+	for i := 1; i < db.cfg.NumStreams; i++ {
 		// the test server processes each conn synchronously
 		// here were just validating that if we send NumStream request we get
 		// a response for every stream and the lengths for the queries are set

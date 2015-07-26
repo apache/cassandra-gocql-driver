@@ -157,8 +157,10 @@ func Connect(addr string, cfg ConnConfig, errorHandler ConnErrorHandler) (*Conn,
 		headerSize = 9
 	}
 
-	if cfg.NumStreams <= 0 || cfg.NumStreams > maxStreams {
+	if cfg.NumStreams <= 0 || cfg.NumStreams >= maxStreams {
 		cfg.NumStreams = maxStreams
+	} else {
+		cfg.NumStreams++
 	}
 
 	c := &Conn{
@@ -180,7 +182,9 @@ func Connect(addr string, cfg ConnConfig, errorHandler ConnErrorHandler) (*Conn,
 		c.setKeepalive(cfg.Keepalive)
 	}
 
-	for i := 0; i < cfg.NumStreams; i++ {
+	// reserve stream 0 incase cassandra returns an error on it without us sending
+	// a request.
+	for i := 1; i < cfg.NumStreams; i++ {
 		c.calls[i].resp = make(chan error)
 		c.uniq <- i
 	}
@@ -363,13 +367,32 @@ func (c *Conn) recv() error {
 
 	if head.stream > len(c.calls) {
 		return fmt.Errorf("gocql: frame header stream is beyond call exepected bounds: %d", head.stream)
-	} else if head.stream < 0 {
+	} else if head.stream == -1 {
 		// TODO: handle cassandra event frames, we shouldnt get any currently
 		_, err := io.CopyN(ioutil.Discard, c, int64(head.length))
 		if err != nil {
 			return err
 		}
 		return nil
+	} else if head.stream <= 0 {
+		// reserved stream that we dont use, probably due to a protocol error
+		// or a bug in Cassandra, this should be an error, parse it and return.
+		framer := newFramer(c, c, c.compressor, c.version)
+		if err := framer.readFrame(&head); err != nil {
+			return err
+		}
+
+		frame, err := framer.parseFrame()
+		if err != nil {
+			return err
+		}
+
+		switch v := frame.(type) {
+		case error:
+			return fmt.Errorf("gocql: error on stream %d: %v", head.stream, v)
+		default:
+			return fmt.Errorf("gocql: received frame on stream %d: %v", head.stream, frame)
+		}
 	}
 
 	call := &c.calls[head.stream]
