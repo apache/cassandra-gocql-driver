@@ -2016,13 +2016,13 @@ func TestStream0(t *testing.T) {
 		return f.finishWrite()
 	})
 
-	const expErr = "gocql: error on stream 0: Invalid or unsupported protocol version: 127"
+	const expErr = "gocql: error on stream 0:"
 	// need to write out an invalid frame, which we need a connection to do
 	frame, err := conn.exec(writer, nil)
 	if err == nil {
 		t.Fatal("expected to get an error on stream 0")
-	} else if err.Error() != expErr {
-		t.Fatalf("expected to get error %q got %q", expErr, err.Error())
+	} else if !strings.HasPrefix(err.Error(), expErr) {
+		t.Fatalf("expected to get error prefix %q got %q", expErr, err.Error())
 	} else if frame != nil {
 		t.Fatalf("expected to get nil frame got %+v", frame)
 	}
