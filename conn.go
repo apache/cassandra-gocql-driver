@@ -367,14 +367,14 @@ func (c *Conn) recv() error {
 
 	if head.stream > len(c.calls) {
 		return fmt.Errorf("gocql: frame header stream is beyond call exepected bounds: %d", head.stream)
-	} else if head.stream < 0 {
+	} else if head.stream == -1 {
 		// TODO: handle cassandra event frames, we shouldnt get any currently
 		_, err := io.CopyN(ioutil.Discard, c, int64(head.length))
 		if err != nil {
 			return err
 		}
 		return nil
-	} else if head.stream == 0 {
+	} else if head.stream <= 0 {
 		// reserved stream that we dont use, probably due to a protocol error
 		// or a bug in Cassandra, this should be an error, parse it and return.
 		framer := newFramer(c, c, c.compressor, c.version)
@@ -389,9 +389,9 @@ func (c *Conn) recv() error {
 
 		switch v := frame.(type) {
 		case error:
-			return fmt.Errorf("gocql: error on stream 0: %v", v)
+			return fmt.Errorf("gocql: error on stream %d: %v", head.stream, v)
 		default:
-			return fmt.Errorf("gocql: received frame on stream 0: %v", frame)
+			return fmt.Errorf("gocql: received frame on stream %d: %v", head.stream, frame)
 		}
 	}
 
