@@ -434,6 +434,11 @@ type Query struct {
 	defaultTimestamp bool
 }
 
+// String implements the stringer interface.
+func (q *Query) String() string {
+	return fmt.Sprintf("Statement: %q, Values: %+v", q.stmt, q.values)
+}
+
 //Attempts returns the number of times the query was executed.
 func (q *Query) Attempts() int {
 	return q.attempts
