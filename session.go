@@ -436,7 +436,7 @@ type Query struct {
 
 // String implements the stringer interface.
 func (q *Query) String() string {
-	return fmt.Sprintf("Statement: %q, Values: %+v", q.stmt, q.values)
+	return fmt.Sprintf("[query statement=%q values=%+v consistency=%s]", q.stmt, q.values, q.cons)
 }
 
 //Attempts returns the number of times the query was executed.
