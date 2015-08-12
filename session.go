@@ -435,7 +435,7 @@ type Query struct {
 }
 
 // String implements the stringer interface.
-func (q *Query) String() string {
+func (q Query) String() string {
 	return fmt.Sprintf("[query statement=%q values=%+v consistency=%s]", q.stmt, q.values, q.cons)
 }
 
