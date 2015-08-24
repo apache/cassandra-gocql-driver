@@ -542,7 +542,9 @@ func (q *Query) GetRoutingKey() ([]byte, error) {
 		if err != nil {
 			return nil, err
 		}
-		binary.Write(buf, binary.BigEndian, int16(len(encoded)))
+		lenBuf := []byte{0x00, 0x00}
+		binary.BigEndian.PutUint16(lenBuf, uint16(len(encoded)))
+		buf.Write(lenBuf)
 		buf.Write(encoded)
 		buf.WriteByte(0x00)
 	}
