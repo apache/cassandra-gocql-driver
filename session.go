@@ -422,6 +422,7 @@ type Query struct {
 	cons             Consistency
 	pageSize         int
 	routingKey       []byte
+	routingKeyBuffer []byte
 	pageState        []byte
 	prefetch         float64
 	trace            Tracer
@@ -532,8 +533,14 @@ func (q *Query) GetRoutingKey() ([]byte, error) {
 		return routingKey, nil
 	}
 
+	// We allocate that buffer only once, so that further re-bind/exec of the
+	// same query don't allocate more memory.
+	if q.routingKeyBuffer == nil {
+		q.routingKeyBuffer = make([]byte, 0, 256)
+	}
+
 	// composite routing key
-	buf := bytes.NewBuffer(make([]byte, 0, 256))
+	buf := bytes.NewBuffer(q.routingKeyBuffer)
 	for i := range routingKeyInfo.indexes {
 		encoded, err := Marshal(
 			routingKeyInfo.types[i],
