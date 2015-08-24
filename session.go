@@ -533,7 +533,7 @@ func (q *Query) GetRoutingKey() ([]byte, error) {
 	}
 
 	// composite routing key
-	buf := &bytes.Buffer{}
+	buf := bytes.NewBuffer(make([]byte, 0, 256))
 	for i := range routingKeyInfo.indexes {
 		encoded, err := Marshal(
 			routingKeyInfo.types[i],
