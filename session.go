@@ -260,9 +260,8 @@ func (s *Session) KeyspaceMetadata(keyspace string) (*KeyspaceMetadata, error) {
 // returns routing key indexes and type info
 func (s *Session) routingKeyInfo(stmt string) (*routingKeyInfo, error) {
 	s.routingKeyInfoCache.mu.Lock()
-	cacheKey := s.cfg.Keyspace + stmt
 
-	entry, cached := s.routingKeyInfoCache.lru.Get(cacheKey)
+	entry, cached := s.routingKeyInfoCache.lru.Get(stmt)
 	if cached {
 		// done accessing the cache
 		s.routingKeyInfoCache.mu.Unlock()
@@ -286,7 +285,7 @@ func (s *Session) routingKeyInfo(stmt string) (*routingKeyInfo, error) {
 	inflight := new(inflightCachedEntry)
 	inflight.wg.Add(1)
 	defer inflight.wg.Done()
-	s.routingKeyInfoCache.lru.Add(cacheKey, inflight)
+	s.routingKeyInfoCache.lru.Add(stmt, inflight)
 	s.routingKeyInfoCache.mu.Unlock()
 
 	var (
@@ -300,14 +299,14 @@ func (s *Session) routingKeyInfo(stmt string) (*routingKeyInfo, error) {
 		// no connections
 		inflight.err = ErrNoConnections
 		// don't cache this error
-		s.routingKeyInfoCache.Remove(cacheKey)
+		s.routingKeyInfoCache.Remove(stmt)
 		return nil, inflight.err
 	}
 
 	prepared, inflight.err = conn.prepareStatement(stmt, nil)
 	if inflight.err != nil {
 		// don't cache this error
-		s.routingKeyInfoCache.Remove(cacheKey)
+		s.routingKeyInfoCache.Remove(stmt)
 		return nil, inflight.err
 	}
 
@@ -323,7 +322,7 @@ func (s *Session) routingKeyInfo(stmt string) (*routingKeyInfo, error) {
 	keyspaceMetadata, inflight.err = s.KeyspaceMetadata(s.cfg.Keyspace)
 	if inflight.err != nil {
 		// don't cache this error
-		s.routingKeyInfoCache.Remove(cacheKey)
+		s.routingKeyInfoCache.Remove(stmt)
 		return nil, inflight.err
 	}
 
@@ -334,7 +333,7 @@ func (s *Session) routingKeyInfo(stmt string) (*routingKeyInfo, error) {
 		// in the metadata code, or that the table was just dropped.
 		inflight.err = ErrNoMetadata
 		// don't cache this error
-		s.routingKeyInfoCache.Remove(cacheKey)
+		s.routingKeyInfoCache.Remove(stmt)
 		return nil, inflight.err
 	}
 
