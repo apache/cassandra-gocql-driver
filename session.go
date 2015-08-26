@@ -609,10 +609,18 @@ func (q *Query) Exec() error {
 	return iter.err
 }
 
+func isUseStatement(stmt string) bool {
+	if len(stmt) < 3 {
+		return false
+	}
+
+	return strings.ToLower(stmt[0:3]) == "use"
+}
+
 // Iter executes the query and returns an iterator capable of iterating
 // over all results.
 func (q *Query) Iter() *Iter {
-	if strings.Index(strings.ToLower(q.stmt), "use") == 0 {
+	if isUseStatement(q.stmt) {
 		return &Iter{err: ErrUseStmt}
 	}
 	return q.session.executeQuery(q)
