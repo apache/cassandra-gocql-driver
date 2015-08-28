@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"log"
 	"net"
 	"runtime"
 	"sync"
@@ -133,8 +134,10 @@ const (
 	flagWithNameValues             = 0x40
 
 	// header flags
-	flagCompress byte = 0x01
-	flagTracing       = 0x02
+	flagCompress      byte = 0x01
+	flagTracing       byte = 0x02
+	flagCustomPayload byte = 0x04
+	flagWarning       byte = 0x08
 )
 
 type Consistency uint16
@@ -407,6 +410,14 @@ func (f *framer) parseFrame() (frame frame, err error) {
 
 	if f.header.flags&flagTracing == flagTracing {
 		f.readTrace()
+	}
+
+	if f.header.flags&flagWarning == flagWarning {
+		warnings := f.readStringList()
+		// what to do with warnings?
+		for _, v := range warnings {
+			log.Println(v)
+		}
 	}
 
 	// asumes that the frame body has been read into rbuf
