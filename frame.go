@@ -502,6 +502,23 @@ func (f *framer) parseErrorFrame() frame {
 			errorFrame:  errD,
 			StatementId: stmtId,
 		}
+	case errReadFailure:
+		res := &RequestErrReadFailure{
+			errorFrame: errD,
+		}
+		res.Consistency = f.readConsistency()
+		res.Received = f.readInt()
+		res.BlockFor = f.readInt()
+		res.DataPresent = f.readByte() != 0
+		return res
+	case errFunctionFailure:
+		res := RequestErrFunctionFailure{
+			errorFrame: errD,
+		}
+		res.Keyspace = f.readString()
+		res.Function = f.readString()
+		res.ArgTypes = f.readStringList()
+		return res
 	default:
 		return &errD
 	}
