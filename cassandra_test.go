@@ -1086,7 +1086,8 @@ func injectInvalidPreparedStatement(t *testing.T, session *Session, table string
 	stmtsLRU.Unlock()
 	flight.info = &resultPreparedFrame{
 		preparedID: []byte{'f', 'o', 'o', 'b', 'a', 'r'},
-		reqMeta: resultMetadata{
+		reqMeta: preparedMetadata{
+			resultMetadata: resultMetadata{
 			columns: []ColumnInfo{
 				{
 					Keyspace: "gocql_test",
@@ -1095,6 +1096,7 @@ func injectInvalidPreparedStatement(t *testing.T, session *Session, table string
 					TypeInfo: NativeType{
 						typ: TypeVarchar,
 					},
+				},
 				},
 			}},
 	}
