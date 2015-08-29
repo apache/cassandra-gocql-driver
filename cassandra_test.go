@@ -87,21 +87,35 @@ func createCluster() *ClusterConfig {
 }
 
 func createKeyspace(tb testing.TB, cluster *ClusterConfig, keyspace string) {
-	session, err := cluster.CreateSession()
+	c := *cluster
+	c.Keyspace = "system"
+	c.CQLVersion = "3.2.0"
+	session, err := c.CreateSession()
 	if err != nil {
 		tb.Fatal("createSession:", err)
 	}
-	defer session.Close()
-	if err = session.Query(`DROP KEYSPACE IF EXISTS ` + keyspace).Exec(); err != nil {
-		tb.Log("drop keyspace:", err)
+
+	// should reuse the same conn apparently
+	conn := session.Pool.Pick(nil)
+	if conn == nil {
+		tb.Fatal("no connections available in the pool")
 	}
-	if err := session.Query(fmt.Sprintf(`CREATE KEYSPACE %s
+
+	err = conn.executeQuery(session.Query(`DROP KEYSPACE IF EXISTS ` + keyspace).Consistency(All)).Close()
+	if err != nil {
+		tb.Fatal(err)
+	}
+
+	query  := session.Query(fmt.Sprintf(`CREATE KEYSPACE %s
 	WITH replication = {
 		'class' : 'SimpleStrategy',
 		'replication_factor' : %d
-	}`, keyspace, *flagRF)).Consistency(All).Exec(); err != nil {
-		tb.Fatalf("error creating keyspace %s: %v", keyspace, err)
+	}`, keyspace, *flagRF)).Consistency(All)
+
+	if err = conn.executeQuery(query).Close(); err != nil {
+		tb.Fatal(err)
 	}
+
 	tb.Logf("Created keyspace %s", keyspace)
 }
 
