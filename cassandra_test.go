@@ -106,7 +106,7 @@ func createKeyspace(tb testing.TB, cluster *ClusterConfig, keyspace string) {
 		tb.Fatal(err)
 	}
 
-	query  := session.Query(fmt.Sprintf(`CREATE KEYSPACE %s
+	query := session.Query(fmt.Sprintf(`CREATE KEYSPACE %s
 	WITH replication = {
 		'class' : 'SimpleStrategy',
 		'replication_factor' : %d
@@ -1088,15 +1088,15 @@ func injectInvalidPreparedStatement(t *testing.T, session *Session, table string
 		preparedID: []byte{'f', 'o', 'o', 'b', 'a', 'r'},
 		reqMeta: preparedMetadata{
 			resultMetadata: resultMetadata{
-			columns: []ColumnInfo{
-				{
-					Keyspace: "gocql_test",
-					Table:    table,
-					Name:     "foo",
-					TypeInfo: NativeType{
-						typ: TypeVarchar,
+				columns: []ColumnInfo{
+					{
+						Keyspace: "gocql_test",
+						Table:    table,
+						Name:     "foo",
+						TypeInfo: NativeType{
+							typ: TypeVarchar,
+						},
 					},
-				},
 				},
 			}},
 	}

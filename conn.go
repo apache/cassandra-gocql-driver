@@ -646,7 +646,7 @@ func (c *Conn) executeQuery(qry *Query) *Iter {
 		}
 
 		return iter
-	case *resultKeyspaceFrame, *resultSchemaChangeFrame, *schemaChangeKeyspace,*schemaChangeTable:
+	case *resultKeyspaceFrame, *resultSchemaChangeFrame, *schemaChangeKeyspace, *schemaChangeTable:
 		return &Iter{}
 	case *RequestErrUnprepared:
 		stmtsLRU.Lock()

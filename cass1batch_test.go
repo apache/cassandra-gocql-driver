@@ -22,7 +22,6 @@ func TestProto1BatchInsert(t *testing.T) {
 	if err := session.Query(fullQuery, args...).Consistency(Quorum).Exec(); err != nil {
 		t.Fatal(err)
 	}
-
 }
 
 func TestShouldPrepareFunction(t *testing.T) {
