@@ -1653,13 +1653,15 @@ func TestGetTableMetadata(t *testing.T) {
 	if testTable.DefaultValidator != "org.apache.cassandra.db.marshal.BytesType" {
 		t.Errorf("Expected test_table_metadata key validator to be 'org.apache.cassandra.db.marshal.BytesType' but was '%s'", testTable.DefaultValidator)
 	}
-	expectedKeyAliases := []string{"first_id"}
-	if !reflect.DeepEqual(testTable.KeyAliases, expectedKeyAliases) {
-		t.Errorf("Expected key aliases %v but was %v", expectedKeyAliases, testTable.KeyAliases)
-	}
-	expectedColumnAliases := []string{"second_id"}
-	if !reflect.DeepEqual(testTable.ColumnAliases, expectedColumnAliases) {
-		t.Errorf("Expected key aliases %v but was %v", expectedColumnAliases, testTable.ColumnAliases)
+	if *flagProto < protoVersion4 {
+		expectedKeyAliases := []string{"first_id"}
+		if !reflect.DeepEqual(testTable.KeyAliases, expectedKeyAliases) {
+			t.Errorf("Expected key aliases %v but was %v", expectedKeyAliases, testTable.KeyAliases)
+		}
+		expectedColumnAliases := []string{"second_id"}
+		if !reflect.DeepEqual(testTable.ColumnAliases, expectedColumnAliases) {
+			t.Errorf("Expected key aliases %v but was %v", expectedColumnAliases, testTable.ColumnAliases)
+		}
 	}
 	if testTable.ValueAlias != "" {
 		t.Errorf("Expected value alias '' but was '%s'", testTable.ValueAlias)
