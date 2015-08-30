@@ -661,7 +661,7 @@ func (c *Conn) executeQuery(qry *Query) *Iter {
 	case error:
 		return &Iter{err: x}
 	default:
-		return &Iter{err: NewErrProtocol("Unknown type in response to execute query: %s", x)}
+		return &Iter{err: NewErrProtocol("Unknown type in response to execute query (%T): %s", x, x)}
 	}
 }
 
