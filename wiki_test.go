@@ -6,9 +6,10 @@ import (
 	"fmt"
 	"reflect"
 	"sort"
-	"gopkg.in/inf.v0"
 	"testing"
 	"time"
+
+	"gopkg.in/inf.v0"
 )
 
 type WikiPage struct {
@@ -49,14 +50,17 @@ var wikiTestData = []*WikiPage{
 type WikiTest struct {
 	session *Session
 	tb      testing.TB
+
+	table string
 }
 
-func (w *WikiTest) CreateSchema() {
-
-	if err := w.session.Query(`DROP TABLE wiki_page`).Exec(); err != nil && err.Error() != "unconfigured columnfamily wiki_page" {
-		w.tb.Fatal("CreateSchema:", err)
+func CreateSchema(session *Session, tb testing.TB, table string) *WikiTest {
+	table = "wiki_" + table
+	if err := session.Query(fmt.Sprintf("DROP TABLE IF EXISTS %s", table)).Exec(); err != nil {
+		tb.Fatal("CreateSchema:", err)
 	}
-	err := createTable(w.session, `CREATE TABLE wiki_page (
+
+	err := createTable(session, fmt.Sprintf(`CREATE TABLE %s (
 			title       varchar,
 			revid       timeuuid,
 			body        varchar,
@@ -67,13 +71,16 @@ func (w *WikiTest) CreateSchema() {
 			tags        set<varchar>,
 			attachments map<varchar, blob>,
 			PRIMARY KEY (title, revid)
-		)`)
-	if *clusterSize > 1 {
-		// wait for table definition to propogate
-		time.Sleep(250 * time.Millisecond)
-	}
+		)`, table))
+
 	if err != nil {
-		w.tb.Fatal("CreateSchema:", err)
+		tb.Fatal("CreateSchema:", err)
+	}
+
+	return &WikiTest{
+		session: session,
+		tb:      tb,
+		table:   table,
 	}
 }
 
@@ -92,17 +99,17 @@ func (w *WikiTest) CreatePages(n int) {
 }
 
 func (w *WikiTest) InsertPage(page *WikiPage) error {
-	return w.session.Query(`INSERT INTO wiki_page
+	return w.session.Query(fmt.Sprintf(`INSERT INTO %s
 		(title, revid, body, views, protected, modified, rating, tags, attachments)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, w.table),
 		page.Title, page.RevId, page.Body, page.Views, page.Protected,
 		page.Modified, page.Rating, page.Tags, page.Attachments).Exec()
 }
 
 func (w *WikiTest) SelectPage(page *WikiPage, title string, revid UUID) error {
-	return w.session.Query(`SELECT title, revid, body, views, protected,
+	return w.session.Query(fmt.Sprintf(`SELECT title, revid, body, views, protected,
 		modified,tags, attachments, rating
-		FROM wiki_page WHERE title = ? AND revid = ? LIMIT 1`,
+		FROM %s WHERE title = ? AND revid = ? LIMIT 1`, w.table),
 		title, revid).Scan(&page.Title, &page.RevId,
 		&page.Body, &page.Views, &page.Protected, &page.Modified, &page.Tags,
 		&page.Attachments, &page.Rating)
@@ -110,7 +117,7 @@ func (w *WikiTest) SelectPage(page *WikiPage, title string, revid UUID) error {
 
 func (w *WikiTest) GetPageCount() int {
 	var count int
-	if err := w.session.Query(`SELECT COUNT(*) FROM wiki_page`).Scan(&count); err != nil {
+	if err := w.session.Query(fmt.Sprintf(`SELECT COUNT(*) FROM %s`, w.table)).Scan(&count); err != nil {
 		w.tb.Error("GetPageCount", err)
 	}
 	return count
@@ -120,8 +127,7 @@ func TestWikiCreateSchema(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 
-	w := WikiTest{session, t}
-	w.CreateSchema()
+	CreateSchema(session, t, "create")
 }
 
 func BenchmarkWikiCreateSchema(b *testing.B) {
@@ -131,11 +137,10 @@ func BenchmarkWikiCreateSchema(b *testing.B) {
 		b.StopTimer()
 		session.Close()
 	}()
-	w := WikiTest{session, b}
-	b.StartTimer()
 
+	b.StartTimer()
 	for i := 0; i < b.N; i++ {
-		w.CreateSchema()
+		CreateSchema(session, b, "bench_create")
 	}
 }
 
@@ -143,8 +148,8 @@ func TestWikiCreatePages(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 
-	w := WikiTest{session, t}
-	w.CreateSchema()
+	w := CreateSchema(session, t, "create_pages")
+
 	numPages := 5
 	w.CreatePages(numPages)
 	if count := w.GetPageCount(); count != numPages {
@@ -159,8 +164,9 @@ func BenchmarkWikiCreatePages(b *testing.B) {
 		b.StopTimer()
 		session.Close()
 	}()
-	w := WikiTest{session, b}
-	w.CreateSchema()
+
+	w := CreateSchema(session, b, "bench_create_pages")
+
 	b.StartTimer()
 
 	w.CreatePages(b.N)
@@ -173,16 +179,16 @@ func BenchmarkWikiSelectAllPages(b *testing.B) {
 		b.StopTimer()
 		session.Close()
 	}()
-	w := WikiTest{session, b}
-	w.CreateSchema()
+	w := CreateSchema(session, b, "bench_select_all")
+
 	w.CreatePages(100)
 	b.StartTimer()
 
 	var page WikiPage
 	for i := 0; i < b.N; i++ {
-		iter := session.Query(`SELECT title, revid, body, views, protected,
+		iter := session.Query(fmt.Sprintf(`SELECT title, revid, body, views, protected,
 			modified, tags, attachments, rating
-			FROM wiki_page`).Iter()
+			FROM %s`, w.table)).Iter()
 		for iter.Scan(&page.Title, &page.RevId, &page.Body, &page.Views,
 			&page.Protected, &page.Modified, &page.Tags, &page.Attachments,
 			&page.Rating) {
@@ -201,11 +207,10 @@ func BenchmarkWikiSelectSinglePage(b *testing.B) {
 		b.StopTimer()
 		session.Close()
 	}()
-	w := WikiTest{session, b}
-	w.CreateSchema()
+	w := CreateSchema(session, b, "bench_select_single")
 	pages := make([]WikiPage, 100)
 	w.CreatePages(len(pages))
-	iter := session.Query(`SELECT title, revid FROM wiki_page`).Iter()
+	iter := session.Query(fmt.Sprintf(`SELECT title, revid FROM %s`, w.table)).Iter()
 	for i := 0; i < len(pages); i++ {
 		if !iter.Scan(&pages[i].Title, &pages[i].RevId) {
 			pages = pages[:i]
@@ -233,9 +238,9 @@ func BenchmarkWikiSelectPageCount(b *testing.B) {
 		b.StopTimer()
 		session.Close()
 	}()
-	w := WikiTest{session, b}
-	w.CreateSchema()
-	numPages := 10
+
+	w := CreateSchema(session, b, "bench_page_count")
+	const numPages = 10
 	w.CreatePages(numPages)
 	b.StartTimer()
 	for i := 0; i < b.N; i++ {
@@ -249,8 +254,8 @@ func TestWikiTypicalCRUD(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 
-	w := WikiTest{session, t}
-	w.CreateSchema()
+	w := CreateSchema(session, t, "crud")
+
 	for _, page := range wikiTestData {
 		if err := w.InsertPage(page); err != nil {
 			t.Error("InsertPage:", err)
