@@ -50,6 +50,8 @@ func goType(t TypeInfo) reflect.Type {
 		// what can we do here? all there is to do is to make a list of interface{}
 		tuple := t.(TupleTypeInfo)
 		return reflect.TypeOf(make([]interface{}, len(tuple.Elems)))
+	case TypeUDT:
+		return reflect.TypeOf(make(map[string]interface{}))
 	default:
 		return nil
 	}
