@@ -468,6 +468,13 @@ func (c *Conn) exec(req frameWriter, tracer Tracer) (frame, error) {
 	select {
 	case err := <-call.resp:
 		if err != nil {
+			if !c.Closed() {
+				// if the connection is closed then we cant release the stream,
+				// this is because the request is still outstanding and we have
+				// been handed another error from another stream which caused the
+				// connection to close.
+				c.releaseStream(stream)
+			}
 			return nil, err
 		}
 	case <-time.After(c.timeout):
