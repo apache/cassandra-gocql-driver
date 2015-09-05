@@ -87,21 +87,34 @@ func createCluster() *ClusterConfig {
 }
 
 func createKeyspace(tb testing.TB, cluster *ClusterConfig, keyspace string) {
-	session, err := cluster.CreateSession()
+	c := *cluster
+	c.Keyspace = "system"
+	session, err := c.CreateSession()
 	if err != nil {
 		tb.Fatal("createSession:", err)
 	}
-	defer session.Close()
-	if err = session.Query(`DROP KEYSPACE IF EXISTS ` + keyspace).Exec(); err != nil {
-		tb.Log("drop keyspace:", err)
+
+	// should reuse the same conn apparently
+	conn := session.Pool.Pick(nil)
+	if conn == nil {
+		tb.Fatal("no connections available in the pool")
 	}
-	if err := session.Query(fmt.Sprintf(`CREATE KEYSPACE %s
+
+	err = conn.executeQuery(session.Query(`DROP KEYSPACE IF EXISTS ` + keyspace).Consistency(All)).Close()
+	if err != nil {
+		tb.Fatal(err)
+	}
+
+	query := session.Query(fmt.Sprintf(`CREATE KEYSPACE %s
 	WITH replication = {
 		'class' : 'SimpleStrategy',
 		'replication_factor' : %d
-	}`, keyspace, *flagRF)).Consistency(All).Exec(); err != nil {
-		tb.Fatalf("error creating keyspace %s: %v", keyspace, err)
+	}`, keyspace, *flagRF)).Consistency(All)
+
+	if err = conn.executeQuery(query).Close(); err != nil {
+		tb.Fatal(err)
 	}
+
 	tb.Logf("Created keyspace %s", keyspace)
 }
 
@@ -1072,14 +1085,16 @@ func injectInvalidPreparedStatement(t *testing.T, session *Session, table string
 	stmtsLRU.Unlock()
 	flight.info = &resultPreparedFrame{
 		preparedID: []byte{'f', 'o', 'o', 'b', 'a', 'r'},
-		reqMeta: resultMetadata{
-			columns: []ColumnInfo{
-				{
-					Keyspace: "gocql_test",
-					Table:    table,
-					Name:     "foo",
-					TypeInfo: NativeType{
-						typ: TypeVarchar,
+		reqMeta: preparedMetadata{
+			resultMetadata: resultMetadata{
+				columns: []ColumnInfo{
+					{
+						Keyspace: "gocql_test",
+						Table:    table,
+						Name:     "foo",
+						TypeInfo: NativeType{
+							typ: TypeVarchar,
+						},
 					},
 				},
 			}},
@@ -1638,13 +1653,15 @@ func TestGetTableMetadata(t *testing.T) {
 	if testTable.DefaultValidator != "org.apache.cassandra.db.marshal.BytesType" {
 		t.Errorf("Expected test_table_metadata key validator to be 'org.apache.cassandra.db.marshal.BytesType' but was '%s'", testTable.DefaultValidator)
 	}
-	expectedKeyAliases := []string{"first_id"}
-	if !reflect.DeepEqual(testTable.KeyAliases, expectedKeyAliases) {
-		t.Errorf("Expected key aliases %v but was %v", expectedKeyAliases, testTable.KeyAliases)
-	}
-	expectedColumnAliases := []string{"second_id"}
-	if !reflect.DeepEqual(testTable.ColumnAliases, expectedColumnAliases) {
-		t.Errorf("Expected key aliases %v but was %v", expectedColumnAliases, testTable.ColumnAliases)
+	if *flagProto < protoVersion4 {
+		expectedKeyAliases := []string{"first_id"}
+		if !reflect.DeepEqual(testTable.KeyAliases, expectedKeyAliases) {
+			t.Errorf("Expected key aliases %v but was %v", expectedKeyAliases, testTable.KeyAliases)
+		}
+		expectedColumnAliases := []string{"second_id"}
+		if !reflect.DeepEqual(testTable.ColumnAliases, expectedColumnAliases) {
+			t.Errorf("Expected key aliases %v but was %v", expectedColumnAliases, testTable.ColumnAliases)
+		}
 	}
 	if testTable.ValueAlias != "" {
 		t.Errorf("Expected value alias '' but was '%s'", testTable.ValueAlias)
