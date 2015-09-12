@@ -2075,3 +2075,54 @@ func TestNegativeStream(t *testing.T) {
 		t.Fatalf("expected to get nil frame got %+v", frame)
 	}
 }
+
+func TestManualQueryPaging(t *testing.T) {
+	const rowsToInsert = 5
+
+	session := createSession(t)
+	defer session.Close()
+
+	if err := createTable(session, "CREATE TABLE testManualPaging (id int, count int, PRIMARY KEY (id))"); err != nil {
+		t.Fatal(err)
+	}
+
+	for i := 0; i < rowsToInsert; i++ {
+		err := session.Query("INSERT INTO testManualPaging(id, count) VALUES(?, ?)", i, i*i).Exec()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// disable auto paging, 1 page per iteration
+	query := session.Query("SELECT id, count FROM testManualPaging").PageState(nil).PageSize(2)
+	var id, count, fetched int
+
+	iter := query.Iter()
+	// NOTE: this isnt very indicitive of how it should be used, the idea is that
+	// the page state is returned to some client who will send it back to manually
+	// page through the results.
+	for {
+		for iter.Scan(&id, &count) {
+			if count != (id * id) {
+				t.Fatalf("got wrong value from iteration: got %d expected %d", count, id*id)
+			}
+
+			fetched++
+		}
+
+		if len(iter.PageState()) > 0 {
+			// more pages
+			iter = query.PageState(iter.PageState()).Iter()
+		} else {
+			break
+		}
+	}
+
+	if err := iter.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	if fetched != rowsToInsert {
+		t.Fatalf("expected to fetch %d rows got %d", fetched, rowsToInsert)
+	}
+}
