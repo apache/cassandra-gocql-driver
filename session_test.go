@@ -10,13 +10,13 @@ import (
 func TestSessionAPI(t *testing.T) {
 
 	cfg := &ClusterConfig{}
-	pool, err := NewSimplePool(cfg)
+	pool, err := cfg.PoolConfig.buildPool(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	s := &Session{
-		Pool: pool,
+		pool: pool,
 		cfg:  *cfg,
 		cons: Quorum,
 	}
@@ -160,13 +160,13 @@ func TestQueryShouldPrepare(t *testing.T) {
 func TestBatchBasicAPI(t *testing.T) {
 
 	cfg := &ClusterConfig{RetryPolicy: &SimpleRetryPolicy{NumRetries: 2}}
-	pool, err := NewSimplePool(cfg)
+	pool, err := cfg.PoolConfig.buildPool(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	s := &Session{
-		Pool: pool,
+		pool: pool,
 		cfg:  *cfg,
 		cons: Quorum,
 	}

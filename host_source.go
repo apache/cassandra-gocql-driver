@@ -24,14 +24,10 @@ type ringDescriber struct {
 	closeChan       chan bool
 }
 
-func (r *ringDescriber) GetHosts() (
-	hosts []HostInfo,
-	partitioner string,
-	err error,
-) {
+func (r *ringDescriber) GetHosts() (hosts []HostInfo, partitioner string, err error) {
 	// we need conn to be the same because we need to query system.peers and system.local
 	// on the same node to get the whole cluster
-	conn := r.session.Pool.Pick(nil)
+	conn := r.session.pool.Pick(nil)
 	if conn == nil {
 		return r.prevHosts, r.prevPartitioner, nil
 	}
@@ -106,12 +102,11 @@ func (h *ringDescriber) run(sleep time.Duration) {
 			hosts, partitioner, err := h.GetHosts()
 			if err != nil {
 				log.Println("RingDescriber: unable to get ring topology:", err)
-			} else {
-				h.session.Pool.SetHosts(hosts)
-				if v, ok := h.session.Pool.(SetPartitioner); ok {
-					v.SetPartitioner(partitioner)
-				}
+				continue
 			}
+
+			h.session.pool.SetHosts(hosts)
+			h.session.pool.SetPartitioner(partitioner)
 		case <-h.closeChan:
 			return
 		}

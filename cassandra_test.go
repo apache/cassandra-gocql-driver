@@ -96,7 +96,7 @@ func createKeyspace(tb testing.TB, cluster *ClusterConfig, keyspace string) {
 	}
 
 	// should reuse the same conn apparently
-	conn := session.Pool.Pick(nil)
+	conn := session.pool.Pick(nil)
 	if conn == nil {
 		tb.Fatal("no connections available in the pool")
 	}
@@ -189,7 +189,9 @@ func TestRingDiscovery(t *testing.T) {
 		time.Sleep(*flagAutoWait)
 	}
 
-	size := len(session.Pool.(*SimplePool).connPool)
+	session.pool.mu.RLock()
+	size := len(session.pool.hostConnPools)
+	session.pool.mu.RUnlock()
 
 	if *clusterSize != size {
 		t.Logf("WARN: Expected a cluster size of %d, but actual size was %d", *clusterSize, size)
@@ -1139,7 +1141,7 @@ func injectInvalidPreparedStatement(t *testing.T, session *Session, table string
 		t.Fatal("create:", err)
 	}
 	stmt := "INSERT INTO " + table + " (foo, bar) VALUES (?, 7)"
-	conn := session.Pool.Pick(nil)
+	conn := session.pool.Pick(nil)
 	flight := new(inflightPrepare)
 	stmtsLRU.Lock()
 	stmtsLRU.lru.Add(conn.addr+stmt, flight)
@@ -1165,7 +1167,7 @@ func injectInvalidPreparedStatement(t *testing.T, session *Session, table string
 
 func TestMissingSchemaPrepare(t *testing.T) {
 	s := createSession(t)
-	conn := s.Pool.Pick(nil)
+	conn := s.pool.Pick(nil)
 	defer s.Close()
 
 	insertQry := &Query{stmt: "INSERT INTO invalidschemaprep (val) VALUES (?)", values: []interface{}{5}, cons: s.cons,
@@ -1214,7 +1216,7 @@ func TestQueryInfo(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 
-	conn := session.Pool.Pick(nil)
+	conn := session.pool.Pick(nil)
 	info, err := conn.prepareStatement("SELECT release_version, host_id FROM system.local WHERE key = ?", nil)
 
 	if err != nil {
@@ -2016,7 +2018,7 @@ func TestRoutingKey(t *testing.T) {
 // Integration test of the token-aware policy-based connection pool
 func TestTokenAwareConnPool(t *testing.T) {
 	cluster := createCluster()
-	cluster.ConnPoolType = NewTokenAwareConnPool
+	cluster.PoolConfig.HostSelectionPolicy = TokenAwareHostPolicy(RoundRobinHostPolicy())
 	cluster.DiscoverHosts = true
 
 	// Drop and re-create the keyspace once. Different tests should use their own
@@ -2037,8 +2039,8 @@ func TestTokenAwareConnPool(t *testing.T) {
 		time.Sleep(*flagAutoWait)
 	}
 
-	if session.Pool.Size() != cluster.NumConns*len(cluster.Hosts) {
-		t.Errorf("Expected pool size %d but was %d", cluster.NumConns*len(cluster.Hosts), session.Pool.Size())
+	if session.pool.Size() != cluster.NumConns*len(cluster.Hosts) {
+		t.Errorf("Expected pool size %d but was %d", cluster.NumConns*len(cluster.Hosts), session.pool.Size())
 	}
 
 	if err := createTable(session, "CREATE TABLE test_token_aware (id int, data text, PRIMARY KEY (id))"); err != nil {
@@ -2077,7 +2079,7 @@ func TestStream0(t *testing.T) {
 			break
 		}
 
-		conn = session.Pool.Pick(nil)
+		conn = session.pool.Pick(nil)
 	}
 
 	if conn == nil {
@@ -2116,7 +2118,7 @@ func TestNegativeStream(t *testing.T) {
 			break
 		}
 
-		conn = session.Pool.Pick(nil)
+		conn = session.pool.Pick(nil)
 	}
 
 	if conn == nil {
@@ -2222,7 +2224,7 @@ func TestLexicalUUIDType(t *testing.T) {
 // Issue 475
 func TestSessionBindRoutingKey(t *testing.T) {
 	cluster := createCluster()
-	cluster.ConnPoolType = NewTokenAwareConnPool
+	cluster.PoolConfig.HostSelectionPolicy = TokenAwareHostPolicy(RoundRobinHostPolicy())
 
 	session := createSessionFromCluster(cluster, t)
 	defer session.Close()
