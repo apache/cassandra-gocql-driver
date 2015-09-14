@@ -462,6 +462,12 @@ func (c *Conn) exec(req frameWriter, tracer Tracer) (frame, error) {
 
 	err := req.writeFrame(framer, stream)
 	if err != nil {
+		// I think this is the correct thing to do, im not entirely sure. It is not
+		// ideal as readers might still get some data, but they probably wont.
+		// Here we need to be careful as the stream is not available and if all
+		// writes just timeout or fail then the pool might use this connection to
+		// send a frame on, with all the streams used up and not returned.
+		c.closeWithError(err)
 		return nil, err
 	}
 
