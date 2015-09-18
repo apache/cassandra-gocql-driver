@@ -2126,3 +2126,34 @@ func TestManualQueryPaging(t *testing.T) {
 		t.Fatalf("expected to fetch %d rows got %d", fetched, rowsToInsert)
 	}
 }
+
+func TestLexicalUUIDType(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+
+	if err := createTable(session, `CREATE TABLE test_lexical_uuid (
+			key     varchar,
+			column1 'org.apache.cassandra.db.marshal.LexicalUUIDType',
+			value   int,
+			PRIMARY KEY (key, column1)
+		)`); err != nil {
+		t.Fatal("create:", err)
+	}
+
+	key := TimeUUID().String()
+	column1 := TimeUUID()
+
+	err := session.Query("INSERT INTO test_lexical_uuid(key, column1, value) VALUES(?, ?, ?)", key, column1, 55).Exec()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var gotUUID UUID
+	if err := session.Query("SELECT column1 from test_lexical_uuid where key = ? AND column1 = ?", key, column1).Scan(&gotUUID); err != nil {
+		t.Fatal(err)
+	}
+
+	if gotUUID != column1 {
+		t.Errorf("got %s, expected %s", gotUUID, column1)
+	}
+}

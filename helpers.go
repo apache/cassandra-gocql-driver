@@ -83,7 +83,7 @@ func getApacheCassandraType(class string) Type {
 		return TypeInt
 	case "DateType", "TimestampType":
 		return TypeTimestamp
-	case "UUIDType":
+	case "UUIDType", "LexicalUUIDType":
 		return TypeUUID
 	case "UTF8Type":
 		return TypeVarchar
