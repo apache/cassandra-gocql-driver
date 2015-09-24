@@ -518,6 +518,7 @@ func (q *Query) GetRoutingKey() ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	if routingKeyInfo == nil {
 		return nil, nil
 	}

@@ -2157,3 +2157,35 @@ func TestLexicalUUIDType(t *testing.T) {
 		t.Errorf("got %s, expected %s", gotUUID, column1)
 	}
 }
+
+// Issue 475
+func TestSessionBindRoutingKey(t *testing.T) {
+	cluster := createCluster()
+	cluster.ConnPoolType = NewTokenAwareConnPool
+
+	session := createSessionFromCluster(cluster, t)
+	defer session.Close()
+
+	if err := createTable(session, `CREATE TABLE test_bind_routing_key (
+			key     varchar,
+			value   int,
+			PRIMARY KEY (key)
+		)`); err != nil {
+
+		t.Fatal(err)
+	}
+
+	const (
+		key   = "routing-key"
+		value = 5
+	)
+
+	fn := func(info *QueryInfo) ([]interface{}, error) {
+		return []interface{}{key, value}, nil
+	}
+
+	q := session.Bind("INSERT INTO test_bind_routing_key(key, value) VALUES(?, ?)", fn)
+	if err := q.Exec(); err != nil {
+		t.Fatal(err)
+	}
+}
