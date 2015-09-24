@@ -17,7 +17,7 @@ Supported Versions
 
 The following matrix shows the versions of Go and Cassandra that are tested with the integration test suite as part of the CI build:
 
-Go/Cassandra | | 2.0.x | 2.1.x | 2.2.x
+Go/Cassandra | 2.0.x | 2.1.x | 2.2.x
 -------------| -------| ------| ---------
 1.4  | yes | yes | yes
 1.5  | yes | yes | yes
