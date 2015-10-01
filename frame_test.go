@@ -73,7 +73,7 @@ func TestFrameReadTooLong(t *testing.T) {
 	r := &bytes.Buffer{}
 	r.Write(make([]byte, maxFrameSize+1))
 	// write a new header right after this frame to verify that we can read it
-	r.Write([]byte{0x02, 0x00, 0x00, opReady, 0x00, 0x00, 0x00, 0x00})
+	r.Write([]byte{0x02, 0x00, 0x00, byte(opReady), 0x00, 0x00, 0x00, 0x00})
 
 	framer := newFramer(r, nil, nil, 2)
 

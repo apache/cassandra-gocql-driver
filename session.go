@@ -917,8 +917,8 @@ type BatchType byte
 
 const (
 	LoggedBatch   BatchType = 0
-	UnloggedBatch           = 1
-	CounterBatch            = 2
+	UnloggedBatch BatchType = 1
+	CounterBatch  BatchType = 2
 )
 
 type BatchEntry struct {
