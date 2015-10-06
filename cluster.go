@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/gocql/gocql/lru"
+	"strings"
 )
 
 const defaultMaxPreparedStmts = 1000
@@ -81,6 +82,9 @@ type ClusterConfig struct {
 
 // NewCluster generates a new config for the default cluster implementation.
 func NewCluster(hosts ...string) *ClusterConfig {
+	if len(hosts) == 1 && strings.Index(hosts[0], ",") != -1 {
+		hosts = strings.Split(strings.Replace(hosts[0], " ", "", -1), ",")
+	}
 	cfg := &ClusterConfig{
 		Hosts:             hosts,
 		CQLVersion:        "3.0.0",
