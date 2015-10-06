@@ -80,7 +80,7 @@ type ClusterConfig struct {
 }
 
 // NewCluster generates a new config for the default cluster implementation.
-func NewCluster(hosts ...string) *ClusterConfig {
+func NewCluster(hosts []string) *ClusterConfig {
 	cfg := &ClusterConfig{
 		Hosts:             hosts,
 		CQLVersion:        "3.0.0",
