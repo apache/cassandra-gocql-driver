@@ -2189,3 +2189,47 @@ func TestSessionBindRoutingKey(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestJSONSupport(t *testing.T) {
+	if *flagProto < 4 {
+		t.Skip("skipping JSON support on proto < 4")
+	}
+
+	session := createSession(t)
+	defer session.Close()
+
+	if err := createTable(session, `CREATE TABLE test_json (
+		    id text PRIMARY KEY,
+		    age int,
+		    state text
+		)`); err != nil {
+
+		t.Fatal(err)
+	}
+
+	err := session.Query("INSERT INTO test_json JSON ?", `{"id": "user123", "age": 42, "state": "TX"}`).Exec()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var (
+		id    string
+		age   int
+		state string
+	)
+
+	err = session.Query("SELECT id, age, state FROM test_json WHERE id = ?", "user123").Scan(&id, &age, &state)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if id != "user123" {
+		t.Errorf("got id %q expected %q", id, "user123")
+	}
+	if age != 42 {
+		t.Errorf("got age %d expected %d", age, 42)
+	}
+	if state != "TX" {
+		t.Errorf("got state %q expected %q", state, "TX")
+	}
+}
