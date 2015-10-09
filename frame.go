@@ -12,6 +12,7 @@ import (
 	"log"
 	"net"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 )
@@ -176,6 +177,29 @@ func (c Consistency) String() string {
 		return "LOCAL_ONE"
 	default:
 		return fmt.Sprintf("UNKNOWN_CONS_0x%x", uint16(c))
+	}
+}
+
+func ParseConsistency(s string) Consistency {
+	switch strings.ToUpper(s) {
+	case "ANY":
+		return Any
+	case "ONE":
+		return One
+	case "TWO":
+		return Two
+	case "THREE":
+		return Three
+	case "QUORUM":
+		return Quorum
+	case "LOCAL_QUORUM":
+		return LocalQuorum
+	case "EACH_QUORUM":
+		return EachQuorum
+	case "LOCAL_ONE":
+		return LocalOne
+	default: // "ALL"
+		return All
 	}
 }
 
