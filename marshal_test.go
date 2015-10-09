@@ -860,3 +860,40 @@ func TestMarshalTimestamp(t *testing.T) {
 		}
 	}
 }
+
+func TestMarshalTuple(t *testing.T) {
+	info := TupleTypeInfo{
+		NativeType: NativeType{proto: 3, typ: TypeTuple},
+		Elems: []TypeInfo{
+			NativeType{proto: 3, typ: TypeVarchar},
+			NativeType{proto: 3, typ: TypeVarchar},
+		},
+	}
+
+	expectedData := []byte("\x00\x00\x00\x03foo\x00\x00\x00\x03bar")
+	value := []interface{}{"foo", "bar"}
+
+	data, err := Marshal(info, value)
+	if err != nil {
+		t.Errorf("marshalTest: %v", err)
+		return
+	}
+
+	if !bytes.Equal(data, expectedData) {
+		t.Errorf("marshalTest: expected %x (%v), got %x (%v)",
+			expectedData, decBigInt(expectedData), data, decBigInt(data))
+		return
+	}
+
+	var s1, s2 string
+	val := []interface{}{&s1, &s2}
+	err = Unmarshal(info, expectedData, val)
+	if err != nil {
+		t.Errorf("unmarshalTest: %v", err)
+		return
+	}
+
+	if s1 != "foo" || s2 != "bar" {
+		t.Errorf("unmarshalTest: expected [foo, bar], got [%s, %s]", s1, s2)
+	}
+}
