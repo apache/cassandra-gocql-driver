@@ -193,7 +193,7 @@ func ParseConsistency(s string) Consistency {
 	case "QUORUM":
 		return Quorum
 	case "ALL":
-		return All;
+		return All
 	case "LOCAL_QUORUM":
 		return LocalQuorum
 	case "EACH_QUORUM":
