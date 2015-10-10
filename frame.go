@@ -192,14 +192,16 @@ func ParseConsistency(s string) Consistency {
 		return Three
 	case "QUORUM":
 		return Quorum
+	case "ALL":
+		return All;
 	case "LOCAL_QUORUM":
 		return LocalQuorum
 	case "EACH_QUORUM":
 		return EachQuorum
 	case "LOCAL_ONE":
 		return LocalOne
-	default: // "ALL"
-		return All
+	default:
+		panic("invalid consistency: " + s)
 	}
 }
 
