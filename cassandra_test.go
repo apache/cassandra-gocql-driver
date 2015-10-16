@@ -340,6 +340,60 @@ func TestCAS(t *testing.T) {
 	} else if !applied {
 		t.Fatal("delete should have been applied")
 	}
+
+	if err := session.Query(`TRUNCATE cas_table`).Exec(); err != nil {
+		t.Fatal("truncate:", err)
+	}
+
+	successBatch := session.NewBatch(LoggedBatch)
+	successBatch.Query("INSERT INTO cas_table (title, revid, last_modified) VALUES (?, ?, ?) IF NOT EXISTS", title, revid, modified)
+	if applied, _, err := session.ExecuteBatchCAS(successBatch, &titleCAS, &revidCAS, &modifiedCAS); err != nil {
+		t.Fatal("insert:", err)
+	} else if !applied {
+		t.Fatal("insert should have been applied")
+	}
+
+	successBatch = session.NewBatch(LoggedBatch)
+	successBatch.Query("INSERT INTO cas_table (title, revid, last_modified) VALUES (?, ?, ?) IF NOT EXISTS", title+"_foo", revid, modified)
+	casMap := make(map[string]interface{})
+	if applied, _, err := session.MapExecuteBatchCAS(successBatch, casMap); err != nil {
+		t.Fatal("insert:", err)
+	} else if !applied {
+		t.Fatal("insert should have been applied")
+	}
+
+	failBatch := session.NewBatch(LoggedBatch)
+	failBatch.Query("INSERT INTO cas_table (title, revid, last_modified) VALUES (?, ?, ?) IF NOT EXISTS", title, revid, modified)
+	if applied, _, err := session.ExecuteBatchCAS(successBatch, &titleCAS, &revidCAS, &modifiedCAS); err != nil {
+		t.Fatal("insert:", err)
+	} else if applied {
+		t.Fatal("insert shouldn't have been applied")
+	}
+
+	insertBatch := session.NewBatch(LoggedBatch)
+	insertBatch.Query("INSERT INTO cas_table (title, revid, last_modified) VALUES ('_foo', 2c3af400-73a4-11e5-9381-29463d90c3f0, DATEOF(NOW()))")
+	insertBatch.Query("INSERT INTO cas_table (title, revid, last_modified) VALUES ('_foo', 3e4ad2f1-73a4-11e5-9381-29463d90c3f0, DATEOF(NOW()))")
+	if err := session.ExecuteBatch(insertBatch); err != nil {
+		t.Fatal("insert:", err)
+	}
+
+	failBatch = session.NewBatch(LoggedBatch)
+	failBatch.Query("UPDATE cas_table SET last_modified = DATEOF(NOW()) WHERE title='_foo' AND revid=2c3af400-73a4-11e5-9381-29463d90c3f0 IF last_modified=DATEOF(NOW());")
+	failBatch.Query("UPDATE cas_table SET last_modified = DATEOF(NOW()) WHERE title='_foo' AND revid=3e4ad2f1-73a4-11e5-9381-29463d90c3f0 IF last_modified=DATEOF(NOW());")
+	if applied, iter, err := session.ExecuteBatchCAS(failBatch, &titleCAS, &revidCAS, &modifiedCAS); err != nil {
+		t.Fatal("insert:", err)
+	} else if applied {
+		t.Fatal("insert shouldn't have been applied")
+	} else {
+		if scan := iter.Scan(&applied, &titleCAS, &revidCAS, &modifiedCAS); scan && applied {
+			t.Fatal("insert shouldn't have been applied")
+		} else if !scan {
+			t.Fatal("should have scanned another row")
+		}
+		if err := iter.Close(); err != nil {
+			t.Fatal("scan:", err)
+		}
+	}
 }
 
 func TestMapScanCAS(t *testing.T) {
@@ -1128,7 +1182,7 @@ func TestReprepareBatch(t *testing.T) {
 	stmt, conn := injectInvalidPreparedStatement(t, session, "test_reprepare_statement_batch")
 	batch := session.NewBatch(UnloggedBatch)
 	batch.Query(stmt, "bar")
-	if err := conn.executeBatch(batch); err != nil {
+	if _, err := conn.executeBatch(batch); err != nil {
 		t.Fatalf("Failed to execute query for reprepare statement: %v", err)
 	}
 

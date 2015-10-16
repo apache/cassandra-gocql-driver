@@ -706,9 +706,9 @@ func (c *Conn) UseKeyspace(keyspace string) error {
 	return nil
 }
 
-func (c *Conn) executeBatch(batch *Batch) error {
+func (c *Conn) executeBatch(batch *Batch) (*Iter, error) {
 	if c.version == protoVersion1 {
-		return ErrUnsupported
+		return nil, ErrUnsupported
 	}
 
 	n := len(batch.Entries)
@@ -728,7 +728,7 @@ func (c *Conn) executeBatch(batch *Batch) error {
 		if len(entry.Args) > 0 || entry.binding != nil {
 			info, err := c.prepareStatement(entry.Stmt, nil)
 			if err != nil {
-				return err
+				return nil, err
 			}
 
 			var args []interface{}
@@ -742,12 +742,12 @@ func (c *Conn) executeBatch(batch *Batch) error {
 				}
 				args, err = entry.binding(binding)
 				if err != nil {
-					return err
+					return nil, err
 				}
 			}
 
 			if len(args) != len(info.reqMeta.columns) {
-				return ErrQueryArgLength
+				return nil, ErrQueryArgLength
 			}
 
 			b.preparedID = info.preparedID
@@ -758,7 +758,7 @@ func (c *Conn) executeBatch(batch *Batch) error {
 			for j := 0; j < len(info.reqMeta.columns); j++ {
 				val, err := Marshal(info.reqMeta.columns[j].TypeInfo, args[j])
 				if err != nil {
-					return err
+					return nil, err
 				}
 
 				b.values[j].value = val
@@ -772,12 +772,12 @@ func (c *Conn) executeBatch(batch *Batch) error {
 	// TODO: should batch support tracing?
 	resp, err := c.exec(req, nil)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	switch x := resp.(type) {
 	case *resultVoidFrame:
-		return nil
+		return nil, nil
 	case *RequestErrUnprepared:
 		stmt, found := stmts[string(x.StatementId)]
 		if found {
@@ -788,12 +788,19 @@ func (c *Conn) executeBatch(batch *Batch) error {
 		if found {
 			return c.executeBatch(batch)
 		} else {
-			return x
+			return nil, x
 		}
+	case *resultRowsFrame:
+		iter := &Iter{
+			meta: x.meta,
+			rows: x.rows,
+		}
+
+		return iter, nil
 	case error:
-		return x
+		return nil, x
 	default:
-		return NewErrProtocol("Unknown type in response to batch statement: %s", x)
+		return nil, NewErrProtocol("Unknown type in response to batch statement: %s", x)
 	}
 }
 
