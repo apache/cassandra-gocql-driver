@@ -843,7 +843,7 @@ func (c *Conn) awaitSchemaAgreement() error {
 
 	const (
 		// TODO(zariel): if we export this make this configurable
-		maxWaitTime = 30 * time.Second
+		maxWaitTime = 60 * time.Second
 
 		peerSchemas  = "SELECT schema_version FROM system.peers"
 		localSchemas = "SELECT schema_version FROM system.local WHERE key='local'"
