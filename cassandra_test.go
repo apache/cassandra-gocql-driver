@@ -111,6 +111,8 @@ func createKeyspace(tb testing.TB, cluster *ClusterConfig, keyspace string) {
 		tb.Fatal(err)
 	}
 
+	time.Sleep(1 * time.Second)
+
 	query := session.Query(fmt.Sprintf(`CREATE KEYSPACE %s
 	WITH replication = {
 		'class' : 'SimpleStrategy',
@@ -125,9 +127,8 @@ func createKeyspace(tb testing.TB, cluster *ClusterConfig, keyspace string) {
 	// cluster to settle.
 	// TODO(zariel): use events here to know when the cluster has resolved to the
 	// new schema version
-	if err := conn.awaitSchemaAgreement(); err != nil {
-		tb.Fatal(err)
-	}
+	time.Sleep(5 * time.Second)
+	return nil
 }
 
 func createSessionFromCluster(cluster *ClusterConfig, tb testing.TB) *Session {
