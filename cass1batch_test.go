@@ -9,7 +9,7 @@ import (
 
 func TestProto1BatchInsert(t *testing.T) {
 	session := createSession(t)
-	if err := session.Query("CREATE TABLE large (id int primary key)").Exec(); err != nil {
+	if err := createTable(session, "CREATE TABLE large (id int primary key)"); err != nil {
 		t.Fatal("create table:", err)
 	}
 	defer session.Close()
