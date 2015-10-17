@@ -524,7 +524,7 @@ func (c *Conn) exec(req frameWriter, tracer Tracer) (frame, error) {
 	return frame, nil
 }
 
-func (c *Conn) prepareStatement(stmt string, trace Tracer) (*resultPreparedFrame, error) {
+func (c *Conn) prepareStatement(stmt string, trace Tracer) (*QueryInfo, error) {
 	stmtsLRU.Lock()
 	if stmtsLRU.lru == nil {
 		initStmtsLRU(defaultMaxPreparedStmts)
@@ -536,7 +536,7 @@ func (c *Conn) prepareStatement(stmt string, trace Tracer) (*resultPreparedFrame
 		stmtsLRU.Unlock()
 		flight := val.(*inflightPrepare)
 		flight.wg.Wait()
-		return flight.info, flight.err
+		return &flight.info, flight.err
 	}
 
 	flight := new(inflightPrepare)
@@ -557,7 +557,13 @@ func (c *Conn) prepareStatement(stmt string, trace Tracer) (*resultPreparedFrame
 
 	switch x := resp.(type) {
 	case *resultPreparedFrame:
-		flight.info = x
+		flight.info.Id = make([]byte, len(x.preparedID))
+		copy(flight.info.Id, x.preparedID)
+		// the type info's should _not_ have a reference to the framers read buffer,
+		// therefore we can just copy them directly.
+		flight.info.Args = x.reqMeta.columns
+		flight.info.PKeyColumns = x.reqMeta.pkeyColumns
+		flight.info.Rval = x.respMeta.columns
 	case error:
 		flight.err = x
 	default:
@@ -571,7 +577,7 @@ func (c *Conn) prepareStatement(stmt string, trace Tracer) (*resultPreparedFrame
 		stmtsLRU.Unlock()
 	}
 
-	return flight.info, flight.err
+	return &flight.info, flight.err
 }
 
 func (c *Conn) executeQuery(qry *Query) *Iter {
@@ -603,24 +609,19 @@ func (c *Conn) executeQuery(qry *Query) *Iter {
 		if qry.binding == nil {
 			values = qry.values
 		} else {
-			binding := &QueryInfo{
-				Id:   info.preparedID,
-				Args: info.reqMeta.columns,
-				Rval: info.respMeta.columns,
-			}
-
-			values, err = qry.binding(binding)
+			values, err = qry.binding(info)
 			if err != nil {
 				return &Iter{err: err}
 			}
 		}
 
-		if len(values) != len(info.reqMeta.columns) {
+		if len(values) != len(info.Args) {
 			return &Iter{err: ErrQueryArgLength}
 		}
+
 		params.values = make([]queryValues, len(values))
 		for i := 0; i < len(values); i++ {
-			val, err := Marshal(info.reqMeta.columns[i].TypeInfo, values[i])
+			val, err := Marshal(info.Args[i].TypeInfo, values[i])
 			if err != nil {
 				return &Iter{err: err}
 			}
@@ -631,7 +632,7 @@ func (c *Conn) executeQuery(qry *Query) *Iter {
 		}
 
 		frame = &writeExecuteFrame{
-			preparedID: info.preparedID,
+			preparedID: info.Id,
 			params:     params,
 		}
 	} else {
@@ -757,28 +758,23 @@ func (c *Conn) executeBatch(batch *Batch) (*Iter, error) {
 			if entry.binding == nil {
 				args = entry.Args
 			} else {
-				binding := &QueryInfo{
-					Id:   info.preparedID,
-					Args: info.reqMeta.columns,
-					Rval: info.respMeta.columns,
-				}
-				args, err = entry.binding(binding)
+				args, err = entry.binding(info)
 				if err != nil {
 					return nil, err
 				}
 			}
 
-			if len(args) != len(info.reqMeta.columns) {
+			if len(args) != len(info.Args) {
 				return nil, ErrQueryArgLength
 			}
 
-			b.preparedID = info.preparedID
-			stmts[string(info.preparedID)] = entry.Stmt
+			b.preparedID = info.Id
+			stmts[string(info.Id)] = entry.Stmt
 
-			b.values = make([]queryValues, len(info.reqMeta.columns))
+			b.values = make([]queryValues, len(info.Args))
 
-			for j := 0; j < len(info.reqMeta.columns); j++ {
-				val, err := Marshal(info.reqMeta.columns[j].TypeInfo, args[j])
+			for j := 0; j < len(info.Args); j++ {
+				val, err := Marshal(info.Args[j].TypeInfo, args[j])
 				if err != nil {
 					return nil, err
 				}
@@ -900,7 +896,7 @@ func (c *Conn) awaitSchemaAgreement() (err error) {
 }
 
 type inflightPrepare struct {
-	info *resultPreparedFrame
+	info QueryInfo
 	err  error
 	wg   sync.WaitGroup
 }

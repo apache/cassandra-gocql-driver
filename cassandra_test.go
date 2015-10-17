@@ -1156,21 +1156,18 @@ func injectInvalidPreparedStatement(t *testing.T, session *Session, table string
 	stmtsLRU.Lock()
 	stmtsLRU.lru.Add(conn.addr+stmt, flight)
 	stmtsLRU.Unlock()
-	flight.info = &resultPreparedFrame{
-		preparedID: []byte{'f', 'o', 'o', 'b', 'a', 'r'},
-		reqMeta: preparedMetadata{
-			resultMetadata: resultMetadata{
-				columns: []ColumnInfo{
-					{
-						Keyspace: "gocql_test",
-						Table:    table,
-						Name:     "foo",
-						TypeInfo: NativeType{
-							typ: TypeVarchar,
-						},
-					},
+	flight.info = QueryInfo{
+		Id: []byte{'f', 'o', 'o', 'b', 'a', 'r'},
+		Args: []ColumnInfo{
+			{
+				Keyspace: "gocql_test",
+				Table:    table,
+				Name:     "foo",
+				TypeInfo: NativeType{
+					typ: TypeVarchar,
 				},
-			}},
+			},
+		},
 	}
 	return stmt, conn
 }
@@ -1233,13 +1230,13 @@ func TestQueryInfo(t *testing.T) {
 		t.Fatalf("Failed to execute query for preparing statement: %v", err)
 	}
 
-	if len(info.reqMeta.columns) != 1 {
-		t.Fatalf("Was not expecting meta data for %d query arguments, but got %d\n", 1, len(info.reqMeta.columns))
+	if x := len(info.Args); x != 1 {
+		t.Fatalf("Was not expecting meta data for %d query arguments, but got %d\n", 1, x)
 	}
 
 	if *flagProto > 1 {
-		if len(info.respMeta.columns) != 2 {
-			t.Fatalf("Was not expecting meta data for %d result columns, but got %d\n", 2, len(info.respMeta.columns))
+		if x := len(info.Rval); x != 2 {
+			t.Fatalf("Was not expecting meta data for %d result columns, but got %d\n", 2, x)
 		}
 	}
 }
