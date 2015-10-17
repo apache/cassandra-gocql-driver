@@ -89,6 +89,7 @@ func createCluster() *ClusterConfig {
 func createKeyspace(tb testing.TB, cluster *ClusterConfig, keyspace string) {
 	c := *cluster
 	c.Keyspace = "system"
+	c.Timeout = 20 * time.Second
 	session, err := c.CreateSession()
 	if err != nil {
 		tb.Fatal("createSession:", err)
@@ -114,6 +115,12 @@ func createKeyspace(tb testing.TB, cluster *ClusterConfig, keyspace string) {
 	if err = conn.executeQuery(query).Close(); err != nil {
 		tb.Fatal(err)
 	}
+
+	// the schema version might be out of data between 2 nodes, so wait for the
+	// cluster to settle.
+	// TODO(zariel): use events here to know when the cluster has resolved to the
+	// new schema version
+	time.Sleep(5 * time.Millisecond)
 
 	tb.Logf("Created keyspace %s", keyspace)
 }
