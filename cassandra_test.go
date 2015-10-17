@@ -57,11 +57,16 @@ var initOnce sync.Once
 
 func createTable(s *Session, table string) error {
 	err := s.Query(table).Consistency(All).Exec()
-	if *clusterSize > 1 {
-		// wait for table definition to propogate
-		time.Sleep(1 * time.Second)
+	if err != nil {
+		return err
 	}
-	return err
+
+	c := s.pool.Pick(nil)
+	if c == nil {
+		return ErrNoConnections
+	}
+
+	return c.awaitSchemaAgreement()
 }
 
 func createCluster() *ClusterConfig {
@@ -120,9 +125,9 @@ func createKeyspace(tb testing.TB, cluster *ClusterConfig, keyspace string) {
 	// cluster to settle.
 	// TODO(zariel): use events here to know when the cluster has resolved to the
 	// new schema version
-	time.Sleep(5 * time.Millisecond)
-
-	tb.Logf("Created keyspace %s", keyspace)
+	if err := conn.awaitSchemaAgreement(); err != nil {
+		tb.Fatal(err)
+	}
 }
 
 func createSessionFromCluster(cluster *ClusterConfig, tb testing.TB) *Session {
@@ -2021,23 +2026,8 @@ func TestTokenAwareConnPool(t *testing.T) {
 	cluster.PoolConfig.HostSelectionPolicy = TokenAwareHostPolicy(RoundRobinHostPolicy())
 	cluster.DiscoverHosts = true
 
-	// Drop and re-create the keyspace once. Different tests should use their own
-	// individual tables, but can assume that the table does not exist before.
-	initOnce.Do(func() {
-		createKeyspace(t, cluster, "gocql_test")
-	})
-
-	cluster.Keyspace = "gocql_test"
-	session, err := cluster.CreateSession()
-	if err != nil {
-		t.Fatal("createSession:", err)
-	}
+	session := createSessionFromCluster(cluster, t)
 	defer session.Close()
-
-	if *clusterSize > 1 {
-		// wait for autodiscovery to update the pool with the list of known hosts
-		time.Sleep(*flagAutoWait)
-	}
 
 	if session.pool.Size() != cluster.NumConns*len(cluster.Hosts) {
 		t.Errorf("Expected pool size %d but was %d", cluster.NumConns*len(cluster.Hosts), session.pool.Size())
@@ -2050,14 +2040,11 @@ func TestTokenAwareConnPool(t *testing.T) {
 	if err := query.Exec(); err != nil {
 		t.Fatalf("failed to insert with err: %v", err)
 	}
+
 	query = session.Query("SELECT data FROM test_token_aware where id = ?", 42).Consistency(One)
-	iter := query.Iter()
 	var data string
-	if !iter.Scan(&data) {
-		t.Error("failed to scan data")
-	}
-	if err := iter.Close(); err != nil {
-		t.Errorf("iter failed with err: %v", err)
+	if err := query.Scan(&data); err != nil {
+		t.Error(err)
 	}
 
 	// TODO add verification that the query went to the correct host
