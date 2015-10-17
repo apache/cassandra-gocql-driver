@@ -151,9 +151,9 @@ func (s *Session) Query(stmt string, values ...interface{}) *Query {
 }
 
 type QueryInfo struct {
-	Id   []byte
-	Args []ColumnInfo
-	Rval []ColumnInfo
+	Id          []byte
+	Args        []ColumnInfo
+	Rval        []ColumnInfo
 	PKeyColumns []int
 }
 
@@ -287,7 +287,7 @@ func (s *Session) routingKeyInfo(stmt string) (*routingKeyInfo, error) {
 	s.routingKeyInfoCache.mu.Unlock()
 
 	var (
-		info     *QueryInfo
+		info         *QueryInfo
 		partitionKey []*ColumnMetadata
 	)
 
@@ -764,6 +764,9 @@ type Iter struct {
 	rows [][][]byte
 	meta resultMetadata
 	next *nextIter
+
+	framer *framer
+	once   sync.Once
 }
 
 // Columns returns the name and type of the selected columns.
@@ -837,6 +840,13 @@ func (iter *Iter) Scan(dest ...interface{}) bool {
 // Close closes the iterator and returns any errors that happened during
 // the query or the iteration.
 func (iter *Iter) Close() error {
+	iter.once.Do(func() {
+		if iter.framer != nil {
+			framerPool.Put(iter.framer)
+			iter.framer = nil
+		}
+	})
+
 	return iter.err
 }
 
