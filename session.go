@@ -28,7 +28,7 @@ import (
 // and automatically sets a default consinstency level on all operations
 // that do not have a consistency level set.
 type Session struct {
-	Pool                ConnectionPool
+	pool                *policyConnPool
 	cons                Consistency
 	pageSize            int
 	prefetch            float64
@@ -60,47 +60,44 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 		cfg.NumStreams = maxStreams
 	}
 
-	pool, err := cfg.ConnPoolType(&cfg)
-	if err != nil {
-		return nil, err
-	}
-
 	//Adjust the size of the prepared statements cache to match the latest configuration
 	stmtsLRU.Lock()
 	initStmtsLRU(cfg.MaxPreparedStmts)
 	stmtsLRU.Unlock()
 
 	s := &Session{
-		Pool:     pool,
 		cons:     cfg.Consistency,
 		prefetch: 0.25,
 		cfg:      cfg,
+		pageSize: cfg.PageSize,
 	}
+
+	pool, err := cfg.PoolConfig.buildPool(&s.cfg)
+	if err != nil {
+		return nil, err
+	}
+	s.pool = pool
 
 	//See if there are any connections in the pool
-	if pool.Size() > 0 {
-		s.routingKeyInfoCache.lru = lru.New(cfg.MaxRoutingKeyInfo)
-
-		s.SetConsistency(cfg.Consistency)
-		s.SetPageSize(cfg.PageSize)
-
-		if cfg.DiscoverHosts {
-			s.hostSource = &ringDescriber{
-				session:    s,
-				dcFilter:   cfg.Discovery.DcFilter,
-				rackFilter: cfg.Discovery.RackFilter,
-				closeChan:  make(chan bool),
-			}
-
-			go s.hostSource.run(cfg.Discovery.Sleep)
-		}
-
-		return s, nil
+	if pool.Size() == 0 {
+		s.Close()
+		return nil, ErrNoConnectionsStarted
 	}
 
-	s.Close()
+	s.routingKeyInfoCache.lru = lru.New(cfg.MaxRoutingKeyInfo)
 
-	return nil, ErrNoConnectionsStarted
+	if cfg.DiscoverHosts {
+		s.hostSource = &ringDescriber{
+			session:    s,
+			dcFilter:   cfg.Discovery.DcFilter,
+			rackFilter: cfg.Discovery.RackFilter,
+			closeChan:  make(chan bool),
+		}
+
+		go s.hostSource.run(cfg.Discovery.Sleep)
+	}
+
+	return s, nil
 }
 
 // SetConsistency sets the default consistency level for this session. This
@@ -185,7 +182,7 @@ func (s *Session) Close() {
 	}
 	s.isClosed = true
 
-	s.Pool.Close()
+	s.pool.Close()
 
 	if s.hostSource != nil {
 		close(s.hostSource.closeChan)
@@ -210,7 +207,7 @@ func (s *Session) executeQuery(qry *Query) *Iter {
 	qry.attempts = 0
 	qry.totalLatency = 0
 	for {
-		conn := s.Pool.Pick(qry)
+		conn := s.pool.Pick(qry)
 
 		//Assign the error unavailable to the iterator
 		if conn == nil {
@@ -294,7 +291,7 @@ func (s *Session) routingKeyInfo(stmt string) (*routingKeyInfo, error) {
 	)
 
 	// get the query info for the statement
-	conn := s.Pool.Pick(nil)
+	conn := s.pool.Pick(nil)
 	if conn == nil {
 		// no connections
 		inflight.err = ErrNoConnections
@@ -389,7 +386,7 @@ func (s *Session) executeBatch(batch *Batch) (*Iter, error) {
 	batch.attempts = 0
 	batch.totalLatency = 0
 	for {
-		conn := s.Pool.Pick(nil)
+		conn := s.pool.Pick(nil)
 
 		//Assign the error unavailable and break loop
 		if conn == nil {

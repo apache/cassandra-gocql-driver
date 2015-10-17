@@ -36,7 +36,6 @@ func BenchmarkConnStress(b *testing.B) {
 
 	b.SetParallelism(workers)
 	b.RunParallel(writer)
-
 }
 
 func BenchmarkConnRoutingKey(b *testing.B) {
@@ -45,7 +44,7 @@ func BenchmarkConnRoutingKey(b *testing.B) {
 	cluster := createCluster()
 	cluster.NumConns = 1
 	cluster.NumStreams = workers
-	cluster.ConnPoolType = NewTokenAwareConnPool
+	cluster.PoolConfig.HostSelectionPolicy = TokenAwareHostPolicy(RoundRobinHostPolicy())
 	session := createSessionFromCluster(cluster, b)
 	defer session.Close()
 

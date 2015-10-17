@@ -8,7 +8,7 @@ import "testing"
 
 // Tests of the round-robin host selection policy implementation
 func TestRoundRobinHostPolicy(t *testing.T) {
-	policy := NewRoundRobinHostPolicy()
+	policy := RoundRobinHostPolicy()
 
 	hosts := []HostInfo{
 		HostInfo{HostId: "0"},
@@ -46,7 +46,7 @@ func TestRoundRobinHostPolicy(t *testing.T) {
 // Tests of the token-aware host selection policy implementation with a
 // round-robin host selection policy fallback.
 func TestTokenAwareHostPolicy(t *testing.T) {
-	policy := NewTokenAwareHostPolicy(NewRoundRobinHostPolicy())
+	policy := TokenAwareHostPolicy(RoundRobinHostPolicy())
 
 	query := &Query{}
 
@@ -101,7 +101,7 @@ func TestTokenAwareHostPolicy(t *testing.T) {
 
 // Tests of the round-robin connection selection policy implementation
 func TestRoundRobinConnPolicy(t *testing.T) {
-	policy := NewRoundRobinConnPolicy()
+	policy := RoundRobinConnPolicy()()
 
 	conn0 := &Conn{}
 	conn1 := &Conn{}
