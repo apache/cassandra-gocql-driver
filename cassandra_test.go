@@ -89,6 +89,7 @@ func createCluster() *ClusterConfig {
 func createKeyspace(tb testing.TB, cluster *ClusterConfig, keyspace string) {
 	c := *cluster
 	c.Keyspace = "system"
+	c.Timeout = 20 * time.Second
 	session, err := c.CreateSession()
 	if err != nil {
 		tb.Fatal("createSession:", err)
