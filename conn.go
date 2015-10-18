@@ -839,6 +839,66 @@ func (c *Conn) setKeepalive(d time.Duration) error {
 	return nil
 }
 
+func (c *Conn) awaitSchemaAgreement() (err error) {
+
+	const (
+		// TODO(zariel): if we export this make this configurable
+		maxWaitTime = 60 * time.Second
+
+		peerSchemas  = "SELECT schema_version FROM system.peers"
+		localSchemas = "SELECT schema_version FROM system.local WHERE key='local'"
+	)
+
+	endDeadline := time.Now().Add(maxWaitTime)
+
+	for time.Now().Before(endDeadline) {
+		iter := c.executeQuery(&Query{
+			stmt: peerSchemas,
+			cons: One,
+		})
+
+		versions := make(map[string]struct{})
+
+		var schemaVersion string
+		for iter.Scan(&schemaVersion) {
+			versions[schemaVersion] = struct{}{}
+			schemaVersion = ""
+		}
+
+		if err = iter.Close(); err != nil {
+			goto cont
+		}
+
+		iter = c.executeQuery(&Query{
+			stmt: localSchemas,
+			cons: One,
+		})
+
+		for iter.Scan(&schemaVersion) {
+			versions[schemaVersion] = struct{}{}
+			schemaVersion = ""
+		}
+
+		if err = iter.Close(); err != nil {
+			goto cont
+		}
+
+		if len(versions) <= 1 {
+			return nil
+		}
+
+	cont:
+		time.Sleep(200 * time.Millisecond)
+	}
+
+	if err != nil {
+		return
+	}
+
+	// not exported
+	return errors.New("gocql: cluster schema versions not consistent")
+}
+
 type inflightPrepare struct {
 	info *resultPreparedFrame
 	err  error
