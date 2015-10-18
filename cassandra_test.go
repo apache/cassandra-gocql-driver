@@ -67,7 +67,7 @@ func createTable(s *Session, table string) error {
 		return err
 	}
 
-	return c.awaitSchemaAgreement()
+	return s.control.awaitSchemaAgreement()
 }
 
 func createCluster() *ClusterConfig {
@@ -101,28 +101,22 @@ func createKeyspace(tb testing.TB, cluster *ClusterConfig, keyspace string) {
 		tb.Fatal("createSession:", err)
 	}
 
-	// should reuse the same conn apparently
-	conn := session.pool.Pick(nil)
-	if conn == nil {
-		tb.Fatal("no connections available in the pool")
-	}
-
-	err = conn.executeQuery(session.Query(`DROP KEYSPACE IF EXISTS ` + keyspace).Consistency(All)).Close()
+	err = session.Query(`DROP KEYSPACE IF EXISTS ` + keyspace).Exec()
 	if err != nil {
 		tb.Fatal(err)
 	}
 
-	if err = conn.awaitSchemaAgreement(); err != nil {
+	if err = session.control.awaitSchemaAgreement(); err != nil {
 		tb.Fatal(err)
 	}
 
-	query := session.Query(fmt.Sprintf(`CREATE KEYSPACE %s
+	err = session.Query(fmt.Sprintf(`CREATE KEYSPACE %s
 	WITH replication = {
 		'class' : 'SimpleStrategy',
 		'replication_factor' : %d
-	}`, keyspace, *flagRF)).Consistency(All)
+	}`, keyspace, *flagRF)).Exec()
 
-	if err = conn.executeQuery(query).Close(); err != nil {
+	if err != nil {
 		tb.Fatal(err)
 	}
 
@@ -130,7 +124,7 @@ func createKeyspace(tb testing.TB, cluster *ClusterConfig, keyspace string) {
 	// cluster to settle.
 	// TODO(zariel): use events here to know when the cluster has resolved to the
 	// new schema version
-	if err = conn.awaitSchemaAgreement(); err != nil {
+	if err = session.control.awaitSchemaAgreement(); err != nil {
 		tb.Fatal(err)
 	}
 }
