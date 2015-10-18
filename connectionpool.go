@@ -60,7 +60,7 @@ func setupTLSConfig(sslOpts *SslOptions) (*tls.Config, error) {
 type policyConnPool struct {
 	port     int
 	numConns int
-	connCfg  ConnConfig
+	connCfg  *ConnConfig
 	keyspace string
 
 	mu            sync.RWMutex
@@ -88,7 +88,7 @@ func newPolicyConnPool(cfg *ClusterConfig, hostPolicy HostSelectionPolicy,
 	pool := &policyConnPool{
 		port:     cfg.Port,
 		numConns: cfg.NumConns,
-		connCfg: ConnConfig{
+		connCfg: &ConnConfig{
 			ProtoVersion:  cfg.ProtoVersion,
 			CQLVersion:    cfg.CQLVersion,
 			Timeout:       cfg.Timeout,
@@ -212,7 +212,7 @@ type hostConnPool struct {
 	port     int
 	addr     string
 	size     int
-	connCfg  ConnConfig
+	connCfg  *ConnConfig
 	keyspace string
 	policy   ConnSelectionPolicy
 	// protection for conns, closed, filling
@@ -222,7 +222,7 @@ type hostConnPool struct {
 	filling bool
 }
 
-func newHostConnPool(host string, port int, size int, connCfg ConnConfig,
+func newHostConnPool(host string, port int, size int, connCfg *ConnConfig,
 	keyspace string, policy ConnSelectionPolicy) *hostConnPool {
 
 	pool := &hostConnPool{

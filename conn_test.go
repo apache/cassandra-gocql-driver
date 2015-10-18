@@ -341,6 +341,7 @@ func TestRoundRobinConnPoolRoundRobin(t *testing.T) {
 	cluster := NewCluster(addrs...)
 	cluster.PoolConfig.HostSelectionPolicy = RoundRobinHostPolicy()
 	cluster.PoolConfig.ConnSelectionPolicy = RoundRobinConnPolicy()
+	cluster.disableControlConn = true
 
 	db, err := cluster.CreateSession()
 	if err != nil {

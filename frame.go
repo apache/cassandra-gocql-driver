@@ -1397,6 +1397,17 @@ func (f *framer) writeBatchFrame(streamID int, w *writeBatchFrame) error {
 	return f.finishWrite()
 }
 
+type writeOptionsFrame struct{}
+
+func (w *writeOptionsFrame) writeFrame(framer *framer, streamID int) error {
+	return framer.writeOptionsFrame(streamID, w)
+}
+
+func (f *framer) writeOptionsFrame(stream int, _ *writeOptionsFrame) error {
+	f.writeHeader(f.flags, opOptions, stream)
+	return f.finishWrite()
+}
+
 func (f *framer) readByte() byte {
 	if len(f.rbuf) < 1 {
 		panic(fmt.Errorf("not enough bytes in buffer to read byte require 1 got: %d", len(f.rbuf)))

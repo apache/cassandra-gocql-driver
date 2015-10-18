@@ -99,6 +99,7 @@ type Conn struct {
 	conn    net.Conn
 	r       *bufio.Reader
 	timeout time.Duration
+	cfg     *ConnConfig
 
 	headerBuf []byte
 
@@ -121,7 +122,7 @@ type Conn struct {
 
 // Connect establishes a connection to a Cassandra node.
 // You must also call the Serve method before you can execute any queries.
-func Connect(addr string, cfg ConnConfig, errorHandler ConnErrorHandler) (*Conn, error) {
+func Connect(addr string, cfg *ConnConfig, errorHandler ConnErrorHandler) (*Conn, error) {
 	var (
 		err  error
 		conn net.Conn
@@ -166,6 +167,7 @@ func Connect(addr string, cfg ConnConfig, errorHandler ConnErrorHandler) (*Conn,
 	c := &Conn{
 		conn:         conn,
 		r:            bufio.NewReader(conn),
+		cfg:          cfg,
 		uniq:         make(chan int, cfg.NumStreams),
 		calls:        make([]callReq, cfg.NumStreams),
 		timeout:      cfg.Timeout,
@@ -191,7 +193,7 @@ func Connect(addr string, cfg ConnConfig, errorHandler ConnErrorHandler) (*Conn,
 
 	go c.serve()
 
-	if err := c.startup(&cfg); err != nil {
+	if err := c.startup(); err != nil {
 		conn.Close()
 		return nil, err
 	}
@@ -231,9 +233,9 @@ func (c *Conn) Read(p []byte) (n int, err error) {
 	return
 }
 
-func (c *Conn) startup(cfg *ConnConfig) error {
+func (c *Conn) startup() error {
 	m := map[string]string{
-		"CQL_VERSION": cfg.CQLVersion,
+		"CQL_VERSION": c.cfg.CQLVersion,
 	}
 
 	if c.compressor != nil {
@@ -882,66 +884,6 @@ func (c *Conn) setKeepalive(d time.Duration) error {
 	}
 
 	return nil
-}
-
-func (c *Conn) awaitSchemaAgreement() (err error) {
-
-	const (
-		// TODO(zariel): if we export this make this configurable
-		maxWaitTime = 60 * time.Second
-
-		peerSchemas  = "SELECT schema_version FROM system.peers"
-		localSchemas = "SELECT schema_version FROM system.local WHERE key='local'"
-	)
-
-	endDeadline := time.Now().Add(maxWaitTime)
-
-	for time.Now().Before(endDeadline) {
-		iter := c.executeQuery(&Query{
-			stmt: peerSchemas,
-			cons: One,
-		})
-
-		versions := make(map[string]struct{})
-
-		var schemaVersion string
-		for iter.Scan(&schemaVersion) {
-			versions[schemaVersion] = struct{}{}
-			schemaVersion = ""
-		}
-
-		if err = iter.Close(); err != nil {
-			goto cont
-		}
-
-		iter = c.executeQuery(&Query{
-			stmt: localSchemas,
-			cons: One,
-		})
-
-		for iter.Scan(&schemaVersion) {
-			versions[schemaVersion] = struct{}{}
-			schemaVersion = ""
-		}
-
-		if err = iter.Close(); err != nil {
-			goto cont
-		}
-
-		if len(versions) <= 1 {
-			return nil
-		}
-
-	cont:
-		time.Sleep(200 * time.Millisecond)
-	}
-
-	if err != nil {
-		return
-	}
-
-	// not exported
-	return errors.New("gocql: cluster schema versions not consistent")
 }
 
 type inflightPrepare struct {

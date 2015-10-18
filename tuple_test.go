@@ -12,7 +12,7 @@ func TestTupleSimple(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 
-	err := createTable(session, `CREATE TABLE tuple_test(
+	err := createTable(session, `CREATE TABLE gocql_test.tuple_test(
 		id int,
 		coord frozen<tuple<int, int>>,
 

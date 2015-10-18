@@ -51,7 +51,7 @@ func TestUDT_Marshaler(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 
-	err := createTable(session, `CREATE TYPE position(
+	err := createTable(session, `CREATE TYPE gocql_test.position(
 		lat int,
 		lon int,
 		padding text);`)
@@ -59,7 +59,7 @@ func TestUDT_Marshaler(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err = createTable(session, `CREATE TABLE houses(
+	err = createTable(session, `CREATE TABLE gocql_test.houses(
 		id int,
 		name text,
 		loc frozen<position>,
@@ -108,14 +108,14 @@ func TestUDT_Reflect(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 
-	err := createTable(session, `CREATE TYPE horse(
+	err := createTable(session, `CREATE TYPE gocql_test.horse(
 		name text,
 		owner text);`)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	err = createTable(session, `CREATE TABLE horse_race(
+	err = createTable(session, `CREATE TABLE gocql_test.horse_race(
 		position int,
 		horse frozen<horse>,
 
@@ -167,14 +167,14 @@ func TestUDT_Proto2error(t *testing.T) {
 	}
 	defer session.Close()
 
-	err = createTable(session, `CREATE TYPE fish(
+	err = createTable(session, `CREATE TYPE gocql_test.fish(
 		name text,
 		owner text);`)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	err = createTable(session, `CREATE TABLE fish_race(
+	err = createTable(session, `CREATE TABLE gocql_test.fish_race(
 		position int,
 		fish frozen<fish>,
 
@@ -208,14 +208,14 @@ func TestUDT_NullObject(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 
-	err := createTable(session, `CREATE TYPE udt_null_type(
+	err := createTable(session, `CREATE TYPE gocql_test.udt_null_type(
 		name text,
 		owner text);`)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	err = createTable(session, `CREATE TABLE udt_null_table(
+	err = createTable(session, `CREATE TABLE gocql_test.udt_null_table(
 		id uuid,
 		udt_col frozen<udt_null_type>,
 
@@ -262,7 +262,7 @@ func TestMapScanUDT(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 
-	err := createTable(session, `CREATE TYPE log_entry (
+	err := createTable(session, `CREATE TYPE gocql_test.log_entry (
 		created_timestamp timestamp,
 		message text
 	);`)
@@ -270,7 +270,7 @@ func TestMapScanUDT(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err = createTable(session, `CREATE TABLE requests_by_id (
+	err = createTable(session, `CREATE TABLE gocql_test.requests_by_id (
 		id uuid PRIMARY KEY,
 		type int,
 		log_entries list<frozen <log_entry>>

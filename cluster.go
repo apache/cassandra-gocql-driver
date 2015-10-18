@@ -106,6 +106,9 @@ type ClusterConfig struct {
 	// PoolConfig configures the underlying connection pool, allowing the
 	// configuration of host selection and connection selection policies.
 	PoolConfig PoolConfig
+
+	// internal config for testing
+	disableControlConn bool
 }
 
 // NewCluster generates a new config for the default cluster implementation.
