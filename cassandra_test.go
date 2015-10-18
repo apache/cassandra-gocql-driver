@@ -177,10 +177,8 @@ func TestRingDiscovery(t *testing.T) {
 	cluster.Hosts = clusterHosts[:1]
 	cluster.DiscoverHosts = true
 
-	session, err := cluster.CreateSession()
-	if err != nil {
-		t.Fatalf("got error connecting to the cluster %v", err)
-	}
+	session := createSessionFromCluster(cluster, t)
+	defer session.Close()
 
 	if *clusterSize > 1 {
 		// wait for autodiscovery to update the pool with the list of known hosts
@@ -192,10 +190,8 @@ func TestRingDiscovery(t *testing.T) {
 	session.pool.mu.RUnlock()
 
 	if *clusterSize != size {
-		t.Logf("WARN: Expected a cluster size of %d, but actual size was %d", *clusterSize, size)
+		t.Fatalf("Expected a cluster size of %d, but actual size was %d", *clusterSize, size)
 	}
-
-	session.Close()
 }
 
 func TestEmptyHosts(t *testing.T) {
