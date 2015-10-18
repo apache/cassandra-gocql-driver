@@ -526,7 +526,7 @@ func (f *framer) parseErrorFrame() frame {
 		stmtId := f.readShortBytes()
 		return &RequestErrUnprepared{
 			errorFrame:  errD,
-			StatementId: stmtId,
+			StatementId: copyBytes(stmtId), // defensivly copy
 		}
 	case errReadFailure:
 		res := &RequestErrReadFailure{
@@ -1492,13 +1492,7 @@ func (f *framer) readBytes() []byte {
 		panic(fmt.Errorf("not enough bytes in buffer to read bytes require %d got: %d", size, len(f.rbuf)))
 	}
 
-	// we cant make assumptions about the length of the life of the supplied byte
-	// slice so we defensivly copy it out of the underlying buffer. This has the
-	// downside of increasing allocs per read but will provide much greater memory
-	// safety. The allocs can hopefully be improved in the future.
-	// TODO: dont copy into a new slice
-	l := make([]byte, size)
-	copy(l, f.rbuf[:size])
+	l := f.rbuf[:size]
 	f.rbuf = f.rbuf[size:]
 
 	return l
@@ -1510,8 +1504,7 @@ func (f *framer) readShortBytes() []byte {
 		panic(fmt.Errorf("not enough bytes in buffer to read short bytes: require %d got %d", size, len(f.rbuf)))
 	}
 
-	l := make([]byte, size)
-	copy(l, f.rbuf[:size])
+	l := f.rbuf[:size]
 	f.rbuf = f.rbuf[size:]
 
 	return l
