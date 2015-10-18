@@ -32,6 +32,7 @@ var (
 	flagRunSslTest   = flag.Bool("runssl", false, "Set to true to run ssl test")
 	flagRunAuthTest  = flag.Bool("runauth", false, "Set to true to run authentication test")
 	flagCompressTest = flag.String("compressor", "", "compressor to use")
+	flagTimeout      = flag.Duration("gocql.timeout", 5*time.Second, "sets the connection `timeout` for all operations")
 	clusterHosts     []string
 )
 
@@ -73,7 +74,7 @@ func createCluster() *ClusterConfig {
 	cluster := NewCluster(clusterHosts...)
 	cluster.ProtoVersion = *flagProto
 	cluster.CQLVersion = *flagCQL
-	cluster.Timeout = 5 * time.Second
+	cluster.Timeout = *flagTimeout
 	cluster.Consistency = Quorum
 	if *flagRetry > 0 {
 		cluster.RetryPolicy = &SimpleRetryPolicy{NumRetries: *flagRetry}
