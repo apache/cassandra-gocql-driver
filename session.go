@@ -222,8 +222,12 @@ func (s *Session) executeQuery(qry *Query) *Iter {
 
 		//Assign the error unavailable to the iterator
 		if conn == nil {
-			iter = &Iter{err: ErrNoConnections}
-			break
+			if qry.rt == nil || !qry.rt.Attempt(qry) {
+				iter = &Iter{err: ErrNoConnections}
+				break
+			}
+
+			continue
 		}
 
 		t := time.Now()

@@ -9,7 +9,7 @@ import (
 
 func TestProto1BatchInsert(t *testing.T) {
 	session := createSession(t)
-	if err := createTable(session, "CREATE TABLE large (id int primary key)"); err != nil {
+	if err := createTable(session, "CREATE TABLE gocql_test.large (id int primary key)"); err != nil {
 		t.Fatal(err)
 	}
 	defer session.Close()

@@ -56,11 +56,11 @@ type WikiTest struct {
 
 func CreateSchema(session *Session, tb testing.TB, table string) *WikiTest {
 	table = "wiki_" + table
-	if err := session.Query(fmt.Sprintf("DROP TABLE IF EXISTS %s", table)).Exec(); err != nil {
+	if err := createTable(session, fmt.Sprintf("DROP TABLE IF EXISTS gocql_test.%s", table)); err != nil {
 		tb.Fatal("CreateSchema:", err)
 	}
 
-	err := createTable(session, fmt.Sprintf(`CREATE TABLE %s (
+	err := createTable(session, fmt.Sprintf(`CREATE TABLE gocql_test.%s (
 			title       varchar,
 			revid       timeuuid,
 			body        varchar,

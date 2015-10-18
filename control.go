@@ -110,7 +110,7 @@ func (c *controlConn) HandleError(conn *Conn, err error, closed bool) {
 
 	oldConn := c.conn.Load().(*Conn)
 	if oldConn != conn {
-		panic("controlConn: got error for connection which we did not create")
+		return
 	}
 
 	c.reconnect()
@@ -151,11 +151,8 @@ func (c *controlConn) query(statement string, values ...interface{}) (iter *Iter
 		}
 
 		iter = conn.executeQuery(q)
-		if iter.err == nil {
-			break
-		}
-
-		if !c.retry.Attempt(q) {
+		q.attempts++
+		if iter.err == nil || !c.retry.Attempt(q) {
 			break
 		}
 	}
