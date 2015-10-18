@@ -839,7 +839,7 @@ func (c *Conn) setKeepalive(d time.Duration) error {
 	return nil
 }
 
-func (c *Conn) awaitSchemaAgreement() error {
+func (c *Conn) awaitSchemaAgreement() (err error) {
 
 	const (
 		// TODO(zariel): if we export this make this configurable
@@ -865,9 +865,8 @@ func (c *Conn) awaitSchemaAgreement() error {
 			schemaVersion = ""
 		}
 
-		if err := iter.Close(); err != nil {
-			// TODO: should we keep trying?
-			return err
+		if err = iter.Close(); err != nil {
+			goto cont
 		}
 
 		iter = c.executeQuery(&Query{
@@ -880,15 +879,20 @@ func (c *Conn) awaitSchemaAgreement() error {
 			schemaVersion = ""
 		}
 
-		if err := iter.Close(); err != nil {
-			return err
+		if err = iter.Close(); err != nil {
+			goto cont
 		}
 
 		if len(versions) <= 1 {
 			return nil
 		}
 
+	cont:
 		time.Sleep(200 * time.Millisecond)
+	}
+
+	if err != nil {
+		return
 	}
 
 	// not exported
