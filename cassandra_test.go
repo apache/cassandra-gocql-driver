@@ -2270,3 +2270,21 @@ func TestJSONSupport(t *testing.T) {
 		t.Errorf("got state %q expected %q", state, "TX")
 	}
 }
+
+func TestUDF(t *testing.T) {
+	if *flagProto < 4 {
+		t.Skip("skipping UDF support on proto < 4")
+	}
+
+	session := createSession(t)
+	defer session.Close()
+
+	const query = `CREATE OR REPLACE FUNCTION uniq(state set<text>, val text)
+	  CALLED ON NULL INPUT RETURNS set<text> LANGUAGE java
+	  AS 'state.add(val); return state;'`
+
+	err := session.Query(query).Exec()
+	if err != nil {
+		t.Fatal(err)
+	}
+}

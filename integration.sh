@@ -40,10 +40,6 @@ function run_tests() {
 		rm -rf $HOME/.ccm/test/node1/data/system_auth
 	fi
 
-	ccm start -v
-	ccm status
-	ccm node1 nodetool status
-
 	local proto=2
 	if [[ $version == 1.2.* ]]; then
 		proto=1
@@ -53,7 +49,12 @@ function run_tests() {
 		proto=3
 	elif [[ $version == 2.2.* ]]; then
 		proto=4
+		ccm updateconf 'enable_user_defined_functions: true'
 	fi
+
+	ccm start -v
+	ccm status
+	ccm node1 nodetool status
 
 	if [ "$auth" = true ]
 	then

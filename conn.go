@@ -700,7 +700,7 @@ func (c *Conn) executeQuery(qry *Query) *Iter {
 		}
 
 		return iter
-	case *resultKeyspaceFrame, *resultSchemaChangeFrame, *schemaChangeKeyspace, *schemaChangeTable:
+	case *resultKeyspaceFrame, *resultSchemaChangeFrame, *schemaChangeKeyspace, *schemaChangeTable, *schemaChangeFunction:
 		return &Iter{framer: framer}
 	case *RequestErrUnprepared:
 		stmtsLRU.Lock()
