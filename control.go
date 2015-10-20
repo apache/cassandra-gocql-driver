@@ -83,17 +83,19 @@ func (c *controlConn) reconnect(refreshring bool) {
 
 	// TODO: should have our own roundrobbin for hosts so that we can try each
 	// in succession and guantee that we get a different host each time.
-	conn := c.session.pool.Pick(nil)
+	host, conn := c.session.pool.Pick(nil)
 	if conn == nil {
 		return
 	}
 
 	newConn, err := Connect(conn.addr, conn.cfg, c)
 	if err != nil {
+		host.Mark(err)
 		// TODO: add log handler for things like this
 		return
 	}
 
+	host.Mark(nil)
 	c.conn.Store(newConn)
 	success = true
 

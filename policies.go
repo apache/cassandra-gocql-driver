@@ -57,8 +57,15 @@ type HostSelectionPolicy interface {
 	Pick(*Query) NextHost
 }
 
+// SelectedHost is an interface returned when picking a host from a host
+// selection policy.
+type SelectedHost interface {
+	Info() *HostInfo
+	Mark(error)
+}
+
 // NextHost is an iteration function over picked hosts
-type NextHost func() *HostInfo
+type NextHost func() SelectedHost
 
 // RoundRobinHostPolicy is a round-robin load balancing policy, where each host
 // is tried sequentially for each query.
@@ -86,7 +93,7 @@ func (r *roundRobinHostPolicy) Pick(qry *Query) NextHost {
 	// i is used to limit the number of attempts to find a host
 	// to the number of hosts known to this policy
 	var i uint32 = 0
-	return func() *HostInfo {
+	return func() SelectedHost {
 		r.mu.RLock()
 		if len(r.hosts) == 0 {
 			r.mu.RUnlock()
@@ -102,8 +109,22 @@ func (r *roundRobinHostPolicy) Pick(qry *Query) NextHost {
 			i++
 		}
 		r.mu.RUnlock()
-		return host
+		return selectedRoundRobinHost{host}
 	}
+}
+
+// selectedRoundRobinHost is a host returned by the roundRobinHostPolicy and
+// implements the SelectedHost interface
+type selectedRoundRobinHost struct {
+	info *HostInfo
+}
+
+func (host selectedRoundRobinHost) Info() *HostInfo {
+	return host.info
+}
+
+func (host selectedRoundRobinHost) Mark(err error) {
+	// noop
 }
 
 // TokenAwareHostPolicy is a token aware host selection policy, where hosts are
@@ -195,10 +216,10 @@ func (t *tokenAwareHostPolicy) Pick(qry *Query) NextHost {
 		hostReturned bool
 		fallbackIter NextHost
 	)
-	return func() *HostInfo {
+	return func() SelectedHost {
 		if !hostReturned {
 			hostReturned = true
-			return host
+			return selectedTokenAwareHost{host}
 		}
 
 		// fallback
@@ -209,12 +230,26 @@ func (t *tokenAwareHostPolicy) Pick(qry *Query) NextHost {
 		fallbackHost := fallbackIter()
 
 		// filter the token aware selected hosts from the fallback hosts
-		if fallbackHost == host {
+		if fallbackHost.Info() == host {
 			fallbackHost = fallbackIter()
 		}
 
 		return fallbackHost
 	}
+}
+
+// selectedTokenAwareHost is a host returned by the tokenAwareHostPolicy and
+// implements the SelectedHost interface
+type selectedTokenAwareHost struct {
+	info *HostInfo
+}
+
+func (host selectedTokenAwareHost) Info() *HostInfo {
+	return host.info
+}
+
+func (host selectedTokenAwareHost) Mark(err error) {
+	// noop
 }
 
 //ConnSelectionPolicy is an interface for selecting an

@@ -235,7 +235,7 @@ func (s *Session) executeQuery(qry *Query) *Iter {
 	qry.attempts = 0
 	qry.totalLatency = 0
 	for {
-		conn := s.pool.Pick(qry)
+		host, conn := s.pool.Pick(qry)
 
 		//Assign the error unavailable to the iterator
 		if conn == nil {
@@ -254,8 +254,12 @@ func (s *Session) executeQuery(qry *Query) *Iter {
 
 		//Exit for loop if the query was successful
 		if iter.err == nil {
+			host.Mark(iter.err)
 			break
 		}
+
+		// Mark host as ok
+		host.Mark(nil)
 
 		if qry.rt == nil || !qry.rt.Attempt(qry) {
 			break
@@ -323,7 +327,7 @@ func (s *Session) routingKeyInfo(stmt string) (*routingKeyInfo, error) {
 	)
 
 	// get the query info for the statement
-	conn := s.pool.Pick(nil)
+	host, conn := s.pool.Pick(nil)
 	if conn == nil {
 		// no connections
 		inflight.err = ErrNoConnections
@@ -336,8 +340,12 @@ func (s *Session) routingKeyInfo(stmt string) (*routingKeyInfo, error) {
 	if inflight.err != nil {
 		// don't cache this error
 		s.routingKeyInfoCache.Remove(stmt)
+		host.Mark(inflight.err)
 		return nil, inflight.err
 	}
+
+	// Mark host as OK
+	host.Mark(nil)
 
 	if len(info.Args) == 0 {
 		// no arguments, no routing key, and no error
@@ -418,7 +426,7 @@ func (s *Session) executeBatch(batch *Batch) (*Iter, error) {
 	batch.attempts = 0
 	batch.totalLatency = 0
 	for {
-		conn := s.pool.Pick(nil)
+		host, conn := s.pool.Pick(nil)
 
 		//Assign the error unavailable and break loop
 		if conn == nil {
@@ -431,8 +439,12 @@ func (s *Session) executeBatch(batch *Batch) (*Iter, error) {
 		batch.attempts++
 		//Exit loop if operation executed correctly
 		if err == nil {
+			host.Mark(err)
 			return iter, err
 		}
+
+		// Mark host as OK
+		host.Mark(nil)
 
 		if batch.rt == nil || !batch.rt.Attempt(batch) {
 			break

@@ -20,26 +20,26 @@ func TestRoundRobinHostPolicy(t *testing.T) {
 	// the first host selected is actually at [1], but this is ok for RR
 	// interleaved iteration should always increment the host
 	iterA := policy.Pick(nil)
-	if actual := iterA(); actual != &hosts[1] {
-		t.Errorf("Expected hosts[1] but was hosts[%s]", actual.HostId)
+	if actual := iterA(); actual.Info() != &hosts[1] {
+		t.Errorf("Expected hosts[1] but was hosts[%s]", actual.Info().HostId)
 	}
 	iterB := policy.Pick(nil)
-	if actual := iterB(); actual != &hosts[0] {
-		t.Errorf("Expected hosts[0] but was hosts[%s]", actual.HostId)
+	if actual := iterB(); actual.Info() != &hosts[0] {
+		t.Errorf("Expected hosts[0] but was hosts[%s]", actual.Info().HostId)
 	}
-	if actual := iterB(); actual != &hosts[1] {
-		t.Errorf("Expected hosts[1] but was hosts[%s]", actual.HostId)
+	if actual := iterB(); actual.Info() != &hosts[1] {
+		t.Errorf("Expected hosts[1] but was hosts[%s]", actual.Info().HostId)
 	}
-	if actual := iterA(); actual != &hosts[0] {
-		t.Errorf("Expected hosts[0] but was hosts[%s]", actual.HostId)
+	if actual := iterA(); actual.Info() != &hosts[0] {
+		t.Errorf("Expected hosts[0] but was hosts[%s]", actual.Info().HostId)
 	}
 
 	iterC := policy.Pick(nil)
-	if actual := iterC(); actual != &hosts[1] {
-		t.Errorf("Expected hosts[1] but was hosts[%s]", actual.HostId)
+	if actual := iterC(); actual.Info() != &hosts[1] {
+		t.Errorf("Expected hosts[1] but was hosts[%s]", actual.Info().HostId)
 	}
-	if actual := iterC(); actual != &hosts[0] {
-		t.Errorf("Expected hosts[0] but was hosts[%s]", actual.HostId)
+	if actual := iterC(); actual.Info() != &hosts[0] {
+		t.Errorf("Expected hosts[0] but was hosts[%s]", actual.Info().HostId)
 	}
 }
 
@@ -70,13 +70,13 @@ func TestTokenAwareHostPolicy(t *testing.T) {
 
 	// the token ring is not setup without the partitioner, but the fallback
 	// should work
-	if actual := policy.Pick(nil)(); actual.Peer != "1" {
-		t.Errorf("Expected peer 1 but was %s", actual.Peer)
+	if actual := policy.Pick(nil)(); actual.Info().Peer != "1" {
+		t.Errorf("Expected peer 1 but was %s", actual.Info().Peer)
 	}
 
 	query.RoutingKey([]byte("30"))
-	if actual := policy.Pick(query)(); actual.Peer != "2" {
-		t.Errorf("Expected peer 2 but was %s", actual.Peer)
+	if actual := policy.Pick(query)(); actual.Info().Peer != "2" {
+		t.Errorf("Expected peer 2 but was %s", actual.Info().Peer)
 	}
 
 	policy.SetPartitioner("OrderedPartitioner")
@@ -84,18 +84,18 @@ func TestTokenAwareHostPolicy(t *testing.T) {
 	// now the token ring is configured
 	query.RoutingKey([]byte("20"))
 	iter = policy.Pick(query)
-	if actual := iter(); actual.Peer != "1" {
-		t.Errorf("Expected peer 1 but was %s", actual.Peer)
+	if actual := iter(); actual.Info().Peer != "1" {
+		t.Errorf("Expected peer 1 but was %s", actual.Info().Peer)
 	}
 	// rest are round robin
-	if actual := iter(); actual.Peer != "3" {
-		t.Errorf("Expected peer 3 but was %s", actual.Peer)
+	if actual := iter(); actual.Info().Peer != "3" {
+		t.Errorf("Expected peer 3 but was %s", actual.Info().Peer)
 	}
-	if actual := iter(); actual.Peer != "0" {
-		t.Errorf("Expected peer 0 but was %s", actual.Peer)
+	if actual := iter(); actual.Info().Peer != "0" {
+		t.Errorf("Expected peer 0 but was %s", actual.Info().Peer)
 	}
-	if actual := iter(); actual.Peer != "2" {
-		t.Errorf("Expected peer 2 but was %s", actual.Peer)
+	if actual := iter(); actual.Info().Peer != "2" {
+		t.Errorf("Expected peer 2 but was %s", actual.Info().Peer)
 	}
 }
 
