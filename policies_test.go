@@ -4,7 +4,12 @@
 
 package gocql
 
-import "testing"
+import (
+	"fmt"
+	"testing"
+
+	"github.com/hailocab/go-hostpool"
+)
 
 // Tests of the round-robin host selection policy implementation
 func TestRoundRobinHostPolicy(t *testing.T) {
@@ -97,6 +102,45 @@ func TestTokenAwareHostPolicy(t *testing.T) {
 	if actual := iter(); actual.Info().Peer != "2" {
 		t.Errorf("Expected peer 2 but was %s", actual.Info().Peer)
 	}
+}
+
+// Tests of the host pool host selection policy implementation
+func TestHostPoolHostPolicy(t *testing.T) {
+	policy := HostPoolHostPolicy(hostpool.New([]string{}))
+
+	hosts := []HostInfo{
+		HostInfo{HostId: "0", Peer: "0"},
+		HostInfo{HostId: "1", Peer: "1"},
+	}
+
+	policy.SetHosts(hosts)
+
+	// the first host selected is actually at [1], but this is ok for RR
+	// interleaved iteration should always increment the host
+	iter := policy.Pick(nil)
+	actualA := iter()
+	if actualA.Info().HostId != "0" {
+		t.Errorf("Expected hosts[0] but was hosts[%s]", actualA.Info().HostId)
+	}
+	actualA.Mark(nil)
+
+	actualB := iter()
+	if actualB.Info().HostId != "1" {
+		t.Errorf("Expected hosts[1] but was hosts[%s]", actualB.Info().HostId)
+	}
+	actualB.Mark(fmt.Errorf("error"))
+
+	actualC := iter()
+	if actualC.Info().HostId != "0" {
+		t.Errorf("Expected hosts[0] but was hosts[%s]", actualC.Info().HostId)
+	}
+	actualC.Mark(nil)
+
+	actualD := iter()
+	if actualD.Info().HostId != "0" {
+		t.Errorf("Expected hosts[0] but was hosts[%s]", actualD.Info().HostId)
+	}
+	actualD.Mark(nil)
 }
 
 // Tests of the round-robin connection selection policy implementation

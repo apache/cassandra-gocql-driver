@@ -8,6 +8,8 @@ import (
 	"log"
 	"sync"
 	"sync/atomic"
+
+	"github.com/hailocab/go-hostpool"
 )
 
 // RetryableQuery is an interface that represents a query or batch statement that
@@ -250,6 +252,72 @@ func (host selectedTokenAwareHost) Info() *HostInfo {
 
 func (host selectedTokenAwareHost) Mark(err error) {
 	// noop
+}
+
+// HostPoolHostPolicy is a host policy which uses the bitly/go-hostpool library
+// to distribute queries between hosts and prevent sending queries to
+// unresponsive hosts.
+func HostPoolHostPolicy(hp hostpool.HostPool) HostSelectionPolicy {
+	return &hostPoolHostPolicy{hostMap: map[string]HostInfo{}, hp: hp}
+}
+
+type hostPoolHostPolicy struct {
+	hp      hostpool.HostPool
+	hostMap map[string]HostInfo
+	mu      sync.RWMutex
+}
+
+func (r *hostPoolHostPolicy) SetHosts(hosts []HostInfo) {
+	peers := make([]string, len(hosts))
+	hostMap := make(map[string]HostInfo, len(hosts))
+
+	for i, host := range hosts {
+		peers[i] = host.Peer
+		hostMap[host.Peer] = host
+	}
+
+	r.mu.Lock()
+	r.hp.SetHosts(peers)
+	r.hostMap = hostMap
+	r.mu.Unlock()
+}
+
+func (r *hostPoolHostPolicy) SetPartitioner(partitioner string) {
+	// noop
+}
+
+func (r *hostPoolHostPolicy) Pick(qry *Query) NextHost {
+	return func() SelectedHost {
+		r.mu.RLock()
+		if len(r.hostMap) == 0 {
+			r.mu.RUnlock()
+			return nil
+		}
+
+		hostR := r.hp.Get()
+		host, ok := r.hostMap[hostR.Host()]
+		if !ok {
+			r.mu.RUnlock()
+			return nil
+		}
+
+		return selectedHostPoolHost{&host, hostR}
+	}
+}
+
+// selectedHostPoolHost is a host returned by the hostPoolHostPolicy and
+// implements the SelectedHost interface
+type selectedHostPoolHost struct {
+	info  *HostInfo
+	hostR hostpool.HostPoolResponse
+}
+
+func (host selectedHostPoolHost) Info() *HostInfo {
+	return host.info
+}
+
+func (host selectedHostPoolHost) Mark(err error) {
+	host.hostR.Mark(err)
 }
 
 //ConnSelectionPolicy is an interface for selecting an
