@@ -26,7 +26,6 @@ func createControlConn(session *Session) *controlConn {
 	}
 
 	control.conn.Store((*Conn)(nil))
-	control.reconnect()
 	go control.heartBeat()
 
 	return control
@@ -55,14 +54,14 @@ func (c *controlConn) heartBeat() {
 		}
 
 	reconn:
-		c.reconnect()
-		time.Sleep(5 * time.Second)
+		c.reconnect(true)
+		// time.Sleep(5 * time.Second)
 		continue
 
 	}
 }
 
-func (c *controlConn) reconnect() {
+func (c *controlConn) reconnect(refreshring bool) {
 	if !atomic.CompareAndSwapUint64(&c.connecting, 0, 1) {
 		return
 	}
@@ -101,6 +100,10 @@ func (c *controlConn) reconnect() {
 	if oldConn != nil {
 		oldConn.Close()
 	}
+
+	if refreshring {
+		c.session.hostSource.refreshRing()
+	}
 }
 
 func (c *controlConn) HandleError(conn *Conn, err error, closed bool) {
@@ -113,7 +116,7 @@ func (c *controlConn) HandleError(conn *Conn, err error, closed bool) {
 		return
 	}
 
-	c.reconnect()
+	c.reconnect(true)
 }
 
 func (c *controlConn) writeFrame(w frameWriter) (frame, error) {
@@ -146,7 +149,7 @@ func (c *controlConn) query(statement string, values ...interface{}) (iter *Iter
 
 			connectAttempts++
 
-			c.reconnect()
+			c.reconnect(false)
 			continue
 		}
 
@@ -212,6 +215,15 @@ func (c *controlConn) awaitSchemaAgreement() (err error) {
 	// not exported
 	return errors.New("gocql: cluster schema versions not consistent")
 }
+
+func (c *controlConn) addr() string {
+	conn := c.conn.Load().(*Conn)
+	if conn == nil {
+		return ""
+	}
+	return conn.addr
+}
+
 func (c *controlConn) close() {
 	// TODO: handle more gracefully
 	close(c.quit)
