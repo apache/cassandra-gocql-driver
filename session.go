@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"strings"
 	"sync"
 	"time"
@@ -80,7 +81,7 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 	}
 	s.pool = pool
 
-	//See if there are any connections in the pool
+	// See if there are any connections in the pool
 	if pool.Size() == 0 {
 		s.Close()
 		return nil, ErrNoConnectionsStarted
@@ -88,10 +89,8 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 
 	s.routingKeyInfoCache.lru = lru.New(cfg.MaxRoutingKeyInfo)
 
-	if !cfg.disableControlConn {
-		s.control = createControlConn(s)
-	}
-
+	// I think it might be a good idea to simplify this and make it always discover
+	// hosts, maybe with more filters.
 	if cfg.DiscoverHosts {
 		s.hostSource = &ringDescriber{
 			session:    s,
@@ -99,7 +98,25 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 			rackFilter: cfg.Discovery.RackFilter,
 			closeChan:  make(chan bool),
 		}
+	}
 
+	if !cfg.disableControlConn {
+		s.control = createControlConn(s)
+		s.control.reconnect(false)
+
+		// need to setup host source to check for rpc_address in system.local
+		localHasRPCAddr, err := checkSystemLocal(s.control)
+		if err != nil {
+			log.Printf("gocql: unable to verify if system.local table contains rpc_address, falling back to connection address: %v", err)
+		}
+
+		if cfg.DiscoverHosts {
+			s.hostSource.localHasRpcAddr = localHasRPCAddr
+		}
+	}
+
+	if cfg.DiscoverHosts {
+		s.hostSource.refreshRing()
 		go s.hostSource.run(cfg.Discovery.Sleep)
 	}
 
