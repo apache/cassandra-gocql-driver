@@ -106,7 +106,7 @@ func TestTokenAwareHostPolicy(t *testing.T) {
 
 // Tests of the host pool host selection policy implementation
 func TestHostPoolHostPolicy(t *testing.T) {
-	policy := HostPoolHostPolicy(hostpool.New([]string{}))
+	policy := HostPoolHostPolicy(hostpool.New(nil))
 
 	hosts := []HostInfo{
 		HostInfo{HostId: "0", Peer: "0"},

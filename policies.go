@@ -256,7 +256,18 @@ func (host selectedTokenAwareHost) Mark(err error) {
 
 // HostPoolHostPolicy is a host policy which uses the bitly/go-hostpool library
 // to distribute queries between hosts and prevent sending queries to
-// unresponsive hosts.
+// unresponsive hosts. When creating the host pool that is passed to the policy
+// use an empty slice of hosts as the hostpool will be populated later by gocql.
+// See below for examples of usage:
+//
+//     // Create host selection policy using a simple host pool
+//     cluster.PoolConfig.HostSelectionPolicy = HostPoolHostPolicy(hostpool.New(nil))
+//
+//     // Create host selection policy using an epsilon greddy pool
+//     cluster.PoolConfig.HostSelectionPolicy = HostPoolHostPolicy(
+//         hostpool.NewEpsilonGreedy(nil, 0, &hostpool.LinearEpsilonValueCalculator{}),
+//     )
+//
 func HostPoolHostPolicy(hp hostpool.HostPool) HostSelectionPolicy {
 	return &hostPoolHostPolicy{hostMap: map[string]HostInfo{}, hp: hp}
 }
