@@ -1137,7 +1137,7 @@ func injectInvalidPreparedStatement(t *testing.T, session *Session, table string
 		t.Fatal("create:", err)
 	}
 	stmt := "INSERT INTO " + table + " (foo, bar) VALUES (?, 7)"
-	conn := session.pool.Pick(nil)
+	_, conn := session.pool.Pick(nil)
 	flight := new(inflightPrepare)
 	stmtsLRU.Lock()
 	stmtsLRU.lru.Add(conn.addr+stmt, flight)
@@ -1160,7 +1160,7 @@ func injectInvalidPreparedStatement(t *testing.T, session *Session, table string
 
 func TestMissingSchemaPrepare(t *testing.T) {
 	s := createSession(t)
-	conn := s.pool.Pick(nil)
+	_, conn := s.pool.Pick(nil)
 	defer s.Close()
 
 	insertQry := &Query{stmt: "INSERT INTO invalidschemaprep (val) VALUES (?)", values: []interface{}{5}, cons: s.cons,
@@ -1209,7 +1209,7 @@ func TestQueryInfo(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 
-	conn := session.pool.Pick(nil)
+	_, conn := session.pool.Pick(nil)
 	info, err := conn.prepareStatement("SELECT release_version, host_id FROM system.local WHERE key = ?", nil)
 
 	if err != nil {
@@ -2054,7 +2054,7 @@ func TestStream0(t *testing.T) {
 			break
 		}
 
-		conn = session.pool.Pick(nil)
+		_, conn = session.pool.Pick(nil)
 	}
 
 	if conn == nil {
@@ -2093,7 +2093,7 @@ func TestNegativeStream(t *testing.T) {
 			break
 		}
 
-		conn = session.pool.Pick(nil)
+		_, conn = session.pool.Pick(nil)
 	}
 
 	if conn == nil {
