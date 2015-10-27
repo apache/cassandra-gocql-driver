@@ -45,12 +45,11 @@ func TestSimple(t *testing.T) {
 	cluster.ProtoVersion = int(defaultProto)
 	db, err := cluster.CreateSession()
 	if err != nil {
-		t.Errorf("0x%x: NewCluster: %v", defaultProto, err)
-		return
+		t.Fatalf("0x%x: NewCluster: %v", defaultProto, err)
 	}
 
 	if err := db.Query("void").Exec(); err != nil {
-		t.Errorf("0x%x: %v", defaultProto, err)
+		t.Fatalf("0x%x: %v", defaultProto, err)
 	}
 }
 
@@ -109,13 +108,11 @@ func TestClosed(t *testing.T) {
 	session, err := cluster.CreateSession()
 	defer session.Close()
 	if err != nil {
-		t.Errorf("0x%x: NewCluster: %v", defaultProto, err)
-		return
+		t.Fatalf("0x%x: NewCluster: %v", defaultProto, err)
 	}
 
 	if err := session.Query("void").Exec(); err != ErrSessionClosed {
-		t.Errorf("0x%x: expected %#v, got %#v", defaultProto, ErrSessionClosed, err)
-		return
+		t.Fatalf("0x%x: expected %#v, got %#v", defaultProto, ErrSessionClosed, err)
 	}
 }
 
@@ -132,8 +129,7 @@ func TestTimeout(t *testing.T) {
 
 	db, err := newTestSession(srv.Address, defaultProto)
 	if err != nil {
-		t.Errorf("NewCluster: %v", err)
-		return
+		t.Fatalf("NewCluster: %v", err)
 	}
 	defer db.Close()
 
@@ -190,7 +186,7 @@ func TestConnClosing(t *testing.T) {
 
 	db, err := NewCluster(srv.Address).CreateSession()
 	if err != nil {
-		t.Errorf("NewCluster: %v", err)
+		t.Fatalf("NewCluster: %v", err)
 	}
 	defer db.Close()
 
@@ -357,12 +353,14 @@ func TestRoundRobinConnPoolRoundRobin(t *testing.T) {
 	wg.Add(5)
 	for n := 0; n < 5; n++ {
 		go func() {
+			defer wg.Done()
+
 			for j := 0; j < 5; j++ {
 				if err := db.Query("void").Exec(); err != nil {
 					t.Errorf("Query failed with error: %v", err)
+					return
 				}
 			}
-			wg.Done()
 		}()
 	}
 	wg.Wait()
@@ -391,7 +389,7 @@ func TestRoundRobinConnPoolRoundRobin(t *testing.T) {
 	}
 
 	if diff > 0 {
-		t.Errorf("expected 0 difference in usage but was %d", diff)
+		t.Fatalf("expected 0 difference in usage but was %d", diff)
 	}
 }
 
@@ -406,20 +404,20 @@ func TestPolicyConnPoolSSL(t *testing.T) {
 
 	db, err := cluster.CreateSession()
 	if err != nil {
+		db.Close()
 		t.Fatalf("failed to create new session: %v", err)
 	}
 
 	if err := db.Query("void").Exec(); err != nil {
-		t.Errorf("query failed due to error: %v", err)
+		t.Fatalf("query failed due to error: %v", err)
 	}
-
 	db.Close()
 
 	// wait for the pool to drain
 	time.Sleep(100 * time.Millisecond)
 	size := db.pool.Size()
 	if size != 0 {
-		t.Errorf("connection pool did not drain, still contains %d connections", size)
+		t.Fatalf("connection pool did not drain, still contains %d connections", size)
 	}
 }
 
@@ -434,7 +432,7 @@ func TestQueryTimeout(t *testing.T) {
 
 	db, err := cluster.CreateSession()
 	if err != nil {
-		t.Errorf("NewCluster: %v", err)
+		t.Fatalf("NewCluster: %v", err)
 	}
 	defer db.Close()
 
@@ -603,11 +601,11 @@ func NewSSLTestServer(t testing.TB, protocol uint8) *TestServer {
 	pem, err := ioutil.ReadFile("testdata/pki/ca.crt")
 	certPool := x509.NewCertPool()
 	if !certPool.AppendCertsFromPEM(pem) {
-		t.Errorf("Failed parsing or appending certs")
+		t.Fatalf("Failed parsing or appending certs")
 	}
 	mycert, err := tls.LoadX509KeyPair("testdata/pki/cassandra.crt", "testdata/pki/cassandra.key")
 	if err != nil {
-		t.Errorf("could not load cert")
+		t.Fatalf("could not load cert")
 	}
 	config := &tls.Config{
 		Certificates: []tls.Certificate{mycert},
