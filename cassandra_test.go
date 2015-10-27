@@ -211,10 +211,10 @@ func TestUseStatementError(t *testing.T) {
 
 	if err := session.Query("USE gocql_test").Exec(); err != nil {
 		if err != ErrUseStmt {
-			t.Error("expected ErrUseStmt, got " + err.Error())
+			t.Fatalf("expected ErrUseStmt, got " + err.Error())
 		}
 	} else {
-		t.Error("expected err, got nil.")
+		t.Fatal("expected err, got nil.")
 	}
 }
 
@@ -225,11 +225,11 @@ func TestInvalidKeyspace(t *testing.T) {
 	session, err := cluster.CreateSession()
 	if err != nil {
 		if err != ErrNoConnectionsStarted {
-			t.Errorf("Expected ErrNoConnections but got %v", err)
+			t.Fatalf("Expected ErrNoConnections but got %v", err)
 		}
 	} else {
 		session.Close() //Clean up the session
-		t.Error("expected err, got nil.")
+		t.Fatal("expected err, got nil.")
 	}
 }
 
@@ -245,19 +245,19 @@ func TestTracing(t *testing.T) {
 	trace := NewTraceWriter(session, buf)
 
 	if err := session.Query(`INSERT INTO trace (id) VALUES (?)`, 42).Trace(trace).Exec(); err != nil {
-		t.Error("insert:", err)
+		t.Fatal("insert:", err)
 	} else if buf.Len() == 0 {
-		t.Error("insert: failed to obtain any tracing")
+		t.Fatal("insert: failed to obtain any tracing")
 	}
 	buf.Reset()
 
 	var value int
 	if err := session.Query(`SELECT id FROM trace WHERE id = ?`, 42).Trace(trace).Scan(&value); err != nil {
-		t.Error("select:", err)
+		t.Fatal("select:", err)
 	} else if value != 42 {
-		t.Errorf("value: expected %d, got %d", 42, value)
+		t.Fatalf("value: expected %d, got %d", 42, value)
 	} else if buf.Len() == 0 {
-		t.Error("select: failed to obtain any tracing")
+		t.Fatal("select: failed to obtain any tracing")
 	}
 }
 
