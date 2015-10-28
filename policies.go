@@ -300,15 +300,15 @@ func (r *hostPoolHostPolicy) SetPartitioner(partitioner string) {
 func (r *hostPoolHostPolicy) Pick(qry *Query) NextHost {
 	return func() SelectedHost {
 		r.mu.RLock()
+		defer r.mu.RUnlock()
+
 		if len(r.hostMap) == 0 {
-			r.mu.RUnlock()
 			return nil
 		}
 
 		hostR := r.hp.Get()
 		host, ok := r.hostMap[hostR.Host()]
 		if !ok {
-			r.mu.RUnlock()
 			return nil
 		}
 
