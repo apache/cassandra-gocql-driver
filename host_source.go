@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"sync"
 	"time"
 )
 
@@ -29,6 +30,8 @@ type ringDescriber struct {
 	closeChan       chan bool
 	// indicates that we can use system.local to get the connections remote address
 	localHasRpcAddr bool
+
+	mu sync.Mutex
 }
 
 func checkSystemLocal(control *controlConn) (bool, error) {
@@ -47,6 +50,8 @@ func checkSystemLocal(control *controlConn) (bool, error) {
 }
 
 func (r *ringDescriber) GetHosts() (hosts []HostInfo, partitioner string, err error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	// we need conn to be the same because we need to query system.peers and system.local
 	// on the same node to get the whole cluster
 
