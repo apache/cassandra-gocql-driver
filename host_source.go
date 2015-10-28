@@ -98,7 +98,7 @@ func (r *ringDescriber) GetHosts() (hosts []HostInfo, partitioner string, err er
 
 	hosts = []HostInfo{localHost}
 
-	iter := r.session.control.query("SELECT peer, data_center, rack, host_id, tokens FROM system.peers")
+	iter := r.session.control.query("SELECT rpc_address, data_center, rack, host_id, tokens FROM system.peers")
 	if iter == nil {
 		return r.prevHosts, r.prevPartitioner, nil
 	}
