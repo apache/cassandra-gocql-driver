@@ -103,7 +103,7 @@ func (c *controlConn) reconnect(refreshring bool) {
 		oldConn.Close()
 	}
 
-	if refreshring {
+	if refreshring && c.session.cfg.DiscoverHosts {
 		c.session.hostSource.refreshRing()
 	}
 }
