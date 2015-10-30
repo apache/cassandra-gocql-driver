@@ -121,6 +121,7 @@ func newPolicyConnPool(session *Session, hostPolicy HostSelectionPolicy,
 
 func (p *policyConnPool) SetHosts(hosts []HostInfo) {
 	p.mu.Lock()
+	defer p.mu.Unlock()
 
 	toRemove := make(map[string]struct{})
 	for addr := range p.hostConnPools {
@@ -159,7 +160,6 @@ func (p *policyConnPool) SetHosts(hosts []HostInfo) {
 	// update the policy
 	p.hostPolicy.SetHosts(hosts)
 
-	p.mu.Unlock()
 }
 
 func (p *policyConnPool) SetPartitioner(partitioner string) {
@@ -186,6 +186,7 @@ func (p *policyConnPool) Pick(qry *Query) (SelectedHost, *Conn) {
 	)
 
 	p.mu.RLock()
+	defer p.mu.RUnlock()
 	for conn == nil {
 		host = nextHost()
 		if host == nil {
@@ -201,13 +202,12 @@ func (p *policyConnPool) Pick(qry *Query) (SelectedHost, *Conn) {
 
 		conn = pool.Pick(qry)
 	}
-
-	p.mu.RUnlock()
 	return host, conn
 }
 
 func (p *policyConnPool) Close() {
 	p.mu.Lock()
+	defer p.mu.Unlock()
 
 	// remove the hosts from the policy
 	p.hostPolicy.SetHosts([]HostInfo{})
@@ -217,7 +217,6 @@ func (p *policyConnPool) Close() {
 		delete(p.hostConnPools, addr)
 		pool.Close()
 	}
-	p.mu.Unlock()
 }
 
 // hostConnPool is a connection pool for a single host.
