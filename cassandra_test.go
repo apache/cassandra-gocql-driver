@@ -62,7 +62,7 @@ func createTable(s *Session, table string) error {
 		return err
 	}
 
-	return s.control.awaitSchemaAgreement()
+	return nil
 }
 
 func createCluster() *ClusterConfig {
@@ -71,6 +71,7 @@ func createCluster() *ClusterConfig {
 	cluster.CQLVersion = *flagCQL
 	cluster.Timeout = *flagTimeout
 	cluster.Consistency = Quorum
+	cluster.MaxWaitSchemaAgreement = 2 * time.Minute // travis might be slow
 	if *flagRetry > 0 {
 		cluster.RetryPolicy = &SimpleRetryPolicy{NumRetries: *flagRetry}
 	}
@@ -101,10 +102,6 @@ func createKeyspace(tb testing.TB, cluster *ClusterConfig, keyspace string) {
 		tb.Fatal(err)
 	}
 
-	if err = session.control.awaitSchemaAgreement(); err != nil {
-		tb.Fatal(err)
-	}
-
 	err = session.control.query(fmt.Sprintf(`CREATE KEYSPACE %s
 	WITH replication = {
 		'class' : 'SimpleStrategy',
@@ -112,14 +109,6 @@ func createKeyspace(tb testing.TB, cluster *ClusterConfig, keyspace string) {
 	}`, keyspace, *flagRF)).Close()
 
 	if err != nil {
-		tb.Fatal(err)
-	}
-
-	// the schema version might be out of data between 2 nodes, so wait for the
-	// cluster to settle.
-	// TODO(zariel): use events here to know when the cluster has resolved to the
-	// new schema version
-	if err = session.control.awaitSchemaAgreement(); err != nil {
 		tb.Fatal(err)
 	}
 }
