@@ -10,17 +10,17 @@ import (
 func TestSessionAPI(t *testing.T) {
 
 	cfg := &ClusterConfig{}
-	pool, err := cfg.PoolConfig.buildPool(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
 
 	s := &Session{
-		pool: pool,
 		cfg:  *cfg,
 		cons: Quorum,
 	}
 
+	var err error
+	s.pool, err = cfg.PoolConfig.buildPool(s)
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer s.Close()
 
 	s.SetConsistency(All)
@@ -160,17 +160,18 @@ func TestQueryShouldPrepare(t *testing.T) {
 func TestBatchBasicAPI(t *testing.T) {
 
 	cfg := &ClusterConfig{RetryPolicy: &SimpleRetryPolicy{NumRetries: 2}}
-	pool, err := cfg.PoolConfig.buildPool(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
 
 	s := &Session{
-		pool: pool,
 		cfg:  *cfg,
 		cons: Quorum,
 	}
 	defer s.Close()
+
+	var err error
+	s.pool, err = cfg.PoolConfig.buildPool(s)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	b := s.NewBatch(UnloggedBatch)
 	if b.Type != UnloggedBatch {
