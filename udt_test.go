@@ -339,5 +339,54 @@ func TestMapScanUDT(t *testing.T) {
 			t.Errorf("message was not string got: %T", message)
 		}
 	}
+}
 
+func TestUDT_MissingField(t *testing.T) {
+	if *flagProto < protoVersion3 {
+		t.Skip("UDT are only available on protocol >= 3")
+	}
+
+	session := createSession(t)
+	defer session.Close()
+
+	err := createTable(session, `CREATE TYPE gocql_test.missing_field(
+		name text,
+		owner text);`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = createTable(session, `CREATE TABLE gocql_test.missing_field(
+		id uuid,
+		udt_col frozen<udt_null_type>,
+
+		primary key(id)
+	);`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	type col struct {
+		Name string `cql:"name"`
+	}
+
+	writeCol := &col{
+		Name: "test",
+	}
+
+	id := TimeUUID()
+	err = session.Query("INSERT INTO missing_field(id, udt_col) VALUES(?, ?)", id, writeCol).Exec()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	readCol := &col{}
+	err = session.Query("SELECT udt_col FROM missing_field WHERE id = ?", id).Scan(readCol)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if readCol.Name != writeCol.Name {
+		t.Errorf("expected %q: got %q", writeCol.Name, readCol.Name)
+	}
 }
