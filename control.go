@@ -3,6 +3,8 @@ package gocql
 import (
 	"errors"
 	"fmt"
+	"log"
+	"net"
 	"sync/atomic"
 	"time"
 )
@@ -98,6 +100,18 @@ func (c *controlConn) reconnect(refreshring bool) {
 		return
 	}
 
+	frame, err := c.writeFrame(&writeRegisterFrame{
+		events: []string{"TOPOLOGY_CHANGE", "STATUS_CHANGE", "STATUS_CHANGE"},
+	})
+
+	if err != nil {
+		host.Mark(err)
+		return
+	} else if _, ok := frame.(*readyFrame); !ok {
+		log.Printf("gocql: unexpected frame in response to register: got %T: %v\n", frame, frame)
+		return
+	}
+
 	host.Mark(nil)
 	c.conn.Store(newConn)
 	success = true
@@ -177,6 +191,38 @@ func (c *controlConn) query(statement string, values ...interface{}) (iter *Iter
 	}
 
 	return
+}
+
+func (c *controlConn) fetchHostInfo(addr net.IP, port int) (*HostInfo, error) {
+	// TODO(zariel): we should probably move this into host_source or atleast
+	// share code with it.
+	isLocal := c.addr() == addr.String()
+
+	var fn func(*HostInfo) error
+
+	if isLocal {
+		fn = func(host *HostInfo) error {
+			// TODO(zariel): should we fetch rpc_address from here?
+			iter := c.query("SELECT data_center, rack, host_id, tokens FROM system.local WHERE key='local'")
+			iter.Scan(&host.DataCenter, &host.Rack, &host.HostId, &host.Tokens)
+			return iter.Close()
+		}
+	} else {
+		fn = func(host *HostInfo) error {
+			// TODO(zariel): should we fetch rpc_address from here?
+			iter := c.query("SELECT data_center, rack, host_id, tokens FROM system.peers WHERE peer=?", addr)
+			iter.Scan(&host.DataCenter, &host.Rack, &host.HostId, &host.Tokens)
+			return iter.Close()
+		}
+	}
+
+	host := &HostInfo{}
+	if err := fn(host); err != nil {
+		return nil, err
+	}
+	host.Peer = addr.String()
+
+	return host, nil
 }
 
 func (c *controlConn) awaitSchemaAgreement() error {

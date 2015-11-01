@@ -462,6 +462,8 @@ func (f *framer) parseFrame() (frame frame, err error) {
 		frame = f.parseAuthChallengeFrame()
 	case opAuthSuccess:
 		frame = f.parseAuthSuccessFrame()
+	case opEvent:
+		frame = f.parseEventFrame()
 	default:
 		return nil, NewErrProtocol("unknown op in frame header: %s", f.header.op)
 	}
@@ -1152,6 +1154,48 @@ func (f *framer) parseAuthChallengeFrame() frame {
 		frameHeader: *f.header,
 		data:        f.readBytes(),
 	}
+}
+
+type statusChangeEventFrame struct {
+	frameHeader
+
+	change string
+	host   net.IP
+	port   int
+}
+
+// essentially the same as statusChange
+type topologyChangeEventFrame struct {
+	frameHeader
+
+	change string
+	host   net.IP
+	port   int
+}
+
+func (f *framer) parseEventFrame() frame {
+	eventType := f.readString()
+
+	switch eventType {
+	case "TOPOLOGY_CHANGE":
+		frame := &topologyChangeEventFrame{frameHeader: *f.header}
+		frame.change = f.readString()
+		frame.host, frame.port = f.readInet()
+
+		return frame
+	case "STATUS_CHANGE":
+		frame := &statusChangeEventFrame{frameHeader: *f.header}
+		frame.change = f.readString()
+		frame.host, frame.port = f.readInet()
+
+		return frame
+	case "SCHEMA_CHANGE":
+		// this should work for all versions
+		return f.parseResultSchemaChange()
+	default:
+		panic(fmt.Errorf("gocql: unknown event type: %q", eventType))
+	}
+
 }
 
 type writeAuthResponseFrame struct {

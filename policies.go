@@ -12,6 +12,78 @@ import (
 	"github.com/hailocab/go-hostpool"
 )
 
+// cowHostList implements a copy on write host list, its equivilent type is []HostInfo
+type cowHostList struct {
+	list atomic.Value
+	mu   sync.Mutex
+}
+
+func (c *cowHostList) get() []HostInfo {
+	// TODO(zariel): should we replace this with []*HostInfo?
+	l, ok := c.list.Load().(*[]HostInfo)
+	if !ok {
+		return nil
+	}
+	return *l
+}
+
+func (c *cowHostList) set(list []HostInfo) {
+	c.mu.Lock()
+	c.list.Store(&list)
+	c.mu.Unlock()
+}
+
+func (c *cowHostList) add(host HostInfo) {
+	c.mu.Lock()
+	l := c.get()
+
+	if n := len(l); n == 0 {
+		l = append(l, host)
+	} else {
+		newL := make([]HostInfo, n+1)
+		for i := 0; i < n; i++ {
+			if host.Peer == l[i].Peer && host.HostId == l[i].HostId {
+				c.mu.Unlock()
+				return
+			}
+			newL[i] = l[i]
+		}
+		newL[n] = host
+	}
+
+	c.list.Store(&l)
+	c.mu.Unlock()
+}
+
+func (c *cowHostList) remove(host HostInfo) {
+	c.mu.Lock()
+	l := c.get()
+	size := len(l)
+	if size == 0 {
+		c.mu.Unlock()
+		return
+	}
+
+	found := false
+	newL := make([]HostInfo, 0, size)
+	for i := 0; i < len(l); i++ {
+		if host.Peer != l[i].Peer && host.HostId != l[i].HostId {
+			newL = append(newL, l[i])
+		} else {
+			found = true
+		}
+	}
+
+	if !found {
+		c.mu.Unlock()
+		return
+	}
+
+	newL = newL[:size-1 : size-1]
+	c.list.Store(&newL)
+	c.mu.Unlock()
+}
+
 // RetryableQuery is an interface that represents a query or batch statement that
 // exposes the correct functions for the retry policy logic to evaluate correctly.
 type RetryableQuery interface {
@@ -50,9 +122,14 @@ func (s *SimpleRetryPolicy) Attempt(q RetryableQuery) bool {
 	return q.Attempts() <= s.NumRetries
 }
 
+type HostStateNotifier interface {
+	AddHost(host *HostInfo)
+}
+
 // HostSelectionPolicy is an interface for selecting
 // the most appropriate host to execute a given query.
 type HostSelectionPolicy interface {
+	HostStateNotifier
 	SetHosts
 	SetPartitioner
 	//Pick returns an iteration function over selected hosts
@@ -76,15 +153,13 @@ func RoundRobinHostPolicy() HostSelectionPolicy {
 }
 
 type roundRobinHostPolicy struct {
-	hosts []HostInfo
+	hosts cowHostList
 	pos   uint32
 	mu    sync.RWMutex
 }
 
 func (r *roundRobinHostPolicy) SetHosts(hosts []HostInfo) {
-	r.mu.Lock()
-	r.hosts = hosts
-	r.mu.Unlock()
+	r.hosts.set(hosts)
 }
 
 func (r *roundRobinHostPolicy) SetPartitioner(partitioner string) {
@@ -96,9 +171,8 @@ func (r *roundRobinHostPolicy) Pick(qry *Query) NextHost {
 	// to the number of hosts known to this policy
 	var i int
 	return func() SelectedHost {
-		r.mu.RLock()
-		defer r.mu.RUnlock()
-		if len(r.hosts) == 0 {
+		hosts := r.hosts.get()
+		if len(hosts) == 0 {
 			return nil
 		}
 
@@ -112,6 +186,10 @@ func (r *roundRobinHostPolicy) Pick(qry *Query) NextHost {
 		i++
 		return selectedRoundRobinHost{host}
 	}
+}
+
+func (r *roundRobinHostPolicy) AddHost(host *HostInfo) {
+	r.hosts.add(*host)
 }
 
 // selectedRoundRobinHost is a host returned by the roundRobinHostPolicy and
@@ -164,6 +242,22 @@ func (t *tokenAwareHostPolicy) SetPartitioner(partitioner string) {
 
 		t.resetTokenRing()
 	}
+}
+
+func (t *tokenAwareHostPolicy) AddHost(host *HostInfo) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	t.fallback.AddHost(host)
+	for i := range t.hosts {
+		h := &t.hosts[i]
+		if h.HostId == host.HostId && h.Peer == host.Peer {
+			return
+		}
+	}
+
+	t.hosts = append(t.hosts, *host)
+	t.resetTokenRing()
 }
 
 func (t *tokenAwareHostPolicy) resetTokenRing() {
@@ -288,6 +382,24 @@ func (r *hostPoolHostPolicy) SetHosts(hosts []HostInfo) {
 	r.hp.SetHosts(peers)
 	r.hostMap = hostMap
 	r.mu.Unlock()
+}
+
+func (r *hostPoolHostPolicy) AddHost(host *HostInfo) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if _, ok := r.hostMap[host.Peer]; ok {
+		return
+	}
+
+	hosts := make([]string, 0, len(r.hostMap)+1)
+	for addr := range r.hostMap {
+		hosts = append(hosts, addr)
+	}
+	hosts = append(hosts, host.Peer)
+
+	r.hp.SetHosts(hosts)
+	r.hostMap[host.Peer] = *host
 }
 
 func (r *hostPoolHostPolicy) SetPartitioner(partitioner string) {

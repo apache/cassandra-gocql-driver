@@ -218,6 +218,43 @@ func (p *policyConnPool) Close() {
 	}
 }
 
+func (p *policyConnPool) addHost(host *HostInfo) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	pool, ok := p.hostConnPools[host.Peer]
+	if ok {
+		return
+	}
+
+	pool = newHostConnPool(
+		p.session,
+		host.Peer,
+		p.port,
+		p.numConns,
+		p.connCfg,
+		p.keyspace,
+		p.connPolicy(),
+	)
+
+	p.hostConnPools[host.Peer] = pool
+}
+
+func (p *policyConnPool) removeHost(addr string) {
+	p.mu.Lock()
+
+	pool, ok := p.hostConnPools[addr]
+	if !ok {
+		p.mu.Unlock()
+		return
+	}
+
+	delete(p.hostConnPools, addr)
+	p.mu.Unlock()
+
+	pool.Close()
+}
+
 // hostConnPool is a connection pool for a single host.
 // Connection selection is based on a provided ConnSelectionPolicy
 type hostConnPool struct {
