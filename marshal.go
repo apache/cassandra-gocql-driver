@@ -1285,9 +1285,12 @@ func marshalUDT(info TypeInfo, value interface{}) ([]byte, error) {
 				return nil, err
 			}
 
-			n := len(data)
-			buf = appendInt(buf, int32(n))
-			buf = append(buf, data...)
+			if data == nil && typeCanBeNull(e.Type) {
+				buf = appendInt(buf, -1)
+			} else {
+				buf = appendInt(buf, int32(len(data)))
+				buf = append(buf, data...)
+			}
 		}
 
 		return buf, nil
@@ -1304,9 +1307,12 @@ func marshalUDT(info TypeInfo, value interface{}) ([]byte, error) {
 				return nil, err
 			}
 
-			n := len(data)
-			buf = appendInt(buf, int32(n))
-			buf = append(buf, data...)
+			if data == nil && typeCanBeNull(e.Type) {
+				buf = appendInt(buf, -1)
+			} else {
+				buf = appendInt(buf, int32(len(data)))
+				buf = append(buf, data...)
+			}
 		}
 
 		return buf, nil
@@ -1342,8 +1348,12 @@ func marshalUDT(info TypeInfo, value interface{}) ([]byte, error) {
 		}
 
 		if !f.IsValid() {
-			buf = appendInt(buf, -1)
-			continue
+			if _, ok := e.Type.(CollectionType); ok {
+				f = reflect.Zero(goType(e.Type))
+			} else {
+				buf = appendInt(buf, -1)
+				continue
+			}
 		} else if f.Kind() == reflect.Ptr {
 			if f.IsNil() {
 				buf = appendInt(buf, -1)
@@ -1358,9 +1368,12 @@ func marshalUDT(info TypeInfo, value interface{}) ([]byte, error) {
 			return nil, err
 		}
 
-		n := len(data)
-		buf = appendInt(buf, int32(n))
-		buf = append(buf, data...)
+		if data == nil && typeCanBeNull(e.Type) {
+			buf = appendInt(buf, -1)
+		} else {
+			buf = appendInt(buf, int32(len(data)))
+			buf = append(buf, data...)
+		}
 	}
 
 	return buf, nil
