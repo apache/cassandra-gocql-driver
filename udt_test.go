@@ -390,3 +390,37 @@ func TestUDT_MissingField(t *testing.T) {
 		t.Errorf("expected %q: got %q", writeCol.Name, readCol.Name)
 	}
 }
+
+func TestUDT_EmptyCollections(t *testing.T) {
+	if *flagProto < protoVersion3 {
+		t.Skip("UDT are only available on protocol >= 3")
+	}
+
+	session := createSession(t)
+	defer session.Close()
+
+	err := createTable(session, `CREATE TYPE gocql_test.nil_collections(
+		a list<text>,
+		b map<text, text>,
+		c set<text>
+	);`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = createTable(session, `CREATE TABLE gocql_test.nil_collections(
+		id uuid,
+		udt_col frozen<nil_collections>,
+
+		primary key(id)
+	);`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	id := TimeUUID()
+	err = session.Query("INSERT INTO nil_collections(id, udt_col) VALUES(?, ?)", id, &struct{}{}).Exec()
+	if err != nil {
+		t.Fatal(err)
+	}
+}
