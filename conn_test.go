@@ -50,12 +50,18 @@ func TestJoinHostPort(t *testing.T) {
 	}
 }
 
+func testCluster(addr string, proto protoVersion) *ClusterConfig {
+	cluster := NewCluster(addr)
+	cluster.ProtoVersion = int(proto)
+	cluster.disableControlConn = true
+	return cluster
+}
+
 func TestSimple(t *testing.T) {
 	srv := NewTestServer(t, defaultProto)
 	defer srv.Stop()
 
-	cluster := NewCluster(srv.Address)
-	cluster.ProtoVersion = int(defaultProto)
+	cluster := testCluster(srv.Address, defaultProto)
 	db, err := cluster.CreateSession()
 	if err != nil {
 		t.Fatalf("0x%x: NewCluster: %v", defaultProto, err)
@@ -94,18 +100,19 @@ func TestSSLSimpleNoClientCert(t *testing.T) {
 	}
 }
 
-func createTestSslCluster(hosts string, proto uint8, useClientCert bool) *ClusterConfig {
-	cluster := NewCluster(hosts)
+func createTestSslCluster(addr string, proto protoVersion, useClientCert bool) *ClusterConfig {
+	cluster := testCluster(addr, proto)
 	sslOpts := &SslOptions{
 		CaPath:                 "testdata/pki/ca.crt",
 		EnableHostVerification: false,
 	}
+
 	if useClientCert {
 		sslOpts.CertPath = "testdata/pki/gocql.crt"
 		sslOpts.KeyPath = "testdata/pki/gocql.key"
 	}
+
 	cluster.SslOpts = sslOpts
-	cluster.ProtoVersion = int(proto)
 	return cluster
 }
 
@@ -115,28 +122,23 @@ func TestClosed(t *testing.T) {
 	srv := NewTestServer(t, defaultProto)
 	defer srv.Stop()
 
-	cluster := NewCluster(srv.Address)
-	cluster.ProtoVersion = int(defaultProto)
-
-	session, err := cluster.CreateSession()
-	defer session.Close()
+	session, err := newTestSession(srv.Address, defaultProto)
 	if err != nil {
 		t.Fatalf("0x%x: NewCluster: %v", defaultProto, err)
 	}
+
+	session.Close()
 
 	if err := session.Query("void").Exec(); err != ErrSessionClosed {
 		t.Fatalf("0x%x: expected %#v, got %#v", defaultProto, ErrSessionClosed, err)
 	}
 }
 
-func newTestSession(addr string, proto uint8) (*Session, error) {
-	cluster := NewCluster(addr)
-	cluster.ProtoVersion = int(proto)
-	return cluster.CreateSession()
+func newTestSession(addr string, proto protoVersion) (*Session, error) {
+	return testCluster(addr, proto).CreateSession()
 }
 
 func TestTimeout(t *testing.T) {
-
 	srv := NewTestServer(t, defaultProto)
 	defer srv.Stop()
 
@@ -197,7 +199,7 @@ func TestStreams_Protocol1(t *testing.T) {
 
 	// TODO: these are more like session tests and should instead operate
 	// on a single Conn
-	cluster := NewCluster(srv.Address)
+	cluster := testCluster(srv.Address, protoVersion1)
 	cluster.NumConns = 1
 	cluster.ProtoVersion = 1
 
@@ -229,7 +231,7 @@ func TestStreams_Protocol3(t *testing.T) {
 
 	// TODO: these are more like session tests and should instead operate
 	// on a single Conn
-	cluster := NewCluster(srv.Address)
+	cluster := testCluster(srv.Address, protoVersion3)
 	cluster.NumConns = 1
 	cluster.ProtoVersion = 3
 
@@ -356,7 +358,6 @@ func TestPolicyConnPoolSSL(t *testing.T) {
 
 	db, err := cluster.CreateSession()
 	if err != nil {
-		db.Close()
 		t.Fatalf("failed to create new session: %v", err)
 	}
 
@@ -377,7 +378,7 @@ func TestQueryTimeout(t *testing.T) {
 	srv := NewTestServer(t, defaultProto)
 	defer srv.Stop()
 
-	cluster := NewCluster(srv.Address)
+	cluster := testCluster(srv.Address, defaultProto)
 	// Set the timeout arbitrarily low so that the query hits the timeout in a
 	// timely manner.
 	cluster.Timeout = 1 * time.Millisecond
@@ -418,7 +419,7 @@ func TestQueryTimeoutReuseStream(t *testing.T) {
 	srv := NewTestServer(t, defaultProto)
 	defer srv.Stop()
 
-	cluster := NewCluster(srv.Address)
+	cluster := testCluster(srv.Address, defaultProto)
 	// Set the timeout arbitrarily low so that the query hits the timeout in a
 	// timely manner.
 	cluster.Timeout = 1 * time.Millisecond
@@ -442,7 +443,7 @@ func TestQueryTimeoutClose(t *testing.T) {
 	srv := NewTestServer(t, defaultProto)
 	defer srv.Stop()
 
-	cluster := NewCluster(srv.Address)
+	cluster := testCluster(srv.Address, defaultProto)
 	// Set the timeout arbitrarily low so that the query hits the timeout in a
 	// timely manner.
 	cluster.Timeout = 1000 * time.Millisecond

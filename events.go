@@ -43,12 +43,9 @@ func (s *Session) handleEvent(framer *framer) {
 }
 
 func (s *Session) handleNewNode(host net.IP, port int) {
-	if !s.cfg.DiscoverHosts || s.control == nil {
+	// TODO(zariel): need to be able to filter discovered nodes
+	if s.control == nil {
 		return
-	}
-
-	if s.control.addr() == host.String() {
-		go s.control.reconnect(false)
 	}
 
 	hostInfo, err := s.control.fetchHostInfo(host, port)
@@ -57,22 +54,21 @@ func (s *Session) handleNewNode(host net.IP, port int) {
 		return
 	}
 
-	s.pool.addHost(hostInfo)
+	if s.hostFilter.Accept(*hostInfo) {
+		s.pool.addHost(hostInfo)
+	}
 }
 
 func (s *Session) handleRemovedNode(host net.IP, port int) {
-	if !s.cfg.DiscoverHosts {
-		return
-	}
-
+	// we remove all nodes but only add ones which pass the filter
 	s.pool.removeHost(host.String())
 }
 
 func (s *Session) handleNodeUp(host net.IP, port int) {
-	// even if were not disconvering new nodes we should still handle nodes going
-	// up.
-
-	s.pool.hostUp(host.String())
+	// TODO(zariel): handle this case even when not discovering, just mark the
+	// host up.
+	// TODO: implement this properly not as newNode
+	s.handleNewNode(host, port)
 }
 
 func (s *Session) handleNodeDown(host net.IP, port int) {

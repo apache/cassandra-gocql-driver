@@ -71,16 +71,15 @@ type policyConnPool struct {
 	hostConnPools map[string]*hostConnPool
 }
 
-func newPolicyConnPool(session *Session, hostPolicy HostSelectionPolicy,
-	connPolicy func() ConnSelectionPolicy) (*policyConnPool, error) {
+func connConfig(session *Session) (*ConnConfig, error) {
+	cfg := session.cfg
 
 	var (
 		err       error
 		tlsConfig *tls.Config
 	)
 
-	cfg := session.cfg
-
+	// TODO(zariel): move tls config setup into session init.
 	if cfg.SslOpts != nil {
 		tlsConfig, err = setupTLSConfig(cfg.SslOpts)
 		if err != nil {
@@ -88,28 +87,41 @@ func newPolicyConnPool(session *Session, hostPolicy HostSelectionPolicy,
 		}
 	}
 
+	return &ConnConfig{
+		ProtoVersion:  cfg.ProtoVersion,
+		CQLVersion:    cfg.CQLVersion,
+		Timeout:       cfg.Timeout,
+		NumStreams:    cfg.NumStreams,
+		Compressor:    cfg.Compressor,
+		Authenticator: cfg.Authenticator,
+		Keepalive:     cfg.SocketKeepalive,
+		tlsConfig:     tlsConfig,
+	}, nil
+}
+
+func newPolicyConnPool(session *Session, hostPolicy HostSelectionPolicy,
+	connPolicy func() ConnSelectionPolicy) (*policyConnPool, error) {
+
+	connCfg, err := connConfig(session)
+	if err != nil {
+		return nil, err
+	}
+
 	// create the pool
 	pool := &policyConnPool{
-		session:  session,
-		port:     cfg.Port,
-		numConns: cfg.NumConns,
-		connCfg: &ConnConfig{
-			ProtoVersion:  cfg.ProtoVersion,
-			CQLVersion:    cfg.CQLVersion,
-			Timeout:       cfg.Timeout,
-			Compressor:    cfg.Compressor,
-			Authenticator: cfg.Authenticator,
-			Keepalive:     cfg.SocketKeepalive,
-			tlsConfig:     tlsConfig,
-		},
-		keyspace:      cfg.Keyspace,
+		session:       session,
+		port:          session.cfg.Port,
+		numConns:      session.cfg.NumConns,
+		connCfg:       connCfg,
+		keyspace:      session.cfg.Keyspace,
 		hostPolicy:    hostPolicy,
 		connPolicy:    connPolicy,
 		hostConnPools: map[string]*hostConnPool{},
 	}
 
-	hosts := make([]HostInfo, len(cfg.Hosts))
-	for i, hostAddr := range cfg.Hosts {
+	// TODO(zariel): fetch this from session metadata.
+	hosts := make([]HostInfo, len(session.cfg.Hosts))
+	for i, hostAddr := range session.cfg.Hosts {
 		hosts[i].Peer = hostAddr
 	}
 
@@ -241,6 +253,7 @@ func (p *policyConnPool) addHost(host *HostInfo) {
 }
 
 func (p *policyConnPool) removeHost(addr string) {
+	p.hostPolicy.RemoveHost(addr)
 	p.mu.Lock()
 
 	pool, ok := p.hostConnPools[addr]
@@ -253,6 +266,18 @@ func (p *policyConnPool) removeHost(addr string) {
 	p.mu.Unlock()
 
 	pool.Close()
+}
+
+func (p *policyConnPool) hostUp(host *HostInfo) {
+	// TODO(zariel): have a set of up hosts and down hosts, we can internally
+	// detect down hosts, then try to reconnect to them.
+	p.addHost(host)
+}
+
+func (p *policyConnPool) hostDown(addr string) {
+	// TODO(zariel): mark host as down so we can try to connect to it later, for
+	// now just treat it has removed.
+	p.removeHost(addr)
 }
 
 // hostConnPool is a connection pool for a single host.

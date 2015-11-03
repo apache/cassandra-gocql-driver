@@ -165,7 +165,6 @@ func TestAuthentication(t *testing.T) {
 func TestRingDiscovery(t *testing.T) {
 	cluster := createCluster()
 	cluster.Hosts = clusterHosts[:1]
-	cluster.DiscoverHosts = true
 
 	session := createSessionFromCluster(cluster, t)
 	defer session.Close()
@@ -648,10 +647,6 @@ func TestCreateSessionTimeout(t *testing.T) {
 	if err == nil {
 		session.Close()
 		t.Fatal("expected ErrNoConnectionsStarted, but no error was returned.")
-	}
-
-	if err != ErrNoConnectionsStarted {
-		t.Fatalf("expected ErrNoConnectionsStarted, but received %v", err)
 	}
 }
 
@@ -2001,7 +1996,6 @@ func TestRoutingKey(t *testing.T) {
 func TestTokenAwareConnPool(t *testing.T) {
 	cluster := createCluster()
 	cluster.PoolConfig.HostSelectionPolicy = TokenAwareHostPolicy(RoundRobinHostPolicy())
-	cluster.DiscoverHosts = true
 
 	session := createSessionFromCluster(cluster, t)
 	defer session.Close()
@@ -2379,9 +2373,7 @@ func TestDiscoverViaProxy(t *testing.T) {
 	proxyAddr := proxy.Addr().String()
 
 	cluster := createCluster()
-	cluster.DiscoverHosts = true
 	cluster.NumConns = 1
-	cluster.Discovery.Sleep = 100 * time.Millisecond
 	// initial host is the proxy address
 	cluster.Hosts = []string{proxyAddr}
 

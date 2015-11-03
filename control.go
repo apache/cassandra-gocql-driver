@@ -4,23 +4,26 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"math/rand"
 	"net"
+	"sync"
 	"sync/atomic"
 	"time"
 )
 
-// Ensure that the atomic variable is aligned to a 64bit boundary 
+// Ensure that the atomic variable is aligned to a 64bit boundary
 // so that atomic operations can be applied on 32bit architectures.
 type controlConn struct {
 	connecting uint64
 
 	session *Session
 
-	conn       atomic.Value
+	conn atomic.Value
 
 	retry RetryPolicy
 
-	quit chan struct{}
+	closeWg sync.WaitGroup
+	quit    chan struct{}
 }
 
 func createControlConn(session *Session) *controlConn {
@@ -31,12 +34,14 @@ func createControlConn(session *Session) *controlConn {
 	}
 
 	control.conn.Store((*Conn)(nil))
-	go control.heartBeat()
 
 	return control
 }
 
 func (c *controlConn) heartBeat() {
+	c.closeWg.Add(1)
+	defer c.closeWg.Done()
+
 	for {
 		select {
 		case <-c.quit:
@@ -62,12 +67,61 @@ func (c *controlConn) heartBeat() {
 		c.reconnect(true)
 		// time.Sleep(5 * time.Second)
 		continue
-
 	}
 }
 
+func (c *controlConn) connect(endpoints []string) error {
+	// intial connection attmept, try to connect to each endpoint to get an initial
+	// list of nodes.
+
+	// shuffle endpoints so not all drivers will connect to the same initial
+	// node.
+	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+	perm := r.Perm(len(endpoints))
+	shuffled := make([]string, len(endpoints))
+
+	for i, endpoint := range endpoints {
+		shuffled[perm[i]] = endpoint
+	}
+
+	connCfg, err := connConfig(c.session)
+	if err != nil {
+		return err
+	}
+
+	// store that we are not connected so that reconnect wont happen if we error
+	atomic.StoreInt64(&c.connecting, -1)
+
+	var (
+		conn *Conn
+	)
+
+	for _, addr := range shuffled {
+		conn, err = Connect(JoinHostPort(addr, c.session.cfg.Port), connCfg, c, c.session)
+		if err != nil {
+			log.Printf("gocql: unable to dial %v: %v\n", addr, err)
+			continue
+		}
+
+		// we should fetch the initial ring here and update initial host data. So that
+		// when we return from here we have a ring topology ready to go.
+		break
+	}
+
+	if conn == nil {
+		// this is fatal, not going to connect a session
+		return err
+	}
+
+	c.conn.Store(conn)
+	atomic.StoreInt64(&c.connecting, 0)
+	go c.heartBeat()
+
+	return nil
+}
+
 func (c *controlConn) reconnect(refreshring bool) {
-	if !atomic.CompareAndSwapUint64(&c.connecting, 0, 1) {
+	if !atomic.CompareAndSwapInt64(&c.connecting, 0, 1) {
 		return
 	}
 
@@ -77,10 +131,10 @@ func (c *controlConn) reconnect(refreshring bool) {
 		if success {
 			go func() {
 				time.Sleep(500 * time.Millisecond)
-				atomic.StoreUint64(&c.connecting, 0)
+				atomic.StoreInt64(&c.connecting, 0)
 			}()
 		} else {
-			atomic.StoreUint64(&c.connecting, 0)
+			atomic.StoreInt64(&c.connecting, 0)
 		}
 	}()
 
@@ -120,7 +174,7 @@ func (c *controlConn) reconnect(refreshring bool) {
 		oldConn.Close()
 	}
 
-	if refreshring && c.session.cfg.DiscoverHosts {
+	if refreshring {
 		c.session.hostSource.refreshRing()
 	}
 }
@@ -242,6 +296,11 @@ func (c *controlConn) addr() string {
 func (c *controlConn) close() {
 	// TODO: handle more gracefully
 	close(c.quit)
+	c.closeWg.Wait()
+	conn := c.conn.Load().(*Conn)
+	if conn != nil {
+		conn.Close()
+	}
 }
 
 var errNoControl = errors.New("gocql: no control connection available")
