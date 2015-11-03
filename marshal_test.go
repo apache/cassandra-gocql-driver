@@ -897,3 +897,32 @@ func TestMarshalTuple(t *testing.T) {
 		t.Errorf("unmarshalTest: expected [foo, bar], got [%s, %s]", s1, s2)
 	}
 }
+
+func TestMarshalNil(t *testing.T) {
+	types := []Type{
+		TypeAscii,
+		TypeBlob,
+		TypeBoolean,
+		TypeBigInt,
+		TypeCounter,
+		TypeDecimal,
+		TypeDouble,
+		TypeFloat,
+		TypeInt,
+		TypeTimestamp,
+		TypeUUID,
+		TypeVarchar,
+		TypeVarint,
+		TypeTimeUUID,
+		TypeInet,
+	}
+
+	for _, typ := range types {
+		data, err := Marshal(NativeType{proto: 3, typ: typ}, nil)
+		if err != nil {
+			t.Errorf("unable to marshal nil %v: %v\n", typ, err)
+		} else if data != nil {
+			t.Errorf("expected to get nil byte for nil %v got % X", typ, data)
+		}
+	}
+}
