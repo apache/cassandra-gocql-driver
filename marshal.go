@@ -43,9 +43,6 @@ type Unmarshaler interface {
 // Marshal returns the CQL encoding of the value for the Cassandra
 // internal type described by the info parameter.
 func Marshal(info TypeInfo, value interface{}) ([]byte, error) {
-	if value == nil {
-		return nil, nil
-	}
 	if info.Version() < protoVersion1 {
 		panic("protocol version not set")
 	}
@@ -290,7 +287,16 @@ func marshalInt(info TypeInfo, value interface{}) ([]byte, error) {
 		}
 		return encInt(int32(i)), nil
 	}
+
+	if value == nil {
+		return nil, nil
+	}
+
 	rv := reflect.ValueOf(value)
+	if rv.IsNil() {
+		return nil, nil
+	}
+
 	switch rv.Type().Kind() {
 	case reflect.Int, reflect.Int64, reflect.Int32, reflect.Int16, reflect.Int8:
 		v := rv.Int()
@@ -881,9 +887,6 @@ func marshalList(info TypeInfo, value interface{}) ([]byte, error) {
 	k := t.Kind()
 	switch k {
 	case reflect.Slice, reflect.Array:
-		if k == reflect.Slice && rv.IsNil() {
-			return nil, nil
-		}
 		buf := &bytes.Buffer{}
 		n := rv.Len()
 
@@ -989,9 +992,7 @@ func marshalMap(info TypeInfo, value interface{}) ([]byte, error) {
 	if t.Kind() != reflect.Map {
 		return nil, marshalErrorf("can not marshal %T into %s", value, info)
 	}
-	if rv.IsNil() {
-		return nil, nil
-	}
+
 	buf := &bytes.Buffer{}
 	n := rv.Len()
 

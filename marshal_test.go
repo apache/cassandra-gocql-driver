@@ -257,8 +257,8 @@ var marshalTests = []struct {
 			NativeType: NativeType{proto: 2, typ: TypeSet},
 			Elem:       NativeType{proto: 2, typ: TypeInt},
 		},
-		[]byte(nil),
-		[]int(nil),
+		[]byte{0, 0}, // encoding of a list should always include the size of the collection
+		[]int{},
 	},
 	{
 		CollectionType{
@@ -275,8 +275,8 @@ var marshalTests = []struct {
 			Key:        NativeType{proto: 2, typ: TypeVarchar},
 			Elem:       NativeType{proto: 2, typ: TypeInt},
 		},
-		[]byte(nil),
-		map[string]int(nil),
+		[]byte{0, 0},
+		map[string]int{},
 	},
 	{
 		CollectionType{
