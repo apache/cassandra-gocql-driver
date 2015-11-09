@@ -15,6 +15,8 @@ import (
 	"gopkg.in/inf.v0"
 )
 
+type AliasInt int
+
 var marshalTests = []struct {
 	Info  TypeInfo
 	Data  []byte
@@ -72,6 +74,11 @@ var marshalTests = []struct {
 		NativeType{proto: 2, typ: TypeInt},
 		[]byte("\x01\x02\x03\x04"),
 		int(16909060),
+	},
+	{
+		NativeType{proto: 2, typ: TypeInt},
+		[]byte("\x01\x02\x03\x04"),
+		AliasInt(16909060),
 	},
 	{
 		NativeType{proto: 2, typ: TypeInt},
