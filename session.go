@@ -42,6 +42,9 @@ type Session struct {
 
 	control *controlConn
 
+	// ring metadata
+	hosts []HostInfo
+
 	cfg ClusterConfig
 
 	closeMu  sync.RWMutex
@@ -79,7 +82,6 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 	if !cfg.disableControlConn {
 		s.control = createControlConn(s)
 		if err := s.control.connect(cfg.Hosts); err != nil {
-			s.control.close()
 			return nil, err
 		}
 

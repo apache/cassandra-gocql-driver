@@ -8,16 +8,41 @@ import (
 	"time"
 )
 
+type nodeState int32
+
+func (n nodeState) String() {
+	if n == NodeUp {
+		return "UP"
+	} else if n == NodeDown {
+		return "DOWN"
+	}
+}
+
+const (
+	NodeUp nodeState = iota
+	NodeDown
+)
+
 type HostInfo struct {
 	Peer       string
 	DataCenter string
 	Rack       string
 	HostId     string
+	Version    cassVersion
+	State      nodeState
 	Tokens     []string
 }
 
+type cassVersion struct {
+	Major, Minor, Patch int
+}
+
+func (c cassVersion) String() string {
+	return fmt.Sprintf("v%d.%d.%d", c.Major, c.Minor, c.Patch)
+}
+
 func (h HostInfo) String() string {
-	return fmt.Sprintf("[hostinfo peer=%q data_centre=%q rack=%q host_id=%q num_tokens=%d]", h.Peer, h.DataCenter, h.Rack, h.HostId, len(h.Tokens))
+	return fmt.Sprintf("[hostinfo peer=%q data_centre=%q rack=%q host_id=%q version=%q state=%s num_tokens=%d]", h.Peer, h.DataCenter, h.Rack, h.HostId, h.Version, h.State, len(h.Tokens))
 }
 
 // Polls system.peers at a specific interval to find new hosts

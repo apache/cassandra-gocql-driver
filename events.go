@@ -6,6 +6,7 @@ import (
 )
 
 func (s *Session) handleEvent(framer *framer) {
+	// TODO(zariel): need to debounce events frames, and possible also events
 	defer framerPool.Put(framer)
 
 	frame, err := framer.parseFrame()
@@ -36,6 +37,7 @@ func (s *Session) handleEvent(framer *framer) {
 		case "UP":
 			s.handleNodeUp(f.host, f.port)
 		case "DOWN":
+			s.handleNodeDown(f.host, f.port)
 		}
 	default:
 		log.Printf("gocql: invalid event frame (%T): %v\n", f, f)
