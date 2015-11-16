@@ -167,3 +167,28 @@ func TestRoundRobinConnPolicy(t *testing.T) {
 		t.Error("Expected conn1")
 	}
 }
+
+func TestRoundRobinNilHostInfo(t *testing.T) {
+	policy := RoundRobinHostPolicy()
+
+	host := HostInfo{HostId: "host-1"}
+	policy.SetHosts([]HostInfo{host})
+
+	iter := policy.Pick(nil)
+	next := iter()
+	if next == nil {
+		t.Fatal("got nil host")
+	} else if v := next.Info(); v == nil {
+		t.Fatal("got nil HostInfo")
+	} else if v.HostId != host.HostId {
+		t.Fatalf("expected host %v got %v", host, *v)
+	}
+
+	next = iter()
+	if next != nil {
+		t.Errorf("expected to get nil host got %+v", next)
+		if next.Info() == nil {
+			t.Fatalf("HostInfo is nil")
+		}
+	}
+}
