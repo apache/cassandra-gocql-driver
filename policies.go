@@ -38,7 +38,7 @@ func (c *cowHostList) add(host HostInfo) {
 	l := c.get()
 
 	if n := len(l); n == 0 {
-		l = append(l, host)
+		l = []HostInfo{host}
 	} else {
 		newL := make([]HostInfo, n+1)
 		for i := 0; i < n; i++ {
@@ -49,6 +49,7 @@ func (c *cowHostList) add(host HostInfo) {
 			newL[i] = l[i]
 		}
 		newL[n] = host
+		l = newL
 	}
 
 	c.list.Store(&l)
