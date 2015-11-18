@@ -20,6 +20,22 @@ import (
 	"time"
 )
 
+var (
+	approvedAuthenticators = [...]string{
+		"org.apache.cassandra.auth.PasswordAuthenticator",
+		"com.instaclustr.cassandra.auth.SharedSecretAuthenticator",
+	}
+)
+
+func approve(authenticator string) bool {
+	for _, s := range approvedAuthenticators {
+		if authenticator == s {
+			return true
+		}
+	}
+	return false
+}
+
 //JoinHostPort is a utility to return a address string that can be used
 //gocql.Conn to form a connection with a host.
 func JoinHostPort(addr string, port int) string {
@@ -41,7 +57,7 @@ type PasswordAuthenticator struct {
 }
 
 func (p PasswordAuthenticator) Challenge(req []byte) ([]byte, Authenticator, error) {
-	if string(req) != "org.apache.cassandra.auth.PasswordAuthenticator" {
+	if !approve(string(req)) {
 		return nil, nil, fmt.Errorf("unexpected authenticator %q", req)
 	}
 	resp := make([]byte, 2+len(p.Username)+len(p.Password))

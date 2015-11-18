@@ -23,6 +23,19 @@ const (
 	defaultProto = protoVersion2
 )
 
+func TestApprove(t *testing.T) {
+	tests := map[bool]bool{
+		approve("org.apache.cassandra.auth.PasswordAuthenticator"):          true,
+		approve("com.instaclustr.cassandra.auth.SharedSecretAuthenticator"): true,
+		approve("com.apache.cassandra.auth.FakeAuthenticator"):              false,
+	}
+	for k, v := range tests {
+		if k != v {
+			t.Fatalf("expected '%v', got '%v'", k, v)
+		}
+	}
+}
+
 func TestJoinHostPort(t *testing.T) {
 	tests := map[string]string{
 		"127.0.0.1:0":                                 JoinHostPort("127.0.0.1", 0),
