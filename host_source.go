@@ -23,22 +23,118 @@ const (
 	NodeDown
 )
 
-type HostInfo struct {
-	Peer       string
-	DataCenter string
-	Rack       string
-	HostId     string
-	Version    cassVersion
-	State      nodeState
-	Tokens     []string
-}
-
 type cassVersion struct {
 	Major, Minor, Patch int
 }
 
 func (c cassVersion) String() string {
 	return fmt.Sprintf("v%d.%d.%d", c.Major, c.Minor, c.Patch)
+}
+
+type HostInfo struct {
+	// TODO(zariel): reduce locking maybe, not all values will change, but to ensure
+	// that we are thread safe use a mutex to access all fields.
+	mu         sync.RWMutex
+	peer       string
+	dataCenter string
+	rack       string
+	hostId     string
+	version    cassVersion
+	state      nodeState
+	tokens     []string
+}
+
+func (h *HostInfo) Peer() string {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return h.peer
+}
+
+func (h *HostInfo) SetPeer(peer string) *HostInfo {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.peer = peer
+	return h
+}
+
+func (h *HostInfo) DataCenter() string {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return h.dataCenter
+}
+
+func (h *HostInfo) SetDataCenter(dataCenter string) *HostInfo {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.dataCenter = dataCenter
+	return h
+}
+
+func (h *HostFilter) Rack() string {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return h.rack
+}
+
+func (h *HostInfo) SetRack(rack string) *HostInfo {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.rack = rack
+	return h
+}
+
+func (h *HostInfo) HostID() string {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return h.hostId
+}
+
+func (h *HostInfo) SetHostID(hostID string) *HostInfo {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.hostId = hostID
+	return h
+}
+
+func (h *HostInfo) Version() cassVersion {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return h.version
+}
+
+func (h *HostInfo) SetVersion(major, minor, patch int) *HostInfo {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.version.Major = major
+	h.version.Minor = minor
+	h.version.Patch = patch
+	return h
+}
+
+func (h *HostInfo) State() nodeState {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return h.state
+}
+
+func (h *HostInfo) SetState(state nodeState) *HostInfo {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.state = state
+	return h
+}
+
+func (h *HostInfo) Tokens() []string {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return h.tokens
+}
+
+func (h *HostInfo) SetTokens(tokens []string) *HostInfo {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.tokens = tokens
+	return h
 }
 
 func (h HostInfo) String() string {

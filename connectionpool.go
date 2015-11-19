@@ -537,7 +537,7 @@ func (pool *hostConnPool) drain() {
 
 	// empty the pool
 	conns := pool.conns
-	pool.conns = pool.conns[:0]
+	pool.conns = pool.conns[:0:0]
 
 	// update the policy
 	pool.policy.SetConns(pool.conns)

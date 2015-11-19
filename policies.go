@@ -33,6 +33,7 @@ func (c *cowHostList) set(list []HostInfo) {
 	c.mu.Unlock()
 }
 
+// add will add a host if it not already in the list
 func (c *cowHostList) add(host HostInfo) {
 	c.mu.Lock()
 	l := c.get()
@@ -53,6 +54,33 @@ func (c *cowHostList) add(host HostInfo) {
 	}
 
 	c.list.Store(&l)
+	c.mu.Unlock()
+}
+
+func (c *cowHostList) update(host HostInfo) {
+	c.mu.Lock()
+	l := c.get()
+
+	if len(l) == 0 {
+		c.mu.Unlock()
+		return
+	}
+
+	found := false
+	newL := make([]HostInfo, len(l))
+	for i := range l {
+		if host.Peer == l[i].Peer && host.HostId == l[i].HostId {
+			newL[i] = host
+			found := true
+		} else {
+			newL[i] = l[i]
+		}
+	}
+
+	if found {
+		c.list.Store(&newL)
+	}
+
 	c.mu.Unlock()
 }
 
