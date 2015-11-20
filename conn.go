@@ -120,9 +120,11 @@ type Conn struct {
 
 	headerBuf []byte
 
-	uniq  chan int
-	mu    sync.RWMutex
-	calls map[int]*callReq
+	availableStreams int32
+	streamCounter    int32
+	streamBlocker    *sync.Cond
+	mu               sync.RWMutex
+	calls            map[int]*callReq
 
 	errorHandler    ConnErrorHandler
 	compressor      Compressor
@@ -186,31 +188,27 @@ func Connect(addr string, cfg *ConnConfig, errorHandler ConnErrorHandler, sessio
 	}
 
 	c := &Conn{
-		conn:         conn,
-		r:            bufio.NewReader(conn),
-		cfg:          cfg,
-		uniq:         make(chan int, streams),
-		calls:        make(map[int]*callReq),
-		timeout:      cfg.Timeout,
-		version:      uint8(cfg.ProtoVersion),
-		addr:         conn.RemoteAddr().String(),
-		errorHandler: errorHandler,
-		compressor:   cfg.Compressor,
-		auth:         cfg.Authenticator,
-		headerBuf:    make([]byte, headerSize),
-		quit:         make(chan struct{}),
-		session:      session,
-		numStreams:   streams,
+		conn:             conn,
+		r:                bufio.NewReader(conn),
+		cfg:              cfg,
+		availableStreams: int32(maxStreams - 1), // reserve stream 0
+		streamCounter:    0,
+		streamBlocker:    sync.NewCond(&sync.Mutex{}),
+		calls:            make(map[int]*callReq),
+		timeout:          cfg.Timeout,
+		version:          uint8(cfg.ProtoVersion),
+		addr:             conn.RemoteAddr().String(),
+		errorHandler:     errorHandler,
+		compressor:       cfg.Compressor,
+		auth:             cfg.Authenticator,
+		headerBuf:        make([]byte, headerSize),
+		quit:             make(chan struct{}),
+		session:          session,
+		numStreams:       streams,
 	}
 
 	if cfg.Keepalive > 0 {
 		c.setKeepalive(cfg.Keepalive)
-	}
-
-	// reserve stream 0 incase cassandra returns an error on it without us sending
-	// a request.
-	for i := 1; i < streams; i++ {
-		c.uniq <- i
 	}
 
 	go c.serve()
@@ -410,9 +408,7 @@ func (c *Conn) recv() error {
 		return err
 	}
 
-	if head.stream > c.numStreams {
-		return fmt.Errorf("gocql: frame header stream is beyond call exepected bounds: %d", head.stream)
-	} else if head.stream == -1 {
+	if head.stream == -1 {
 		// TODO: handle cassandra event frames, we shouldnt get any currently
 		return c.discardFrame(head)
 	} else if head.stream <= 0 {
@@ -485,9 +481,8 @@ func (c *Conn) releaseStream(stream int) {
 
 	streamPool.Put(call)
 
-	select {
-	case c.uniq <- stream:
-	case <-c.quit:
+	if atomic.AddInt32(&c.availableStreams, 1) <= 0 {
+		c.streamBlocker.Signal()
 	}
 }
 
@@ -510,10 +505,24 @@ var (
 func (c *Conn) exec(req frameWriter, tracer Tracer) (*framer, error) {
 	// TODO: move tracer onto conn
 	var stream int
-	select {
-	case stream = <-c.uniq:
-	case <-c.quit:
-		return nil, ErrConnectionClosed
+	maxStreams := 128 - 1
+	if c.cfg.ProtoVersion > protoVersion2 {
+		maxStreams = 32768 - 1
+	}
+	for stream == 0 {
+		if atomic.AddInt32(&c.availableStreams, -1) >= 0 {
+			stream = 1 + (((int(atomic.AddInt32(&c.streamCounter, 1)) % maxStreams) + maxStreams) % maxStreams)
+		} else {
+			atomic.AddInt32(&c.availableStreams, 1)
+			c.streamBlocker.L.Lock()
+			c.streamBlocker.Wait()
+			c.streamBlocker.L.Unlock()
+			select {
+			case <-c.quit:
+				return nil, ErrConnectionClosed
+			default:
+			}
+		}
 	}
 
 	// resp is basically a waiting semaphore protecting the framer
@@ -799,7 +808,11 @@ func (c *Conn) Address() string {
 }
 
 func (c *Conn) AvailableStreams() int {
-	return len(c.uniq)
+	n := int(c.availableStreams)
+	if n < 0 {
+		return 0
+	}
+	return n
 }
 
 func (c *Conn) UseKeyspace(keyspace string) error {
