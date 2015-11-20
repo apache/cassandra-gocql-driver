@@ -117,12 +117,13 @@ type Conn struct {
 	timeout    time.Duration
 	cfg        *ConnConfig
 	numStreams int
+	maxStreams int
 
 	headerBuf []byte
 
 	availableStreams int32
-	streamCounter    int32
-	streamBlocker    *sync.Cond
+	streamCounter    int
+	streamWaiter     *sync.Cond
 	mu               sync.RWMutex
 	calls            map[int]*callReq
 
@@ -193,7 +194,6 @@ func Connect(addr string, cfg *ConnConfig, errorHandler ConnErrorHandler, sessio
 		cfg:              cfg,
 		availableStreams: int32(maxStreams - 1), // reserve stream 0
 		streamCounter:    0,
-		streamBlocker:    sync.NewCond(&sync.Mutex{}),
 		calls:            make(map[int]*callReq),
 		timeout:          cfg.Timeout,
 		version:          uint8(cfg.ProtoVersion),
@@ -205,7 +205,9 @@ func Connect(addr string, cfg *ConnConfig, errorHandler ConnErrorHandler, sessio
 		quit:             make(chan struct{}),
 		session:          session,
 		numStreams:       streams,
+		maxStreams:       maxStreams,
 	}
+	c.streamWaiter = sync.NewCond(&c.mu)
 
 	if cfg.Keepalive > 0 {
 		c.setKeepalive(cfg.Keepalive)
@@ -477,13 +479,12 @@ func (c *Conn) releaseStream(stream int) {
 		panic(fmt.Sprintf("attempt to release streamID with ivalid stream: %d -> %+v\n", stream, call))
 	}
 	delete(c.calls, stream)
+	if c.availableStreams += 1; c.availableStreams <= 0 {
+		c.streamWaiter.Signal()
+	}
 	c.mu.Unlock()
 
 	streamPool.Put(call)
-
-	if atomic.AddInt32(&c.availableStreams, 1) <= 0 {
-		c.streamBlocker.Signal()
-	}
 }
 
 func (c *Conn) handleTimeout() {
@@ -505,36 +506,42 @@ var (
 func (c *Conn) exec(req frameWriter, tracer Tracer) (*framer, error) {
 	// TODO: move tracer onto conn
 	var stream int
-	maxStreams := 128 - 1
-	if c.cfg.ProtoVersion > protoVersion2 {
-		maxStreams = 32768 - 1
-	}
-	for stream == 0 {
-		if atomic.AddInt32(&c.availableStreams, -1) >= 0 {
-			stream = 1 + (((int(atomic.AddInt32(&c.streamCounter, 1)) % maxStreams) + maxStreams) % maxStreams)
-		} else {
-			atomic.AddInt32(&c.availableStreams, 1)
-			c.streamBlocker.L.Lock()
-			c.streamBlocker.Wait()
-			c.streamBlocker.L.Unlock()
-			select {
-			case <-c.quit:
-				return nil, ErrConnectionClosed
-			default:
-			}
-		}
-	}
-
 	// resp is basically a waiting semaphore protecting the framer
 	framer := newFramer(c, c, c.compressor, c.version)
 
 	c.mu.Lock()
+	for c.availableStreams <= 0 {
+		c.streamWaiter.Wait()
+		if c.Closed() {
+			c.mu.Unlock()
+			return nil, ErrConnectionClosed
+		}
+	}
+	c.availableStreams--
+	stream = 1 + (((c.streamCounter % (c.maxStreams - 1)) + (c.maxStreams - 1)) % (c.maxStreams - 1)) // positive modulo
+	c.streamCounter++
 	call := c.calls[stream]
 	if call != nil {
-		panic(fmt.Sprintf("attempting to use stream already in use: %d -> %+v\n", stream, call))
-	} else {
-		call = streamPool.Get().(*callReq)
+		// The next sequential stream is in use (we have wrapped around, and the
+		// first stream is still in use)
+		// so manually search for an empty stream. This code path should be
+		// rare enough to not affect performance
+		for i := 1; i < c.maxStreams; i++ {
+			if c.calls[i] == nil {
+				stream = i
+				c.streamCounter = i + 1
+				break
+			}
+		}
+		if stream == 0 {
+			// sanity check: we shouldn't actually need this check as
+			// availableStreams is > 1 here, so we must be able to find a
+			// stream
+			c.mu.Unlock()
+			panic("Sanity failure: tried to search exhausted stream list")
+		}
 	}
+	call = streamPool.Get().(*callReq)
 	c.calls[stream] = call
 	c.mu.Unlock()
 
@@ -808,11 +815,11 @@ func (c *Conn) Address() string {
 }
 
 func (c *Conn) AvailableStreams() int {
-	n := int(c.availableStreams)
+	n := atomic.LoadInt32(&c.availableStreams)
 	if n < 0 {
 		return 0
 	}
-	return n
+	return int(n)
 }
 
 func (c *Conn) UseKeyspace(keyspace string) error {
