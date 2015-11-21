@@ -54,15 +54,6 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 		return nil, ErrNoHosts
 	}
 
-	maxStreams := 128
-	if cfg.ProtoVersion > protoVersion2 {
-		maxStreams = 32768
-	}
-
-	if cfg.NumStreams <= 0 || cfg.NumStreams > maxStreams {
-		cfg.NumStreams = maxStreams
-	}
-
 	//Adjust the size of the prepared statements cache to match the latest configuration
 	stmtsLRU.Lock()
 	initStmtsLRU(cfg.MaxPreparedStmts)
