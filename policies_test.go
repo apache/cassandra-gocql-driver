@@ -6,6 +6,7 @@ package gocql
 
 import (
 	"fmt"
+	"github.com/gocql/gocql/internal/streams"
 	"testing"
 
 	"github.com/hailocab/go-hostpool"
@@ -147,8 +148,8 @@ func TestHostPoolHostPolicy(t *testing.T) {
 func TestRoundRobinConnPolicy(t *testing.T) {
 	policy := RoundRobinConnPolicy()()
 
-	conn0 := &Conn{}
-	conn1 := &Conn{}
+	conn0 := &Conn{streams: streams.New(1)}
+	conn1 := &Conn{streams: streams.New(1)}
 	conn := []*Conn{
 		conn0,
 		conn1,
@@ -156,14 +157,13 @@ func TestRoundRobinConnPolicy(t *testing.T) {
 
 	policy.SetConns(conn)
 
-	// the first conn selected is actually at [1], but this is ok for RR
-	if actual := policy.Pick(nil); actual != conn1 {
+	if actual := policy.Pick(nil); actual != conn0 {
 		t.Error("Expected conn1")
 	}
-	if actual := policy.Pick(nil); actual != conn0 {
+	if actual := policy.Pick(nil); actual != conn1 {
 		t.Error("Expected conn0")
 	}
-	if actual := policy.Pick(nil); actual != conn1 {
+	if actual := policy.Pick(nil); actual != conn0 {
 		t.Error("Expected conn1")
 	}
 }
