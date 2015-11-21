@@ -356,7 +356,7 @@ func TestCAS(t *testing.T) {
 	if applied, _, err := session.ExecuteBatchCAS(successBatch, &titleCAS, &revidCAS, &modifiedCAS); err != nil {
 		t.Fatal("insert:", err)
 	} else if !applied {
-		t.Fatal("insert should have been applied")
+		t.Fatalf("insert should have been applied: title=%v revID=%v modified=%v", titleCAS, revidCAS, modifiedCAS)
 	}
 
 	successBatch = session.NewBatch(LoggedBatch)
@@ -373,7 +373,7 @@ func TestCAS(t *testing.T) {
 	if applied, _, err := session.ExecuteBatchCAS(successBatch, &titleCAS, &revidCAS, &modifiedCAS); err != nil {
 		t.Fatal("insert:", err)
 	} else if applied {
-		t.Fatal("insert shouldn't have been applied")
+		t.Fatalf("insert should have been applied: title=%v revID=%v modified=%v", titleCAS, revidCAS, modifiedCAS)
 	}
 
 	insertBatch := session.NewBatch(LoggedBatch)
@@ -389,10 +389,10 @@ func TestCAS(t *testing.T) {
 	if applied, iter, err := session.ExecuteBatchCAS(failBatch, &titleCAS, &revidCAS, &modifiedCAS); err != nil {
 		t.Fatal("insert:", err)
 	} else if applied {
-		t.Fatal("insert shouldn't have been applied")
+		t.Fatalf("insert should have been applied: title=%v revID=%v modified=%v", titleCAS, revidCAS, modifiedCAS)
 	} else {
 		if scan := iter.Scan(&applied, &titleCAS, &revidCAS, &modifiedCAS); scan && applied {
-			t.Fatal("insert shouldn't have been applied")
+			t.Fatalf("insert should have been applied: title=%v revID=%v modified=%v", titleCAS, revidCAS, modifiedCAS)
 		} else if !scan {
 			t.Fatal("should have scanned another row")
 		}
@@ -428,7 +428,7 @@ func TestMapScanCAS(t *testing.T) {
 		title, revid, modified, deleted).MapScanCAS(mapCAS); err != nil {
 		t.Fatal("insert:", err)
 	} else if !applied {
-		t.Fatal("insert should have been applied")
+		t.Fatalf("insert should have been applied: title=%v revID=%v modified=%v", title, revid, modified)
 	}
 
 	mapCAS = map[string]interface{}{}
@@ -437,7 +437,7 @@ func TestMapScanCAS(t *testing.T) {
 		title, revid, modified, deleted).MapScanCAS(mapCAS); err != nil {
 		t.Fatal("insert:", err)
 	} else if applied {
-		t.Fatal("insert should not have been applied")
+		t.Fatalf("insert should have been applied: title=%v revID=%v modified=%v", title, revid, modified)
 	} else if title != mapCAS["title"] || revid != mapCAS["revid"] || deleted != mapCAS["deleted"] {
 		t.Fatalf("expected %s/%v/%v/%v but got %s/%v/%v%v", title, revid, modified, false, mapCAS["title"], mapCAS["revid"], mapCAS["last_modified"], mapCAS["deleted"])
 	}
