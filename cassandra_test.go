@@ -2284,7 +2284,7 @@ func TestDiscoverViaProxy(t *testing.T) {
 	// that is infact a proxy it discovers the rest of the ring behind the proxy
 	// and does not store the proxies address as a host in its connection pool.
 	// See https://github.com/gocql/gocql/issues/481
-	proxy, err := net.Listen("tcp", ":0")
+	proxy, err := net.Listen("tcp", "localhost:0")
 	if err != nil {
 		t.Fatalf("unable to create proxy listener: %v", err)
 	}
