@@ -1,4 +1,4 @@
-package gocql
+package murmur
 
 import (
 	"strconv"
@@ -49,7 +49,7 @@ func TestMurmur3H1(t *testing.T) {
 
 // helper function for testing the murmur3 implementation
 func assertMurmur3H1(t *testing.T, data []byte, expected uint64) {
-	actual := murmur3H1(data)
+	actual := Murmur3H1(data)
 	if actual != expected {
 		t.Errorf("Expected h1 = %x for data = %x, but was %x", expected, data, actual)
 	}
@@ -57,14 +57,18 @@ func assertMurmur3H1(t *testing.T, data []byte, expected uint64) {
 
 // Benchmark of the performance of the murmur3 implementation
 func BenchmarkMurmur3H1(b *testing.B) {
-	var h1 uint64
-	var data [1024]byte
+	data := make([]byte, 1024)
 	for i := 0; i < 1024; i++ {
 		data[i] = byte(i)
 	}
-	for i := 0; i < b.N; i++ {
-		b.ResetTimer()
-		h1 = murmur3H1(data[:])
-		_ = murmur3Token(int64(h1))
-	}
+
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			h1 := Murmur3H1(data)
+			if h1 != 7627370222079200297 {
+				b.Fatalf("expected %d got %d", 7627370222079200297, h1)
+			}
+		}
+	})
 }
