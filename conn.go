@@ -93,7 +93,6 @@ type ConnConfig struct {
 	ProtoVersion  int
 	CQLVersion    string
 	Timeout       time.Duration
-	NumStreams    int
 	Compressor    Compressor
 	Authenticator Authenticator
 	Keepalive     time.Duration
@@ -114,11 +113,10 @@ var TimeoutLimit int64 = 10
 // queries, but users are usually advised to use a more reliable, higher
 // level API.
 type Conn struct {
-	conn       net.Conn
-	r          *bufio.Reader
-	timeout    time.Duration
-	cfg        *ConnConfig
-	numStreams int
+	conn    net.Conn
+	r       *bufio.Reader
+	timeout time.Duration
+	cfg     *ConnConfig
 
 	headerBuf []byte
 

@@ -13,7 +13,6 @@ func BenchmarkConnStress(b *testing.B) {
 
 	cluster := createCluster()
 	cluster.NumConns = 1
-	cluster.NumStreams = workers
 	session := createSessionFromCluster(cluster, b)
 	defer session.Close()
 
@@ -43,7 +42,6 @@ func BenchmarkConnRoutingKey(b *testing.B) {
 
 	cluster := createCluster()
 	cluster.NumConns = 1
-	cluster.NumStreams = workers
 	cluster.PoolConfig.HostSelectionPolicy = TokenAwareHostPolicy(RoundRobinHostPolicy())
 	session := createSessionFromCluster(cluster, b)
 	defer session.Close()

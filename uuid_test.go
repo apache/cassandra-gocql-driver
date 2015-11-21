@@ -170,7 +170,7 @@ func TestTimeUUID(t *testing.T) {
 
 		ts := uuid.Timestamp()
 		if ts < timestamp {
-			t.Errorf("timestamps must grow")
+			t.Errorf("timestamps must grow: timestamp=%v ts=%v", timestamp, ts)
 		}
 		timestamp = ts
 	}
