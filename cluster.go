@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gocql/gocql/lru"
+	"github.com/gocql/gocql/internal/lru"
 )
 
 const defaultMaxPreparedStmts = 1000
