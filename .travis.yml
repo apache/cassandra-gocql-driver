@@ -38,6 +38,7 @@ install:
   - ./setup.py install --user
   - popd
   - go get .
+  - jdk_switcher use oraclejdk8
 
 script:
   - set -e
