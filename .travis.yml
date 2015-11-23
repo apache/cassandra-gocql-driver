@@ -2,6 +2,11 @@ language: go
 
 sudo: false
 
+addons:
+  apt:
+    packages:
+      - openjdk-8-jre-headless
+
 cache:
   directories:
     - $HOME/.ccm/repository
@@ -24,7 +29,6 @@ env:
     - CASS=3.0.0
       AUTH=false
 
-
 go:
   - 1.4
   - 1.5
@@ -38,7 +42,6 @@ install:
   - ./setup.py install --user
   - popd
   - go get .
-  - jdk_switcher use oraclejdk8
 
 script:
   - set -e
