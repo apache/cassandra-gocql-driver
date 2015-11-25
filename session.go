@@ -884,6 +884,12 @@ func (iter *Iter) Close() error {
 	return iter.err
 }
 
+// WillSwitchPage detects if iterator reached end of current page
+// and the next page is available.
+func (iter *Iter) WillSwitchPage() bool {
+	return iter.pos >= len(iter.rows) && iter.next != nil
+}
+
 // checkErrAndNotFound handle error and NotFound in one method.
 func (iter *Iter) checkErrAndNotFound() error {
 	if iter.err != nil {
