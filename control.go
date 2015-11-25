@@ -7,6 +7,8 @@ import (
 	"time"
 )
 
+// Ensure that the atomic variable is aligned to a 64bit boundary 
+// so that atomic operations can be applied on 32bit architectures.
 type controlConn struct {
 	connecting uint64
 
