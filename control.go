@@ -8,10 +8,11 @@ import (
 )
 
 type controlConn struct {
+	connecting uint64
+
 	session *Session
 
 	conn       atomic.Value
-	connecting uint64
 
 	retry RetryPolicy
 
