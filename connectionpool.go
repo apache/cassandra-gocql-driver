@@ -19,7 +19,7 @@ import (
 
 // interface to implement to receive the host information
 type SetHosts interface {
-	SetHosts(hosts []HostInfo)
+	SetHosts(hosts []*HostInfo)
 }
 
 // interface to implement to receive the partitioner value
@@ -69,6 +69,8 @@ type policyConnPool struct {
 	hostPolicy    HostSelectionPolicy
 	connPolicy    func() ConnSelectionPolicy
 	hostConnPools map[string]*hostConnPool
+
+	endpoints []string
 }
 
 func connConfig(session *Session) (*ConnConfig, error) {
@@ -91,7 +93,6 @@ func connConfig(session *Session) (*ConnConfig, error) {
 		ProtoVersion:  cfg.ProtoVersion,
 		CQLVersion:    cfg.CQLVersion,
 		Timeout:       cfg.Timeout,
-		NumStreams:    cfg.NumStreams,
 		Compressor:    cfg.Compressor,
 		Authenticator: cfg.Authenticator,
 		Keepalive:     cfg.SocketKeepalive,
@@ -119,18 +120,13 @@ func newPolicyConnPool(session *Session, hostPolicy HostSelectionPolicy,
 		hostConnPools: map[string]*hostConnPool{},
 	}
 
-	// TODO(zariel): fetch this from session metadata.
-	hosts := make([]HostInfo, len(session.cfg.Hosts))
-	for i, hostAddr := range session.cfg.Hosts {
-		hosts[i].Peer = hostAddr
-	}
-
-	pool.SetHosts(hosts)
+	pool.endpoints = make([]string, len(session.cfg.Hosts))
+	copy(pool.endpoints, session.cfg.Hosts)
 
 	return pool, nil
 }
 
-func (p *policyConnPool) SetHosts(hosts []HostInfo) {
+func (p *policyConnPool) SetHosts(hosts []*HostInfo) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
@@ -141,24 +137,23 @@ func (p *policyConnPool) SetHosts(hosts []HostInfo) {
 
 	// TODO connect to hosts in parallel, but wait for pools to be
 	// created before returning
-
-	for i := range hosts {
-		pool, exists := p.hostConnPools[hosts[i].Peer]
+	for _, host := range hosts {
+		pool, exists := p.hostConnPools[host.Peer()]
 		if !exists {
 			// create a connection pool for the host
 			pool = newHostConnPool(
 				p.session,
-				hosts[i].Peer,
+				host.Peer(),
 				p.port,
 				p.numConns,
 				p.connCfg,
 				p.keyspace,
 				p.connPolicy(),
 			)
-			p.hostConnPools[hosts[i].Peer] = pool
+			p.hostConnPools[host.Peer()] = pool
 		} else {
 			// still have this host, so don't remove it
-			delete(toRemove, hosts[i].Peer)
+			delete(toRemove, host.Peer())
 		}
 	}
 
@@ -170,7 +165,6 @@ func (p *policyConnPool) SetHosts(hosts []HostInfo) {
 
 	// update the policy
 	p.hostPolicy.SetHosts(hosts)
-
 }
 
 func (p *policyConnPool) SetPartitioner(partitioner string) {
@@ -206,7 +200,7 @@ func (p *policyConnPool) Pick(qry *Query) (SelectedHost, *Conn) {
 			panic(fmt.Sprintf("policy %T returned no host info: %+v", p.hostPolicy, host))
 		}
 
-		pool, ok := p.hostConnPools[host.Info().Peer]
+		pool, ok := p.hostConnPools[host.Info().Peer()]
 		if !ok {
 			continue
 		}
@@ -221,7 +215,7 @@ func (p *policyConnPool) Close() {
 	defer p.mu.Unlock()
 
 	// remove the hosts from the policy
-	p.hostPolicy.SetHosts([]HostInfo{})
+	p.hostPolicy.SetHosts(nil)
 
 	// close the pools
 	for addr, pool := range p.hostConnPools {
@@ -234,14 +228,14 @@ func (p *policyConnPool) addHost(host *HostInfo) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	pool, ok := p.hostConnPools[host.Peer]
+	pool, ok := p.hostConnPools[host.Peer()]
 	if ok {
 		return
 	}
 
 	pool = newHostConnPool(
 		p.session,
-		host.Peer,
+		host.Peer(),
 		p.port,
 		p.numConns,
 		p.connCfg,
@@ -249,7 +243,7 @@ func (p *policyConnPool) addHost(host *HostInfo) {
 		p.connPolicy(),
 	)
 
-	p.hostConnPools[host.Peer] = pool
+	p.hostConnPools[host.Peer()] = pool
 }
 
 func (p *policyConnPool) removeHost(addr string) {

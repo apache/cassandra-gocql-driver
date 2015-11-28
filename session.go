@@ -99,6 +99,7 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 			return nil, err
 		}
 		s.pool = pool
+
 		// TODO(zariel): this should be used to create initial metadata
 		s.pool.SetHosts(hosts)
 	} else {
@@ -108,6 +109,12 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 			return nil, err
 		}
 		s.pool = pool
+		// we dont get host info
+		hosts := make([]*HostInfo, len(cfg.Hosts))
+		for i, addr := range cfg.Hosts {
+			hosts[i] = &HostInfo{peer: addr}
+		}
+		s.pool.SetHosts(hosts)
 	}
 
 	// TODO(zariel): we probably dont need this any more as we verify that we

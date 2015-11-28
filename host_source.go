@@ -10,12 +10,13 @@ import (
 
 type nodeState int32
 
-func (n nodeState) String() {
+func (n nodeState) String() string {
 	if n == NodeUp {
 		return "UP"
 	} else if n == NodeDown {
 		return "DOWN"
 	}
+	return fmt.Sprintf("UNKNOWN_%d", n)
 }
 
 const (
@@ -44,13 +45,22 @@ type HostInfo struct {
 	tokens     []string
 }
 
+func (h *HostInfo) Equal(host *HostInfo) bool {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	host.mu.RLock()
+	defer host.mu.RUnlock()
+
+	return h.peer == host.peer && h.hostId == host.hostId
+}
+
 func (h *HostInfo) Peer() string {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	return h.peer
 }
 
-func (h *HostInfo) SetPeer(peer string) *HostInfo {
+func (h *HostInfo) setPeer(peer string) *HostInfo {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.peer = peer
@@ -63,20 +73,20 @@ func (h *HostInfo) DataCenter() string {
 	return h.dataCenter
 }
 
-func (h *HostInfo) SetDataCenter(dataCenter string) *HostInfo {
+func (h *HostInfo) setDataCenter(dataCenter string) *HostInfo {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.dataCenter = dataCenter
 	return h
 }
 
-func (h *HostFilter) Rack() string {
+func (h *HostInfo) Rack() string {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	return h.rack
 }
 
-func (h *HostInfo) SetRack(rack string) *HostInfo {
+func (h *HostInfo) setRack(rack string) *HostInfo {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.rack = rack
@@ -89,7 +99,7 @@ func (h *HostInfo) HostID() string {
 	return h.hostId
 }
 
-func (h *HostInfo) SetHostID(hostID string) *HostInfo {
+func (h *HostInfo) setHostID(hostID string) *HostInfo {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.hostId = hostID
@@ -102,7 +112,7 @@ func (h *HostInfo) Version() cassVersion {
 	return h.version
 }
 
-func (h *HostInfo) SetVersion(major, minor, patch int) *HostInfo {
+func (h *HostInfo) setVersion(major, minor, patch int) *HostInfo {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.version.Major = major
@@ -117,7 +127,7 @@ func (h *HostInfo) State() nodeState {
 	return h.state
 }
 
-func (h *HostInfo) SetState(state nodeState) *HostInfo {
+func (h *HostInfo) setState(state nodeState) *HostInfo {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.state = state
@@ -130,7 +140,7 @@ func (h *HostInfo) Tokens() []string {
 	return h.tokens
 }
 
-func (h *HostInfo) SetTokens(tokens []string) *HostInfo {
+func (h *HostInfo) setTokens(tokens []string) *HostInfo {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.tokens = tokens
@@ -138,21 +148,23 @@ func (h *HostInfo) SetTokens(tokens []string) *HostInfo {
 }
 
 func (h HostInfo) String() string {
-	return fmt.Sprintf("[hostinfo peer=%q data_centre=%q rack=%q host_id=%q version=%q state=%s num_tokens=%d]", h.Peer, h.DataCenter, h.Rack, h.HostId, h.Version, h.State, len(h.Tokens))
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return fmt.Sprintf("[hostinfo peer=%q data_centre=%q rack=%q host_id=%q version=%q state=%s num_tokens=%d]", h.peer, h.dataCenter, h.rack, h.hostId, h.version, h.state, len(h.tokens))
 }
 
 // Polls system.peers at a specific interval to find new hosts
 type ringDescriber struct {
-	dcFilter        string
-	rackFilter      string
-	prevHosts       []HostInfo
-	prevPartitioner string
-	session         *Session
-	closeChan       chan bool
+	dcFilter   string
+	rackFilter string
+	session    *Session
+	closeChan  chan bool
 	// indicates that we can use system.local to get the connections remote address
 	localHasRpcAddr bool
 
-	mu sync.Mutex
+	mu              sync.Mutex
+	prevHosts       []*HostInfo
+	prevPartitioner string
 }
 
 func checkSystemLocal(control *controlConn) (bool, error) {
@@ -170,7 +182,7 @@ func checkSystemLocal(control *controlConn) (bool, error) {
 	return true, nil
 }
 
-func (r *ringDescriber) GetHosts() (hosts []HostInfo, partitioner string, err error) {
+func (r *ringDescriber) GetHosts() (hosts []*HostInfo, partitioner string, err error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	// we need conn to be the same because we need to query system.peers and system.local
@@ -182,15 +194,15 @@ func (r *ringDescriber) GetHosts() (hosts []HostInfo, partitioner string, err er
 		localQuery = "SELECT broadcast_address, data_center, rack, host_id, tokens, partitioner FROM system.local"
 	)
 
-	var localHost HostInfo
+	localHost := &HostInfo{}
 	if r.localHasRpcAddr {
 		iter := r.session.control.query(localQuery)
 		if iter == nil {
 			return r.prevHosts, r.prevPartitioner, nil
 		}
 
-		iter.Scan(&localHost.Peer, &localHost.DataCenter, &localHost.Rack,
-			&localHost.HostId, &localHost.Tokens, &partitioner)
+		iter.Scan(&localHost.peer, &localHost.dataCenter, &localHost.rack,
+			&localHost.hostId, &localHost.tokens, &partitioner)
 
 		if err = iter.Close(); err != nil {
 			return nil, "", err
@@ -201,7 +213,7 @@ func (r *ringDescriber) GetHosts() (hosts []HostInfo, partitioner string, err er
 			return r.prevHosts, r.prevPartitioner, nil
 		}
 
-		iter.Scan(&localHost.DataCenter, &localHost.Rack, &localHost.HostId, &localHost.Tokens, &partitioner)
+		iter.Scan(&localHost.dataCenter, &localHost.rack, &localHost.hostId, &localHost.tokens, &partitioner)
 
 		if err = iter.Close(); err != nil {
 			return nil, "", err
@@ -214,22 +226,22 @@ func (r *ringDescriber) GetHosts() (hosts []HostInfo, partitioner string, err er
 			panic(err)
 		}
 
-		localHost.Peer = addr
+		localHost.peer = addr
 	}
 
-	hosts = []HostInfo{localHost}
+	hosts = []*HostInfo{localHost}
 
 	iter := r.session.control.query("SELECT rpc_address, data_center, rack, host_id, tokens FROM system.peers")
 	if iter == nil {
 		return r.prevHosts, r.prevPartitioner, nil
 	}
 
-	host := HostInfo{}
-	for iter.Scan(&host.Peer, &host.DataCenter, &host.Rack, &host.HostId, &host.Tokens) {
-		if r.matchFilter(&host) {
+	host := &HostInfo{}
+	for iter.Scan(&host.peer, &host.dataCenter, &host.rack, &host.hostId, &host.tokens) {
+		if r.matchFilter(host) {
 			hosts = append(hosts, host)
 		}
-		host = HostInfo{}
+		host = &HostInfo{}
 	}
 
 	if err = iter.Close(); err != nil {
@@ -244,11 +256,11 @@ func (r *ringDescriber) GetHosts() (hosts []HostInfo, partitioner string, err er
 
 func (r *ringDescriber) matchFilter(host *HostInfo) bool {
 
-	if r.dcFilter != "" && r.dcFilter != host.DataCenter {
+	if r.dcFilter != "" && r.dcFilter != host.DataCenter() {
 		return false
 	}
 
-	if r.rackFilter != "" && r.rackFilter != host.Rack {
+	if r.rackFilter != "" && r.rackFilter != host.Rack() {
 		return false
 	}
 

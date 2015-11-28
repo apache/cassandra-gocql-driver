@@ -56,7 +56,7 @@ func (s *Session) handleNewNode(host net.IP, port int) {
 		return
 	}
 
-	if s.hostFilter.Accept(*hostInfo) {
+	if s.hostFilter.Accept(hostInfo) {
 		s.pool.addHost(hostInfo)
 	}
 }

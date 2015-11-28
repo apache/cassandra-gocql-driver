@@ -39,7 +39,6 @@ func createControlConn(session *Session) *controlConn {
 }
 
 func (c *controlConn) heartBeat() {
-	c.closeWg.Add(1)
 	defer c.closeWg.Done()
 
 	for {
@@ -115,6 +114,7 @@ func (c *controlConn) connect(endpoints []string) error {
 
 	c.conn.Store(conn)
 	atomic.StoreInt64(&c.connecting, 0)
+	c.closeWg.Add(1)
 	go c.heartBeat()
 
 	return nil
@@ -258,14 +258,14 @@ func (c *controlConn) fetchHostInfo(addr net.IP, port int) (*HostInfo, error) {
 		fn = func(host *HostInfo) error {
 			// TODO(zariel): should we fetch rpc_address from here?
 			iter := c.query("SELECT data_center, rack, host_id, tokens FROM system.local WHERE key='local'")
-			iter.Scan(&host.DataCenter, &host.Rack, &host.HostId, &host.Tokens)
+			iter.Scan(&host.dataCenter, &host.rack, &host.hostId, &host.tokens)
 			return iter.Close()
 		}
 	} else {
 		fn = func(host *HostInfo) error {
 			// TODO(zariel): should we fetch rpc_address from here?
 			iter := c.query("SELECT data_center, rack, host_id, tokens FROM system.peers WHERE peer=?", addr)
-			iter.Scan(&host.DataCenter, &host.Rack, &host.HostId, &host.Tokens)
+			iter.Scan(&host.dataCenter, &host.rack, &host.hostId, &host.tokens)
 			return iter.Close()
 		}
 	}
@@ -274,7 +274,7 @@ func (c *controlConn) fetchHostInfo(addr net.IP, port int) (*HostInfo, error) {
 	if err := fn(host); err != nil {
 		return nil, err
 	}
-	host.Peer = addr.String()
+	host.peer = addr.String()
 
 	return host, nil
 }
