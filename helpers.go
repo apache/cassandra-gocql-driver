@@ -20,7 +20,7 @@ type RowData struct {
 
 func goType(t TypeInfo) reflect.Type {
 	switch t.Type() {
-	case TypeVarchar, TypeAscii, TypeInet:
+	case TypeVarchar, TypeAscii, TypeInet, TypeText:
 		return reflect.TypeOf(*new(string))
 	case TypeBigInt, TypeCounter:
 		return reflect.TypeOf(*new(int64))
