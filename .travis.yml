@@ -2,6 +2,11 @@ language: go
 
 sudo: false
 
+addons:
+  apt:
+    packages:
+      - openjdk-8-jre-headless
+
 cache:
   directories:
     - $HOME/.ccm/repository
@@ -13,13 +18,15 @@ env:
   global:
     - GOMAXPROCS=2
   matrix:
-    - CASS=2.0.17
-      AUTH=false
     - CASS=2.1.11
       AUTH=false
     - CASS=2.1.11
       AUTH=true
     - CASS=2.2.3
+      AUTH=false
+    - CASS=2.2.3
+      AUTH=false
+    - CASS=3.0.0
       AUTH=false
 
 go:
