@@ -62,7 +62,7 @@ func Marshal(info TypeInfo, value interface{}) ([]byte, error) {
 	}
 
 	switch info.Type() {
-	case TypeVarchar, TypeAscii, TypeBlob:
+	case TypeVarchar, TypeAscii, TypeBlob, TypeText:
 		return marshalVarchar(info, value)
 	case TypeBoolean:
 		return marshalBool(info, value)
@@ -115,7 +115,7 @@ func Unmarshal(info TypeInfo, data []byte, value interface{}) error {
 	}
 
 	switch info.Type() {
-	case TypeVarchar, TypeAscii, TypeBlob:
+	case TypeVarchar, TypeAscii, TypeBlob, TypeText:
 		return unmarshalVarchar(info, data, value)
 	case TypeBoolean:
 		return unmarshalBool(info, data, value)
@@ -1663,6 +1663,7 @@ const (
 	TypeDouble    Type = 0x0007
 	TypeFloat     Type = 0x0008
 	TypeInt       Type = 0x0009
+	TypeText      Type = 0x000A
 	TypeTimestamp Type = 0x000B
 	TypeUUID      Type = 0x000C
 	TypeVarchar   Type = 0x000D
@@ -1699,6 +1700,8 @@ func (t Type) String() string {
 		return "float"
 	case TypeInt:
 		return "int"
+	case TypeText:
+		return "text"
 	case TypeTimestamp:
 		return "timestamp"
 	case TypeUUID:
