@@ -5,7 +5,6 @@ import (
 	"log"
 	"net"
 	"sync"
-	"time"
 )
 
 type nodeState int32
@@ -147,6 +146,10 @@ func (h *HostInfo) setTokens(tokens []string) *HostInfo {
 	return h
 }
 
+func (h *HostInfo) IsUp() bool {
+	return h.State() == NodeUp
+}
+
 func (h HostInfo) String() string {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
@@ -278,22 +281,13 @@ func (r *ringDescriber) refreshRing() {
 		return
 	}
 
-	r.session.pool.SetHosts(hosts)
-	r.session.pool.SetPartitioner(partitioner)
-}
-
-func (r *ringDescriber) run(sleep time.Duration) {
-	if sleep == 0 {
-		sleep = 30 * time.Second
-	}
-
-	for {
-		r.refreshRing()
-
-		select {
-		case <-time.After(sleep):
-		case <-r.closeChan:
-			return
+	// TODO: move this to session
+	for _, h := range hosts {
+		if r.session.ring.addHostIfMissing(h) {
+			r.session.pool.addHost(h)
+			// TODO: trigger OnUp/OnAdd
 		}
 	}
+
+	r.session.pool.SetPartitioner(partitioner)
 }
