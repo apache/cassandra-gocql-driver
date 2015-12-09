@@ -139,7 +139,7 @@ func (p *policyConnPool) SetHosts(hosts []*HostInfo) {
 	// created before returning
 	for _, host := range hosts {
 		pool, exists := p.hostConnPools[host.Peer()]
-		if !exists {
+		if !exists && host.IsUp() {
 			// create a connection pool for the host
 			pool = newHostConnPool(
 				p.session,
@@ -500,6 +500,8 @@ func (pool *hostConnPool) HandleError(conn *Conn, err error, closed bool) {
 		return
 	}
 
+	// TODO: track the number of errors per host and detect when a host is dead,
+	// then also have something which can detect when a host comes back.
 	pool.mu.Lock()
 	defer pool.mu.Unlock()
 
