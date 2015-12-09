@@ -36,6 +36,7 @@ type Session struct {
 	schemaDescriber     *schemaDescriber
 	trace               Tracer
 	hostSource          *ringDescriber
+	ring                ring
 	mu                  sync.RWMutex
 
 	hostFilter HostFilter
