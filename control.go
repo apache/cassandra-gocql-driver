@@ -20,7 +20,8 @@ type controlConn struct {
 
 	conn atomic.Value
 
-	retry RetryPolicy
+	retry   RetryPolicy
+	connCfg *ConnConfig
 
 	closeWg sync.WaitGroup
 	quit    chan struct{}
@@ -87,6 +88,7 @@ func (c *controlConn) connect(endpoints []string) error {
 	if err != nil {
 		return err
 	}
+	c.connCfg = connCfg
 
 	// store that we are not connected so that reconnect wont happen if we error
 	atomic.StoreInt64(&c.connecting, -1)
@@ -99,6 +101,11 @@ func (c *controlConn) connect(endpoints []string) error {
 		conn, err = Connect(JoinHostPort(addr, c.session.cfg.Port), connCfg, c, c.session)
 		if err != nil {
 			log.Printf("gocql: unable to dial %v: %v\n", addr, err)
+			continue
+		}
+
+		if err = c.registerEvents(conn); err != nil {
+			conn.Close()
 			continue
 		}
 
@@ -116,6 +123,24 @@ func (c *controlConn) connect(endpoints []string) error {
 	atomic.StoreInt64(&c.connecting, 0)
 	c.closeWg.Add(1)
 	go c.heartBeat()
+
+	return nil
+}
+
+func (c *controlConn) registerEvents(conn *Conn) error {
+	framer, err := conn.exec(&writeRegisterFrame{
+		events: []string{"TOPOLOGY_CHANGE", "STATUS_CHANGE", "STATUS_CHANGE"},
+	}, nil)
+	if err != nil {
+		return err
+	}
+
+	frame, err := framer.parseFrame()
+	if err != nil {
+		return err
+	} else if _, ok := frame.(*readyFrame); !ok {
+		return fmt.Errorf("unexpected frame in response to register: got %T: %v\n", frame, frame)
+	}
 
 	return nil
 }
@@ -147,27 +172,23 @@ func (c *controlConn) reconnect(refreshring bool) {
 		return
 	}
 
-	newConn, err := Connect(conn.addr, conn.cfg, c, c.session)
+	newConn, err := Connect(conn.addr, c.connCfg, c, c.session)
 	if err != nil {
 		host.Mark(err)
 		// TODO: add log handler for things like this
 		return
 	}
 
-	frame, err := c.writeFrame(&writeRegisterFrame{
-		events: []string{"TOPOLOGY_CHANGE", "STATUS_CHANGE", "STATUS_CHANGE"},
-	})
-
-	if err != nil {
+	if err := c.registerEvents(newConn); err != nil {
 		host.Mark(err)
-		return
-	} else if _, ok := frame.(*readyFrame); !ok {
-		log.Printf("gocql: unexpected frame in response to register: got %T: %v\n", frame, frame)
+		// TODO: handle this case better
+		newConn.Close()
+		log.Printf("gocql: unable to register events: %v\n", err)
 		return
 	}
 
-	host.Mark(nil)
 	c.conn.Store(newConn)
+	host.Mark(nil)
 	success = true
 
 	if oldConn != nil {
