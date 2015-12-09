@@ -401,6 +401,7 @@ func (c *Conn) recv() error {
 			return err
 		}
 		go c.session.handleEvent(framer)
+		return nil
 	} else if head.stream <= 0 {
 		// reserved stream that we dont use, probably due to a protocol error
 		// or a bug in Cassandra, this should be an error, parse it and return.
