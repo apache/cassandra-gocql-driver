@@ -743,7 +743,10 @@ func (c *Conn) executeQuery(qry *Query) *Iter {
 		return &Iter{framer: framer}
 	case *resultSchemaChangeFrame, *schemaChangeKeyspace, *schemaChangeTable, *schemaChangeFunction:
 		iter := &Iter{framer: framer}
-		c.awaitSchemaAgreement()
+		if err := c.awaitSchemaAgreement(); err != nil {
+			// TODO: should have this behind a flag
+			log.Println(err)
+		}
 		// dont return an error from this, might be a good idea to give a warning
 		// though. The impact of this returning an error would be that the cluster
 		// is not consistent with regards to its schema.
@@ -943,11 +946,13 @@ func (c *Conn) awaitSchemaAgreement() (err error) {
 		localSchemas = "SELECT schema_version FROM system.local WHERE key='local'"
 	)
 
+	var versions map[string]struct{}
+
 	endDeadline := time.Now().Add(c.session.cfg.MaxWaitSchemaAgreement)
 	for time.Now().Before(endDeadline) {
 		iter := c.query(peerSchemas)
 
-		versions := make(map[string]struct{})
+		versions = make(map[string]struct{})
 
 		var schemaVersion string
 		for iter.Scan(&schemaVersion) {
@@ -981,8 +986,13 @@ func (c *Conn) awaitSchemaAgreement() (err error) {
 		return
 	}
 
+	schemas := make([]string, 0, len(versions))
+	for schema := range versions {
+		schemas = append(schemas, schema)
+	}
+
 	// not exported
-	return errors.New("gocql: cluster schema versions not consistent")
+	return fmt.Errorf("gocql: cluster schema versions not consistent: %+v", schemas)
 }
 
 type inflightPrepare struct {
