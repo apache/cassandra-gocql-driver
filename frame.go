@@ -346,7 +346,7 @@ func readHeader(r io.Reader, p []byte) (head frameHeader, err error) {
 	version := p[0] & protoVersionMask
 
 	if version < protoVersion1 || version > protoVersion4 {
-		err = fmt.Errorf("gocql: invalid version: %x", version)
+		err = fmt.Errorf("gocql: invalid version: %d", version)
 		return
 	}
 
@@ -1164,6 +1164,10 @@ type statusChangeEventFrame struct {
 	port   int
 }
 
+func (t statusChangeEventFrame) String() string {
+	return fmt.Sprintf("[status_change change=%s host=%v port=%v]", t.change, t.host, t.port)
+}
+
 // essentially the same as statusChange
 type topologyChangeEventFrame struct {
 	frameHeader
@@ -1171,6 +1175,10 @@ type topologyChangeEventFrame struct {
 	change string
 	host   net.IP
 	port   int
+}
+
+func (t topologyChangeEventFrame) String() string {
+	return fmt.Sprintf("[topology_change change=%s host=%v port=%v]", t.change, t.host, t.port)
 }
 
 func (f *framer) parseEventFrame() frame {
