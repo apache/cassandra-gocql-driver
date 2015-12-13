@@ -86,7 +86,9 @@ func TestEventNodeUp(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 
-	if err := ccm.NodeDown("node1"); err != nil {
+	const targetNode = "node2"
+
+	if err := ccm.NodeDown(targetNode); err != nil {
 		t.Fatal(err)
 	}
 
@@ -96,15 +98,15 @@ func TestEventNodeUp(t *testing.T) {
 
 	poolHosts := session.pool.hostConnPools
 	log.Printf("poolhosts=%+v\n", poolHosts)
-	node1 := status["node1"]
+	node := status[targetNode]
 
-	if _, ok := poolHosts[node1.Addr]; ok {
+	if _, ok := poolHosts[node.Addr]; ok {
 		session.pool.mu.RUnlock()
-		t.Fatal("node1 not removed after remove event")
+		t.Fatal("node not removed after remove event")
 	}
 	session.pool.mu.RUnlock()
 
-	if err := ccm.NodeUp("node1"); err != nil {
+	if err := ccm.NodeUp(targetNode); err != nil {
 		t.Fatal(err)
 	}
 
@@ -112,9 +114,9 @@ func TestEventNodeUp(t *testing.T) {
 
 	session.pool.mu.RLock()
 	log.Printf("poolhosts=%+v\n", poolHosts)
-	if _, ok := poolHosts[node1.Addr]; !ok {
+	if _, ok := poolHosts[node.Addr]; !ok {
 		session.pool.mu.RUnlock()
-		t.Fatal("node1 not added after node added event")
+		t.Fatal("node not added after node added event")
 	}
 	session.pool.mu.RUnlock()
 }

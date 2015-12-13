@@ -43,6 +43,9 @@ type Session struct {
 
 	control *controlConn
 
+	// event handlers
+	nodeEvents *eventDeouncer
+
 	// ring metadata
 	hosts []HostInfo
 
@@ -70,6 +73,8 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 		cfg:      cfg,
 		pageSize: cfg.PageSize,
 	}
+
+	s.nodeEvents = newEventDeouncer("NodeEvents", s.handleNodeEvent)
 
 	s.routingKeyInfoCache.lru = lru.New(cfg.MaxRoutingKeyInfo)
 

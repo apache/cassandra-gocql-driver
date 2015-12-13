@@ -8,20 +8,37 @@ import (
 )
 
 type eventDeouncer struct {
+	name   string
+	timer  *time.Timer
 	mu     sync.Mutex
-	events []frame // TODO: possibly use a chan here
+	events []frame
 
 	callback func([]frame)
 	quit     chan struct{}
 }
 
-func (e *eventDeouncer) flusher() {
-	ticker := time.NewTicker(1 * time.Second)
-	defer ticker.Stop()
+func newEventDeouncer(name string, eventHandler func([]frame)) *eventDeouncer {
+	e := &eventDeouncer{
+		name:     name,
+		quit:     make(chan struct{}),
+		timer:    time.NewTimer(eventDebounceTime),
+		callback: eventHandler,
+	}
+	e.timer.Stop()
+	go e.flusher()
 
+	return e
+}
+
+func (e *eventDeouncer) stop() {
+	e.quit <- struct{}{} // sync with flusher
+	close(e.quit)
+}
+
+func (e *eventDeouncer) flusher() {
 	for {
 		select {
-		case <-ticker.C:
+		case <-e.timer.C:
 			e.mu.Lock()
 			e.flush()
 			e.mu.Unlock()
@@ -31,30 +48,87 @@ func (e *eventDeouncer) flusher() {
 	}
 }
 
+const (
+	eventBufferSize   = 1000
+	eventDebounceTime = 1 * time.Second
+)
+
 // flush must be called with mu locked
 func (e *eventDeouncer) flush() {
+	log.Printf("%s: flushing %d events\n", e.name, len(e.events))
 	if len(e.events) == 0 {
 		return
 	}
 
-	// TODO: can this be done in a nicer way?
-	events := make([]frame, len(e.events))
-	copy(events, e.events)
-	e.events = e.events[:0]
-
-	go e.callback(events)
+	// if the flush interval is faster than the callback then we will end up calling
+	// the callback multiple times, probably a bad idea. In this case we could drop
+	// frames?
+	go e.callback(e.events)
+	e.events = make([]frame, 0, eventBufferSize)
 }
 
-func (e *eventDeouncer) handleEvent(frame frame) {
+func (e *eventDeouncer) debounce(frame frame) {
 	e.mu.Lock()
+	e.timer.Reset(eventDebounceTime)
 
-	const maxEvents = 100
-	e.events = append(e.events, frame)
 	// TODO: probably need a warning to track if this threshold is too low
-	if len(e.events) > maxEvents {
-		e.flush()
+	if len(e.events) < eventBufferSize {
+		log.Printf("%s: buffering event: %v", e.name, frame)
+		e.events = append(e.events, frame)
+	} else {
+		log.Printf("%s: buffer full, dropping event frame: %s", e.name, frame)
 	}
+
 	e.mu.Unlock()
+}
+
+func (s *Session) handleNodeEvent(frames []frame) {
+	type nodeEvent struct {
+		change string
+		host   net.IP
+		port   int
+	}
+
+	events := make(map[string]*nodeEvent)
+
+	for _, frame := range frames {
+		// TODO: can we be sure the order of events in the buffer is correct?
+		switch f := frame.(type) {
+		case *topologyChangeEventFrame:
+			event, ok := events[f.host.String()]
+			if !ok {
+				event = &nodeEvent{change: f.change, host: f.host}
+				events[f.host.String()] = event
+			}
+			event.change = f.change
+
+		case *statusChangeEventFrame:
+			event, ok := events[f.host.String()]
+			if !ok {
+				event = &nodeEvent{change: f.change, host: f.host}
+				events[f.host.String()] = event
+			}
+			event.change = f.change
+		}
+	}
+
+	for addr, f := range events {
+		log.Printf("NodeEvent: handling debounced event: %q => %s", addr, f.change)
+
+		switch f.change {
+		case "NEW_NODE":
+			s.handleNewNode(f.host, f.port)
+		case "REMOVED_NODE":
+			s.handleRemovedNode(f.host, f.port)
+		case "MOVED_NODE":
+		// java-driver handles this, not mentioned in the spec
+		// TODO(zariel): refresh token map
+		case "UP":
+			s.handleNodeUp(f.host, f.port)
+		case "DOWN":
+			s.handleNodeDown(f.host, f.port)
+		}
+	}
 }
 
 func (s *Session) handleEvent(framer *framer) {
@@ -67,33 +141,19 @@ func (s *Session) handleEvent(framer *framer) {
 		log.Printf("gocql: unable to parse event frame: %v\n", err)
 		return
 	}
+	log.Println(frame)
 
 	// TODO: handle medatadata events
 	switch f := frame.(type) {
 	case *schemaChangeKeyspace:
 	case *schemaChangeFunction:
 	case *schemaChangeTable:
-	case *topologyChangeEventFrame:
-		switch f.change {
-		case "NEW_NODE":
-			s.handleNewNode(f.host, f.port)
-		case "REMOVED_NODE":
-			s.handleRemovedNode(f.host, f.port)
-		case "MOVED_NODE":
-			// java-driver handles this, not mentioned in the spec
-			// TODO(zariel): refresh token map
-		}
-	case *statusChangeEventFrame:
-		// TODO(zariel): is it worth having 2 methods for these?
-		switch f.change {
-		case "UP":
-			s.handleNodeUp(f.host, f.port)
-		case "DOWN":
-			s.handleNodeDown(f.host, f.port)
-		}
+	case *topologyChangeEventFrame, *statusChangeEventFrame:
+		s.nodeEvents.debounce(frame)
 	default:
 		log.Printf("gocql: invalid event frame (%T): %v\n", f, f)
 	}
+
 }
 
 func (s *Session) handleNewNode(host net.IP, port int) {
