@@ -282,6 +282,8 @@ func (r *ringDescriber) GetHosts() (hosts []*HostInfo, partitioner string, err e
 		localHost.peer = addr
 	}
 
+	localHost.port = r.session.cfg.Port
+
 	hosts = []*HostInfo{localHost}
 
 	iter := r.session.control.query("SELECT rpc_address, data_center, rack, host_id, tokens, release_version FROM system.peers")
@@ -289,12 +291,14 @@ func (r *ringDescriber) GetHosts() (hosts []*HostInfo, partitioner string, err e
 		return r.prevHosts, r.prevPartitioner, nil
 	}
 
-	host := &HostInfo{}
+	host := &HostInfo{port: r.session.cfg.Port}
 	for iter.Scan(&host.peer, &host.dataCenter, &host.rack, &host.hostId, &host.tokens, &host.version) {
 		if r.matchFilter(host) {
 			hosts = append(hosts, host)
 		}
-		host = &HostInfo{}
+		host = &HostInfo{
+			port: r.session.cfg.Port,
+		}
 	}
 
 	if err = iter.Close(); err != nil {
