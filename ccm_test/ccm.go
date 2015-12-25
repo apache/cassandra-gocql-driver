@@ -1,3 +1,5 @@
+// +build ccm
+
 package ccm
 
 import (
@@ -151,19 +153,6 @@ func Status() (map[string]Host, error) {
 					host.Addr = v[:i]
 					// dont need port
 				}
-				// 	v = v[i+1:]
-				// }
-
-				// v = v[2:] // ,
-				// if i := strings.IndexByte(v, ')'); i < 0 {
-				// 	return nil, fmt.Errorf("invalid binary v=%q", v)
-				// } else {
-				// 	port, err = strconv.Atoi(v[:i])
-				// 	if err != nil {
-				// 		return nil, err
-				// 	}
-				// }
-				// host.Addr = fmt.Sprintf("%s:%d", addr, port)
 			}
 		default:
 			return nil, fmt.Errorf("unexpected state: %q", state)

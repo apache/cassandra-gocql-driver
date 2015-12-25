@@ -1,3 +1,5 @@
+// +build ccm
+
 package ccm
 
 import (
