@@ -172,6 +172,16 @@ func (h *HostInfo) setTokens(tokens []string) *HostInfo {
 	return h
 }
 
+func (h *HostInfo) update(from *HostInfo) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	h.tokens = from.tokens
+	h.version = from.version
+	h.hostId = from.hostId
+	h.dataCenter = from.dataCenter
+}
+
 func (h *HostInfo) IsUp() bool {
 	return h.State() == NodeUp
 }
@@ -284,7 +294,6 @@ func (r *ringDescriber) GetHosts() (hosts []*HostInfo, partitioner string, err e
 }
 
 func (r *ringDescriber) matchFilter(host *HostInfo) bool {
-
 	if r.dcFilter != "" && r.dcFilter != host.DataCenter() {
 		return false
 	}
@@ -296,24 +305,27 @@ func (r *ringDescriber) matchFilter(host *HostInfo) bool {
 	return true
 }
 
-func (r *ringDescriber) refreshRing() {
+func (r *ringDescriber) refreshRing() error {
 	// if we have 0 hosts this will return the previous list of hosts to
 	// attempt to reconnect to the cluster otherwise we would never find
 	// downed hosts again, could possibly have an optimisation to only
 	// try to add new hosts if GetHosts didnt error and the hosts didnt change.
 	hosts, partitioner, err := r.GetHosts()
 	if err != nil {
-		log.Println("RingDescriber: unable to get ring topology:", err)
-		return
+		return err
 	}
 
 	// TODO: move this to session
+	// TODO: handle removing hosts here
 	for _, h := range hosts {
-		if r.session.ring.addHostIfMissing(h) {
+		log.Println(h)
+		if host, ok := r.session.ring.addHostIfMissing(h); !ok {
 			r.session.pool.addHost(h)
-			// TODO: trigger OnUp/OnAdd
+		} else {
+			host.update(h)
 		}
 	}
 
 	r.session.pool.SetPartitioner(partitioner)
+	return nil
 }

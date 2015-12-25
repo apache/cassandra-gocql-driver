@@ -46,19 +46,20 @@ func (r *ring) addHost(host *HostInfo) bool {
 	return ok
 }
 
-func (r *ring) addHostIfMissing(host *HostInfo) bool {
+func (r *ring) addHostIfMissing(host *HostInfo) (*HostInfo, bool) {
 	r.mu.Lock()
 	if r.hosts == nil {
 		r.hosts = make(map[string]*HostInfo)
 	}
 
 	addr := host.Peer()
-	_, ok := r.hosts[addr]
+	existing, ok := r.hosts[addr]
 	if !ok {
 		r.hosts[addr] = host
+		existing = host
 	}
 	r.mu.Unlock()
-	return ok
+	return existing, ok
 }
 
 func (r *ring) removeHost(addr string) bool {

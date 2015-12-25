@@ -97,7 +97,7 @@ func (s *Session) handleNodeEvent(frames []frame) {
 		case *topologyChangeEventFrame:
 			event, ok := events[f.host.String()]
 			if !ok {
-				event = &nodeEvent{change: f.change, host: f.host}
+				event = &nodeEvent{change: f.change, host: f.host, port: f.port}
 				events[f.host.String()] = event
 			}
 			event.change = f.change
@@ -105,7 +105,7 @@ func (s *Session) handleNodeEvent(frames []frame) {
 		case *statusChangeEventFrame:
 			event, ok := events[f.host.String()]
 			if !ok {
-				event = &nodeEvent{change: f.change, host: f.host}
+				event = &nodeEvent{change: f.change, host: f.host, port: f.port}
 				events[f.host.String()] = event
 			}
 			event.change = f.change
@@ -169,12 +169,14 @@ func (s *Session) handleNewNode(host net.IP, port int) {
 	}
 
 	// should this handle token moving?
-	if !s.ring.addHostIfMissing(hostInfo) {
-		s.handleNodeUp(host, port)
-		return
+	if existing, ok := s.ring.addHostIfMissing(hostInfo); !ok {
+		log.Printf("already have host=%v existing=%v, updating\n", hostInfo, existing)
+		existing.update(hostInfo)
+		hostInfo = existing
 	}
 
 	s.pool.addHost(hostInfo)
+	s.hostSource.refreshRing()
 }
 
 func (s *Session) handleRemovedNode(ip net.IP, port int) {
@@ -182,6 +184,8 @@ func (s *Session) handleRemovedNode(ip net.IP, port int) {
 	addr := ip.String()
 	s.pool.removeHost(addr)
 	s.ring.removeHost(addr)
+
+	s.hostSource.refreshRing()
 }
 
 func (s *Session) handleNodeUp(ip net.IP, port int) {
