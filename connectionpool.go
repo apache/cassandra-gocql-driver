@@ -482,7 +482,11 @@ func (pool *hostConnPool) connect() error {
 	}
 
 	pool.conns = append(pool.conns, conn)
-	pool.policy.SetConns(pool.conns)
+
+	conns := make([]*Conn, len(pool.conns))
+	copy(conns, pool.conns)
+	pool.policy.SetConns(conns)
+
 	return nil
 }
 
@@ -510,7 +514,9 @@ func (pool *hostConnPool) HandleError(conn *Conn, err error, closed bool) {
 			pool.conns[i], pool.conns = pool.conns[len(pool.conns)-1], pool.conns[:len(pool.conns)-1]
 
 			// update the policy
-			pool.policy.SetConns(pool.conns)
+			conns := make([]*Conn, len(pool.conns))
+			copy(conns, pool.conns)
+			pool.policy.SetConns(conns)
 
 			// lost a connection, so fill the pool
 			go pool.fill()
@@ -529,7 +535,7 @@ func (pool *hostConnPool) drain() {
 	pool.conns = pool.conns[:0:0]
 
 	// update the policy
-	pool.policy.SetConns(pool.conns)
+	pool.policy.SetConns(nil)
 
 	// close the connections
 	for _, conn := range conns {
