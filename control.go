@@ -6,6 +6,7 @@ import (
 	"log"
 	"math/rand"
 	"net"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -118,6 +119,7 @@ func (c *controlConn) connect(endpoints []string) error {
 
 	c.conn.Store(conn)
 	atomic.StoreInt64(&c.connecting, 0)
+
 	c.closeWg.Add(1)
 	go c.heartBeat()
 
@@ -143,6 +145,8 @@ func (c *controlConn) registerEvents(conn *Conn) error {
 }
 
 func (c *controlConn) reconnect(refreshring bool) {
+	// TODO: simplify this function, use session.ring to get hosts instead of the
+	// connection pool
 	if !atomic.CompareAndSwapInt64(&c.connecting, 0, 1) {
 		return
 	}
@@ -160,37 +164,56 @@ func (c *controlConn) reconnect(refreshring bool) {
 		}
 	}()
 
+	addr := c.addr()
 	oldConn := c.conn.Load().(*Conn)
+	if oldConn != nil {
+		oldConn.Close()
+	}
+
+	var newConn *Conn
+	if addr != "" {
+		// try to connect to the old host
+		conn, err := c.session.connect(addr, c)
+		if err != nil {
+			// host is dead
+			// TODO: this is replicated in a few places
+			ip, portStr, _ := net.SplitHostPort(addr)
+			port, _ := strconv.Atoi(portStr)
+			c.session.handleNodeDown(net.ParseIP(ip), port)
+		} else {
+			newConn = conn
+		}
+	}
 
 	// TODO: should have our own roundrobbin for hosts so that we can try each
 	// in succession and guantee that we get a different host each time.
-	host, conn := c.session.pool.Pick(nil)
-	if conn == nil {
-		return
-	}
+	if newConn == nil {
+		_, conn := c.session.pool.Pick(nil)
+		if conn == nil {
+			return
+		}
 
-	newConn, err := Connect(conn.addr, c.connCfg, c, c.session)
-	if err != nil {
-		host.Mark(err)
-		// TODO: add log handler for things like this
-		return
+		if conn == nil {
+			return
+		}
+
+		var err error
+		newConn, err = c.session.connect(conn.addr, c)
+		if err != nil {
+			// TODO: add log handler for things like this
+			return
+		}
 	}
 
 	if err := c.registerEvents(newConn); err != nil {
-		host.Mark(err)
 		// TODO: handle this case better
 		newConn.Close()
-		log.Printf("gocql: unable to register events: %v\n", err)
+		log.Printf("gocql: control unable to register events: %v\n", err)
 		return
 	}
 
 	c.conn.Store(newConn)
-	host.Mark(nil)
 	success = true
-
-	if oldConn != nil {
-		oldConn.Close()
-	}
 
 	if refreshring {
 		c.session.hostSource.refreshRing()
