@@ -318,7 +318,6 @@ func (r *ringDescriber) refreshRing() error {
 	// TODO: move this to session
 	// TODO: handle removing hosts here
 	for _, h := range hosts {
-		log.Println(h)
 		if host, ok := r.session.ring.addHostIfMissing(h); !ok {
 			r.session.pool.addHost(h)
 		} else {

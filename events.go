@@ -55,7 +55,6 @@ const (
 
 // flush must be called with mu locked
 func (e *eventDeouncer) flush() {
-	log.Printf("%s: flushing %d events\n", e.name, len(e.events))
 	if len(e.events) == 0 {
 		return
 	}
@@ -73,7 +72,6 @@ func (e *eventDeouncer) debounce(frame frame) {
 
 	// TODO: probably need a warning to track if this threshold is too low
 	if len(e.events) < eventBufferSize {
-		log.Printf("%s: buffering event: %v", e.name, frame)
 		e.events = append(e.events, frame)
 	} else {
 		log.Printf("%s: buffer full, dropping event frame: %s", e.name, frame)
@@ -113,8 +111,6 @@ func (s *Session) handleNodeEvent(frames []frame) {
 	}
 
 	for addr, f := range events {
-		log.Printf("NodeEvent: handling debounced event: %q => %s", addr, f.change)
-
 		switch f.change {
 		case "NEW_NODE":
 			s.handleNewNode(f.host, f.port)
@@ -141,7 +137,6 @@ func (s *Session) handleEvent(framer *framer) {
 		log.Printf("gocql: unable to parse event frame: %v\n", err)
 		return
 	}
-	log.Println(frame)
 
 	// TODO: handle medatadata events
 	switch f := frame.(type) {
@@ -170,7 +165,6 @@ func (s *Session) handleNewNode(host net.IP, port int) {
 
 	// should this handle token moving?
 	if existing, ok := s.ring.addHostIfMissing(hostInfo); !ok {
-		log.Printf("already have host=%v existing=%v, updating\n", hostInfo, existing)
 		existing.update(hostInfo)
 		hostInfo = existing
 	}
