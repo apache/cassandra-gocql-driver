@@ -1,4 +1,4 @@
-// +build travis
+// +build ccm
 
 package gocql
 
@@ -21,11 +21,11 @@ func TestEventDiscovery(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	log.Printf("status=%+v\n", status)
+	t.Logf("status=%+v\n", status)
 
 	session.pool.mu.RLock()
 	poolHosts := session.pool.hostConnPools // TODO: replace with session.ring
-	log.Printf("poolhosts=%+v\n", poolHosts)
+	t.Logf("poolhosts=%+v\n", poolHosts)
 	// check we discovered all the nodes in the ring
 	for _, host := range status {
 		if _, ok := poolHosts[host.Addr]; !ok {
@@ -56,7 +56,7 @@ func TestEventNodeDownControl(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	log.Printf("status=%+v\n", status)
+	t.Logf("status=%+v\n", status)
 
 	time.Sleep(5 * time.Second)
 
@@ -64,7 +64,7 @@ func TestEventNodeDownControl(t *testing.T) {
 
 	poolHosts := session.pool.hostConnPools
 	node := status[targetNode]
-	log.Printf("poolhosts=%+v\n", poolHosts)
+	t.Logf("poolhosts=%+v\n", poolHosts)
 
 	if _, ok := poolHosts[node.Addr]; ok {
 		session.pool.mu.RUnlock()
@@ -91,7 +91,7 @@ func TestEventNodeDown(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	log.Printf("status=%+v\n", status)
+	t.Logf("status=%+v\n", status)
 
 	time.Sleep(5 * time.Second)
 
@@ -100,7 +100,7 @@ func TestEventNodeDown(t *testing.T) {
 
 	poolHosts := session.pool.hostConnPools
 	node := status[targetNode]
-	log.Printf("poolhosts=%+v\n", poolHosts)
+	t.Logf("poolhosts=%+v\n", poolHosts)
 
 	if _, ok := poolHosts[node.Addr]; ok {
 		t.Fatal("node not removed after remove event")
@@ -116,7 +116,7 @@ func TestEventNodeUp(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	log.Printf("status=%+v\n", status)
+	t.Logf("status=%+v\n", status)
 
 	session := createSession(t)
 	defer session.Close()
@@ -132,7 +132,7 @@ func TestEventNodeUp(t *testing.T) {
 	session.pool.mu.RLock()
 
 	poolHosts := session.pool.hostConnPools
-	log.Printf("poolhosts=%+v\n", poolHosts)
+	t.Logf("poolhosts=%+v\n", poolHosts)
 	node := status[targetNode]
 
 	if _, ok := poolHosts[node.Addr]; ok {
@@ -148,7 +148,7 @@ func TestEventNodeUp(t *testing.T) {
 	time.Sleep(5 * time.Second)
 
 	session.pool.mu.RLock()
-	log.Printf("poolhosts=%+v\n", poolHosts)
+	t.Logf("poolhosts=%+v\n", poolHosts)
 	if _, ok := poolHosts[node.Addr]; !ok {
 		session.pool.mu.RUnlock()
 		t.Fatal("node not added after node added event")

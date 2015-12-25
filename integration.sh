@@ -73,6 +73,8 @@ function run_tests() {
 			echo "--- FAIL: Received a non-zero exit code from the go test execution, please investigate this"
 			exit 1
 		fi
+
+		go test -timeout 5m -tags ccm -v -gocql.timeout=10s -runssl -proto=$proto -rf=3 -cluster=$(ccm liveset) -clusterSize=$clusterSize -autowait=2000ms -compressor=snappy ./...
 	fi
 
 	ccm remove
