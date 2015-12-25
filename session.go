@@ -225,6 +225,8 @@ func (s *Session) Close() {
 	if s.control != nil {
 		s.control.close()
 	}
+
+	s.nodeEvents.stop()
 }
 
 func (s *Session) Closed() bool {
