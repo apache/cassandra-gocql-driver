@@ -236,6 +236,12 @@ func (p *policyConnPool) addHost(host *HostInfo) {
 	)
 
 	p.hostConnPools[host.Peer()] = pool
+
+	// update policy
+	// TODO: policy should not have conns, it should have hosts and return a host
+	// iter which the pool will use to serve conns
+	p.hostPolicy.AddHost(host)
+	p.mu.Unlock()
 }
 
 func (p *policyConnPool) removeHost(addr string) {
