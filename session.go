@@ -95,6 +95,7 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 		closeChan: make(chan bool),
 	}
 
+	s.pool = cfg.PoolConfig.buildPool(s)
 	if !cfg.disableControlConn {
 		s.control = createControlConn(s)
 		if err := s.control.connect(cfg.Hosts); err != nil {
@@ -110,21 +111,9 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 			return nil, err
 		}
 
-		pool, err := cfg.PoolConfig.buildPool(s)
-		if err != nil {
-			return nil, err
-		}
-		s.pool = pool
-
 		// TODO(zariel): this should be used to create initial metadata
 		s.pool.SetHosts(hosts)
 	} else {
-		// TODO(zariel): remove branch for creating pools
-		pool, err := cfg.PoolConfig.buildPool(s)
-		if err != nil {
-			return nil, err
-		}
-		s.pool = pool
 		// we dont get host info
 		hosts := make([]*HostInfo, len(cfg.Hosts))
 		for i, addr := range cfg.Hosts {

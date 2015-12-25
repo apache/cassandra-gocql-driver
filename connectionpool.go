@@ -136,7 +136,7 @@ func (p *policyConnPool) SetHosts(hosts []*HostInfo) {
 			// create a connection pool for the host
 			pool = newHostConnPool(
 				p.session,
-				host.Peer(),
+				host,
 				p.port,
 				p.numConns,
 				p.keyspace,
@@ -227,7 +227,7 @@ func (p *policyConnPool) addHost(host *HostInfo) {
 
 	pool = newHostConnPool(
 		p.session,
-		host.Peer(),
+		host,
 		p.port,
 		p.numConns,
 		p.keyspace,
@@ -269,7 +269,7 @@ func (p *policyConnPool) hostDown(addr string) {
 // Connection selection is based on a provided ConnSelectionPolicy
 type hostConnPool struct {
 	session  *Session
-	host     string
+	host     *HostInfo
 	port     int
 	addr     string
 	size     int
@@ -289,7 +289,7 @@ func newHostConnPool(session *Session, host *HostInfo, port, size int,
 		session:  session,
 		host:     host,
 		port:     port,
-		addr:     JoinHostPort(host, port),
+		addr:     JoinHostPort(host.Peer(), port),
 		size:     size,
 		keyspace: keyspace,
 		policy:   policy,
