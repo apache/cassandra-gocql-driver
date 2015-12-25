@@ -16,11 +16,7 @@ func TestSessionAPI(t *testing.T) {
 		cons: Quorum,
 	}
 
-	var err error
-	s.pool, err = cfg.PoolConfig.buildPool(s)
-	if err != nil {
-		t.Fatal(err)
-	}
+	s.pool = cfg.PoolConfig.buildPool(s)
 	defer s.Close()
 
 	s.SetConsistency(All)
@@ -70,7 +66,7 @@ func TestSessionAPI(t *testing.T) {
 
 	testBatch := s.NewBatch(LoggedBatch)
 	testBatch.Query("test")
-	err = s.ExecuteBatch(testBatch)
+	err := s.ExecuteBatch(testBatch)
 
 	if err != ErrNoConnections {
 		t.Fatalf("expected session.ExecuteBatch to return '%v', got '%v'", ErrNoConnections, err)
@@ -167,11 +163,7 @@ func TestBatchBasicAPI(t *testing.T) {
 	}
 	defer s.Close()
 
-	var err error
-	s.pool, err = cfg.PoolConfig.buildPool(s)
-	if err != nil {
-		t.Fatal(err)
-	}
+	s.pool = cfg.PoolConfig.buildPool(s)
 
 	b := s.NewBatch(UnloggedBatch)
 	if b.Type != UnloggedBatch {
