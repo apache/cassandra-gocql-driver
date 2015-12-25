@@ -291,7 +291,12 @@ func (c *controlConn) query(statement string, values ...interface{}) (iter *Iter
 func (c *controlConn) fetchHostInfo(addr net.IP, port int) (*HostInfo, error) {
 	// TODO(zariel): we should probably move this into host_source or atleast
 	// share code with it.
-	isLocal := c.addr() == addr.String()
+	hostname, _, err := net.SplitHostPort(c.addr())
+	if err != nil {
+		return nil, fmt.Errorf("unable to fetch host info, invalid conn addr: %q: %v", c.addr(), err)
+	}
+
+	isLocal := hostname == addr.String()
 
 	var fn func(*HostInfo) error
 
