@@ -108,7 +108,7 @@ func Status() (map[string]Host, error) {
 			state = stateCommas
 		case stateCommas:
 			text := sc.Text()
-			if strings.HasPrefix(text, "-") {
+			if !strings.HasPrefix(text, "-") {
 				return nil, fmt.Errorf("expected commas got %q", text)
 			}
 			state = stateNode
