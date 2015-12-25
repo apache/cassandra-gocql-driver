@@ -289,7 +289,6 @@ func (s *Session) executeQuery(qry *Query) *Iter {
 
 		//Exit for loop if the query was successful
 		if iter.err == nil {
-			iter.host = conn.host
 			host.Mark(nil)
 			break
 		}

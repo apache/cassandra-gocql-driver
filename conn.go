@@ -131,7 +131,6 @@ type Conn struct {
 	version         uint8
 	currentKeyspace string
 	started         bool
-	host            *HostInfo
 
 	session *Session
 
@@ -191,13 +190,6 @@ func Connect(addr string, cfg *ConnConfig, errorHandler ConnErrorHandler, sessio
 		session:      session,
 		streams:      streams.New(cfg.ProtoVersion),
 	}
-
-	host, _, err := net.SplitHostPort(addr)
-	if err != nil {
-		conn.Close()
-		return nil, err
-	}
-	c.host = session.ring.getHost(host)
 
 	if cfg.Keepalive > 0 {
 		c.setKeepalive(cfg.Keepalive)
