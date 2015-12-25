@@ -153,7 +153,6 @@ func (s *Session) handleEvent(framer *framer) {
 
 func (s *Session) handleNewNode(host net.IP, port int) {
 	// TODO(zariel): need to be able to filter discovered nodes
-	log.Printf("new node host=%v port=%v\n", host, port)
 
 	var hostInfo *HostInfo
 	if s.control != nil {
