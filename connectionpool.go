@@ -222,6 +222,7 @@ func (p *policyConnPool) addHost(host *HostInfo) {
 
 	pool, ok := p.hostConnPools[host.Peer()]
 	if ok {
+		go pool.fill()
 		return
 	}
 
@@ -312,13 +313,16 @@ func (pool *hostConnPool) Pick(qry *Query) *Conn {
 		return nil
 	}
 
-	empty := len(pool.conns) == 0
+	size := len(pool.conns)
 	pool.mu.RUnlock()
 
-	if empty {
-		// try to fill the empty pool
+	if size < pool.size {
+		// try to fill the pool
 		go pool.fill()
-		return nil
+
+		if size == 0 {
+			return nil
+		}
 	}
 
 	return pool.policy.Pick(qry)
