@@ -847,9 +847,15 @@ type Iter struct {
 	rows [][][]byte
 	meta resultMetadata
 	next *nextIter
+	host *HostInfo
 
 	framer *framer
 	once   sync.Once
+}
+
+// Host returns the host which the query was sent to.
+func (iter *Iter) Host() *HostInfo {
+	return iter.host
 }
 
 // Columns returns the name and type of the selected columns.
