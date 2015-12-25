@@ -5,6 +5,7 @@
 package gocql
 
 import (
+	"fmt"
 	"log"
 	"sync"
 	"sync/atomic"
@@ -16,6 +17,10 @@ import (
 type cowHostList struct {
 	list atomic.Value
 	mu   sync.Mutex
+}
+
+func (c *cowHostList) String() string {
+	return fmt.Sprintf("%+v", c.get())
 }
 
 func (c *cowHostList) get() []*HostInfo {
