@@ -37,7 +37,10 @@ type Session struct {
 	trace               Tracer
 	hostSource          *ringDescriber
 	ring                ring
-	mu                  sync.RWMutex
+
+	connCfg *ConnConfig
+
+	mu sync.RWMutex
 
 	hostFilter HostFilter
 
@@ -73,6 +76,13 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 		cfg:      cfg,
 		pageSize: cfg.PageSize,
 	}
+
+	connCfg, err := connConfig(s)
+	if err != nil {
+		s.Close()
+		return nil, fmt.Errorf("gocql: unable to create session: %v", err)
+	}
+	s.connCfg = connCfg
 
 	s.nodeEvents = newEventDeouncer("NodeEvents", s.handleNodeEvent)
 

@@ -20,8 +20,10 @@ type controlConn struct {
 
 	conn atomic.Value
 
-	retry   RetryPolicy
-	connCfg *ConnConfig
+	session *Session
+	conn    atomic.Value
+
+	retry RetryPolicy
 
 	closeWg sync.WaitGroup
 	quit    chan struct{}
@@ -83,12 +85,6 @@ func (c *controlConn) connect(endpoints []string) error {
 	for i, endpoint := range endpoints {
 		shuffled[perm[i]] = endpoint
 	}
-
-	connCfg, err := connConfig(c.session)
-	if err != nil {
-		return err
-	}
-	c.connCfg = connCfg
 
 	// store that we are not connected so that reconnect wont happen if we error
 	atomic.StoreInt64(&c.connecting, -1)

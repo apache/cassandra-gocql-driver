@@ -62,7 +62,6 @@ type policyConnPool struct {
 
 	port     int
 	numConns int
-	connCfg  *ConnConfig
 	keyspace string
 
 	mu            sync.RWMutex
@@ -101,19 +100,13 @@ func connConfig(session *Session) (*ConnConfig, error) {
 }
 
 func newPolicyConnPool(session *Session, hostPolicy HostSelectionPolicy,
-	connPolicy func() ConnSelectionPolicy) (*policyConnPool, error) {
-
-	connCfg, err := connConfig(session)
-	if err != nil {
-		return nil, err
-	}
+	connPolicy func() ConnSelectionPolicy) *policyConnPool {
 
 	// create the pool
 	pool := &policyConnPool{
 		session:       session,
 		port:          session.cfg.Port,
 		numConns:      session.cfg.NumConns,
-		connCfg:       connCfg,
 		keyspace:      session.cfg.Keyspace,
 		hostPolicy:    hostPolicy,
 		connPolicy:    connPolicy,
@@ -123,7 +116,7 @@ func newPolicyConnPool(session *Session, hostPolicy HostSelectionPolicy,
 	pool.endpoints = make([]string, len(session.cfg.Hosts))
 	copy(pool.endpoints, session.cfg.Hosts)
 
-	return pool, nil
+	return pool
 }
 
 func (p *policyConnPool) SetHosts(hosts []*HostInfo) {
@@ -146,7 +139,6 @@ func (p *policyConnPool) SetHosts(hosts []*HostInfo) {
 				host.Peer(),
 				p.port,
 				p.numConns,
-				p.connCfg,
 				p.keyspace,
 				p.connPolicy(),
 			)
@@ -238,7 +230,6 @@ func (p *policyConnPool) addHost(host *HostInfo) {
 		host.Peer(),
 		p.port,
 		p.numConns,
-		p.connCfg,
 		p.keyspace,
 		p.connPolicy(),
 	)
@@ -282,7 +273,6 @@ type hostConnPool struct {
 	port     int
 	addr     string
 	size     int
-	connCfg  *ConnConfig
 	keyspace string
 	policy   ConnSelectionPolicy
 	// protection for conns, closed, filling
@@ -292,7 +282,7 @@ type hostConnPool struct {
 	filling bool
 }
 
-func newHostConnPool(session *Session, host string, port, size int, connCfg *ConnConfig,
+func newHostConnPool(session *Session, host *HostInfo, port, size int,
 	keyspace string, policy ConnSelectionPolicy) *hostConnPool {
 
 	pool := &hostConnPool{
@@ -301,7 +291,6 @@ func newHostConnPool(session *Session, host string, port, size int, connCfg *Con
 		port:     port,
 		addr:     JoinHostPort(host, port),
 		size:     size,
-		connCfg:  connCfg,
 		keyspace: keyspace,
 		policy:   policy,
 		conns:    make([]*Conn, 0, size),
