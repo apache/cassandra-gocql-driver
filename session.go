@@ -756,7 +756,7 @@ func (q *Query) PageState(state []byte) *Query {
 // Exec executes the query without returning any rows.
 func (q *Query) Exec() error {
 	iter := q.Iter()
-	return iter.err
+	return iter.Close()
 }
 
 func isUseStatement(stmt string) bool {
