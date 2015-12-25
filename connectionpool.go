@@ -412,7 +412,7 @@ func (pool *hostConnPool) fill() {
 
 		if err != nil {
 			// probably unreachable host
-			go pool.fillingStopped()
+			pool.fillingStopped()
 
 			// this is calle with the connetion pool mutex held, this call will
 			// then recursivly try to lock it again. FIXME
@@ -432,7 +432,7 @@ func (pool *hostConnPool) fill() {
 			fillCount--
 		}
 
-		go pool.fillingStopped()
+		pool.fillingStopped()
 		return
 	}
 
