@@ -401,7 +401,9 @@ func (pool *hostConnPool) fill() {
 			// probably unreachable host
 			go pool.fillingStopped()
 
-			pool.session.handleNodeDown(net.ParseIP(pool.host.Peer()), pool.port)
+			// this is calle with the connetion pool mutex held, this call will
+			// then recursivly try to lock it again. FIXME
+			go pool.session.handleNodeDown(net.ParseIP(pool.host.Peer()), pool.port)
 			return
 		}
 
