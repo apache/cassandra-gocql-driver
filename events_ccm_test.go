@@ -38,8 +38,42 @@ func TestEventDiscovery(t *testing.T) {
 	}
 }
 
-func TestEventNodeDown(t *testing.T) {
+func TestEventNodeDownControl(t *testing.T) {
 	const targetNode = "node1"
+	if err := ccm.AllUp(); err != nil {
+		t.Fatal(err)
+	}
+
+	session := createSession(t)
+	defer session.Close()
+
+	if err := ccm.NodeDown(targetNode); err != nil {
+		t.Fatal(err)
+	}
+	log.Println("down")
+
+	status, err := ccm.Status()
+	if err != nil {
+		t.Fatal(err)
+	}
+	log.Printf("status=%+v\n", status)
+
+	time.Sleep(5 * time.Second)
+
+	session.pool.mu.RLock()
+	defer session.pool.mu.RUnlock()
+
+	poolHosts := session.pool.hostConnPools
+	node := status[targetNode]
+	log.Printf("poolhosts=%+v\n", poolHosts)
+
+	if _, ok := poolHosts[node.Addr]; ok {
+		t.Fatal("node not removed after remove event")
+	}
+}
+
+func TestEventNodeDown(t *testing.T) {
+	const targetNode = "node3"
 	if err := ccm.AllUp(); err != nil {
 		t.Fatal(err)
 	}
