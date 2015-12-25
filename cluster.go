@@ -53,7 +53,7 @@ type PoolConfig struct {
 	ConnSelectionPolicy func() ConnSelectionPolicy
 }
 
-func (p PoolConfig) buildPool(session *Session) (*policyConnPool, error) {
+func (p PoolConfig) buildPool(session *Session) *policyConnPool {
 	hostSelection := p.HostSelectionPolicy
 	if hostSelection == nil {
 		hostSelection = RoundRobinHostPolicy()
