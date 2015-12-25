@@ -272,6 +272,7 @@ func (s *Session) executeQuery(qry *Query) *Iter {
 	for {
 		host, conn := s.pool.Pick(qry)
 
+		qry.attempts++
 		//Assign the error unavailable to the iterator
 		if conn == nil {
 			if qry.rt == nil || !qry.rt.Attempt(qry) {
@@ -285,11 +286,11 @@ func (s *Session) executeQuery(qry *Query) *Iter {
 		t := time.Now()
 		iter = conn.executeQuery(qry)
 		qry.totalLatency += time.Now().Sub(t).Nanoseconds()
-		qry.attempts++
 
 		//Exit for loop if the query was successful
 		if iter.err == nil {
-			host.Mark(iter.err)
+			iter.host = conn.host
+			host.Mark(nil)
 			break
 		}
 
