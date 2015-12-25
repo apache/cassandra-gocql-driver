@@ -1885,8 +1885,8 @@ func TestTokenAwareConnPool(t *testing.T) {
 	session := createSessionFromCluster(cluster, t)
 	defer session.Close()
 
-	if session.pool.Size() != cluster.NumConns*len(cluster.Hosts) {
-		t.Errorf("Expected pool size %d but was %d", cluster.NumConns*len(cluster.Hosts), session.pool.Size())
+	if expected := cluster.NumConns * len(session.ring.allHosts()); session.pool.Size() != expected {
+		t.Errorf("Expected pool size %d but was %d", expected, session.pool.Size())
 	}
 
 	if err := createTable(session, "CREATE TABLE gocql_test.test_token_aware (id int, data text, PRIMARY KEY (id))"); err != nil {
