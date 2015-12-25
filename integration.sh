@@ -52,6 +52,8 @@ function run_tests() {
 		ccm updateconf 'enable_user_defined_functions: true'
 	fi
 
+	sleep 1s
+
 	ccm list
 	ccm start -v
 	ccm status
