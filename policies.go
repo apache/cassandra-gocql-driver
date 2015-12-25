@@ -285,6 +285,7 @@ func (t *tokenAwareHostPolicy) SetPartitioner(partitioner string) {
 
 func (t *tokenAwareHostPolicy) AddHost(host *HostInfo) {
 	t.hosts.add(host)
+	t.fallback.AddHost(host)
 
 	t.mu.Lock()
 	t.resetTokenRing()
