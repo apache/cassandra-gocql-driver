@@ -400,6 +400,8 @@ func (pool *hostConnPool) fill() {
 		if err != nil {
 			// probably unreachable host
 			go pool.fillingStopped()
+
+			pool.session.handleNodeDown(net.ParseIP(pool.host.Peer()), pool.port)
 			return
 		}
 
