@@ -525,6 +525,10 @@ func (s *Session) MapExecuteBatchCAS(batch *Batch, dest map[string]interface{}) 
 	}
 }
 
+func (s *Session) connect(addr string, errorHandler ConnErrorHandler) (*Conn, error) {
+	return Connect(addr, s.connCfg, errorHandler, s)
+}
+
 // Query represents a CQL statement that can be executed.
 type Query struct {
 	stmt             string

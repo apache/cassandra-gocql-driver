@@ -455,7 +455,7 @@ func (pool *hostConnPool) fillingStopped() {
 // create a new connection to the host and add it to the pool
 func (pool *hostConnPool) connect() error {
 	// try to connect
-	conn, err := Connect(pool.addr, pool.connCfg, pool, pool.session)
+	conn, err := pool.session.connect(pool.addr, pool)
 	if err != nil {
 		return err
 	}

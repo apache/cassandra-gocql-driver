@@ -91,12 +91,13 @@ func (c *controlConn) connect(endpoints []string) error {
 
 	var (
 		conn *Conn
+		err  error
 	)
 
 	for _, addr := range shuffled {
-		conn, err = Connect(JoinHostPort(addr, c.session.cfg.Port), connCfg, c, c.session)
+		conn, err = c.session.connect(JoinHostPort(addr, c.session.cfg.Port), c)
 		if err != nil {
-			log.Printf("gocql: unable to dial %v: %v\n", addr, err)
+			log.Printf("gocql: unable to control conn dial %v: %v\n", addr, err)
 			continue
 		}
 
