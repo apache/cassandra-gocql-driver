@@ -191,3 +191,31 @@ func TestRoundRobinNilHostInfo(t *testing.T) {
 		}
 	}
 }
+
+func TestCOWList_Add(t *testing.T) {
+	var cow cowHostList
+
+	toAdd := [...]string{"peer1", "peer2", "peer3"}
+
+	for _, addr := range toAdd {
+		if !cow.add(&HostInfo{peer: addr}) {
+			t.Fatal("did not add peer which was not in the set")
+		}
+	}
+
+	hosts := cow.get()
+	if len(hosts) != len(toAdd) {
+		t.Fatalf("expected to have %d hosts got %d", len(toAdd), len(hosts))
+	}
+
+	set := make(map[string]bool)
+	for _, host := range hosts {
+		set[host.Peer()] = true
+	}
+
+	for _, addr := range toAdd {
+		if !set[addr] {
+			t.Errorf("addr was not in the host list: %q", addr)
+		}
+	}
+}
