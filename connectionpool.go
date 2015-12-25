@@ -289,6 +289,13 @@ type hostConnPool struct {
 	filling bool
 }
 
+func (h *hostConnPool) String() string {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return fmt.Sprintf("[filling=%v closed=%v conns=%v size=%v host=%v]",
+		h.filling, h.closed, len(h.conns), h.size, h.host)
+}
+
 func newHostConnPool(session *Session, host *HostInfo, port, size int,
 	keyspace string, policy ConnSelectionPolicy) *hostConnPool {
 
