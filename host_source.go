@@ -62,6 +62,7 @@ type HostInfo struct {
 	// that we are thread safe use a mutex to access all fields.
 	mu         sync.RWMutex
 	peer       string
+	port       int
 	dataCenter string
 	rack       string
 	hostId     string
@@ -172,6 +173,19 @@ func (h *HostInfo) setTokens(tokens []string) *HostInfo {
 	return h
 }
 
+func (h *HostInfo) Port() int {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return h.port
+}
+
+func (h *HostInfo) setPort(port int) *HostInfo {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.port = port
+	return h
+}
+
 func (h *HostInfo) update(from *HostInfo) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -186,10 +200,10 @@ func (h *HostInfo) IsUp() bool {
 	return h.State() == NodeUp
 }
 
-func (h HostInfo) String() string {
+func (h *HostInfo) String() string {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
-	return fmt.Sprintf("[hostinfo peer=%q data_centre=%q rack=%q host_id=%q version=%q state=%s num_tokens=%d]", h.peer, h.dataCenter, h.rack, h.hostId, h.version, h.state, len(h.tokens))
+	return fmt.Sprintf("[hostinfo peer=%q port=%d data_centre=%q rack=%q host_id=%q version=%q state=%s num_tokens=%d]", h.peer, h.port, h.dataCenter, h.rack, h.hostId, h.version, h.state, len(h.tokens))
 }
 
 // Polls system.peers at a specific interval to find new hosts

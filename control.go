@@ -311,7 +311,10 @@ func (c *controlConn) fetchHostInfo(addr net.IP, port int) (*HostInfo, error) {
 		}
 	}
 
-	host := &HostInfo{}
+	host := &HostInfo{
+		port: port,
+	}
+
 	if err := fn(host); err != nil {
 		return nil, err
 	}

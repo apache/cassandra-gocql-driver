@@ -229,7 +229,7 @@ func (p *policyConnPool) addHost(host *HostInfo) {
 	pool = newHostConnPool(
 		p.session,
 		host,
-		p.port,
+		host.Port(),
 		p.numConns,
 		p.keyspace,
 		p.connPolicy(),

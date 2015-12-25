@@ -10,6 +10,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
+	"net"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -96,30 +99,48 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 	}
 
 	s.pool = cfg.PoolConfig.buildPool(s)
+
+	var hosts []*HostInfo
+
 	if !cfg.disableControlConn {
 		s.control = createControlConn(s)
 		if err := s.control.connect(cfg.Hosts); err != nil {
+			s.Close()
 			return nil, err
 		}
 
 		// need to setup host source to check for broadcast_address in system.local
 		localHasRPCAddr, _ := checkSystemLocal(s.control)
 		s.hostSource.localHasRpcAddr = localHasRPCAddr
-		hosts, _, err := s.hostSource.GetHosts()
+		hosts, _, err = s.hostSource.GetHosts()
 		if err != nil {
-			s.control.close()
+			s.Close()
 			return nil, err
 		}
 
-		// TODO(zariel): this should be used to create initial metadata
-		s.pool.SetHosts(hosts)
 	} else {
 		// we dont get host info
-		hosts := make([]*HostInfo, len(cfg.Hosts))
-		for i, addr := range cfg.Hosts {
-			hosts[i] = &HostInfo{peer: addr}
+		hosts = make([]*HostInfo, len(cfg.Hosts))
+		for i, hostport := range cfg.Hosts {
+			// TODO: remove duplication
+			addr, portStr, err := net.SplitHostPort(JoinHostPort(hostport, cfg.Port))
+			if err != nil {
+				s.Close()
+				return nil, fmt.Errorf("NewSession: unable to parse hostport of addr %q: %v", hostport, err)
+			}
+
+			port, err := strconv.Atoi(portStr)
+			if err != nil {
+				s.Close()
+				return nil, fmt.Errorf("NewSession: invalid port for hostport of addr %q: %v", hostport, err)
+			}
+
+			hosts[i] = &HostInfo{peer: addr, port: port, state: NodeUp}
 		}
-		s.pool.SetHosts(hosts)
+	}
+
+	for _, host := range hosts {
+		s.handleNodeUp(net.ParseIP(host.Peer()), host.Port())
 	}
 
 	// TODO(zariel): we probably dont need this any more as we verify that we

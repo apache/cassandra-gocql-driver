@@ -153,14 +153,19 @@ func (s *Session) handleEvent(framer *framer) {
 
 func (s *Session) handleNewNode(host net.IP, port int) {
 	// TODO(zariel): need to be able to filter discovered nodes
-	if s.control == nil {
-		return
-	}
+	log.Printf("new node host=%v port=%v\n", host, port)
 
-	hostInfo, err := s.control.fetchHostInfo(host, port)
-	if err != nil {
-		log.Printf("gocql: unable to fetch host info for %v: %v\n", host, err)
-		return
+	var hostInfo *HostInfo
+	if s.control != nil {
+		var err error
+		hostInfo, err = s.control.fetchHostInfo(host, port)
+		if err != nil {
+			log.Printf("gocql: events: unable to fetch host info for %v: %v\n", host, err)
+			return
+		}
+
+	} else {
+		hostInfo = &HostInfo{peer: host.String(), port: port, state: NodeUp}
 	}
 
 	// should this handle token moving?
@@ -170,7 +175,10 @@ func (s *Session) handleNewNode(host net.IP, port int) {
 	}
 
 	s.pool.addHost(hostInfo)
-	s.hostSource.refreshRing()
+
+	if s.control != nil {
+		s.hostSource.refreshRing()
+	}
 }
 
 func (s *Session) handleRemovedNode(ip net.IP, port int) {

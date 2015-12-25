@@ -61,15 +61,16 @@ func TestEventNodeDownControl(t *testing.T) {
 	time.Sleep(5 * time.Second)
 
 	session.pool.mu.RLock()
-	defer session.pool.mu.RUnlock()
 
 	poolHosts := session.pool.hostConnPools
 	node := status[targetNode]
 	log.Printf("poolhosts=%+v\n", poolHosts)
 
 	if _, ok := poolHosts[node.Addr]; ok {
+		session.pool.mu.RUnlock()
 		t.Fatal("node not removed after remove event")
 	}
+	session.pool.mu.RUnlock()
 }
 
 func TestEventNodeDown(t *testing.T) {
