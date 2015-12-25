@@ -110,7 +110,7 @@ func (s *Session) handleNodeEvent(frames []frame) {
 		}
 	}
 
-	for addr, f := range events {
+	for _, f := range events {
 		switch f.change {
 		case "NEW_NODE":
 			s.handleNewNode(f.host, f.port)
