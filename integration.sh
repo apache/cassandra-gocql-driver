@@ -52,6 +52,7 @@ function run_tests() {
 		ccm updateconf 'enable_user_defined_functions: true'
 	fi
 
+	ccm list
 	ccm start -v
 	ccm status
 	ccm node1 nodetool status
