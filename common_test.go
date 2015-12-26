@@ -50,6 +50,10 @@ func createTable(s *Session, table string) error {
 		return err
 	}
 
+	if err := s.control.awaitSchemaAgreement(); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -99,6 +103,11 @@ func createKeyspace(tb testing.TB, cluster *ClusterConfig, keyspace string) {
 	}`, keyspace, *flagRF)).Close()
 
 	if err != nil {
+		tb.Fatal(err)
+	}
+
+	// lets just be sure
+	if err := session.control.awaitSchemaAgreement(); err != nil {
 		tb.Fatal(err)
 	}
 }
