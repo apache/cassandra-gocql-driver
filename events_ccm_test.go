@@ -4,6 +4,7 @@ package gocql
 
 import (
 	"github.com/gocql/gocql/ccm_test"
+	"log"
 	"testing"
 	"time"
 )
@@ -116,7 +117,7 @@ func TestEventNodeUp(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Logf("status=%+v\n", status)
+	log.Printf("status=%+v\n", status)
 
 	session := createSession(t)
 	defer session.Close()
@@ -141,7 +142,7 @@ func TestEventNodeUp(t *testing.T) {
 	time.Sleep(5 * time.Second)
 
 	session.pool.mu.RLock()
-	t.Logf("poolhosts=%+v\n", poolHosts)
+	log.Printf("poolhosts=%+v\n", poolHosts)
 	node := status[targetNode]
 
 	if _, ok := poolHosts[node.Addr]; ok {
@@ -157,7 +158,7 @@ func TestEventNodeUp(t *testing.T) {
 	time.Sleep(5 * time.Second)
 
 	session.pool.mu.RLock()
-	t.Logf("poolhosts=%+v\n", poolHosts)
+	log.Printf("poolhosts=%+v\n", poolHosts)
 	if _, ok := poolHosts[node.Addr]; !ok {
 		session.pool.mu.RUnlock()
 		t.Fatal("node not added after node added event")
