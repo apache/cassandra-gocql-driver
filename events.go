@@ -111,6 +111,7 @@ func (s *Session) handleNodeEvent(frames []frame) {
 	}
 
 	for _, f := range events {
+		log.Printf("debouncing event %+v\n", f)
 		switch f.change {
 		case "NEW_NODE":
 			s.handleNewNode(f.host, f.port)
