@@ -120,18 +120,27 @@ func TestEventNodeUp(t *testing.T) {
 
 	session := createSession(t)
 	defer session.Close()
+	poolHosts := session.pool.hostConnPools
 
 	const targetNode = "node2"
+
+	session.pool.mu.RLock()
+	_, ok := poolHosts[status[targetNode].Addr]
+	session.pool.mu.RUnlock()
+	if !ok {
+		session.pool.mu.RLock()
+		t.Errorf("target pool not in connection pool: addr=%q pools=%v", status[targetNode].Addr, poolHosts)
+		session.pool.mu.RUnlock()
+		t.FailNow()
+	}
 
 	if err := ccm.NodeDown(targetNode); err != nil {
 		t.Fatal(err)
 	}
 
-	time.Sleep(10 * time.Second)
+	time.Sleep(5 * time.Second)
 
 	session.pool.mu.RLock()
-
-	poolHosts := session.pool.hostConnPools
 	t.Logf("poolhosts=%+v\n", poolHosts)
 	node := status[targetNode]
 
@@ -145,7 +154,7 @@ func TestEventNodeUp(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	time.Sleep(10 * time.Second)
+	time.Sleep(5 * time.Second)
 
 	session.pool.mu.RLock()
 	t.Logf("poolhosts=%+v\n", poolHosts)
