@@ -137,6 +137,7 @@ func (s *Session) handleEvent(framer *framer) {
 		log.Printf("gocql: unable to parse event frame: %v\n", err)
 		return
 	}
+	log.Println(frame)
 
 	// TODO: handle medatadata events
 	switch f := frame.(type) {
