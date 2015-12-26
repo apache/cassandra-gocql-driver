@@ -139,7 +139,7 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 	}
 
 	for _, host := range hosts {
-		s.handleNodeUp(net.ParseIP(host.Peer()), host.Port())
+		s.handleNodeUp(net.ParseIP(host.Peer()), host.Port(), false)
 	}
 
 	// TODO(zariel): we probably dont need this any more as we verify that we
