@@ -127,7 +127,7 @@ func TestEventNodeUp(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	time.Sleep(5 * time.Second)
+	time.Sleep(10 * time.Second)
 
 	session.pool.mu.RLock()
 
@@ -145,7 +145,7 @@ func TestEventNodeUp(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	time.Sleep(5 * time.Second)
+	time.Sleep(10 * time.Second)
 
 	session.pool.mu.RLock()
 	t.Logf("poolhosts=%+v\n", poolHosts)
