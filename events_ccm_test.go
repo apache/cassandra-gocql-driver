@@ -155,7 +155,8 @@ func TestEventNodeUp(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	time.Sleep(5 * time.Second)
+	// cassandra < 2.2 needs 10 seconds to start up the binary service
+	time.Sleep(10 * time.Second)
 
 	session.pool.mu.RLock()
 	log.Printf("poolhosts=%+v\n", poolHosts)

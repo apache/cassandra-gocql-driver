@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 type nodeState int32
@@ -55,6 +56,15 @@ func (c *cassVersion) UnmarshalCQL(info TypeInfo, data []byte) error {
 
 func (c cassVersion) String() string {
 	return fmt.Sprintf("v%d.%d.%d", c.Major, c.Minor, c.Patch)
+}
+
+func (c cassVersion) nodeUpDelay() time.Duration {
+	if c.Major >= 2 && c.Minor >= 2 {
+		// CASSANDRA-8236
+		return 0
+	}
+
+	return 10 * time.Second
 }
 
 type HostInfo struct {
@@ -141,9 +151,7 @@ func (h *HostInfo) Version() cassVersion {
 func (h *HostInfo) setVersion(major, minor, patch int) *HostInfo {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	h.version.Major = major
-	h.version.Minor = minor
-	h.version.Patch = patch
+	h.version = cassVersion{major, minor, patch}
 	return h
 }
 

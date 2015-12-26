@@ -169,6 +169,10 @@ func (s *Session) handleNewNode(host net.IP, port int) {
 		hostInfo = &HostInfo{peer: host.String(), port: port, state: NodeUp}
 	}
 
+	if t := hostInfo.Version().nodeUpDelay(); t > 0 {
+		time.Sleep(t)
+	}
+
 	// should this handle token moving?
 	if existing, ok := s.ring.addHostIfMissing(hostInfo); !ok {
 		existing.update(hostInfo)
@@ -195,6 +199,10 @@ func (s *Session) handleNodeUp(ip net.IP, port int) {
 	addr := ip.String()
 	host := s.ring.getHost(addr)
 	if host != nil {
+		if t := host.Version().nodeUpDelay(); t > 0 {
+			time.Sleep(t)
+		}
+
 		host.setState(NodeUp)
 		s.pool.hostUp(host)
 		return
