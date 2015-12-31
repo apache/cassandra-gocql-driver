@@ -228,7 +228,7 @@ const (
 )
 
 var (
-	ErrFrameTooBig = errors.New("frame length is bigger than the maximum alowed")
+	ErrFrameTooBig = errors.New("frame length is bigger than the maximum allowed")
 )
 
 func writeInt(p []byte, n int32) {
@@ -446,7 +446,7 @@ func (f *framer) parseFrame() (frame frame, err error) {
 		}
 	}
 
-	// asumes that the frame body has been read into rbuf
+	// assumes that the frame body has been read into rbuf
 	switch f.header.op {
 	case opError:
 		frame = f.parseErrorFrame()
@@ -592,7 +592,7 @@ func (f *framer) setLength(length int) {
 
 func (f *framer) finishWrite() error {
 	if len(f.wbuf) > maxFrameSize {
-		// huge app frame, lets remove it so it doesnt bloat the heap
+		// huge app frame, lets remove it so it doesn't bloat the heap
 		f.wbuf = make([]byte, defaultBufSize)
 		return ErrFrameTooBig
 	}
@@ -1064,7 +1064,7 @@ func (f *framer) parseResultSchemaChange() frame {
 		change := f.readString()
 		target := f.readString()
 
-		// TODO: could just use a seperate type for each target
+		// TODO: could just use a separate type for each target
 		switch target {
 		case "KEYSPACE":
 			frame := &schemaChangeKeyspace{
