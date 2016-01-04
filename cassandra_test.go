@@ -2418,3 +2418,36 @@ close:
 	}
 	mu.Unlock()
 }
+
+func TestUnmarshallNestedTypes(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+
+	if err := createTable(session, `CREATE TABLE gocql_test.test_557 (
+		    id text PRIMARY KEY,
+		    val list<frozen<map<text, text> > >
+		)`); err != nil {
+
+		t.Fatal(err)
+	}
+
+	m := []map[string]string{
+		{"key1": "val1"},
+		{"key2": "val2"},
+	}
+
+	const id = "key"
+	err := session.Query("INSERT INTO test_557(id, val) VALUES(?, ?)", id, m).Exec()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var data []map[string]string
+	if err := session.Query("SELECT val FROM test_557 WHERE id = ?", id).Scan(&data); err != nil {
+		t.Fatal(err)
+	}
+
+	if !reflect.DeepEqual(data, m) {
+		t.Fatalf("%+#v != %+#v", data, m)
+	}
+}
