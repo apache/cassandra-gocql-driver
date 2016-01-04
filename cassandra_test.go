@@ -2420,6 +2420,9 @@ close:
 }
 
 func TestUnmarshallNestedTypes(t *testing.T) {
+	if *flagProto < protoVersion3 {
+		t.Skip("can not have frozen types in cassandra < 2.1.3")
+	}
 	session := createSession(t)
 	defer session.Close()
 
