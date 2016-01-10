@@ -5,6 +5,7 @@
 package gocql
 
 import (
+	"fmt"
 	"math/big"
 	"reflect"
 	"strings"
@@ -128,16 +129,34 @@ func (r *RowData) rowMap(m map[string]interface{}) {
 	}
 }
 
+// TupeColumnName will return the column name of a tuple value in a column named
+// c at index n. It should be used if a specific element within a tuple is needed
+// to be extracted from a map returned from SliceMap or MapScan.
+func TupleColumnName(c string, n int) string {
+	return fmt.Sprintf("%s[%d]", c, n)
+}
+
 func (iter *Iter) RowData() (RowData, error) {
 	if iter.err != nil {
 		return RowData{}, iter.err
 	}
+
 	columns := make([]string, 0)
 	values := make([]interface{}, 0)
+
 	for _, column := range iter.Columns() {
-		val := column.TypeInfo.New()
-		columns = append(columns, column.Name)
-		values = append(values, val)
+
+		switch c := column.TypeInfo.(type) {
+		case TupleTypeInfo:
+			for i, elem := range c.Elems {
+				columns = append(columns, TupleColumnName(column.Name, i))
+				values = append(values, elem.New())
+			}
+		default:
+			val := column.TypeInfo.New()
+			columns = append(columns, column.Name)
+			values = append(values, val)
+		}
 	}
 	rowData := RowData{
 		Columns: columns,

@@ -1616,6 +1616,10 @@ type TupleTypeInfo struct {
 	Elems []TypeInfo
 }
 
+func (t TupleTypeInfo) New() interface{} {
+	return reflect.New(goType(t)).Interface()
+}
+
 type UDTField struct {
 	Name string
 	Type TypeInfo
@@ -1626,6 +1630,10 @@ type UDTTypeInfo struct {
 	KeySpace string
 	Name     string
 	Elements []UDTField
+}
+
+func (u UDTTypeInfo) New() interface{} {
+	return reflect.New(goType(u)).Interface()
 }
 
 func (u UDTTypeInfo) String() string {

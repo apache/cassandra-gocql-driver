@@ -336,8 +336,8 @@ func TestCAS(t *testing.T) {
 	}
 
 	if _, err := session.Query(`DELETE FROM cas_table WHERE title = ? and revid = ? IF last_modified = ?`,
-		title, revid, tenSecondsLater).ScanCAS(); err.Error() != "count mismatch" {
-		t.Fatalf("delete: was expecting count mismatch error but got %s", err)
+		title, revid, tenSecondsLater).ScanCAS(); !strings.HasPrefix(err.Error(), "gocql: not enough columns to scan into") {
+		t.Fatal("delete: was expecting count mismatch error but got: %q", err.Error())
 	}
 
 	if applied, err := session.Query(`DELETE FROM cas_table WHERE title = ? and revid = ? IF last_modified = ?`,

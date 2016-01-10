@@ -834,7 +834,7 @@ func (iter *Iter) Scan(dest ...interface{}) bool {
 	// currently only support scanning into an expand tuple, such that its the same
 	// as scanning in more values from a single column
 	if len(dest) != iter.meta.actualColCount {
-		iter.err = errors.New("count mismatch")
+		iter.err = fmt.Errorf("gocql: not enough columns to scan into: have %d want %d", len(dest), iter.meta.actualColCount)
 		return false
 	}
 
