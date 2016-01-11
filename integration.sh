@@ -31,7 +31,7 @@ function run_tests() {
 
 	ccm remove test || true
 
-	ccm create test -v binary:$version -n $clusterSize -d --vnodes --jvm_arg="-Xmx256m -XX:NewSize=100m"
+	ccm create test -v $version -n $clusterSize -d --vnodes --jvm_arg="-Xmx256m -XX:NewSize=100m"
     ccm updateconf "${conf[@]}"
 
     if [ "$auth" = true ]
