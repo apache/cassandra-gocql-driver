@@ -933,3 +933,17 @@ func TestMarshalNil(t *testing.T) {
 		}
 	}
 }
+
+func TestUnmarshalInetCopyBytes(t *testing.T) {
+	data := []byte{127, 0, 0, 1}
+	var ip net.IP
+	if err := unmarshalInet(NativeType{proto: 2, typ: TypeInet}, data, &ip); err != nil {
+		t.Fatal(err)
+	}
+
+	copy(data, []byte{0xFF, 0xFF, 0xFF, 0xFF})
+	ip2 := net.IP(data)
+	if !ip.Equal(net.IPv4(127, 0, 0, 1)) {
+		t.Fatalf("IP memory shared with data: ip=%v ip2=%v", ip, ip2)
+	}
+}

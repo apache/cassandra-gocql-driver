@@ -1216,7 +1216,11 @@ func unmarshalInet(info TypeInfo, data []byte, value interface{}) error {
 	case Unmarshaler:
 		return v.UnmarshalCQL(info, data)
 	case *net.IP:
-		ip := net.IP(data)
+		if x := len(data); !(x == 4 || x == 16) {
+			return unmarshalErrorf("cannot unmarshal %s into %T: invalid sized IP: got %d bytes not 4 or 16", info, value, x)
+		}
+		buf := copyBytes(data)
+		ip := net.IP(buf)
 		if v4 := ip.To4(); v4 != nil {
 			*v = v4
 			return nil
