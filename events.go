@@ -167,6 +167,11 @@ func (s *Session) handleNewNode(host net.IP, port int, waitForBinary bool) {
 		hostInfo = &HostInfo{peer: host.String(), port: port, state: NodeUp}
 	}
 
+	// TODO: remove this when the host selection policy is more sophisticated
+	if !s.cfg.Discovery.matchFilter(hostInfo) {
+		return
+	}
+
 	if t := hostInfo.Version().nodeUpDelay(); t > 0 && waitForBinary {
 		time.Sleep(t)
 	}
@@ -197,6 +202,11 @@ func (s *Session) handleNodeUp(ip net.IP, port int, waitForBinary bool) {
 	addr := ip.String()
 	host := s.ring.getHost(addr)
 	if host != nil {
+		// TODO: remove this when the host selection policy is more sophisticated
+		if !s.cfg.Discovery.matchFilter(host) {
+			return
+		}
+
 		if t := host.Version().nodeUpDelay(); t > 0 && waitForBinary {
 			time.Sleep(t)
 		}

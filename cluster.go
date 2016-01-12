@@ -67,6 +67,27 @@ func (p PoolConfig) buildPool(session *Session) *policyConnPool {
 	return newPolicyConnPool(session, hostSelection, connSelection)
 }
 
+type DiscoveryConfig struct {
+	// If not empty will filter all discoverred hosts to a single Data Centre (default: "")
+	DcFilter string
+	// If not empty will filter all discoverred hosts to a single Rack (default: "")
+	RackFilter string
+	// ignored
+	Sleep time.Duration
+}
+
+func (d DiscoveryConfig) matchFilter(host *HostInfo) bool {
+	if d.DcFilter != "" && d.DcFilter != host.DataCenter() {
+		return false
+	}
+
+	if d.RackFilter != "" && d.RackFilter != host.Rack() {
+		return false
+	}
+
+	return true
+}
+
 // ClusterConfig is a struct to configure the default cluster implementation
 // of gocoql. It has a varity of attributes that can be used to modify the
 // behavior to fit the most common use cases. Applications that requre a
@@ -94,11 +115,11 @@ type ClusterConfig struct {
 	// configuration of host selection and connection selection policies.
 	PoolConfig PoolConfig
 
+	Discovery DiscoveryConfig
+
 	// The maximum amount of time to wait for schema agreement in a cluster after
 	// receiving a schema change frame. (deault: 60s)
 	MaxWaitSchemaAgreement time.Duration
-
-	HostFilter
 
 	// internal config for testing
 	disableControlConn bool
