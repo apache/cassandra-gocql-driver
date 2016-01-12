@@ -111,7 +111,6 @@ func (s *Session) handleNodeEvent(frames []frame) {
 	}
 
 	for _, f := range events {
-		log.Printf("debouncing event %+v\n", f)
 		switch f.change {
 		case "NEW_NODE":
 			s.handleNewNode(f.host, f.port, true)
@@ -138,7 +137,6 @@ func (s *Session) handleEvent(framer *framer) {
 		log.Printf("gocql: unable to parse event frame: %v\n", err)
 		return
 	}
-	log.Println(frame)
 
 	// TODO: handle medatadata events
 	switch f := frame.(type) {
