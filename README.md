@@ -12,6 +12,12 @@ Project Website: http://gocql.github.io/<br>
 API documentation: http://godoc.org/github.com/gocql/gocql<br>
 Discussions: https://groups.google.com/forum/#!forum/gocql
 
+Production Stability
+--------------------
+The method in which the driver maintains and discovers hosts in the Cassandra cluster changed when adding support for event driven discovery using serverside events. This has meant many things in the driver internally have been touched and changed, as such if you would like to go back to the historical node discovery the tag `pre-node-events` is a tree which uses the old polling based discovery.
+
+If you run into bugs related to node discovery using events please open a ticket.
+
 Supported Versions
 ------------------
 
