@@ -346,7 +346,7 @@ func readHeader(r io.Reader, p []byte) (head frameHeader, err error) {
 	version := p[0] & protoVersionMask
 
 	if version < protoVersion1 || version > protoVersion4 {
-		err = fmt.Errorf("gocql: invalid version: %x", version)
+		err = fmt.Errorf("gocql: invalid version: %d", version)
 		return
 	}
 
@@ -462,6 +462,8 @@ func (f *framer) parseFrame() (frame frame, err error) {
 		frame = f.parseAuthChallengeFrame()
 	case opAuthSuccess:
 		frame = f.parseAuthSuccessFrame()
+	case opEvent:
+		frame = f.parseEventFrame()
 	default:
 		return nil, NewErrProtocol("unknown op in frame header: %s", f.header.op)
 	}
@@ -1154,6 +1156,56 @@ func (f *framer) parseAuthChallengeFrame() frame {
 	}
 }
 
+type statusChangeEventFrame struct {
+	frameHeader
+
+	change string
+	host   net.IP
+	port   int
+}
+
+func (t statusChangeEventFrame) String() string {
+	return fmt.Sprintf("[status_change change=%s host=%v port=%v]", t.change, t.host, t.port)
+}
+
+// essentially the same as statusChange
+type topologyChangeEventFrame struct {
+	frameHeader
+
+	change string
+	host   net.IP
+	port   int
+}
+
+func (t topologyChangeEventFrame) String() string {
+	return fmt.Sprintf("[topology_change change=%s host=%v port=%v]", t.change, t.host, t.port)
+}
+
+func (f *framer) parseEventFrame() frame {
+	eventType := f.readString()
+
+	switch eventType {
+	case "TOPOLOGY_CHANGE":
+		frame := &topologyChangeEventFrame{frameHeader: *f.header}
+		frame.change = f.readString()
+		frame.host, frame.port = f.readInet()
+
+		return frame
+	case "STATUS_CHANGE":
+		frame := &statusChangeEventFrame{frameHeader: *f.header}
+		frame.change = f.readString()
+		frame.host, frame.port = f.readInet()
+
+		return frame
+	case "SCHEMA_CHANGE":
+		// this should work for all versions
+		return f.parseResultSchemaChange()
+	default:
+		panic(fmt.Errorf("gocql: unknown event type: %q", eventType))
+	}
+
+}
+
 type writeAuthResponseFrame struct {
 	data []byte
 }
@@ -1405,6 +1457,21 @@ func (w *writeOptionsFrame) writeFrame(framer *framer, streamID int) error {
 
 func (f *framer) writeOptionsFrame(stream int, _ *writeOptionsFrame) error {
 	f.writeHeader(f.flags, opOptions, stream)
+	return f.finishWrite()
+}
+
+type writeRegisterFrame struct {
+	events []string
+}
+
+func (w *writeRegisterFrame) writeFrame(framer *framer, streamID int) error {
+	return framer.writeRegisterFrame(streamID, w)
+}
+
+func (f *framer) writeRegisterFrame(streamID int, w *writeRegisterFrame) error {
+	f.writeHeader(f.flags, opRegister, streamID)
+	f.writeStringList(w.events)
+
 	return f.finishWrite()
 }
 
