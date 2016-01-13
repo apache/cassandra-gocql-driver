@@ -450,7 +450,7 @@ func (r *hostPoolHostPolicy) AddHost(host *HostInfo) {
 }
 
 func (r *hostPoolHostPolicy) RemoveHost(addr string) {
-	r.mu.Unlock()
+	r.mu.Lock()
 	defer r.mu.Unlock()
 
 	if _, ok := r.hostMap[addr]; !ok {
