@@ -2118,6 +2118,11 @@ func TestJSONSupport(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	err = session.Query("INSERT INTO test_json JSON ?", `{"id": "user1234", "age": 43, "state": "CA"}`).Exec()
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	var (
 		id    string
 		age   int
@@ -2137,6 +2142,20 @@ func TestJSONSupport(t *testing.T) {
 	}
 	if state != "TX" {
 		t.Errorf("got state %q expected %q", state, "TX")
+	}
+	err = session.Query("SELECT id, age, state FROM test_json WHERE id = ?", "user1234").Scan(&id, &age, &state)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if id != "user1234" {
+		t.Errorf("got id %q expected %q", id, "user1234")
+	}
+	if age != 43 {
+		t.Errorf("got age %d expected %d", age, 43)
+	}
+	if state != "CA" {
+		t.Errorf("got state %q expected %q", state, "CA")
 	}
 }
 
