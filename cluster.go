@@ -121,6 +121,11 @@ type ClusterConfig struct {
 	// receiving a schema change frame. (deault: 60s)
 	MaxWaitSchemaAgreement time.Duration
 
+	// HostFilter will filter all incoming events for host, any which dont pass
+	// the filter will be ignored. If set will take precedence over any options set
+	// via Discovery
+	HostFilter HostFilter
+
 	// internal config for testing
 	disableControlConn bool
 }

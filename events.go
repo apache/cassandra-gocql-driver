@@ -167,8 +167,12 @@ func (s *Session) handleNewNode(host net.IP, port int, waitForBinary bool) {
 		hostInfo = &HostInfo{peer: host.String(), port: port, state: NodeUp}
 	}
 
-	// TODO: remove this when the host selection policy is more sophisticated
-	if !s.cfg.Discovery.matchFilter(hostInfo) {
+	if s.cfg.HostFilter != nil {
+		if !s.cfg.HostFilter.Accept(hostInfo) {
+			return
+		}
+	} else if !s.cfg.Discovery.matchFilter(hostInfo) {
+		// TODO: remove this when the host selection policy is more sophisticated
 		return
 	}
 
@@ -192,6 +196,16 @@ func (s *Session) handleNewNode(host net.IP, port int, waitForBinary bool) {
 func (s *Session) handleRemovedNode(ip net.IP, port int) {
 	// we remove all nodes but only add ones which pass the filter
 	addr := ip.String()
+
+	host := s.ring.getHost(addr)
+	if host == nil {
+		host = &HostInfo{peer: addr}
+	}
+
+	if s.cfg.HostFilter != nil && !s.cfg.HostFilter.Accept(host) {
+		return
+	}
+
 	s.pool.removeHost(addr)
 	s.ring.removeHost(addr)
 
@@ -202,8 +216,12 @@ func (s *Session) handleNodeUp(ip net.IP, port int, waitForBinary bool) {
 	addr := ip.String()
 	host := s.ring.getHost(addr)
 	if host != nil {
-		// TODO: remove this when the host selection policy is more sophisticated
-		if !s.cfg.Discovery.matchFilter(host) {
+		if s.cfg.HostFilter != nil {
+			if !s.cfg.HostFilter.Accept(host) {
+				return
+			}
+		} else if !s.cfg.Discovery.matchFilter(host) {
+			// TODO: remove this when the host selection policy is more sophisticated
 			return
 		}
 
@@ -224,6 +242,12 @@ func (s *Session) handleNodeDown(ip net.IP, port int) {
 	host := s.ring.getHost(addr)
 	if host != nil {
 		host.setState(NodeDown)
+	} else {
+		host = &HostInfo{peer: addr}
+	}
+
+	if s.cfg.HostFilter != nil && !s.cfg.HostFilter.Accept(host) {
+		return
 	}
 
 	s.pool.hostDown(addr)
