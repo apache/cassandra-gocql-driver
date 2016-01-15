@@ -286,14 +286,13 @@ func (s *Session) executeQuery(qry *Query) *Iter {
 		iter = conn.executeQuery(qry)
 		qry.totalLatency += time.Now().Sub(t).Nanoseconds()
 
-		//Exit for loop if the query was successful
+		// Update host
+		host.Mark(iter.err)
+
+		// Exit for loop if the query was successful
 		if iter.err == nil {
-			host.Mark(nil)
 			break
 		}
-
-		// Mark host as ok
-		host.Mark(nil)
 
 		if qry.rt == nil || !qry.rt.Attempt(qry) {
 			break
