@@ -452,100 +452,109 @@ func (s *Session) routingKeyInfo(stmt string) (*routingKeyInfo, error) {
 	return routingKeyInfo, nil
 }
 
-func (s *Session) executeBatch(batch *Batch) (*Iter, error) {
+func (s *Session) executeBatch(batch *Batch) *Iter {
 	// fail fast
 	if s.Closed() {
-		return nil, ErrSessionClosed
+		return &Iter{err: ErrSessionClosed}
 	}
 
 	// Prevent the execution of the batch if greater than the limit
 	// Currently batches have a limit of 65536 queries.
 	// https://datastax-oss.atlassian.net/browse/JAVA-229
 	if batch.Size() > BatchSizeMaximum {
-		return nil, ErrTooManyStmts
+		return &Iter{err: ErrTooManyStmts}
 	}
 
-	var err error
 	var iter *Iter
 	batch.attempts = 0
 	batch.totalLatency = 0
 	for {
 		host, conn := s.pool.Pick(nil)
 
-		//Assign the error unavailable and break loop
-		if conn == nil {
-			err = ErrNoConnections
-			break
-		}
-		t := time.Now()
-		iter, err = conn.executeBatch(batch)
-		batch.totalLatency += time.Now().Sub(t).Nanoseconds()
 		batch.attempts++
+		if conn == nil {
+			if batch.rt == nil || !batch.rt.Attempt(batch) {
+				// Assign the error unavailable and break loop
+				iter = &Iter{err: ErrNoConnections}
+				break
+			}
 
-		// Update host
-		host.Mark(err)
+			continue
+		}
 
-		// Exit loop if operation executed correctly
-		if err == nil {
+		if conn == nil {
+			iter = &Iter{err: ErrNoConnections}
 			break
 		}
+
+		t := time.Now()
+
+		iter = conn.executeBatch(batch)
+
+		batch.totalLatency += time.Since(t).Nanoseconds()
+		// Exit loop if operation executed correctly
+		if iter.err == nil {
+			host.Mark(nil)
+			break
+		}
+
+		// Mark host with error if returned from Close
+		host.Mark(iter.Close())
 
 		if batch.rt == nil || !batch.rt.Attempt(batch) {
 			break
 		}
 	}
 
-	return iter, err
+	return iter
 }
 
 // ExecuteBatch executes a batch operation and returns nil if successful
 // otherwise an error is returned describing the failure.
 func (s *Session) ExecuteBatch(batch *Batch) error {
-	_, err := s.executeBatch(batch)
-	return err
+	iter := s.executeBatch(batch)
+	return iter.Close()
 }
 
-// ExecuteBatchCAS executes a batch operation and returns nil if successful and
+// ExecuteBatchCAS executes a batch operation and returns true if successful and
 // an iterator (to scan aditional rows if more than one conditional statement)
-// was sent, otherwise an error is returned describing the failure.
+// was sent.
 // Further scans on the interator must also remember to include
 // the applied boolean as the first argument to *Iter.Scan
 func (s *Session) ExecuteBatchCAS(batch *Batch, dest ...interface{}) (applied bool, iter *Iter, err error) {
-	if iter, err := s.executeBatch(batch); err == nil {
-		if err := iter.checkErrAndNotFound(); err != nil {
-			return false, nil, err
-		}
-		if len(iter.Columns()) > 1 {
-			dest = append([]interface{}{&applied}, dest...)
-			iter.Scan(dest...)
-		} else {
-			iter.Scan(&applied)
-		}
-		return applied, iter, nil
-	} else {
+	iter = s.executeBatch(batch)
+	if err := iter.checkErrAndNotFound(); err != nil {
+		iter.Close()
 		return false, nil, err
 	}
+
+	if len(iter.Columns()) > 1 {
+		dest = append([]interface{}{&applied}, dest...)
+		iter.Scan(dest...)
+	} else {
+		iter.Scan(&applied)
+	}
+
+	return applied, iter, nil
 }
 
 // MapExecuteBatchCAS executes a batch operation much like ExecuteBatchCAS,
 // however it accepts a map rather than a list of arguments for the initial
 // scan.
 func (s *Session) MapExecuteBatchCAS(batch *Batch, dest map[string]interface{}) (applied bool, iter *Iter, err error) {
-	if iter, err := s.executeBatch(batch); err == nil {
-		if err := iter.checkErrAndNotFound(); err != nil {
-			return false, nil, err
-		}
-		iter.MapScan(dest)
-		applied = dest["[applied]"].(bool)
-		delete(dest, "[applied]")
-
-		// we usually close here, but instead of closing, just returin an error
-		// if MapScan failed. Although Close just returns err, using Close
-		// here might be confusing as we are not actually closing the iter
-		return applied, iter, iter.err
-	} else {
+	iter = s.executeBatch(batch)
+	if err := iter.checkErrAndNotFound(); err != nil {
+		iter.Close()
 		return false, nil, err
 	}
+	iter.MapScan(dest)
+	applied = dest["[applied]"].(bool)
+	delete(dest, "[applied]")
+
+	// we usually close here, but instead of closing, just returin an error
+	// if MapScan failed. Although Close just returns err, using Close
+	// here might be confusing as we are not actually closing the iter
+	return applied, iter, iter.err
 }
 
 func (s *Session) connect(addr string, errorHandler ConnErrorHandler) (*Conn, error) {
