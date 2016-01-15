@@ -44,8 +44,6 @@ type Session struct {
 
 	mu sync.RWMutex
 
-	hostFilter HostFilter
-
 	control *controlConn
 
 	// event handlers
@@ -115,6 +113,10 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 		if err != nil {
 			s.Close()
 			return nil, err
+		}
+
+		for _, host := range hosts {
+			s.ring.addHost(host)
 		}
 
 	} else {

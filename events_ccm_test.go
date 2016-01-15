@@ -3,10 +3,11 @@
 package gocql
 
 import (
-	"github.com/gocql/gocql/ccm_test"
 	"log"
 	"testing"
 	"time"
+
+	"github.com/gocql/gocql/internal/ccm"
 )
 
 func TestEventDiscovery(t *testing.T) {
@@ -165,4 +166,59 @@ func TestEventNodeUp(t *testing.T) {
 		t.Fatal("node not added after node added event")
 	}
 	session.pool.mu.RUnlock()
+}
+
+func TestEventFilter(t *testing.T) {
+	if err := ccm.AllUp(); err != nil {
+		t.Fatal(err)
+	}
+
+	status, err := ccm.Status()
+	if err != nil {
+		t.Fatal(err)
+	}
+	log.Printf("status=%+v\n", status)
+
+	cluster := createCluster()
+	cluster.HostFilter = WhiteListHostFilter(status["node1"].Addr)
+	session := createSessionFromCluster(cluster, t)
+	defer session.Close()
+
+	if _, ok := session.pool.getPool(status["node1"].Addr); !ok {
+		t.Errorf("should have %v in pool but dont", "node1")
+	}
+
+	for _, host := range [...]string{"node2", "node3"} {
+		_, ok := session.pool.getPool(status[host].Addr)
+		if ok {
+			t.Errorf("should not have %v in pool", host)
+		}
+	}
+
+	if t.Failed() {
+		t.FailNow()
+	}
+
+	if err := ccm.NodeDown("node2"); err != nil {
+		t.Fatal(err)
+	}
+
+	time.Sleep(5 * time.Second)
+
+	if err := ccm.NodeUp("node2"); err != nil {
+		t.Fatal(err)
+	}
+
+	time.Sleep(15 * time.Second)
+	for _, host := range [...]string{"node2", "node3"} {
+		_, ok := session.pool.getPool(status[host].Addr)
+		if ok {
+			t.Errorf("should not have %v in pool", host)
+		}
+	}
+
+	if t.Failed() {
+		t.FailNow()
+	}
+
 }
