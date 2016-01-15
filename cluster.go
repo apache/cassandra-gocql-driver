@@ -126,6 +126,15 @@ type ClusterConfig struct {
 	// via Discovery
 	HostFilter HostFilter
 
+	// If IgnorePeerAddr is true and the address in system.peers does not match
+	// the supplied host by either initial hosts or discovered via events then the
+	// host will be replaced with the supplied address.
+	//
+	// For example if an event comes in with host=10.0.0.1 but when looking up that
+	// address in system.local or system.peers returns 127.0.0.1, the peer will be
+	// set to 10.0.0.1 which is what will be used to connect to.
+	IgnorePeerAddr bool
+
 	// internal config for testing
 	disableControlConn bool
 }
