@@ -142,6 +142,14 @@ type ClusterConfig struct {
 	// such host filtering and token aware query routing will not be available.
 	DisableInitialHostLookup bool
 
+	// Configure events the driver will register for
+	Events struct {
+		// disable registering for status events (node up/down)
+		DisableNodeStatusEvents bool
+		// disable registering for topology events (node added/removed/moved)
+		DisableTopologyEvents bool
+	}
+
 	// internal config for testing
 	disableControlConn bool
 }
