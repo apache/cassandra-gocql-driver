@@ -46,6 +46,11 @@ func addSslOptions(cluster *ClusterConfig) *ClusterConfig {
 var initOnce sync.Once
 
 func createTable(s *Session, table string) error {
+	// lets just be really sure
+	if err := s.control.awaitSchemaAgreement(); err != nil {
+		return err
+	}
+
 	if err := s.control.query(table).Close(); err != nil {
 		return err
 	}
