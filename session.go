@@ -58,6 +58,26 @@ type Session struct {
 	isClosed bool
 }
 
+func addrsToHosts(addrs []string, defaultPort int) ([]*HostInfo, error) {
+	hosts := make([]*HostInfo, len(addrs))
+	for i, hostport := range addrs {
+		// TODO: remove duplication
+		addr, portStr, err := net.SplitHostPort(JoinHostPort(hostport, defaultPort))
+		if err != nil {
+			return nil, fmt.Errorf("NewSession: unable to parse hostport of addr %q: %v", hostport, err)
+		}
+
+		port, err := strconv.Atoi(portStr)
+		if err != nil {
+			return nil, fmt.Errorf("NewSession: invalid port for hostport of addr %q: %v", hostport, err)
+		}
+
+		hosts[i] = &HostInfo{peer: addr, port: port, state: NodeUp}
+	}
+
+	return hosts, nil
+}
+
 // NewSession wraps an existing Node.
 func NewSession(cfg ClusterConfig) (*Session, error) {
 	//Check that hosts in the ClusterConfig is not empty
@@ -109,38 +129,27 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 		// need to setup host source to check for broadcast_address in system.local
 		localHasRPCAddr, _ := checkSystemLocal(s.control)
 		s.hostSource.localHasRpcAddr = localHasRPCAddr
-		hosts, _, err = s.hostSource.GetHosts()
+
+		var err error
+		if cfg.DisableInitialHostLookup {
+			// TODO: we could look at system.local to get token and other metadata
+			// in this case.
+			hosts, err = addrsToHosts(cfg.Hosts, cfg.Port)
+		} else {
+			hosts, _, err = s.hostSource.GetHosts()
+		}
+
 		if err != nil {
 			s.Close()
 			return nil, err
 		}
-
-		for _, host := range hosts {
-			s.ring.addHost(host)
-		}
-
 	} else {
 		// we dont get host info
-		hosts = make([]*HostInfo, len(cfg.Hosts))
-		for i, hostport := range cfg.Hosts {
-			// TODO: remove duplication
-			addr, portStr, err := net.SplitHostPort(JoinHostPort(hostport, cfg.Port))
-			if err != nil {
-				s.Close()
-				return nil, fmt.Errorf("NewSession: unable to parse hostport of addr %q: %v", hostport, err)
-			}
-
-			port, err := strconv.Atoi(portStr)
-			if err != nil {
-				s.Close()
-				return nil, fmt.Errorf("NewSession: invalid port for hostport of addr %q: %v", hostport, err)
-			}
-
-			hosts[i] = &HostInfo{peer: addr, port: port, state: NodeUp}
-		}
+		hosts, err = addrsToHosts(cfg.Hosts, cfg.Port)
 	}
 
 	for _, host := range hosts {
+		s.ring.addHost(host)
 		s.handleNodeUp(net.ParseIP(host.Peer()), host.Port(), false)
 	}
 

@@ -167,6 +167,11 @@ func (s *Session) handleNewNode(host net.IP, port int, waitForBinary bool) {
 		hostInfo = &HostInfo{peer: host.String(), port: port, state: NodeUp}
 	}
 
+	addr := host.String()
+	if s.cfg.IgnorePeerAddr && hostInfo.Peer() != addr {
+		hostInfo.setPeer(addr)
+	}
+
 	if s.cfg.HostFilter != nil {
 		if !s.cfg.HostFilter.Accept(hostInfo) {
 			return
@@ -216,6 +221,10 @@ func (s *Session) handleNodeUp(ip net.IP, port int, waitForBinary bool) {
 	addr := ip.String()
 	host := s.ring.getHost(addr)
 	if host != nil {
+		if s.cfg.IgnorePeerAddr && host.Peer() != addr {
+			host.setPeer(addr)
+		}
+
 		if s.cfg.HostFilter != nil {
 			if !s.cfg.HostFilter.Accept(host) {
 				return
