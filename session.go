@@ -470,21 +470,21 @@ func (s *Session) executeBatch(batch *Batch) (*Iter, error) {
 		iter, err = conn.executeBatch(batch)
 		batch.totalLatency += time.Now().Sub(t).Nanoseconds()
 		batch.attempts++
-		//Exit loop if operation executed correctly
-		if err == nil {
-			host.Mark(err)
-			return iter, err
-		}
 
-		// Mark host as OK
-		host.Mark(nil)
+		// Update host
+		host.Mark(err)
+
+		// Exit loop if operation executed correctly
+		if err == nil {
+			break
+		}
 
 		if batch.rt == nil || !batch.rt.Attempt(batch) {
 			break
 		}
 	}
 
-	return nil, err
+	return iter, err
 }
 
 // ExecuteBatch executes a batch operation and returns nil if successful
