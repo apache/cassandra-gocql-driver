@@ -186,7 +186,7 @@ func (s *Session) handleNewNode(host net.IP, port int, waitForBinary bool) {
 	}
 
 	// should this handle token moving?
-	if existing, ok := s.ring.addHostIfMissing(hostInfo); !ok {
+	if existing, ok := s.ring.addHostIfMissing(hostInfo); ok {
 		existing.update(hostInfo)
 		hostInfo = existing
 	}
@@ -251,9 +251,7 @@ func (s *Session) handleNodeUp(ip net.IP, port int, waitForBinary bool) {
 func (s *Session) handleNodeDown(ip net.IP, port int) {
 	addr := ip.String()
 	host := s.ring.getHost(addr)
-	if host != nil {
-		host.setState(NodeDown)
-	} else {
+	if host == nil {
 		host = &HostInfo{peer: addr}
 	}
 
@@ -261,5 +259,6 @@ func (s *Session) handleNodeDown(ip net.IP, port int) {
 		return
 	}
 
+	host.setState(NodeDown)
 	s.pool.hostDown(addr)
 }
