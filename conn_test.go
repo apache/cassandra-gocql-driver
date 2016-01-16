@@ -404,6 +404,46 @@ func TestQueryTimeoutClose(t *testing.T) {
 	}
 }
 
+func TestStream0(t *testing.T) {
+	const expErr = "gocql: error on stream 0:"
+
+	srv := NewTestServer(t, defaultProto)
+	defer srv.Stop()
+
+	errorHandler := connErrorHandlerFn(func(conn *Conn, err error, closed bool) {
+		if !strings.HasPrefix(err.Error(), expErr) {
+			t.Errorf("expected to get error prefix %q got %q", expErr, err.Error())
+		}
+	})
+
+	conn, err := Connect(srv.Address, &ConnConfig{ProtoVersion: int(srv.protocol)}, errorHandler, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	writer := frameWriterFunc(func(f *framer, streamID int) error {
+		f.writeHeader(0, opError, 0)
+		f.writeInt(0)
+		f.writeString("i am a bad frame")
+		// f.wbuf[0] = 2
+		return f.finishWrite()
+	})
+
+	// need to write out an invalid frame, which we need a connection to do
+	framer, err := conn.exec(writer, nil)
+	if err == nil {
+		t.Fatal("expected to get an error on stream 0")
+	} else if !strings.HasPrefix(err.Error(), expErr) {
+		t.Fatalf("expected to get error prefix %q got %q", expErr, err.Error())
+	} else if framer != nil {
+		frame, err := framer.parseFrame()
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Fatalf("got frame %v", frame)
+	}
+}
+
 func NewTestServer(t testing.TB, protocol uint8) *TestServer {
 	laddr, err := net.ResolveTCPAddr("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -567,6 +607,9 @@ func (srv *TestServer) process(f *framer) {
 			f.writeHeader(0, opResult, head.stream)
 			f.writeInt(resultKindVoid)
 		}
+	case opError:
+		f.writeHeader(0, opError, head.stream)
+		f.wbuf = append(f.wbuf, f.rbuf...)
 	default:
 		f.writeHeader(0, opError, head.stream)
 		f.writeInt(0)

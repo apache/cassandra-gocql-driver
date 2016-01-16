@@ -103,6 +103,12 @@ type ConnErrorHandler interface {
 	HandleError(conn *Conn, err error, closed bool)
 }
 
+type connErrorHandlerFn func(conn *Conn, err error, closed bool)
+
+func (fn connErrorHandlerFn) HandleError(conn *Conn, err error, closed bool) {
+	fn(conn, err, closed)
+}
+
 // How many timeouts we will allow to occur before the connection is closed
 // and restarted. This is to prevent a single query timeout from killing a connection
 // which may be serving more queries just fine.
@@ -533,6 +539,11 @@ func (c *Conn) exec(req frameWriter, tracer Tracer) (*framer, error) {
 		return nil, err
 	}
 
+	var timeoutCh <-chan time.Time
+	if c.timeout > 0 {
+		timeoutCh = time.After(c.timeout)
+	}
+
 	select {
 	case err := <-call.resp:
 		if err != nil {
@@ -545,7 +556,7 @@ func (c *Conn) exec(req frameWriter, tracer Tracer) (*framer, error) {
 			}
 			return nil, err
 		}
-	case <-time.After(c.timeout):
+	case <-timeoutCh:
 		close(call.timeout)
 		c.handleTimeout()
 		return nil, ErrTimeoutNoResponse
