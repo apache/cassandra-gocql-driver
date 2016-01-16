@@ -424,3 +424,60 @@ func TestUDT_EmptyCollections(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestUDT_UpdateField(t *testing.T) {
+	if *flagProto < protoVersion3 {
+		t.Skip("UDT are only available on protocol >= 3")
+	}
+
+	session := createSession(t)
+	defer session.Close()
+
+	err := createTable(session, `CREATE TYPE gocql_test.update_field_udt(
+		name text,
+		owner text);`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = createTable(session, `CREATE TABLE gocql_test.update_field(
+		id uuid,
+		udt_col frozen<update_field_udt>,
+
+		primary key(id)
+	);`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	type col struct {
+		Name  string `cql:"name"`
+		Owner string `cql:"owner"`
+		Data  string `cql:"data"`
+	}
+
+	writeCol := &col{
+		Name:  "test-name",
+		Owner: "test-owner",
+	}
+
+	id := TimeUUID()
+	err = session.Query("INSERT INTO update_field(id, udt_col) VALUES(?, ?)", id, writeCol).Exec()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := createTable(session, `ALTER TYPE gocql_test.update_field_udt ADD data text;`); err != nil {
+		t.Fatal(err)
+	}
+
+	readCol := &col{}
+	err = session.Query("SELECT udt_col FROM update_field WHERE id = ?", id).Scan(readCol)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if *readCol != *writeCol {
+		t.Errorf("expected %+v: got %+v", *writeCol, *readCol)
+	}
+}
