@@ -192,6 +192,7 @@ func (s *Session) handleNewNode(host net.IP, port int, waitForBinary bool) {
 	}
 
 	s.pool.addHost(hostInfo)
+	hostInfo.setState(NodeUp)
 
 	if s.control != nil {
 		s.hostSource.refreshRing()
@@ -211,6 +212,7 @@ func (s *Session) handleRemovedNode(ip net.IP, port int) {
 		return
 	}
 
+	host.setState(NodeDown)
 	s.pool.removeHost(addr)
 	s.ring.removeHost(addr)
 
@@ -238,8 +240,8 @@ func (s *Session) handleNodeUp(ip net.IP, port int, waitForBinary bool) {
 			time.Sleep(t)
 		}
 
-		host.setState(NodeUp)
 		s.pool.hostUp(host)
+		host.setState(NodeUp)
 		return
 	}
 
