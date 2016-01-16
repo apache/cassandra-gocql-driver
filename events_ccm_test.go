@@ -73,6 +73,13 @@ func TestEventNodeDownControl(t *testing.T) {
 		t.Fatal("node not removed after remove event")
 	}
 	session.pool.mu.RUnlock()
+
+	host := session.ring.getHost(node.Addr)
+	if host == nil {
+		t.Fatal("node not in metadata ring")
+	} else if host.IsUp() {
+		t.Fatalf("not not marked as down after event in metadata: %v", host)
+	}
 }
 
 func TestEventNodeDown(t *testing.T) {
@@ -107,6 +114,13 @@ func TestEventNodeDown(t *testing.T) {
 	if _, ok := poolHosts[node.Addr]; ok {
 		t.Fatal("node not removed after remove event")
 	}
+
+	host := session.ring.getHost(node.Addr)
+	if host == nil {
+		t.Fatal("node not in metadata ring")
+	} else if host.IsUp() {
+		t.Fatalf("not not marked as down after event in metadata: %v", host)
+	}
 }
 
 func TestEventNodeUp(t *testing.T) {
@@ -122,16 +136,14 @@ func TestEventNodeUp(t *testing.T) {
 
 	session := createSession(t)
 	defer session.Close()
-	poolHosts := session.pool.hostConnPools
 
 	const targetNode = "node2"
+	node := status[targetNode]
 
-	session.pool.mu.RLock()
-	_, ok := poolHosts[status[targetNode].Addr]
-	session.pool.mu.RUnlock()
+	_, ok := session.pool.getPool(node.Addr)
 	if !ok {
 		session.pool.mu.RLock()
-		t.Errorf("target pool not in connection pool: addr=%q pools=%v", status[targetNode].Addr, poolHosts)
+		t.Errorf("target pool not in connection pool: addr=%q pools=%v", status[targetNode].Addr, session.pool.hostConnPools)
 		session.pool.mu.RUnlock()
 		t.FailNow()
 	}
@@ -142,30 +154,29 @@ func TestEventNodeUp(t *testing.T) {
 
 	time.Sleep(5 * time.Second)
 
-	session.pool.mu.RLock()
-	log.Printf("poolhosts=%+v\n", poolHosts)
-	node := status[targetNode]
-
-	if _, ok := poolHosts[node.Addr]; ok {
-		session.pool.mu.RUnlock()
+	_, ok = session.pool.getPool(node.Addr)
+	if ok {
 		t.Fatal("node not removed after remove event")
 	}
-	session.pool.mu.RUnlock()
 
 	if err := ccm.NodeUp(targetNode); err != nil {
 		t.Fatal(err)
 	}
 
 	// cassandra < 2.2 needs 10 seconds to start up the binary service
-	time.Sleep(10 * time.Second)
+	time.Sleep(15 * time.Second)
 
-	session.pool.mu.RLock()
-	log.Printf("poolhosts=%+v\n", poolHosts)
-	if _, ok := poolHosts[node.Addr]; !ok {
-		session.pool.mu.RUnlock()
+	_, ok = session.pool.getPool(node.Addr)
+	if !ok {
 		t.Fatal("node not added after node added event")
 	}
-	session.pool.mu.RUnlock()
+
+	host := session.ring.getHost(node.Addr)
+	if host == nil {
+		t.Fatal("node not in metadata ring")
+	} else if !host.IsUp() {
+		t.Fatalf("not not marked as UP after event in metadata: addr=%q host=%p: %v", node.Addr, host, host)
+	}
 }
 
 func TestEventFilter(t *testing.T) {
