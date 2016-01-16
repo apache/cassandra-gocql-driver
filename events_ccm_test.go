@@ -41,15 +41,7 @@ func TestEventDiscovery(t *testing.T) {
 
 func TestEventNodeDownControl(t *testing.T) {
 	const targetNode = "node1"
-	t.Log("marking " + targetNode + " as down")
 	if err := ccm.AllUp(); err != nil {
-		t.Fatal(err)
-	}
-
-	session := createSession(t)
-	defer session.Close()
-
-	if err := ccm.NodeDown(targetNode); err != nil {
 		t.Fatal(err)
 	}
 
@@ -57,6 +49,17 @@ func TestEventNodeDownControl(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
+	cluster := createCluster()
+	cluster.Hosts = []string{status[targetNode].Addr}
+	session := createSessionFromCluster(cluster, t)
+	defer session.Close()
+
+	t.Log("marking " + targetNode + " as down")
+	if err := ccm.NodeDown(targetNode); err != nil {
+		t.Fatal(err)
+	}
+
 	t.Logf("status=%+v\n", status)
 	t.Logf("marking node %q down: %v\n", targetNode, status[targetNode])
 
