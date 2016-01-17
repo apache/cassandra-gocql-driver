@@ -2237,12 +2237,12 @@ func TestDiscoverViaProxy(t *testing.T) {
 	session.pool.mu.RUnlock()
 
 close:
+	mu.Lock()
+	closed = true
 	if err := proxy.Close(); err != nil {
 		t.Log(err)
 	}
 
-	mu.Lock()
-	closed = true
 	for _, conn := range proxyConns {
 		if err := conn.Close(); err != nil {
 			t.Log(err)
