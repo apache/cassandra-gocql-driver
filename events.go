@@ -111,6 +111,10 @@ func (s *Session) handleNodeEvent(frames []frame) {
 	}
 
 	for _, f := range events {
+		if debug {
+			log.Printf("gocql: dispatching event: %+v\n", f)
+		}
+
 		switch f.change {
 		case "NEW_NODE":
 			s.handleNewNode(f.host, f.port, true)
@@ -136,6 +140,10 @@ func (s *Session) handleEvent(framer *framer) {
 		// TODO: logger
 		log.Printf("gocql: unable to parse event frame: %v\n", err)
 		return
+	}
+
+	if debug {
+		log.Printf("gocql: handling frame: %v\n", frame)
 	}
 
 	// TODO: handle medatadata events
