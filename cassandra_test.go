@@ -461,11 +461,7 @@ func TestTooManyQueryArgs(t *testing.T) {
 	_, err := session.Query(`SELECT * FROM too_many_query_args WHERE id = ?`, 1, 2).Iter().SliceMap()
 
 	if err == nil {
-		t.Fatal("'`SELECT * FROM too_many_query_args WHERE id = ?`, 1, 2' should return an ErrQueryArgLength")
-	}
-
-	if err != ErrQueryArgLength {
-		t.Fatalf("'`SELECT * FROM too_many_query_args WHERE id = ?`, 1, 2' should return an ErrQueryArgLength, but returned: %s", err)
+		t.Fatal("'`SELECT * FROM too_many_query_args WHERE id = ?`, 1, 2' should return an error")
 	}
 
 	batch := session.NewBatch(UnloggedBatch)
@@ -473,12 +469,10 @@ func TestTooManyQueryArgs(t *testing.T) {
 	err = session.ExecuteBatch(batch)
 
 	if err == nil {
-		t.Fatal("'`INSERT INTO too_many_query_args (id, value) VALUES (?, ?)`, 1, 2, 3' should return an ErrQueryArgLength")
+		t.Fatal("'`INSERT INTO too_many_query_args (id, value) VALUES (?, ?)`, 1, 2, 3' should return an error")
 	}
 
-	if err != ErrQueryArgLength {
-		t.Fatalf("'INSERT INTO too_many_query_args (id, value) VALUES (?, ?)`, 1, 2, 3' should return an ErrQueryArgLength, but returned: %s", err)
-	}
+	// TODO: should indicate via an error code that it is an invalid arg?
 
 }
 
@@ -498,11 +492,7 @@ func TestNotEnoughQueryArgs(t *testing.T) {
 	_, err := session.Query(`SELECT * FROM not_enough_query_args WHERE id = ? and cluster = ?`, 1).Iter().SliceMap()
 
 	if err == nil {
-		t.Fatal("'`SELECT * FROM not_enough_query_args WHERE id = ? and cluster = ?`, 1' should return an ErrQueryArgLength")
-	}
-
-	if err != ErrQueryArgLength {
-		t.Fatalf("'`SELECT * FROM too_few_query_args WHERE id = ? and cluster = ?`, 1' should return an ErrQueryArgLength, but returned: %s", err)
+		t.Fatal("'`SELECT * FROM not_enough_query_args WHERE id = ? and cluster = ?`, 1' should return an error")
 	}
 
 	batch := session.NewBatch(UnloggedBatch)
@@ -510,11 +500,7 @@ func TestNotEnoughQueryArgs(t *testing.T) {
 	err = session.ExecuteBatch(batch)
 
 	if err == nil {
-		t.Fatal("'`INSERT INTO not_enough_query_args (id, cluster, value) VALUES (?, ?, ?)`, 1, 2' should return an ErrQueryArgLength")
-	}
-
-	if err != ErrQueryArgLength {
-		t.Fatalf("'INSERT INTO not_enough_query_args (id, cluster, value) VALUES (?, ?, ?)`, 1, 2' should return an ErrQueryArgLength, but returned: %s", err)
+		t.Fatal("'`INSERT INTO not_enough_query_args (id, cluster, value) VALUES (?, ?, ?)`, 1, 2' should return an error")
 	}
 }
 
@@ -1011,15 +997,21 @@ func injectInvalidPreparedStatement(t *testing.T, session *Session, table string
 	session.stmtsLRU.Lock()
 	session.stmtsLRU.lru.Add(conn.addr+stmt, flight)
 	session.stmtsLRU.Unlock()
-	flight.info = QueryInfo{
-		Id: []byte{'f', 'o', 'o', 'b', 'a', 'r'},
-		Args: []ColumnInfo{
-			{
-				Keyspace: "gocql_test",
-				Table:    table,
-				Name:     "foo",
-				TypeInfo: NativeType{
-					typ: TypeVarchar,
+	flight.preparedStatment = &preparedStatment{
+		id: []byte{'f', 'o', 'o', 'b', 'a', 'r'},
+		request: preparedMetadata{
+			resultMetadata: resultMetadata{
+				colCount:       1,
+				actualColCount: 1,
+				columns: []ColumnInfo{
+					{
+						Keyspace: "gocql_test",
+						Table:    table,
+						Name:     "foo",
+						TypeInfo: NativeType{
+							typ: TypeVarchar,
+						},
+					},
 				},
 			},
 		},
@@ -1085,12 +1077,12 @@ func TestQueryInfo(t *testing.T) {
 		t.Fatalf("Failed to execute query for preparing statement: %v", err)
 	}
 
-	if x := len(info.Args); x != 1 {
+	if x := len(info.request.columns); x != 1 {
 		t.Fatalf("Was not expecting meta data for %d query arguments, but got %d\n", 1, x)
 	}
 
 	if *flagProto > 1 {
-		if x := len(info.Rval); x != 2 {
+		if x := len(info.response.columns); x != 2 {
 			t.Fatalf("Was not expecting meta data for %d result columns, but got %d\n", 2, x)
 		}
 	}
