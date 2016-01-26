@@ -149,6 +149,8 @@ type ClusterConfig struct {
 		DisableNodeStatusEvents bool
 		// disable registering for topology events (node added/removed/moved)
 		DisableTopologyEvents bool
+		// disable registering for schema events (keyspace/table/function removed/created/updated)
+		DisableSchemaEvents bool
 	}
 
 	// internal config for testing
