@@ -785,6 +785,9 @@ func (c *Conn) executeQuery(qry *Query) *Iter {
 	case *resultKeyspaceFrame:
 		return &Iter{framer: framer}
 	case *resultSchemaChangeFrame, *schemaChangeKeyspace, *schemaChangeTable, *schemaChangeFunction:
+		// Clear the statments cache so that we dont use stale table info for requests.
+		// TODO: only reset a specific table/keyapce and only when it is changed.
+		c.session.stmtsLRU.clear()
 		iter := &Iter{framer: framer}
 		if err := c.awaitSchemaAgreement(); err != nil {
 			// TODO: should have this behind a flag

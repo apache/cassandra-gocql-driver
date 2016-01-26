@@ -32,6 +32,15 @@ func (p *preparedLRU) max(max int) {
 	p.lru.MaxEntries = max
 }
 
+func (p *preparedLRU) clear() {
+	p.Lock()
+	defer p.Unlock()
+
+	for p.lru.Len() > 0 {
+		p.lru.RemoveOldest()
+	}
+}
+
 // PoolConfig configures the connection pool used by the driver, it defaults to
 // using a round robbin host selection policy and a round robbin connection selection
 // policy for each host.
