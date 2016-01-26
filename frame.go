@@ -1007,18 +1007,6 @@ func (f *framer) parseResultPrepared() frame {
 	return frame
 }
 
-type resultSchemaChangeFrame struct {
-	frameHeader
-
-	change   string
-	keyspace string
-	table    string
-}
-
-func (s *resultSchemaChangeFrame) String() string {
-	return fmt.Sprintf("[result_schema_change change=%s keyspace=%s table=%s]", s.change, s.keyspace, s.table)
-}
-
 type schemaChangeKeyspace struct {
 	frameHeader
 
@@ -1053,15 +1041,24 @@ type schemaChangeFunction struct {
 
 func (f *framer) parseResultSchemaChange() frame {
 	if f.proto <= protoVersion2 {
-		frame := &resultSchemaChangeFrame{
-			frameHeader: *f.header,
+		change := f.readString()
+		keyspace := f.readString()
+		table := f.readString()
+
+		if table != "" {
+			return &schemaChangeTable{
+				frameHeader: *f.header,
+				change:      change,
+				keyspace:    keyspace,
+				object:      table,
+			}
+		} else {
+			return &schemaChangeKeyspace{
+				frameHeader: *f.header,
+				change:      change,
+				keyspace:    keyspace,
+			}
 		}
-
-		frame.change = f.readString()
-		frame.keyspace = f.readString()
-		frame.table = f.readString()
-
-		return frame
 	} else {
 		change := f.readString()
 		target := f.readString()
