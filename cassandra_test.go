@@ -1974,7 +1974,7 @@ func TestManualQueryPaging(t *testing.T) {
 	}
 
 	if fetched != rowsToInsert {
-		t.Fatalf("expected to fetch %d rows got %d", fetched, rowsToInsert)
+		t.Fatalf("expected to fetch %d rows got %d", rowsToInsert, fetched)
 	}
 }
 
