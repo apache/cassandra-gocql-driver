@@ -1008,9 +1008,9 @@ func injectInvalidPreparedStatement(t *testing.T, session *Session, table string
 	stmt := "INSERT INTO " + table + " (foo, bar) VALUES (?, 7)"
 	_, conn := session.pool.Pick(nil)
 	flight := new(inflightPrepare)
-	stmtsLRU.Lock()
-	stmtsLRU.lru.Add(conn.addr+stmt, flight)
-	stmtsLRU.Unlock()
+	session.stmtsLRU.Lock()
+	session.stmtsLRU.lru.Add(conn.addr+stmt, flight)
+	session.stmtsLRU.Unlock()
 	flight.info = QueryInfo{
 		Id: []byte{'f', 'o', 'o', 'b', 'a', 'r'},
 		Args: []ColumnInfo{
@@ -1100,9 +1100,7 @@ func TestQueryInfo(t *testing.T) {
 func TestPreparedCacheEviction(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
-	stmtsLRU.Lock()
-	stmtsLRU.Max(4)
-	stmtsLRU.Unlock()
+	session.stmtsLRU.max(4)
 
 	if err := createTable(session, "CREATE TABLE gocql_test.prepcachetest (id int,mod int,PRIMARY KEY (id))"); err != nil {
 		t.Fatalf("failed to create table with error '%v'", err)
@@ -1140,33 +1138,33 @@ func TestPreparedCacheEviction(t *testing.T) {
 		t.Fatalf("insert into prepcachetest failed, error '%v'", err)
 	}
 
-	stmtsLRU.Lock()
+	session.stmtsLRU.Lock()
 
 	//Make sure the cache size is maintained
-	if stmtsLRU.lru.Len() != stmtsLRU.lru.MaxEntries {
-		t.Fatalf("expected cache size of %v, got %v", stmtsLRU.lru.MaxEntries, stmtsLRU.lru.Len())
+	if session.stmtsLRU.lru.Len() != session.stmtsLRU.lru.MaxEntries {
+		t.Fatalf("expected cache size of %v, got %v", session.stmtsLRU.lru.MaxEntries, session.stmtsLRU.lru.Len())
 	}
 
 	//Walk through all the configured hosts and test cache retention and eviction
 	var selFound, insFound, updFound, delFound, selEvict bool
 	for i := range session.cfg.Hosts {
-		_, ok := stmtsLRU.lru.Get(session.cfg.Hosts[i] + ":9042gocql_testSELECT id,mod FROM prepcachetest WHERE id = 1")
+		_, ok := session.stmtsLRU.lru.Get(session.cfg.Hosts[i] + ":9042gocql_testSELECT id,mod FROM prepcachetest WHERE id = 1")
 		selFound = selFound || ok
 
-		_, ok = stmtsLRU.lru.Get(session.cfg.Hosts[i] + ":9042gocql_testINSERT INTO prepcachetest (id,mod) VALUES (?, ?)")
+		_, ok = session.stmtsLRU.lru.Get(session.cfg.Hosts[i] + ":9042gocql_testINSERT INTO prepcachetest (id,mod) VALUES (?, ?)")
 		insFound = insFound || ok
 
-		_, ok = stmtsLRU.lru.Get(session.cfg.Hosts[i] + ":9042gocql_testUPDATE prepcachetest SET mod = ? WHERE id = ?")
+		_, ok = session.stmtsLRU.lru.Get(session.cfg.Hosts[i] + ":9042gocql_testUPDATE prepcachetest SET mod = ? WHERE id = ?")
 		updFound = updFound || ok
 
-		_, ok = stmtsLRU.lru.Get(session.cfg.Hosts[i] + ":9042gocql_testDELETE FROM prepcachetest WHERE id = ?")
+		_, ok = session.stmtsLRU.lru.Get(session.cfg.Hosts[i] + ":9042gocql_testDELETE FROM prepcachetest WHERE id = ?")
 		delFound = delFound || ok
 
-		_, ok = stmtsLRU.lru.Get(session.cfg.Hosts[i] + ":9042gocql_testSELECT id,mod FROM prepcachetest WHERE id = 0")
+		_, ok = session.stmtsLRU.lru.Get(session.cfg.Hosts[i] + ":9042gocql_testSELECT id,mod FROM prepcachetest WHERE id = 0")
 		selEvict = selEvict || !ok
 	}
 
-	stmtsLRU.Unlock()
+	session.stmtsLRU.Unlock()
 
 	if !selEvict {
 		t.Fatalf("expected first select statement to be purged, but statement was found in the cache.")
