@@ -14,30 +14,22 @@ import (
 
 const defaultMaxPreparedStmts = 1000
 
-//Package global reference to Prepared Statements LRU
-var stmtsLRU preparedLRU
-
 //preparedLRU is the prepared statement cache
 type preparedLRU struct {
-	sync.Mutex
+	sync.RWMutex
 	lru *lru.Cache
 }
 
 //Max adjusts the maximum size of the cache and cleans up the oldest records if
 //the new max is lower than the previous value. Not concurrency safe.
-func (p *preparedLRU) Max(max int) {
+func (p *preparedLRU) max(max int) {
+	p.Lock()
+	defer p.Unlock()
+
 	for p.lru.Len() > max {
 		p.lru.RemoveOldest()
 	}
 	p.lru.MaxEntries = max
-}
-
-func initStmtsLRU(max int) {
-	if stmtsLRU.lru != nil {
-		stmtsLRU.Max(max)
-	} else {
-		stmtsLRU.lru = lru.New(max)
-	}
 }
 
 // PoolConfig configures the connection pool used by the driver, it defaults to

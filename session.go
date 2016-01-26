@@ -39,6 +39,7 @@ type Session struct {
 	trace               Tracer
 	hostSource          *ringDescriber
 	ring                ring
+	stmtsLRU            *preparedLRU
 
 	connCfg *ConnConfig
 
@@ -85,16 +86,12 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 		return nil, ErrNoHosts
 	}
 
-	//Adjust the size of the prepared statements cache to match the latest configuration
-	stmtsLRU.Lock()
-	initStmtsLRU(cfg.MaxPreparedStmts)
-	stmtsLRU.Unlock()
-
 	s := &Session{
 		cons:     cfg.Consistency,
 		prefetch: 0.25,
 		cfg:      cfg,
 		pageSize: cfg.PageSize,
+		stmtsLRU: &preparedLRU{lru: lru.New(cfg.MaxPreparedStmts)},
 	}
 
 	connCfg, err := connConfig(s)
