@@ -824,7 +824,8 @@ type resultMetadata struct {
 	// only if flagPageState
 	pagingState []byte
 
-	columns []ColumnInfo
+	columns  []ColumnInfo
+	colCount int
 
 	// this is a count of the total number of columns which can be scanned,
 	// it is at minimum len(columns) but may be larger, for instance when a column
@@ -856,15 +857,13 @@ func (f *framer) readCol(col *ColumnInfo, meta *resultMetadata, globalSpec bool,
 }
 
 func (f *framer) parseResultMetadata() resultMetadata {
-	meta := resultMetadata{
-		flags: f.readInt(),
+	var meta resultMetadata
+	meta.flags = f.readInt()
+	meta.colCount = f.readInt()
+	if meta.colCount < 0 {
+		panic(fmt.Errorf("received negative column count: %d", meta.colCount))
 	}
-
-	colCount := f.readInt()
-	if colCount < 0 {
-		panic(fmt.Errorf("received negative column count: %d", colCount))
-	}
-	meta.actualColCount = colCount
+	meta.actualColCount = meta.colCount
 
 	if meta.flags&flagHasMorePages == flagHasMorePages {
 		meta.pagingState = f.readBytes()
@@ -882,17 +881,17 @@ func (f *framer) parseResultMetadata() resultMetadata {
 	}
 
 	var cols []ColumnInfo
-	if colCount < 1000 {
+	if meta.colCount < 1000 {
 		// preallocate columninfo to avoid excess copying
-		cols = make([]ColumnInfo, colCount)
-		for i := 0; i < colCount; i++ {
+		cols = make([]ColumnInfo, meta.colCount)
+		for i := 0; i < meta.colCount; i++ {
 			f.readCol(&cols[i], &meta, globalSpec, keyspace, table)
 		}
 
 	} else {
 		// use append, huge number of columns usually indicates a corrupt frame or
 		// just a huge row.
-		for i := 0; i < colCount; i++ {
+		for i := 0; i < meta.colCount; i++ {
 			var col ColumnInfo
 			f.readCol(&col, &meta, globalSpec, keyspace, table)
 			cols = append(cols, col)
@@ -950,7 +949,7 @@ func (f *framer) parseResultRows() frame {
 		panic(fmt.Errorf("invalid row_count in result frame: %d", numRows))
 	}
 
-	colCount := len(meta.columns)
+	colCount := meta.colCount
 
 	rows := make([][][]byte, numRows)
 	for i := 0; i < numRows; i++ {

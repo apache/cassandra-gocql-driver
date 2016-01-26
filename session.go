@@ -576,6 +576,7 @@ type Query struct {
 	totalLatency     int64
 	serialCons       SerialConsistency
 	defaultTimestamp bool
+	isCAS            bool
 
 	disableAutoPage bool
 }
@@ -819,6 +820,7 @@ func (q *Query) Scan(dest ...interface{}) error {
 // the existing values did not match, the previous values will be stored
 // in dest.
 func (q *Query) ScanCAS(dest ...interface{}) (applied bool, err error) {
+	q.isCAS = true
 	iter := q.Iter()
 	if err := iter.checkErrAndNotFound(); err != nil {
 		return false, err
@@ -841,6 +843,7 @@ func (q *Query) ScanCAS(dest ...interface{}) (applied bool, err error) {
 // SELECT * FROM. So using ScanCAS with INSERT is inherently prone to
 // column mismatching. MapScanCAS is added to capture them safely.
 func (q *Query) MapScanCAS(dest map[string]interface{}) (applied bool, err error) {
+	q.isCAS = true
 	iter := q.Iter()
 	if err := iter.checkErrAndNotFound(); err != nil {
 		return false, err

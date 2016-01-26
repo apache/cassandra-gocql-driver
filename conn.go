@@ -662,10 +662,15 @@ func (c *Conn) executeQuery(qry *Query) *Iter {
 		params.pageSize = qry.pageSize
 	}
 
-	var frame frameWriter
+	var (
+		frame frameWriter
+		info  *QueryInfo
+	)
+
 	if qry.shouldPrepare() {
 		// Prepare all DML queries. Other queries can not be prepared.
-		info, err := c.prepareStatement(qry.stmt, qry.trace)
+		var err error
+		info, err = c.prepareStatement(qry.stmt, qry.trace)
 		if err != nil {
 			return &Iter{err: err}
 		}
@@ -696,6 +701,8 @@ func (c *Conn) executeQuery(qry *Query) *Iter {
 			v.value = val
 			// TODO: handle query binding names
 		}
+
+		params.skipMeta = !qry.isCAS
 
 		frame = &writeExecuteFrame{
 			preparedID: info.Id,
@@ -730,6 +737,14 @@ func (c *Conn) executeQuery(qry *Query) *Iter {
 			meta:   x.meta,
 			rows:   x.rows,
 			framer: framer,
+		}
+
+		if params.skipMeta {
+			if info != nil {
+				iter.meta.columns = info.Rval
+			} else {
+				return &Iter{framer: framer, err: errors.New("gocql: did not receive metadata but prepared info is nil")}
+			}
 		}
 
 		if len(x.meta.pagingState) > 0 && !qry.disableAutoPage {
