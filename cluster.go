@@ -16,7 +16,7 @@ const defaultMaxPreparedStmts = 1000
 
 //preparedLRU is the prepared statement cache
 type preparedLRU struct {
-	sync.RWMutex
+	sync.Mutex
 	lru *lru.Cache
 }
 
