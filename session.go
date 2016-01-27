@@ -259,6 +259,10 @@ func (s *Session) Close() {
 	if s.nodeEvents != nil {
 		s.nodeEvents.stop()
 	}
+
+	if s.schemaEvents != nil {
+		s.schemaEvents.stop()
+	}
 }
 
 func (s *Session) Closed() bool {

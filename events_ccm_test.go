@@ -236,3 +236,56 @@ func TestEventFilter(t *testing.T) {
 	}
 
 }
+
+func TestEventDownQueryable(t *testing.T) {
+	if err := ccm.AllUp(); err != nil {
+		t.Fatal(err)
+	}
+
+	status, err := ccm.Status()
+	if err != nil {
+		t.Fatal(err)
+	}
+	log.Printf("status=%+v\n", status)
+
+	const targetNode = "node1"
+
+	addr := status[targetNode].Addr
+
+	cluster := createCluster()
+	cluster.Hosts = []string{addr}
+	cluster.HostFilter = WhiteListHostFilter(addr)
+	session := createSessionFromCluster(cluster, t)
+	defer session.Close()
+
+	if pool, ok := session.pool.getPool(addr); !ok {
+		t.Fatalf("should have %v in pool but dont", addr)
+	} else if !pool.host.IsUp() {
+		t.Fatalf("host is not up %v", pool.host)
+	}
+
+	if err := ccm.NodeDown(targetNode); err != nil {
+		t.Fatal(err)
+	}
+
+	time.Sleep(5 * time.Second)
+
+	if err := ccm.NodeUp(targetNode); err != nil {
+		t.Fatal(err)
+	}
+
+	time.Sleep(15 * time.Second)
+
+	if pool, ok := session.pool.getPool(addr); !ok {
+		t.Fatalf("should have %v in pool but dont", addr)
+	} else if !pool.host.IsUp() {
+		t.Fatalf("host is not up %v", pool.host)
+	}
+
+	var rows int
+	if err := session.Query("SELECT COUNT(*) FROM system.local").Scan(&rows); err != nil {
+		t.Fatal(err)
+	} else if rows != 1 {
+		t.Fatalf("expected to get 1 row got %d", rows)
+	}
+}
