@@ -784,7 +784,7 @@ func (c *Conn) executeQuery(qry *Query) *Iter {
 		return iter
 	case *resultKeyspaceFrame:
 		return &Iter{framer: framer}
-	case *resultSchemaChangeFrame, *schemaChangeKeyspace, *schemaChangeTable, *schemaChangeFunction:
+	case *schemaChangeKeyspace, *schemaChangeTable, *schemaChangeFunction:
 		// Clear the statments cache so that we dont use stale table info for requests.
 		// TODO: only reset a specific table/keyapce and only when it is changed.
 		c.session.stmtsLRU.clear()
