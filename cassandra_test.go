@@ -1090,9 +1090,13 @@ func TestQueryInfo(t *testing.T) {
 
 //TestPreparedCacheEviction will make sure that the cache size is maintained
 func TestPreparedCacheEviction(t *testing.T) {
-	session := createSession(t)
+	const maxPrepared = 4
+	cluster := createCluster()
+	cluster.MaxPreparedStmts = maxPrepared
+	cluster.Events.DisableSchemaEvents = true
+
+	session := createSessionFromCluster(cluster, t)
 	defer session.Close()
-	session.stmtsLRU.max(4)
 
 	if err := createTable(session, "CREATE TABLE gocql_test.prepcachetest (id int,mod int,PRIMARY KEY (id))"); err != nil {
 		t.Fatalf("failed to create table with error '%v'", err)
