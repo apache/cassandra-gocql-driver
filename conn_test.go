@@ -411,7 +411,7 @@ func TestStream0(t *testing.T) {
 	defer srv.Stop()
 
 	errorHandler := connErrorHandlerFn(func(conn *Conn, err error, closed bool) {
-		if !strings.HasPrefix(err.Error(), expErr) {
+		if !srv.isClosed() && !strings.HasPrefix(err.Error(), expErr) {
 			t.Errorf("expected to get error prefix %q got %q", expErr, err.Error())
 		}
 	})
@@ -521,7 +521,9 @@ type TestServer struct {
 	protocol   byte
 	headerSize int
 
-	quit chan struct{}
+	quit   chan struct{}
+	mu     sync.Mutex
+	closed bool
 }
 
 func (srv *TestServer) serve() {
@@ -552,7 +554,20 @@ func (srv *TestServer) serve() {
 	}
 }
 
+func (srv *TestServer) isClosed() bool {
+	srv.mu.Lock()
+	defer srv.mu.Unlock()
+	return srv.closed
+}
+
 func (srv *TestServer) Stop() {
+	srv.mu.Lock()
+	defer srv.mu.Unlock()
+	if srv.closed {
+		return
+	}
+	srv.closed = true
+
 	srv.listen.Close()
 	close(srv.quit)
 }
