@@ -935,7 +935,8 @@ type resultRowsFrame struct {
 	frameHeader
 
 	meta resultMetadata
-	rows [][][]byte
+	// dont parse the rows here as we only need to do it once
+	numRows int
 }
 
 func (f *resultRowsFrame) String() string {
@@ -943,28 +944,15 @@ func (f *resultRowsFrame) String() string {
 }
 
 func (f *framer) parseResultRows() frame {
-	meta := f.parseResultMetadata()
+	result := &resultRowsFrame{}
+	result.meta = f.parseResultMetadata()
 
-	numRows := f.readInt()
-	if numRows < 0 {
-		panic(fmt.Errorf("invalid row_count in result frame: %d", numRows))
+	result.numRows = f.readInt()
+	if result.numRows < 0 {
+		panic(fmt.Errorf("invalid row_count in result frame: %d", result.numRows))
 	}
 
-	colCount := meta.colCount
-
-	rows := make([][][]byte, numRows)
-	for i := 0; i < numRows; i++ {
-		rows[i] = make([][]byte, colCount)
-		for j := 0; j < colCount; j++ {
-			rows[i][j] = f.readBytes()
-		}
-	}
-
-	return &resultRowsFrame{
-		frameHeader: *f.header,
-		meta:        meta,
-		rows:        rows,
-	}
+	return result
 }
 
 type resultKeyspaceFrame struct {
@@ -1563,18 +1551,27 @@ func (f *framer) readStringList() []string {
 	return l
 }
 
-func (f *framer) readBytes() []byte {
+func (f *framer) readBytesInternal() ([]byte, error) {
 	size := f.readInt()
 	if size < 0 {
-		return nil
+		return nil, nil
 	}
 
 	if len(f.rbuf) < size {
-		panic(fmt.Errorf("not enough bytes in buffer to read bytes require %d got: %d", size, len(f.rbuf)))
+		return nil, fmt.Errorf("not enough bytes in buffer to read bytes require %d got: %d", size, len(f.rbuf))
 	}
 
 	l := f.rbuf[:size]
 	f.rbuf = f.rbuf[size:]
+
+	return l, nil
+}
+
+func (f *framer) readBytes() []byte {
+	l, err := f.readBytesInternal()
+	if err != nil {
+		panic(err)
+	}
 
 	return l
 }
