@@ -865,12 +865,12 @@ func (q *Query) MapScanCAS(dest map[string]interface{}) (applied bool, err error
 // were returned by a query. The iterator might send additional queries to the
 // database during the iteration if paging was enabled.
 type Iter struct {
-	err  error
-	pos  int
-	rows [][][]byte
-	meta resultMetadata
-	next *nextIter
-	host *HostInfo
+	err     error
+	pos     int
+	meta    resultMetadata
+	numRows int
+	next    *nextIter
+	host    *HostInfo
 
 	framer *framer
 	once   sync.Once
@@ -886,6 +886,10 @@ func (iter *Iter) Columns() []ColumnInfo {
 	return iter.meta.columns
 }
 
+func (iter *Iter) readColumn() ([]byte, error) {
+	return iter.framer.readBytesInternal()
+}
+
 // Scan consumes the next row of the iterator and copies the columns of the
 // current row into the values pointed at by dest. Use nil as a dest value
 // to skip the corresponding column. Scan might send additional queries
@@ -898,13 +902,15 @@ func (iter *Iter) Scan(dest ...interface{}) bool {
 	if iter.err != nil {
 		return false
 	}
-	if iter.pos >= len(iter.rows) {
+
+	if iter.pos >= iter.numRows {
 		if iter.next != nil {
 			*iter = *iter.next.fetch()
 			return iter.Scan(dest...)
 		}
 		return false
 	}
+
 	if iter.next != nil && iter.pos == iter.next.pos {
 		go iter.next.fetch()
 	}
@@ -919,7 +925,14 @@ func (iter *Iter) Scan(dest ...interface{}) bool {
 	// i is the current position in dest, could posible replace it and just use
 	// slices of dest
 	i := 0
-	for c, col := range iter.meta.columns {
+	for c := range iter.meta.columns {
+		col := &iter.meta.columns[c]
+		colBytes, err := iter.readColumn()
+		if err != nil {
+			iter.err = err
+			return false
+		}
+
 		if dest[i] == nil {
 			i++
 			continue
@@ -933,10 +946,10 @@ func (iter *Iter) Scan(dest ...interface{}) bool {
 			count := len(tuple.Elems)
 			// here we pass in a slice of the struct which has the number number of
 			// values as elements in the tuple
-			iter.err = Unmarshal(col.TypeInfo, iter.rows[iter.pos][c], dest[i:i+count])
+			iter.err = Unmarshal(col.TypeInfo, colBytes, dest[i:i+count])
 			i += count
 		default:
-			iter.err = Unmarshal(col.TypeInfo, iter.rows[iter.pos][c], dest[i])
+			iter.err = Unmarshal(col.TypeInfo, colBytes, dest[i])
 			i++
 		}
 
@@ -965,14 +978,14 @@ func (iter *Iter) Close() error {
 // WillSwitchPage detects if iterator reached end of current page
 // and the next page is available.
 func (iter *Iter) WillSwitchPage() bool {
-	return iter.pos >= len(iter.rows) && iter.next != nil
+	return iter.pos >= iter.numRows && iter.next != nil
 }
 
 // checkErrAndNotFound handle error and NotFound in one method.
 func (iter *Iter) checkErrAndNotFound() error {
 	if iter.err != nil {
 		return iter.err
-	} else if len(iter.rows) == 0 {
+	} else if iter.numRows == 0 {
 		return ErrNotFound
 	}
 	return nil

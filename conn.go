@@ -754,8 +754,9 @@ func (c *Conn) executeQuery(qry *Query) *Iter {
 		return &Iter{framer: framer}
 	case *resultRowsFrame:
 		iter := &Iter{
-			rows:   x.rows,
-			framer: framer,
+			meta:    x.meta,
+			framer:  framer,
+			numRows: x.numRows,
 		}
 
 		if params.skipMeta {
@@ -772,7 +773,7 @@ func (c *Conn) executeQuery(qry *Query) *Iter {
 		if len(x.meta.pagingState) > 0 && !qry.disableAutoPage {
 			iter.next = &nextIter{
 				qry: *qry,
-				pos: int((1 - qry.prefetch) * float64(len(iter.rows))),
+				pos: int((1 - qry.prefetch) * float64(x.numRows)),
 			}
 
 			iter.next.qry.pageState = copyBytes(x.meta.pagingState)
@@ -958,9 +959,9 @@ func (c *Conn) executeBatch(batch *Batch) *Iter {
 		}
 	case *resultRowsFrame:
 		iter := &Iter{
-			meta:   x.meta,
-			rows:   x.rows,
-			framer: framer,
+			meta:    x.meta,
+			framer:  framer,
+			numRows: x.numRows,
 		}
 
 		return iter
