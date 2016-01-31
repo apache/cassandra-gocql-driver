@@ -170,9 +170,10 @@ func TestCAS(t *testing.T) {
 		t.Skip("lightweight transactions not supported. Please use Cassandra >= 2.0")
 	}
 
-	session := createSession(t)
+	cluster := createCluster()
+	cluster.SerialConsistency = LocalSerial
+	session := createSessionFromCluster(cluster, t)
 	defer session.Close()
-	session.cfg.SerialConsistency = LocalSerial
 
 	if err := createTable(session, `CREATE TABLE gocql_test.cas_table (
 			title         varchar,
