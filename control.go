@@ -299,6 +299,10 @@ func (c *controlConn) query(statement string, values ...interface{}) (iter *Iter
 			return conn.executeQuery(q)
 		})
 
+		if debug && iter.err != nil {
+			log.Printf("control: error executing %q: %v\n", statement, iter.err)
+		}
+
 		q.attempts++
 		if iter.err == nil || !c.retry.Attempt(q) {
 			break
