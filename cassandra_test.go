@@ -992,12 +992,14 @@ func injectInvalidPreparedStatement(t *testing.T, session *Session, table string
 	)`); err != nil {
 		t.Fatal("create:", err)
 	}
+
 	stmt := "INSERT INTO " + table + " (foo, bar) VALUES (?, 7)"
 	_, conn := session.pool.Pick(nil)
+
 	flight := new(inflightPrepare)
-	session.stmtsLRU.Lock()
-	session.stmtsLRU.lru.Add(conn.addr+stmt, flight)
-	session.stmtsLRU.Unlock()
+	key := session.stmtsLRU.keyFor(conn.addr, "", stmt)
+	session.stmtsLRU.add(key, flight)
+
 	flight.preparedStatment = &preparedStatment{
 		id: []byte{'f', 'o', 'o', 'b', 'a', 'r'},
 		request: preparedMetadata{
@@ -1017,10 +1019,11 @@ func injectInvalidPreparedStatement(t *testing.T, session *Session, table string
 			},
 		},
 	}
+
 	return stmt, conn
 }
 
-func TestMissingSchemaPrepare(t *testing.T) {
+func TestPrepare_MissingSchemaPrepare(t *testing.T) {
 	s := createSession(t)
 	_, conn := s.pool.Pick(nil)
 	defer s.Close()
@@ -1042,7 +1045,7 @@ func TestMissingSchemaPrepare(t *testing.T) {
 	}
 }
 
-func TestReprepareStatement(t *testing.T) {
+func TestPrepare_ReprepareStatement(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 	stmt, conn := injectInvalidPreparedStatement(t, session, "test_reprepare_statement")
@@ -1052,7 +1055,7 @@ func TestReprepareStatement(t *testing.T) {
 	}
 }
 
-func TestReprepareBatch(t *testing.T) {
+func TestPrepare_ReprepareBatch(t *testing.T) {
 	if *flagProto == 1 {
 		t.Skip("atomic batches not supported. Please use Cassandra >= 2.0")
 	}
@@ -1064,7 +1067,6 @@ func TestReprepareBatch(t *testing.T) {
 	if err := conn.executeBatch(batch).Close(); err != nil {
 		t.Fatalf("Failed to execute query for reprepare statement: %v", err)
 	}
-
 }
 
 func TestQueryInfo(t *testing.T) {
@@ -1090,11 +1092,16 @@ func TestQueryInfo(t *testing.T) {
 }
 
 //TestPreparedCacheEviction will make sure that the cache size is maintained
-func TestPreparedCacheEviction(t *testing.T) {
+func TestPrepare_PreparedCacheEviction(t *testing.T) {
 	const maxPrepared = 4
+
+	host := clusterHosts[0]
 	cluster := createCluster()
 	cluster.MaxPreparedStmts = maxPrepared
 	cluster.Events.DisableSchemaEvents = true
+	cluster.Hosts = []string{host}
+
+	cluster.HostFilter = WhiteListHostFilter(host)
 
 	session := createSessionFromCluster(cluster, t)
 	defer session.Close()
@@ -1102,6 +1109,9 @@ func TestPreparedCacheEviction(t *testing.T) {
 	if err := createTable(session, "CREATE TABLE gocql_test.prepcachetest (id int,mod int,PRIMARY KEY (id))"); err != nil {
 		t.Fatalf("failed to create table with error '%v'", err)
 	}
+	// clear the cache
+	session.stmtsLRU.clear()
+
 	//Fill the table
 	for i := 0; i < 2; i++ {
 		if err := session.Query("INSERT INTO prepcachetest (id,mod) VALUES (?, ?)", i, 10000%(i+1)).Exec(); err != nil {
@@ -1135,52 +1145,44 @@ func TestPreparedCacheEviction(t *testing.T) {
 		t.Fatalf("insert into prepcachetest failed, error '%v'", err)
 	}
 
-	session.stmtsLRU.Lock()
+	session.stmtsLRU.mu.Lock()
+	defer session.stmtsLRU.mu.Unlock()
 
 	//Make sure the cache size is maintained
 	if session.stmtsLRU.lru.Len() != session.stmtsLRU.lru.MaxEntries {
 		t.Fatalf("expected cache size of %v, got %v", session.stmtsLRU.lru.MaxEntries, session.stmtsLRU.lru.Len())
 	}
 
-	//Walk through all the configured hosts and test cache retention and eviction
-	var selFound, insFound, updFound, delFound, selEvict bool
-	for i := range session.cfg.Hosts {
-		_, ok := session.stmtsLRU.lru.Get(session.cfg.Hosts[i] + ":9042gocql_testSELECT id,mod FROM prepcachetest WHERE id = 1")
-		selFound = selFound || ok
+	// Walk through all the configured hosts and test cache retention and eviction
+	for _, host := range session.cfg.Hosts {
+		_, ok := session.stmtsLRU.lru.Get(session.stmtsLRU.keyFor(host+":9042", session.cfg.Keyspace, "SELECT id,mod FROM prepcachetest WHERE id = 0"))
+		if ok {
+			t.Errorf("expected first select to be purged but was in cache for host=%q", host)
+		}
 
-		_, ok = session.stmtsLRU.lru.Get(session.cfg.Hosts[i] + ":9042gocql_testINSERT INTO prepcachetest (id,mod) VALUES (?, ?)")
-		insFound = insFound || ok
+		_, ok = session.stmtsLRU.lru.Get(session.stmtsLRU.keyFor(host+":9042", session.cfg.Keyspace, "SELECT id,mod FROM prepcachetest WHERE id = 1"))
+		if !ok {
+			t.Errorf("exepected second select to be in cache for host=%q", host)
+		}
 
-		_, ok = session.stmtsLRU.lru.Get(session.cfg.Hosts[i] + ":9042gocql_testUPDATE prepcachetest SET mod = ? WHERE id = ?")
-		updFound = updFound || ok
+		_, ok = session.stmtsLRU.lru.Get(session.stmtsLRU.keyFor(host+":9042", session.cfg.Keyspace, "INSERT INTO prepcachetest (id,mod) VALUES (?, ?)"))
+		if !ok {
+			t.Errorf("expected insert to be in cache for host=%q", host)
+		}
 
-		_, ok = session.stmtsLRU.lru.Get(session.cfg.Hosts[i] + ":9042gocql_testDELETE FROM prepcachetest WHERE id = ?")
-		delFound = delFound || ok
+		_, ok = session.stmtsLRU.lru.Get(session.stmtsLRU.keyFor(host+":9042", session.cfg.Keyspace, "UPDATE prepcachetest SET mod = ? WHERE id = ?"))
+		if !ok {
+			t.Errorf("expected update to be in cached for host=%q", host)
+		}
 
-		_, ok = session.stmtsLRU.lru.Get(session.cfg.Hosts[i] + ":9042gocql_testSELECT id,mod FROM prepcachetest WHERE id = 0")
-		selEvict = selEvict || !ok
-	}
-
-	session.stmtsLRU.Unlock()
-
-	if !selEvict {
-		t.Fatalf("expected first select statement to be purged, but statement was found in the cache.")
-	}
-	if !selFound {
-		t.Fatalf("expected second select statement to be cached, but statement was purged or not prepared.")
-	}
-	if !insFound {
-		t.Fatalf("expected insert statement to be cached, but statement was purged or not prepared.")
-	}
-	if !updFound {
-		t.Fatalf("expected update statement to be cached, but statement was purged or not prepared.")
-	}
-	if !delFound {
-		t.Error("expected delete statement to be cached, but statement was purged or not prepared.")
+		_, ok = session.stmtsLRU.lru.Get(session.stmtsLRU.keyFor(host+":9042", session.cfg.Keyspace, "DELETE FROM prepcachetest WHERE id = ?"))
+		if !ok {
+			t.Errorf("expected delete to be cached for host=%q", host)
+		}
 	}
 }
 
-func TestPreparedCacheKey(t *testing.T) {
+func TestPrepare_PreparedCacheKey(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 

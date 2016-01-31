@@ -6,40 +6,8 @@ package gocql
 
 import (
 	"errors"
-	"sync"
 	"time"
-
-	"github.com/gocql/gocql/internal/lru"
 )
-
-const defaultMaxPreparedStmts = 1000
-
-//preparedLRU is the prepared statement cache
-type preparedLRU struct {
-	sync.Mutex
-	lru *lru.Cache
-}
-
-//Max adjusts the maximum size of the cache and cleans up the oldest records if
-//the new max is lower than the previous value. Not concurrency safe.
-func (p *preparedLRU) max(max int) {
-	p.Lock()
-	defer p.Unlock()
-
-	for p.lru.Len() > max {
-		p.lru.RemoveOldest()
-	}
-	p.lru.MaxEntries = max
-}
-
-func (p *preparedLRU) clear() {
-	p.Lock()
-	defer p.Unlock()
-
-	for p.lru.Len() > 0 {
-		p.lru.RemoveOldest()
-	}
-}
 
 // PoolConfig configures the connection pool used by the driver, it defaults to
 // using a round robbin host selection policy and a round robbin connection selection

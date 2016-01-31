@@ -85,13 +85,17 @@ func (c *Cache) Get(key string) (value interface{}, ok bool) {
 }
 
 // Remove removes the provided key from the cache.
-func (c *Cache) Remove(key string) {
+func (c *Cache) Remove(key string) bool {
 	if c.cache == nil {
-		return
+		return false
 	}
+
 	if ele, hit := c.cache[key]; hit {
 		c.removeElement(ele)
+		return true
 	}
+
+	return false
 }
 
 // RemoveOldest removes the oldest item from the cache.
