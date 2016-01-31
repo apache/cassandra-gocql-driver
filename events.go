@@ -107,8 +107,6 @@ func (s *Session) handleEvent(framer *framer) {
 }
 
 func (s *Session) handleSchemaEvent(frames []frame) {
-	// for now we dont care about them, just reset the prepared statements
-	s.stmtsLRU.clear()
 }
 
 func (s *Session) handleNodeEvent(frames []frame) {

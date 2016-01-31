@@ -2280,3 +2280,56 @@ func TestUnmarshallNestedTypes(t *testing.T) {
 		t.Fatalf("%+#v != %+#v", data, m)
 	}
 }
+
+func TestSchemaReset(t *testing.T) {
+	cluster := createCluster()
+	cluster.NumConns = 1
+
+	session := createSessionFromCluster(cluster, t)
+	defer session.Close()
+
+	if err := createTable(session, `CREATE TABLE gocql_test.test_schema_reset (
+		id text PRIMARY KEY)`); err != nil {
+
+		t.Fatal(err)
+	}
+
+	const key = "test"
+
+	err := session.Query("INSERT INTO test_schema_reset(id) VALUES(?)", key).Exec()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var id string
+	err = session.Query("SELECT * FROM test_schema_reset WHERE id=?", key).Scan(&id)
+	if err != nil {
+		t.Fatal(err)
+	} else if id != key {
+		t.Fatalf("expected to get id=%q got=%q", key, id)
+	}
+
+	if err := createTable(session, `ALTER TABLE gocql_test.test_schema_reset ADD val text`); err != nil {
+		t.Fatal(err)
+	}
+
+	const expVal = "test-val"
+	err = session.Query("INSERT INTO test_schema_reset(id, val) VALUES(?, ?)", key, expVal).Exec()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var val string
+	err = session.Query("SELECT * FROM test_schema_reset WHERE id=?", key).Scan(&id, &val)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if id != key {
+		t.Errorf("expected to get id=%q got=%q", key, id)
+	}
+	if val != expVal {
+		t.Errorf("expected to get val=%q got=%q", expVal, val)
+	}
+
+}
