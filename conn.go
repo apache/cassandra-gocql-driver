@@ -9,6 +9,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"github.com/gocql/gocql/internal/lru"
 	"io"
 	"io/ioutil"
 	"log"
@@ -593,19 +594,18 @@ type inflightPrepare struct {
 }
 
 func (c *Conn) prepareStatement(stmt string, tracer Tracer) (*preparedStatment, error) {
-	c.session.stmtsLRU.Lock()
-	stmtCacheKey := c.addr + c.currentKeyspace + stmt
-	if val, ok := c.session.stmtsLRU.lru.Get(stmtCacheKey); ok {
-		c.session.stmtsLRU.Unlock()
-		flight := val.(*inflightPrepare)
+	stmtCacheKey := c.session.stmtsLRU.keyFor(c.addr, c.currentKeyspace, stmt)
+	flight, ok := c.session.stmtsLRU.execIfMissing(stmtCacheKey, func(lru *lru.Cache) *inflightPrepare {
+		flight := new(inflightPrepare)
+		flight.wg.Add(1)
+		lru.Add(stmtCacheKey, flight)
+		return flight
+	})
+
+	if ok {
 		flight.wg.Wait()
 		return flight.preparedStatment, flight.err
 	}
-
-	flight := new(inflightPrepare)
-	flight.wg.Add(1)
-	c.session.stmtsLRU.lru.Add(stmtCacheKey, flight)
-	c.session.stmtsLRU.Unlock()
 
 	prep := &writePrepareFrame{
 		statement: stmt,
@@ -650,9 +650,7 @@ func (c *Conn) prepareStatement(stmt string, tracer Tracer) (*preparedStatment, 
 	flight.wg.Done()
 
 	if flight.err != nil {
-		c.session.stmtsLRU.Lock()
-		c.session.stmtsLRU.lru.Remove(stmtCacheKey)
-		c.session.stmtsLRU.Unlock()
+		c.session.stmtsLRU.remove(stmtCacheKey)
 	}
 
 	framerPool.Put(framer)
@@ -799,14 +797,11 @@ func (c *Conn) executeQuery(qry *Query) *Iter {
 		// is not consistent with regards to its schema.
 		return iter
 	case *RequestErrUnprepared:
-		c.session.stmtsLRU.Lock()
-		stmtCacheKey := c.addr + c.currentKeyspace + qry.stmt
-		if _, ok := c.session.stmtsLRU.lru.Get(stmtCacheKey); ok {
-			c.session.stmtsLRU.lru.Remove(stmtCacheKey)
-			c.session.stmtsLRU.Unlock()
+		stmtCacheKey := c.session.stmtsLRU.keyFor(c.addr, c.currentKeyspace, qry.stmt)
+		if c.session.stmtsLRU.remove(stmtCacheKey) {
 			return c.executeQuery(qry)
 		}
-		c.session.stmtsLRU.Unlock()
+
 		return &Iter{err: x, framer: framer}
 	case error:
 		return &Iter{err: x, framer: framer}
@@ -945,9 +940,8 @@ func (c *Conn) executeBatch(batch *Batch) *Iter {
 	case *RequestErrUnprepared:
 		stmt, found := stmts[string(x.StatementId)]
 		if found {
-			c.session.stmtsLRU.Lock()
-			c.session.stmtsLRU.lru.Remove(c.addr + c.currentKeyspace + stmt)
-			c.session.stmtsLRU.Unlock()
+			key := c.session.stmtsLRU.keyFor(c.addr, c.currentKeyspace, stmt)
+			c.session.stmtsLRU.remove(key)
 		}
 
 		framerPool.Put(framer)
