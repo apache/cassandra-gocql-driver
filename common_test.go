@@ -96,23 +96,18 @@ func createKeyspace(tb testing.TB, cluster *ClusterConfig, keyspace string) {
 	defer session.Close()
 	defer log.Println("closing keyspace session")
 
-	err = session.control.query(`DROP KEYSPACE IF EXISTS ` + keyspace).Close()
+	err = createTable(session, `DROP KEYSPACE IF EXISTS `+keyspace)
 	if err != nil {
 		tb.Fatal(err)
 	}
 
-	err = session.control.query(fmt.Sprintf(`CREATE KEYSPACE %s
+	err = createTable(session, fmt.Sprintf(`CREATE KEYSPACE %s
 	WITH replication = {
 		'class' : 'SimpleStrategy',
 		'replication_factor' : %d
-	}`, keyspace, *flagRF)).Close()
+	}`, keyspace, *flagRF))
 
 	if err != nil {
-		tb.Fatal(err)
-	}
-
-	// lets just be sure
-	if err := session.control.awaitSchemaAgreement(); err != nil {
 		tb.Fatal(err)
 	}
 }
@@ -128,6 +123,10 @@ func createSessionFromCluster(cluster *ClusterConfig, tb testing.TB) *Session {
 	session, err := cluster.CreateSession()
 	if err != nil {
 		tb.Fatal("createSession:", err)
+	}
+
+	if err := session.control.awaitSchemaAgreement(); err != nil {
+		tb.Fatal(err)
 	}
 
 	return session
