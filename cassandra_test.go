@@ -1066,7 +1066,6 @@ func TestPrepare_ReprepareBatch(t *testing.T) {
 	if err := conn.executeBatch(batch).Close(); err != nil {
 		t.Fatalf("Failed to execute query for reprepare statement: %v", err)
 	}
-
 }
 
 func TestQueryInfo(t *testing.T) {
@@ -1095,9 +1094,13 @@ func TestQueryInfo(t *testing.T) {
 func TestPrepare_PreparedCacheEviction(t *testing.T) {
 	const maxPrepared = 4
 
+	host := clusterHosts[0]
 	cluster := createCluster()
 	cluster.MaxPreparedStmts = maxPrepared
 	cluster.Events.DisableSchemaEvents = true
+	cluster.Hosts = []string{host}
+
+	cluster.HostFilter = WhiteListHostFilter(host)
 
 	session := createSessionFromCluster(cluster, t)
 	defer session.Close()
