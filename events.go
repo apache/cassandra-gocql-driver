@@ -91,7 +91,7 @@ func (s *Session) handleEvent(framer *framer) {
 		return
 	}
 
-	if debug {
+	if gocqlDebug {
 		log.Printf("gocql: handling frame: %v\n", frame)
 	}
 
@@ -140,7 +140,7 @@ func (s *Session) handleNodeEvent(frames []frame) {
 	}
 
 	for _, f := range events {
-		if debug {
+		if gocqlDebug {
 			log.Printf("gocql: dispatching event: %+v\n", f)
 		}
 

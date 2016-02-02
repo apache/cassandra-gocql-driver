@@ -241,24 +241,22 @@ func (p *policyConnPool) Close() {
 
 func (p *policyConnPool) addHost(host *HostInfo) {
 	p.mu.Lock()
-	defer p.mu.Unlock()
-
 	pool, ok := p.hostConnPools[host.Peer()]
-	if ok {
-		go pool.fill()
-		return
+	if !ok {
+		pool = newHostConnPool(
+			p.session,
+			host,
+			host.Port(),
+			p.numConns,
+			p.keyspace,
+			p.connPolicy(),
+		)
+
+		p.hostConnPools[host.Peer()] = pool
 	}
+	p.mu.Unlock()
 
-	pool = newHostConnPool(
-		p.session,
-		host,
-		host.Port(),
-		p.numConns,
-		p.keyspace,
-		p.connPolicy(),
-	)
-
-	p.hostConnPools[host.Peer()] = pool
+	pool.fill()
 
 	// update policy
 	// TODO: policy should not have conns, it should have hosts and return a host
@@ -334,9 +332,7 @@ func newHostConnPool(session *Session, host *HostInfo, port, size int,
 		closed:   false,
 	}
 
-	// fill the pool with the initial connections before returning
-	pool.fill()
-
+	// the pool is not filled or connected
 	return pool
 }
 
@@ -463,6 +459,9 @@ func (pool *hostConnPool) logConnectErr(err error) {
 	if opErr, ok := err.(*net.OpError); ok && (opErr.Op == "dial" || opErr.Op == "read") {
 		// connection refused
 		// these are typical during a node outage so avoid log spam.
+		if gocqlDebug {
+			log.Printf("unable to dial %q: %v\n", pool.host.Peer(), err)
+		}
 	} else if err != nil {
 		// unexpected error
 		log.Printf("error: failed to connect to %s due to error: %v", pool.addr, err)
