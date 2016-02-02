@@ -241,10 +241,10 @@ func (p *policyConnPool) Close() {
 
 func (p *policyConnPool) addHost(host *HostInfo) {
 	p.mu.Lock()
-	defer p.mu.Unlock()
 
 	pool, ok := p.hostConnPools[host.Peer()]
 	if ok {
+		p.mu.Unlock()
 		go pool.fill()
 		return
 	}
@@ -259,6 +259,9 @@ func (p *policyConnPool) addHost(host *HostInfo) {
 	)
 
 	p.hostConnPools[host.Peer()] = pool
+	p.mu.Unlock()
+
+	pool.fill()
 
 	// update policy
 	// TODO: policy should not have conns, it should have hosts and return a host
@@ -334,9 +337,7 @@ func newHostConnPool(session *Session, host *HostInfo, port, size int,
 		closed:   false,
 	}
 
-	// fill the pool with the initial connections before returning
-	pool.fill()
-
+	// the pool is not filled or connected
 	return pool
 }
 
