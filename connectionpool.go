@@ -245,7 +245,7 @@ func (p *policyConnPool) addHost(host *HostInfo) {
 	pool, ok := p.hostConnPools[host.Peer()]
 	if ok {
 		p.mu.Unlock()
-		go pool.fill()
+		pool.fill()
 		return
 	}
 
@@ -464,6 +464,9 @@ func (pool *hostConnPool) logConnectErr(err error) {
 	if opErr, ok := err.(*net.OpError); ok && (opErr.Op == "dial" || opErr.Op == "read") {
 		// connection refused
 		// these are typical during a node outage so avoid log spam.
+		if debug {
+			log.Printf("unable to dial %q: %v\n", pool.host.Peer(), err)
+		}
 	} else if err != nil {
 		// unexpected error
 		log.Printf("error: failed to connect to %s due to error: %v", pool.addr, err)
