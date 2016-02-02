@@ -299,7 +299,7 @@ func (c *controlConn) query(statement string, values ...interface{}) (iter *Iter
 			return conn.executeQuery(q)
 		})
 
-		if debug && iter.err != nil {
+		if gocqlDebug && iter.err != nil {
 			log.Printf("control: error executing %q: %v\n", statement, iter.err)
 		}
 
