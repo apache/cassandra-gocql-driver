@@ -248,7 +248,9 @@ func (s *Session) Close() {
 	}
 	s.isClosed = true
 
-	s.pool.Close()
+	if s.pool != nil {
+		s.pool.Close()
+	}
 
 	if s.hostSource != nil {
 		close(s.hostSource.closeChan)
