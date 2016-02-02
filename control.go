@@ -148,7 +148,7 @@ func (c *controlConn) setupConn(conn *Conn) error {
 		return err
 	}
 
-	go c.session.handleNodeUp(net.ParseIP(host), port, true)
+	c.session.handleNodeUp(net.ParseIP(host), port, false)
 
 	return nil
 }
