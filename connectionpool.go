@@ -241,24 +241,19 @@ func (p *policyConnPool) Close() {
 
 func (p *policyConnPool) addHost(host *HostInfo) {
 	p.mu.Lock()
-
 	pool, ok := p.hostConnPools[host.Peer()]
-	if ok {
-		p.mu.Unlock()
-		pool.fill()
-		return
+	if !ok {
+		pool = newHostConnPool(
+			p.session,
+			host,
+			host.Port(),
+			p.numConns,
+			p.keyspace,
+			p.connPolicy(),
+		)
+
+		p.hostConnPools[host.Peer()] = pool
 	}
-
-	pool = newHostConnPool(
-		p.session,
-		host,
-		host.Port(),
-		p.numConns,
-		p.keyspace,
-		p.connPolicy(),
-	)
-
-	p.hostConnPools[host.Peer()] = pool
 	p.mu.Unlock()
 
 	pool.fill()
