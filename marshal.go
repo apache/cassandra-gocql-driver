@@ -401,6 +401,13 @@ func bytesToInt64(data []byte) (ret int64) {
 	return ret
 }
 
+func bytesToUint64(data []byte) (ret uint64) {
+	for i := range data {
+		ret |= uint64(data[i]) << (8 * uint(len(data)-i-1))
+	}
+	return ret
+}
+
 func unmarshalBigInt(info TypeInfo, data []byte, value interface{}) error {
 	return unmarshalIntlike(info, decBigInt(data), data, value)
 }
@@ -410,9 +417,14 @@ func unmarshalInt(info TypeInfo, data []byte, value interface{}) error {
 }
 
 func unmarshalVarint(info TypeInfo, data []byte, value interface{}) error {
-	switch value.(type) {
+	switch v := value.(type) {
 	case *big.Int:
 		return unmarshalIntlike(info, 0, data, value)
+	case *uint64:
+		if len(data) == 9 && data[0] == 0 {
+			*v = bytesToUint64(data[1:])
+			return nil
+		}
 	}
 
 	if len(data) > 8 {

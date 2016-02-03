@@ -675,6 +675,64 @@ func TestMarshalVarint(t *testing.T) {
 			t.Errorf("unmarshaled varint mismatch: expected %v, got %v (test #%d)", test.Unmarshaled, binder, i)
 		}
 	}
+
+	varintUint64Tests := []struct {
+		Value       interface{}
+		Marshaled   []byte
+		Unmarshaled uint64
+	}{
+		{
+			Value:       int8(0),
+			Marshaled:   []byte("\x00"),
+			Unmarshaled: 0,
+		},
+		{
+			Value:       uint8(255),
+			Marshaled:   []byte("\x00\xFF"),
+			Unmarshaled: 255,
+		},
+		{
+			Value:       big.NewInt(math.MaxInt32),
+			Marshaled:   []byte("\x7F\xFF\xFF\xFF"),
+			Unmarshaled: uint64(math.MaxInt32),
+		},
+		{
+			Value:       big.NewInt(int64(math.MaxInt32) + 1),
+			Marshaled:   []byte("\x00\x80\x00\x00\x00"),
+			Unmarshaled: uint64(int64(math.MaxInt32) + 1),
+		},
+		{
+			Value:       uint64(math.MaxInt64) + 1,
+			Marshaled:   []byte("\x00\x80\x00\x00\x00\x00\x00\x00\x00"),
+			Unmarshaled: 9223372036854775808,
+		},
+		{
+			Value:       uint64(math.MaxUint64),
+			Marshaled:   []byte("\x00\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF"),
+			Unmarshaled: uint64(math.MaxUint64),
+		},
+	}
+
+	for i, test := range varintUint64Tests {
+		data, err := Marshal(NativeType{proto: 2, typ: TypeVarint}, test.Value)
+		if err != nil {
+			t.Errorf("error marshaling varint: %v (test #%d)", err, i)
+		}
+
+		if !bytes.Equal(test.Marshaled, data) {
+			t.Errorf("marshaled varint mismatch: expected %v, got %v (test #%d)", test.Marshaled, data, i)
+		}
+
+		var binder uint64
+		err = Unmarshal(NativeType{proto: 2, typ: TypeVarint}, test.Marshaled, &binder)
+		if err != nil {
+			t.Errorf("error unmarshaling varint to uint64: %v (test #%d)", err, i)
+		}
+
+		if test.Unmarshaled != binder {
+			t.Errorf("unmarshaled varint mismatch: expected %v, got %v (test #%d)", test.Unmarshaled, binder, i)
+		}
+	}
 }
 
 func equalStringSlice(leftList, rightList []string) bool {
