@@ -713,7 +713,7 @@ func TestMarshalVarint(t *testing.T) {
 		},
 	}
 
-	for i, test := range varintTests {
+	for i, test := range varintUint64Tests {
 		data, err := Marshal(NativeType{proto: 2, typ: TypeVarint}, test.Value)
 		if err != nil {
 			t.Errorf("error marshaling varint: %v (test #%d)", err, i)
@@ -726,7 +726,7 @@ func TestMarshalVarint(t *testing.T) {
 		var binder uint64
 		err = Unmarshal(NativeType{proto: 2, typ: TypeVarint}, test.Marshaled, &binder)
 		if err != nil {
-			t.Errorf("error unmarshaling varint: %v (test #%d)", err, i)
+			t.Errorf("error unmarshaling varint to uint64: %v (test #%d)", err, i)
 		}
 
 		if test.Unmarshaled != binder {
