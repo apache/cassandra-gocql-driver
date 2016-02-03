@@ -708,7 +708,7 @@ func TestMarshalVarint(t *testing.T) {
 		},
 		{
 			Value:       uint64(math.MaxUint64),
-			Marshaled:   []byte("\x00\x80\x00\x00\x00\x00\x00\x00\x00"),
+			Marshaled:   []byte("\x00\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF"),
 			Unmarshaled: uint64(math.MaxUint64),
 		},
 	}
