@@ -707,9 +707,9 @@ func TestMarshalVarint(t *testing.T) {
 			Unmarshaled: 9223372036854775808,
 		},
 		{
-			Value:       math.MaxUint64,
+			Value:       uint64(math.MaxUint64),
 			Marshaled:   []byte("\x00\x80\x00\x00\x00\x00\x00\x00\x00"),
-			Unmarshaled: math.MaxUint64,
+			Unmarshaled: uint64(math.MaxUint64),
 		},
 	}
 
@@ -724,7 +724,7 @@ func TestMarshalVarint(t *testing.T) {
 		}
 
 		binder := new(uint64)
-		err = Unmarshal(NativeType{proto: 2, typ: TypeVarint}, test.Marshaled, binder)
+		err = Unmarshal(NativeType{proto: 2, typ: TypeVarint}, test.Marshaled, &binder)
 		if err != nil {
 			t.Errorf("error unmarshaling varint: %v (test #%d)", err, i)
 		}
