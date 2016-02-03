@@ -723,7 +723,7 @@ func TestMarshalVarint(t *testing.T) {
 			t.Errorf("marshaled varint mismatch: expected %v, got %v (test #%d)", test.Marshaled, data, i)
 		}
 
-		binder := new(uint64)
+		var binder uint64
 		err = Unmarshal(NativeType{proto: 2, typ: TypeVarint}, test.Marshaled, &binder)
 		if err != nil {
 			t.Errorf("error unmarshaling varint: %v (test #%d)", err, i)
