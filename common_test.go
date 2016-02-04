@@ -51,7 +51,7 @@ func createTable(s *Session, table string) error {
 		return err
 	}
 
-	if err := s.control.query(table).Close(); err != nil {
+	if err := s.Query(table).RetryPolicy(nil).Exec(); err != nil {
 		return err
 	}
 
