@@ -48,14 +48,17 @@ var initOnce sync.Once
 func createTable(s *Session, table string) error {
 	// lets just be really sure
 	if err := s.control.awaitSchemaAgreement(); err != nil {
+		log.Printf("error waiting for schema agreement pre create table=%q err=%v\n", table, err)
 		return err
 	}
 
 	if err := s.Query(table).RetryPolicy(nil).Exec(); err != nil {
+		log.Printf("error creating table table=%q err=%v\n", table, err)
 		return err
 	}
 
 	if err := s.control.awaitSchemaAgreement(); err != nil {
+		log.Printf("error waiting for schema agreement post create table=%q err=%v\n", table, err)
 		return err
 	}
 
