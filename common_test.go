@@ -94,14 +94,14 @@ func createKeyspace(tb testing.TB, cluster *ClusterConfig, keyspace string) {
 	c.Timeout = 30 * time.Second
 	session, err := c.CreateSession()
 	if err != nil {
-		tb.Fatal("createSession:", err)
+		panic(err)
 	}
 	defer session.Close()
 	defer log.Println("closing keyspace session")
 
 	err = createTable(session, `DROP KEYSPACE IF EXISTS `+keyspace)
 	if err != nil {
-		tb.Fatal(err)
+		panic(fmt.Sprintf("unable to drop keyspace: %v", err))
 	}
 
 	err = createTable(session, fmt.Sprintf(`CREATE KEYSPACE %s
@@ -111,7 +111,7 @@ func createKeyspace(tb testing.TB, cluster *ClusterConfig, keyspace string) {
 	}`, keyspace, *flagRF))
 
 	if err != nil {
-		tb.Fatal(err)
+		panic(fmt.Sprintf("unable to create keyspace: %v", err))
 	}
 }
 
