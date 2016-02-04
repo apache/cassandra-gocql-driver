@@ -27,7 +27,7 @@ type WikiPage struct {
 type WikiAttachment []byte
 
 var wikiTestData = []*WikiPage{
-	&WikiPage{
+	{
 		Title:    "Frontpage",
 		RevId:    TimeUUID(),
 		Body:     "Welcome to this wiki page!",
@@ -39,7 +39,7 @@ var wikiTestData = []*WikiPage{
 			"favicon": WikiAttachment("favicon.ico"),
 		},
 	},
-	&WikiPage{
+	{
 		Title:    "Foobar",
 		RevId:    TimeUUID(),
 		Body:     "foo::Foo f = new foo::Foo(foo::Foo::INIT);",

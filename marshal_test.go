@@ -754,9 +754,9 @@ func TestMarshalList(t *testing.T) {
 	}
 
 	sourceLists := [][]string{
-		[]string{"valueA"},
-		[]string{"valueA", "valueB"},
-		[]string{"valueB"},
+		{"valueA"},
+		{"valueA", "valueB"},
+		{"valueB"},
 	}
 
 	listDatas := [][]byte{}
