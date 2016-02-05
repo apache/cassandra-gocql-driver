@@ -570,23 +570,23 @@ func (s *Session) connect(addr string, errorHandler ConnErrorHandler) (*Conn, er
 
 // Query represents a CQL statement that can be executed.
 type Query struct {
-	stmt             string
-	values           []interface{}
-	cons             Consistency
-	pageSize         int
-	routingKey       []byte
-	routingKeyBuffer []byte
-	pageState        []byte
-	prefetch         float64
-	trace            Tracer
-	session          *Session
-	rt               RetryPolicy
-	binding          func(q *QueryInfo) ([]interface{}, error)
-	attempts         int
-	totalLatency     int64
-	serialCons       SerialConsistency
-	defaultTimestamp bool
-	isCAS            bool
+	stmt                string
+	values              []interface{}
+	cons                Consistency
+	pageSize            int
+	routingKey          []byte
+	routingKeyBuffer    []byte
+	pageState           []byte
+	prefetch            float64
+	trace               Tracer
+	session             *Session
+	rt                  RetryPolicy
+	binding             func(q *QueryInfo) ([]interface{}, error)
+	attempts            int
+	totalLatency        int64
+	serialCons          SerialConsistency
+	defaultTimestamp    bool
+	disableSkipMetadata bool
 
 	disableAutoPage bool
 }
@@ -778,6 +778,19 @@ func (q *Query) PageState(state []byte) *Query {
 	return q
 }
 
+// NoSkipMetadata will override the internal result metadata cache so that the driver does not
+// send skip_metadata for queries, this means that the result will always contain
+// the metadata to parse the rows and will not reuse the metadata from the prepared
+// staement. This should only be used to work around cassandra bugs, such as when using
+// CAS operations which do not end in Cas.
+//
+// See https://issues.apache.org/jira/browse/CASSANDRA-11099
+// https://github.com/gocql/gocql/issues/612
+func (q *Query) NoSkipMetadata() *Query {
+	q.disableSkipMetadata = true
+	return q
+}
+
 // Exec executes the query without returning any rows.
 func (q *Query) Exec() error {
 	iter := q.Iter()
@@ -830,7 +843,7 @@ func (q *Query) Scan(dest ...interface{}) error {
 // the existing values did not match, the previous values will be stored
 // in dest.
 func (q *Query) ScanCAS(dest ...interface{}) (applied bool, err error) {
-	q.isCAS = true
+	q.disableSkipMetadata = true
 	iter := q.Iter()
 	if err := iter.checkErrAndNotFound(); err != nil {
 		return false, err
@@ -853,7 +866,7 @@ func (q *Query) ScanCAS(dest ...interface{}) (applied bool, err error) {
 // SELECT * FROM. So using ScanCAS with INSERT is inherently prone to
 // column mismatching. MapScanCAS is added to capture them safely.
 func (q *Query) MapScanCAS(dest map[string]interface{}) (applied bool, err error) {
-	q.isCAS = true
+	q.disableSkipMetadata = true
 	iter := q.Iter()
 	if err := iter.checkErrAndNotFound(); err != nil {
 		return false, err

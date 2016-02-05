@@ -720,7 +720,7 @@ func (c *Conn) executeQuery(qry *Query) *Iter {
 			// TODO: handle query binding names
 		}
 
-		params.skipMeta = !qry.isCAS
+		params.skipMeta = !qry.disableSkipMetadata
 
 		frame = &writeExecuteFrame{
 			preparedID: info.id,
