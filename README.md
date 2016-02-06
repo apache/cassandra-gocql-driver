@@ -30,6 +30,8 @@ Go/Cassandra | 2.0.x | 2.1.x | 2.2.x
 
 Gocql has been tested in production against many different versions of Cassandra. Due to limits in our CI setup we only test against the latest 3 major releases, which coincide with the official support from the Apache project.
 
+NOTE: as of Cassandra 3.0 it requires Java 8, currently (06/02/2016) we can not install Java 8 in Travis to run the integration tests. To run on Casdnra >=3.0 enable protocol 4 and it should work fine, if not please report bugs.
+
 
 Sunsetting Model
 ----------------
@@ -58,7 +60,6 @@ Features
   * Round robin distribution of queries to different connections on a host
   * Each connection can execute up to n concurrent queries (whereby n is the limit set by the protocol version the client chooses to use)
   * Optional automatic discovery of nodes
-  * Optional support for periodic node discovery via system.peers
   * Policy based connection pool with token aware and round-robin policy implementations
 * Support for password authentication
 * Iteration over paged results with configurable page size
@@ -71,9 +72,22 @@ Features
   * Support for tuple types
   * Support for client side timestamps by default
   * Support for UDTs via a custom marshaller or struct tags
+* Support for Cassandra 2.2+ [binary protocol version 4](https://github.com/apache/cassandra/blob/trunk/doc/native_protocol_v4.spec)
 * An API to access the schema metadata of a given keyspace
 
-Please visit the [Roadmap](https://github.com/gocql/gocql/wiki/Roadmap) page to see what is on the horizion.
+Performance
+-----------
+While the driver strives to be highly performant, there are cases where it is difficult to test and verify. The driver is built
+with maintainability and code readability in mind first and then performance and features, as such every now and then performance
+may degrade, if this occurs please report and issue and it will be looked at and remedied. The only time the driver copies data from
+its read buffer is when it Unmarshal's data into supplied types.
+
+Some tips for getting more performance from the driver:
+* Use the TokenAware policy
+* Use many goroutines when doing inserts, the driver is asynchronous but provides a synchronous api, it can execute many queries concurrently
+* Tune query page size
+* Reading data from the network to unmarshal will incur a large ammount of allocations, this can adversly affect the garbage collector, tune `GOGC`
+* Close iterators after use to recycle byte buffers
 
 Important Default Keyspace Changes
 ----------------------------------
@@ -200,6 +214,6 @@ For some reason, when you google `golang cassandra`, this project doesn't featur
 License
 -------
 
-> Copyright (c) 2012-2015 The gocql Authors. All rights reserved.
+> Copyright (c) 2012-2016 The gocql Authors. All rights reserved.
 > Use of this source code is governed by a BSD-style
 > license that can be found in the LICENSE file.
