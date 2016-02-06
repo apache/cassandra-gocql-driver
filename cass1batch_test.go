@@ -9,10 +9,11 @@ import (
 
 func TestProto1BatchInsert(t *testing.T) {
 	session := createSession(t)
+	defer session.Close()
+
 	if err := createTable(session, "CREATE TABLE gocql_test.large (id int primary key)"); err != nil {
 		t.Fatal(err)
 	}
-	defer session.Close()
 
 	begin := "BEGIN BATCH"
 	end := "APPLY BATCH"

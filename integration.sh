@@ -59,25 +59,21 @@ function run_tests() {
 	ccm status
 	ccm node1 nodetool status
 
+	local args="-gocql.timeout=60s -runssl -proto=$proto -rf=3 -clusterSize=$clusterSize -autowait=2000ms -compressor=snappy -gocql.cversion=$version -cluster=$(ccm liveset) ./..."
+
 	if [ "$auth" = true ]
 	then
 		sleep 30s
-		go test -v . -timeout 15s -run=TestAuthentication -tags "integration gocql_debug" -runssl -runauth -proto=$proto -cluster=$(ccm liveset) -clusterSize=$clusterSize -autowait=1000ms
+		go test -run=TestAuthentication -tags "integration gocql_debug" -timeout=15s -v $args
 	else
+		sleep 1s
+		go test -tags "integration gocql_debug" -timeout=5m -v $args
 
-		go test -tags "integration gocql_debug" -timeout 10m -v -gocql.timeout=10s -runssl -proto=$proto -rf=3 -cluster=$(ccm liveset) -clusterSize=$clusterSize -autowait=2000ms -compressor=snappy ./...
+		ccm clear
+		ccm start
+		sleep 1s
 
-		if [ ${PIPESTATUS[0]} -ne 0 ]; then
-			echo "--- FAIL: ccm status follows:"
-			ccm status
-			ccm node1 nodetool status
-			ccm node1 showlog > status.log
-			cat status.log
-			echo "--- FAIL: Received a non-zero exit code from the go test execution, please investigate this"
-			exit 1
-		fi
-
-		go test -timeout 10m -tags "ccm gocql_debug" -v -gocql.timeout=10s -runssl -proto=$proto -rf=3 -cluster=$(ccm liveset) -clusterSize=$clusterSize -autowait=2000ms -compressor=snappy ./...
+		go test -tags "ccm gocql_debug" -timeout=5m -v $args
 	fi
 
 	ccm remove

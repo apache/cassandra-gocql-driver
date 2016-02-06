@@ -29,6 +29,14 @@ type cassVersion struct {
 	Major, Minor, Patch int
 }
 
+func (c *cassVersion) Set(v string) error {
+	if v == "" {
+		return nil
+	}
+
+	return c.UnmarshalCQL(nil, []byte(v))
+}
+
 func (c *cassVersion) UnmarshalCQL(info TypeInfo, data []byte) error {
 	version := strings.TrimSuffix(string(data), "-SNAPSHOT")
 	version = strings.TrimPrefix(version, "v")
@@ -53,6 +61,17 @@ func (c *cassVersion) UnmarshalCQL(info TypeInfo, data []byte) error {
 	}
 
 	return nil
+}
+
+func (c cassVersion) Before(major, minor, patch int) bool {
+	if c.Major > major {
+		return true
+	} else if c.Minor > minor {
+		return true
+	} else if c.Patch > patch {
+		return true
+	}
+	return false
 }
 
 func (c cassVersion) String() string {

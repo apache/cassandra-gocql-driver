@@ -2285,6 +2285,10 @@ func TestUnmarshallNestedTypes(t *testing.T) {
 }
 
 func TestSchemaReset(t *testing.T) {
+	if flagCassVersion.Major == 0 || (flagCassVersion.Before(2, 1, 3)) {
+		t.Skipf("skipping TestSchemaReset due to CASSANDRA-7910 in Cassandra <2.1.3 version=%v", flagCassVersion)
+	}
+
 	cluster := createCluster()
 	cluster.NumConns = 1
 
