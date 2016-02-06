@@ -21,3 +21,24 @@ func TestUnmarshalCassVersion(t *testing.T) {
 		}
 	}
 }
+
+func TestCassVersionBefore(t *testing.T) {
+	tests := [...]struct {
+		version             cassVersion
+		major, minor, patch int
+	}{
+		{cassVersion{1, 0, 0}, 0, 0, 0},
+		{cassVersion{0, 1, 0}, 0, 0, 0},
+		{cassVersion{0, 0, 1}, 0, 0, 0},
+
+		{cassVersion{1, 0, 0}, 0, 1, 0},
+		{cassVersion{0, 1, 0}, 0, 0, 1},
+	}
+
+	for i, test := range tests {
+		if !test.version.Before(test.major, test.minor, test.patch) {
+			t.Errorf("%d: expected v%d.%d.%d to be before %v", i, test.major, test.minor, test.patch, test.version)
+		}
+	}
+
+}
