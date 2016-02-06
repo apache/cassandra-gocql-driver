@@ -64,10 +64,12 @@ function run_tests() {
 		sleep 30s
 		go test -v . -timeout 15s -run=TestAuthentication -tags "integration gocql_debug" -runssl -runauth -proto=$proto -cluster=$(ccm liveset) -clusterSize=$clusterSize -autowait=1000ms
 	else
+		sleep 1s
 		go test -tags "integration gocql_debug" -timeout 10m -v -gocql.timeout=30s -runssl -proto=$proto -rf=3 -cluster=$(ccm liveset) -clusterSize=$clusterSize -autowait=2000ms -compressor=snappy ./...
 
 		ccm clear
 		ccm start
+		sleep 1s
 
 		go test -tags "ccm gocql_debug" -timeout 10m -v -gocql.timeout=30s -runssl -proto=$proto -rf=3 -cluster=$(ccm liveset) -clusterSize=$clusterSize -autowait=2000ms -compressor=snappy ./...
 	fi
