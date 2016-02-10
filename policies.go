@@ -370,7 +370,7 @@ func (t *tokenAwareHostPolicy) Pick(qry *Query) NextHost {
 		fallbackHost := fallbackIter()
 
 		// filter the token aware selected hosts from the fallback hosts
-		if fallbackHost.Info() == host {
+		if fallbackHost != nil && fallbackHost.Info() == host {
 			fallbackHost = fallbackIter()
 		}
 

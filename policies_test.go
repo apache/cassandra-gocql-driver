@@ -192,6 +192,44 @@ func TestRoundRobinNilHostInfo(t *testing.T) {
 	}
 }
 
+func TestTokenAwareNilHostInfo(t *testing.T) {
+	policy := TokenAwareHostPolicy(RoundRobinHostPolicy())
+
+	hosts := []*HostInfo{
+		{peer: "0", tokens: []string{"00"}},
+		{peer: "1", tokens: []string{"25"}},
+		{peer: "2", tokens: []string{"50"}},
+		{peer: "3", tokens: []string{"75"}},
+	}
+	policy.SetHosts(hosts)
+	policy.SetPartitioner("OrderedPartitioner")
+
+	query := &Query{}
+	query.RoutingKey([]byte("20"))
+
+	iter := policy.Pick(query)
+	next := iter()
+	if next == nil {
+		t.Fatal("got nil host")
+	} else if v := next.Info(); v == nil {
+		t.Fatal("got nil HostInfo")
+	} else if v.Peer() != "1" {
+		t.Fatalf("expected peer 1 got %v", v.Peer())
+	}
+
+	// Empty the hosts to trigger the panic when using the fallback.
+	hosts = []*HostInfo{}
+	policy.SetHosts(hosts)
+
+	next = iter()
+	if next != nil {
+		t.Errorf("expected to get nil host got %+v", next)
+		if next.Info() == nil {
+			t.Fatalf("HostInfo is nil")
+		}
+	}
+}
+
 func TestCOWList_Add(t *testing.T) {
 	var cow cowHostList
 
