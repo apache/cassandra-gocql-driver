@@ -1,6 +1,7 @@
 language: go
 
-sudo: false
+sudo: required
+dist: trusty
 
 cache:
   directories:
@@ -24,7 +25,7 @@ env:
       AUTH=false
 
 go:
-  - 1.4
+  - 1.4.2
   - 1.5.3
 
 install:
