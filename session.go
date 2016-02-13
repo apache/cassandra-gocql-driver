@@ -122,7 +122,7 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 		s.control = createControlConn(s)
 		if err := s.control.connect(cfg.Hosts); err != nil {
 			s.Close()
-			return nil, err
+			return nil, fmt.Errorf("gocql: unable to create session: %v", err)
 		}
 
 		// need to setup host source to check for broadcast_address in system.local
@@ -140,7 +140,7 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 
 		if err != nil {
 			s.Close()
-			return nil, err
+			return nil, fmt.Errorf("gocql: unable to create session: %v", err)
 		}
 	} else {
 		// we dont get host info
