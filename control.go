@@ -104,7 +104,7 @@ func (c *controlConn) shuffleDial(endpoints []string) (conn *Conn, err error) {
 			return
 		}
 
-		log.Printf("gocql: unable to control conn dial %v: %v\n", addr, err)
+		log.Printf("gocql: unable to dial control conn %v: %v\n", addr, err)
 	}
 
 	return
@@ -113,14 +113,14 @@ func (c *controlConn) shuffleDial(endpoints []string) (conn *Conn, err error) {
 func (c *controlConn) connect(endpoints []string) error {
 	conn, err := c.shuffleDial(endpoints)
 	if err != nil {
-		return err
+		return fmt.Errorf("control: unable to connect: %v", err)
 	} else if conn == nil {
-		return errors.New("gocql: unable to connect to initial endpoints")
+		return errors.New("control: unable to connect to initial endpoints")
 	}
 
 	if err := c.setupConn(conn); err != nil {
 		conn.Close()
-		return err
+		return fmt.Errorf("control: unable to setup connection: %v", err)
 	}
 
 	// we could fetch the initial ring here and update initial host data. So that
