@@ -30,7 +30,7 @@ Go/Cassandra | 2.0.x | 2.1.x | 2.2.x
 
 Gocql has been tested in production against many different versions of Cassandra. Due to limits in our CI setup we only test against the latest 3 major releases, which coincide with the official support from the Apache project.
 
-NOTE: as of Cassandra 3.0 it requires Java 8, currently (06/02/2016) we can not install Java 8 in Travis to run the integration tests. To run on Casdnra >=3.0 enable protocol 4 and it should work fine, if not please report bugs.
+NOTE: as of Cassandra 3.0 it requires Java 8, currently (06/02/2016) we can not install Java 8 in Travis to run the integration tests. To run on Cassandra >=3.0 enable protocol 4 and it should work fine, if not please report bugs.
 
 
 Sunsetting Model
