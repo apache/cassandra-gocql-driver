@@ -79,12 +79,12 @@ func (c cassVersion) String() string {
 }
 
 func (c cassVersion) nodeUpDelay() time.Duration {
-	if c.Major >= 2 && c.Minor >= 2 {
-		// CASSANDRA-8236
-		return 0
+	if c.Before(2, 2, 0) {
+		return 10 * time.Second
 	}
 
-	return 10 * time.Second
+	// CASSANDRA-8236
+	return 0
 }
 
 type HostInfo struct {
