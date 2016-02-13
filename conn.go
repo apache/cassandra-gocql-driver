@@ -328,18 +328,16 @@ func (c *Conn) closeWithError(err error) {
 		return
 	}
 
+	// we should attempt to deliver the error back to the caller if it
+	// exists
 	if err != nil {
-		// we should attempt to deliver the error back to the caller if it
-		// exists
 		c.mu.RLock()
 		for _, req := range c.calls {
 			// we need to send the error to all waiting queries, put the state
 			// of this conn into not active so that it can not execute any queries.
-			if err != nil {
-				select {
-				case req.resp <- err:
-				default:
-				}
+			select {
+			case req.resp <- err:
+			case <-req.timeout:
 			}
 		}
 		c.mu.RUnlock()
