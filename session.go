@@ -403,6 +403,22 @@ func (s *Session) routingKeyInfo(stmt string) (*routingKeyInfo, error) {
 		return nil, nil
 	}
 
+	if len(info.request.pkeyColumns) > 0 {
+		// proto v4 dont need to calculate primary key columns
+		types := make([]TypeInfo, len(info.request.pkeyColumns))
+		for i, col := range info.request.pkeyColumns {
+			types[i] = info.request.columns[col].TypeInfo
+		}
+
+		routingKeyInfo := &routingKeyInfo{
+			indexes: info.request.pkeyColumns,
+			types:   types,
+		}
+
+		inflight.value = routingKeyInfo
+		return routingKeyInfo, nil
+	}
+
 	// get the table metadata
 	table := info.request.columns[0].Table
 
@@ -1152,6 +1168,10 @@ type routingKeyInfoLRU struct {
 type routingKeyInfo struct {
 	indexes []int
 	types   []TypeInfo
+}
+
+func (r *routingKeyInfo) String() string {
+	return fmt.Sprintf("routing key index=%v types=%v", r.indexes, r.types)
 }
 
 func (r *routingKeyInfoLRU) Remove(key string) {
