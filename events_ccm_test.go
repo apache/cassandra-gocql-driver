@@ -27,11 +27,11 @@ func TestEventDiscovery(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Logf("status=%+v\n", status)
+	log.Printf("status=%+v\n", status)
 
 	session.pool.mu.RLock()
 	poolHosts := session.pool.hostConnPools // TODO: replace with session.ring
-	t.Logf("poolhosts=%+v\n", poolHosts)
+	log.Printf("poolhosts=%+v\n", poolHosts)
 	// check we discovered all the nodes in the ring
 	for _, host := range status {
 		if _, ok := poolHosts[host.Addr]; !ok {
@@ -65,8 +65,8 @@ func TestEventNodeDownControl(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	t.Logf("status=%+v\n", status)
-	t.Logf("marking node %q down: %v\n", targetNode, status[targetNode])
+	log.Printf("status=%+v\n", status)
+	log.Printf("marking node %q down: %v\n", targetNode, status[targetNode])
 
 	time.Sleep(onDownSleep)
 
@@ -92,7 +92,7 @@ func TestEventNodeDown(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Logf("status=%+v\n", status)
+	log.Printf("status=%+v\n", status)
 
 	session := createSession(t)
 	defer session.Close()
@@ -101,7 +101,7 @@ func TestEventNodeDown(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	t.Logf("marked node %q down: %v\n", targetNode, status[targetNode])
+	log.Printf("marked node %q down: %v\n", targetNode, status[targetNode])
 
 	time.Sleep(onDownSleep)
 
