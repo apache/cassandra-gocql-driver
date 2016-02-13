@@ -10,6 +10,11 @@ import (
 	"github.com/gocql/gocql/internal/ccm"
 )
 
+const (
+	onDownSleep = 10 * time.Millisecond
+	onUpSleep   = 20 * time.Millisecond
+)
+
 func TestEventDiscovery(t *testing.T) {
 	if err := ccm.AllUp(); err != nil {
 		t.Fatal(err)
@@ -63,7 +68,7 @@ func TestEventNodeDownControl(t *testing.T) {
 	t.Logf("status=%+v\n", status)
 	t.Logf("marking node %q down: %v\n", targetNode, status[targetNode])
 
-	time.Sleep(5 * time.Second)
+	time.Sleep(onDownSleep)
 
 	node := status[targetNode]
 	if pool, ok := session.pool.getPool(node.Addr); ok {
@@ -98,7 +103,7 @@ func TestEventNodeDown(t *testing.T) {
 
 	t.Logf("marked node %q down: %v\n", targetNode, status[targetNode])
 
-	time.Sleep(5 * time.Second)
+	time.Sleep(onDownSleep)
 
 	node := status[targetNode]
 	if pool, ok := session.pool.getPool(node.Addr); ok {
@@ -142,7 +147,7 @@ func TestEventNodeUp(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	time.Sleep(5 * time.Second)
+	time.Sleep(onDownSleep)
 
 	_, ok = session.pool.getPool(node.Addr)
 	if ok {
@@ -154,7 +159,11 @@ func TestEventNodeUp(t *testing.T) {
 	}
 
 	// cassandra < 2.2 needs 10 seconds to start up the binary service
-	time.Sleep(15 * time.Second)
+	if flagCassVersion.Before(2, 2, 0) {
+		time.Sleep(onUpSleep)
+	} else {
+		time.Sleep(2 * time.Second)
+	}
 
 	_, ok = session.pool.getPool(node.Addr)
 	if !ok {
@@ -204,13 +213,18 @@ func TestEventFilter(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	time.Sleep(5 * time.Second)
+	time.Sleep(onDownSleep)
 
 	if err := ccm.NodeUp("node2"); err != nil {
 		t.Fatal(err)
 	}
 
-	time.Sleep(15 * time.Second)
+	if flagCassVersion.Before(2, 2, 0) {
+		time.Sleep(onUpSleep)
+	} else {
+		time.Sleep(2 * time.Second)
+	}
+
 	for _, host := range [...]string{"node2", "node3"} {
 		_, ok := session.pool.getPool(status[host].Addr)
 		if ok {
@@ -255,13 +269,17 @@ func TestEventDownQueryable(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	time.Sleep(5 * time.Second)
+	time.Sleep(onDownSleep)
 
 	if err := ccm.NodeUp(targetNode); err != nil {
 		t.Fatal(err)
 	}
 
-	time.Sleep(15 * time.Second)
+	if flagCassVersion.Before(2, 2, 0) {
+		time.Sleep(onUpSleep)
+	} else {
+		time.Sleep(2 * time.Second)
+	}
 
 	if pool, ok := session.pool.getPool(addr); !ok {
 		t.Fatalf("should have %v in pool but dont", addr)
