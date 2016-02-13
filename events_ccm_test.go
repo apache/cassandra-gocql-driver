@@ -65,17 +65,10 @@ func TestEventNodeDownControl(t *testing.T) {
 
 	time.Sleep(5 * time.Second)
 
-	session.pool.mu.RLock()
-
-	poolHosts := session.pool.hostConnPools
 	node := status[targetNode]
-	t.Logf("poolhosts=%+v\n", poolHosts)
-
-	if _, ok := poolHosts[node.Addr]; ok {
-		session.pool.mu.RUnlock()
-		t.Fatal("node not removed after remove event")
+	if pool, ok := session.pool.getPool(node.Addr); ok {
+		t.Error("node not removed from pool after remove event: %v", pool)
 	}
-	session.pool.mu.RUnlock()
 
 	host := session.ring.getHost(node.Addr)
 	if host == nil {
@@ -90,6 +83,11 @@ func TestEventNodeDown(t *testing.T) {
 	if err := ccm.AllUp(); err != nil {
 		t.Fatal(err)
 	}
+	status, err := ccm.Status()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("status=%+v\n", status)
 
 	session := createSession(t)
 	defer session.Close()
@@ -98,24 +96,13 @@ func TestEventNodeDown(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	status, err := ccm.Status()
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Logf("status=%+v\n", status)
-	t.Logf("marking node %q down: %v\n", targetNode, status[targetNode])
+	t.Logf("marked node %q down: %v\n", targetNode, status[targetNode])
 
 	time.Sleep(5 * time.Second)
 
-	session.pool.mu.RLock()
-	defer session.pool.mu.RUnlock()
-
-	poolHosts := session.pool.hostConnPools
 	node := status[targetNode]
-	t.Logf("poolhosts=%+v\n", poolHosts)
-
-	if _, ok := poolHosts[node.Addr]; ok {
-		t.Fatal("node not removed after remove event")
+	if pool, ok := session.pool.getPool(node.Addr); ok {
+		t.Error("node not removed from pool after remove event: %v", pool)
 	}
 
 	host := session.ring.getHost(node.Addr)
