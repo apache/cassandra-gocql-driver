@@ -80,7 +80,7 @@ func (c cassVersion) String() string {
 
 func (c cassVersion) nodeUpDelay() time.Duration {
 	if c.Before(2, 2, 0) {
-		return 10 * time.Second
+		return 15 * time.Second
 	}
 
 	// CASSANDRA-8236
