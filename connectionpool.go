@@ -499,16 +499,26 @@ func (pool *hostConnPool) connectMany(count int) {
 }
 
 // create a new connection to the host and add it to the pool
-func (pool *hostConnPool) connect() error {
+func (pool *hostConnPool) connect() (err error) {
+	// TODO: provide a more robust connection retry mechanism, we should also
+	// be able to detect hosts that come up by trying to connect to downed ones.
+	const maxAttempts = 3
 	// try to connect
-	conn, err := pool.session.connect(pool.addr, pool)
+	var conn *Conn
+	for i := 0; i < maxAttempts; i++ {
+		conn, err = pool.session.connect(pool.addr, pool)
+		if err == nil {
+			break
+		}
+	}
+
 	if err != nil {
 		return err
 	}
 
 	if pool.keyspace != "" {
 		// set the keyspace
-		if err := conn.UseKeyspace(pool.keyspace); err != nil {
+		if err = conn.UseKeyspace(pool.keyspace); err != nil {
 			conn.Close()
 			return err
 		}
