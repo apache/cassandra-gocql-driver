@@ -149,7 +149,10 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 
 	for _, host := range hosts {
 		if s.cfg.HostFilter == nil || s.cfg.HostFilter.Accept(host) {
-			s.ring.addHost(host)
+			if existingHost, ok := s.ring.addHostIfMissing(host); ok {
+				existingHost.update(host)
+			}
+
 			s.handleNodeUp(net.ParseIP(host.Peer()), host.Port(), false)
 		}
 	}
