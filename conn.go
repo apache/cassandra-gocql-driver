@@ -139,6 +139,8 @@ type Conn struct {
 	currentKeyspace string
 	started         bool
 
+	host *HostInfo
+
 	session *Session
 
 	closed int32
@@ -148,7 +150,9 @@ type Conn struct {
 }
 
 // Connect establishes a connection to a Cassandra node.
-func Connect(addr string, cfg *ConnConfig, errorHandler ConnErrorHandler, session *Session) (*Conn, error) {
+func Connect(host *HostInfo, addr string, cfg *ConnConfig,
+	errorHandler ConnErrorHandler, session *Session) (*Conn, error) {
+
 	var (
 		err  error
 		conn net.Conn
@@ -196,6 +200,7 @@ func Connect(addr string, cfg *ConnConfig, errorHandler ConnErrorHandler, sessio
 		quit:         make(chan struct{}),
 		session:      session,
 		streams:      streams.New(cfg.ProtoVersion),
+		host:         host,
 	}
 
 	if cfg.Keepalive > 0 {

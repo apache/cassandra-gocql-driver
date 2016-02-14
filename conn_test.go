@@ -416,7 +416,8 @@ func TestStream0(t *testing.T) {
 		}
 	})
 
-	conn, err := Connect(srv.Address, &ConnConfig{ProtoVersion: int(srv.protocol)}, errorHandler, nil)
+	host := &HostInfo{peer: srv.Address}
+	conn, err := Connect(host, srv.Address, &ConnConfig{ProtoVersion: int(srv.protocol)}, errorHandler, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

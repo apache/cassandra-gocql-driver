@@ -583,8 +583,8 @@ func (s *Session) MapExecuteBatchCAS(batch *Batch, dest map[string]interface{}) 
 	return applied, iter, iter.err
 }
 
-func (s *Session) connect(addr string, errorHandler ConnErrorHandler) (*Conn, error) {
-	return Connect(addr, s.connCfg, errorHandler, s)
+func (s *Session) connect(addr string, errorHandler ConnErrorHandler, host *HostInfo) (*Conn, error) {
+	return Connect(host, addr, s.connCfg, errorHandler, s)
 }
 
 // Query represents a CQL statement that can be executed.

@@ -249,6 +249,7 @@ func (s *Session) handleNodeUp(ip net.IP, port int, waitForBinary bool) {
 			time.Sleep(t)
 		}
 
+		host.setPort(port)
 		s.pool.hostUp(host)
 		host.setState(NodeUp)
 		return

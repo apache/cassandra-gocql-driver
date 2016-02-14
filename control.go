@@ -99,9 +99,28 @@ func (c *controlConn) shuffleDial(endpoints []string) (conn *Conn, err error) {
 	// shuffle endpoints so not all drivers will connect to the same initial
 	// node.
 	for _, addr := range shuffled {
-		conn, err = c.session.connect(JoinHostPort(addr, c.session.cfg.Port), c)
+		if addr == "" {
+			return nil, fmt.Errorf("control: invalid address: %q", addr)
+		}
+
+		port := c.session.cfg.Port
+		addr = JoinHostPort(addr, port)
+		host, portStr, err := net.SplitHostPort(addr)
+		if err != nil {
+			host = addr
+			port = c.session.cfg.Port
+			err = nil
+		} else {
+			port, err = strconv.Atoi(portStr)
+			if err != nil {
+				return nil, err
+			}
+		}
+
+		hostInfo, _ := c.session.ring.addHostIfMissing(&HostInfo{peer: host, port: port})
+		conn, err = c.session.connect(addr, c, hostInfo)
 		if err == nil {
-			return
+			return conn, err
 		}
 
 		log.Printf("gocql: unable to dial control conn %v: %v\n", addr, err)
@@ -111,6 +130,10 @@ func (c *controlConn) shuffleDial(endpoints []string) (conn *Conn, err error) {
 }
 
 func (c *controlConn) connect(endpoints []string) error {
+	if len(endpoints) == 0 {
+		return errors.New("control: no endpoints specified")
+	}
+
 	conn, err := c.shuffleDial(endpoints)
 	if err != nil {
 		return fmt.Errorf("control: unable to connect: %v", err)
@@ -200,7 +223,7 @@ func (c *controlConn) reconnect(refreshring bool) {
 	var newConn *Conn
 	if addr != "" {
 		// try to connect to the old host
-		conn, err := c.session.connect(addr, c)
+		conn, err := c.session.connect(addr, c, oldConn.host)
 		if err != nil {
 			// host is dead
 			// TODO: this is replicated in a few places
@@ -222,7 +245,7 @@ func (c *controlConn) reconnect(refreshring bool) {
 		}
 
 		var err error
-		newConn, err = c.session.connect(conn.addr, c)
+		newConn, err = c.session.connect(conn.addr, c, conn.host)
 		if err != nil {
 			// TODO: add log handler for things like this
 			return
