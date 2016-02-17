@@ -149,7 +149,10 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 
 	for _, host := range hosts {
 		if s.cfg.HostFilter == nil || s.cfg.HostFilter.Accept(host) {
-			s.ring.addHost(host)
+			if existingHost, ok := s.ring.addHostIfMissing(host); ok {
+				existingHost.update(host)
+			}
+
 			s.handleNodeUp(net.ParseIP(host.Peer()), host.Port(), false)
 		}
 	}
@@ -580,8 +583,8 @@ func (s *Session) MapExecuteBatchCAS(batch *Batch, dest map[string]interface{}) 
 	return applied, iter, iter.err
 }
 
-func (s *Session) connect(addr string, errorHandler ConnErrorHandler) (*Conn, error) {
-	return Connect(addr, s.connCfg, errorHandler, s)
+func (s *Session) connect(addr string, errorHandler ConnErrorHandler, host *HostInfo) (*Conn, error) {
+	return Connect(host, addr, s.connCfg, errorHandler, s)
 }
 
 // Query represents a CQL statement that can be executed.

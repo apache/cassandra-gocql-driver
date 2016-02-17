@@ -246,7 +246,7 @@ func (p *policyConnPool) addHost(host *HostInfo) {
 		pool = newHostConnPool(
 			p.session,
 			host,
-			host.Port(),
+			host.Port(), // TODO: if port == 0 use pool.port?
 			p.numConns,
 			p.keyspace,
 			p.connPolicy(),
@@ -506,7 +506,7 @@ func (pool *hostConnPool) connect() (err error) {
 	// try to connect
 	var conn *Conn
 	for i := 0; i < maxAttempts; i++ {
-		conn, err = pool.session.connect(pool.addr, pool)
+		conn, err = pool.session.connect(pool.addr, pool, pool.host)
 		if err == nil {
 			break
 		}
