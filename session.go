@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unicode"
 
@@ -909,7 +910,7 @@ type Iter struct {
 	host    *HostInfo
 
 	framer *framer
-	once   sync.Once
+	closed int32
 }
 
 // Host returns the host which the query was sent to.
@@ -1001,12 +1002,12 @@ func (iter *Iter) Scan(dest ...interface{}) bool {
 // Close closes the iterator and returns any errors that happened during
 // the query or the iteration.
 func (iter *Iter) Close() error {
-	iter.once.Do(func() {
+	if atomic.CompareAndSwapInt32(&iter.closed, 0, 1) {
 		if iter.framer != nil {
 			framerPool.Put(iter.framer)
 			iter.framer = nil
 		}
-	})
+	}
 
 	return iter.err
 }
