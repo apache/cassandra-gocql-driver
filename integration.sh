@@ -59,21 +59,23 @@ function run_tests() {
 	ccm status
 	ccm node1 nodetool status
 
-	local args="-gocql.timeout=60s -runssl -proto=$proto -rf=3 -clusterSize=$clusterSize -autowait=2000ms -compressor=snappy -gocql.cversion=$version -cluster=$(ccm liveset) ./..."
+	local args="-v -gocql.timeout=60s -runssl -proto=$proto -rf=3 -clusterSize=$clusterSize -autowait=2000ms -compressor=snappy -gocql.cversion=$version -cluster=$(ccm liveset) ./..."
+
+	go test -v -tags unit
 
 	if [ "$auth" = true ]
 	then
 		sleep 30s
-		go test -run=TestAuthentication -tags "integration gocql_debug" -timeout=15s -v $args
+		go test -run=TestAuthentication -tags "integration gocql_debug" -timeout=15s $args -runauth
 	else
 		sleep 1s
-		go test -tags "integration gocql_debug" -timeout=5m -v $args
+		go test -tags "integration gocql_debug" -timeout=5m $args
 
 		ccm clear
 		ccm start
 		sleep 1s
 
-		go test -tags "ccm gocql_debug" -timeout=5m -v $args
+		go test -tags "ccm gocql_debug" -timeout=5m $args
 	fi
 
 	ccm remove
