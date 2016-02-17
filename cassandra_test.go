@@ -222,7 +222,7 @@ func TestCAS(t *testing.T) {
 
 	if _, err := session.Query(`DELETE FROM cas_table WHERE title = ? and revid = ? IF last_modified = ?`,
 		title, revid, tenSecondsLater).ScanCAS(); !strings.HasPrefix(err.Error(), "gocql: not enough columns to scan into") {
-		t.Fatal("delete: was expecting count mismatch error but got: %q", err.Error())
+		t.Fatalf("delete: was expecting count mismatch error but got: %q", err.Error())
 	}
 
 	if applied, err := session.Query(`DELETE FROM cas_table WHERE title = ? and revid = ? IF last_modified = ?`,
@@ -1879,11 +1879,19 @@ func TestTokenAwareConnPool(t *testing.T) {
 	cluster := createCluster()
 	cluster.PoolConfig.HostSelectionPolicy = TokenAwareHostPolicy(RoundRobinHostPolicy())
 
+	// force metadata query to page
+	cluster.PageSize = 1
+
 	session := createSessionFromCluster(cluster, t)
 	defer session.Close()
 
 	if expected := cluster.NumConns * len(session.ring.allHosts()); session.pool.Size() != expected {
 		t.Errorf("Expected pool size %d but was %d", expected, session.pool.Size())
+	}
+
+	// add another cf so there are two pages when fetching table metadata from our keyspace
+	if err := createTable(session, "CREATE TABLE gocql_test.test_token_aware_other_cf (id int, data text, PRIMARY KEY (id))"); err != nil {
+		t.Fatalf("failed to create test_token_aware table with err: %v", err)
 	}
 
 	if err := createTable(session, "CREATE TABLE gocql_test.test_token_aware (id int, data text, PRIMARY KEY (id))"); err != nil {
