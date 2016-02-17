@@ -66,7 +66,7 @@ function run_tests() {
 	if [ "$auth" = true ]
 	then
 		sleep 30s
-		go test -run=TestAuthentication -tags "integration gocql_debug" -timeout=15s $args -runauth
+		go test -run=TestAuthentication -tags "integration gocql_debug" -timeout=15s -runauth $args
 	else
 		sleep 1s
 		go test -tags "integration gocql_debug" -timeout=5m $args
