@@ -20,7 +20,7 @@ env:
       AUTH=false
     - CASS=2.2.4
       AUTH=true
-    - CASS=2.2.4
+    - CASS=2.2.5
       AUTH=false
 
 go:
