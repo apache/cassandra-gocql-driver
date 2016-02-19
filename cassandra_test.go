@@ -77,6 +77,39 @@ func TestEmptyHosts(t *testing.T) {
 	}
 }
 
+func TestInvalidPeerEntry(t *testing.T) {
+	cluster := createCluster()
+	cluster.PoolConfig.HostSelectionPolicy = TokenAwareHostPolicy(RoundRobinHostPolicy())
+	session := createSessionFromCluster(cluster, t)
+	defer session.Close()
+
+	// rack, release_version, schema_version, tokens are all null
+	query := session.Query("INSERT into system.peers (peer, data_center, host_id, rpc_address) VALUES (?, ?, ?, ?)",
+		"169.254.235.45",
+		"datacenter1",
+		"35c0ec48-5109-40fd-9281-9e9d4add2f1e",
+		"169.254.235.45",
+	)
+
+	if err := query.Exec(); err != nil {
+		t.Fatal(err)
+	}
+
+	session.Close()
+
+	session = createSession(t)
+	defer session.Close()
+
+	// check we can perform a query
+	iter := session.Query("select peer from system.peers").Iter()
+	var peer string
+	for iter.Scan(&peer) {
+	}
+	if err := iter.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 //TestUseStatementError checks to make sure the correct error is returned when the user tries to execute a use statement.
 func TestUseStatementError(t *testing.T) {
 	session := createSession(t)
