@@ -78,10 +78,7 @@ func TestEmptyHosts(t *testing.T) {
 }
 
 func TestInvalidPeerEntry(t *testing.T) {
-	cluster := createCluster()
-	cluster.PoolConfig.HostSelectionPolicy = TokenAwareHostPolicy(RoundRobinHostPolicy())
-	session := createSessionFromCluster(cluster, t)
-	defer session.Close()
+	session := createSession(t)
 
 	// rack, release_version, schema_version, tokens are all null
 	query := session.Query("INSERT into system.peers (peer, data_center, host_id, rpc_address) VALUES (?, ?, ?, ?)",
@@ -91,13 +88,18 @@ func TestInvalidPeerEntry(t *testing.T) {
 		"169.254.235.45",
 	)
 
+	// clean up naughty peer
+	defer session.Query("DELETE from system.peers where peer == ?", "169.254.235.45").Exec()
+
 	if err := query.Exec(); err != nil {
 		t.Fatal(err)
 	}
 
 	session.Close()
 
-	session = createSession(t)
+	cluster := createCluster()
+	cluster.PoolConfig.HostSelectionPolicy = TokenAwareHostPolicy(RoundRobinHostPolicy())
+	session = createSessionFromCluster(cluster, t)
 	defer session.Close()
 
 	// check we can perform a query

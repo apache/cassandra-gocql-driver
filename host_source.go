@@ -47,7 +47,7 @@ func (c *cassVersion) unmarshal(data []byte) error {
 	version = strings.TrimPrefix(version, "v")
 	v := strings.Split(version, ".")
 
-	if len(v) < 3 {
+	if len(v) < 2 {
 		return fmt.Errorf("invalid version string: %s", data)
 	}
 
