@@ -464,14 +464,6 @@ func (c *Conn) recv() error {
 	return nil
 }
 
-type callReq struct {
-	// could use a waitgroup but this allows us to do timeouts on the read/send
-	resp     chan error
-	framer   *framer
-	timeout  chan struct{} // indicates to recv() that a call has timedout
-	streamID int           // current stream in use
-}
-
 func (c *Conn) releaseStream(stream int) {
 	c.mu.Lock()
 	call := c.calls[stream]
@@ -502,6 +494,16 @@ var (
 		},
 	}
 )
+
+type callReq struct {
+	// could use a waitgroup but this allows us to do timeouts on the read/send
+	resp     chan error
+	framer   *framer
+	timeout  chan struct{} // indicates to recv() that a call has timedout
+	streamID int           // current stream in use
+
+	timer *time.Timer
+}
 
 func (c *Conn) exec(req frameWriter, tracer Tracer) (*framer, error) {
 	// TODO: move tracer onto conn
@@ -546,7 +548,20 @@ func (c *Conn) exec(req frameWriter, tracer Tracer) (*framer, error) {
 
 	var timeoutCh <-chan time.Time
 	if c.timeout > 0 {
-		timeoutCh = time.After(c.timeout)
+		if call.timer == nil {
+			call.timer = time.NewTimer(0)
+			<-call.timer.C
+		} else {
+			if !call.timer.Stop() {
+				select {
+				case <-call.timer.C:
+				default:
+				}
+			}
+		}
+
+		call.timer.Reset(c.timeout)
+		timeoutCh = call.timer.C
 	}
 
 	select {

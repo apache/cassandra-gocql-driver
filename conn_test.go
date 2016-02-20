@@ -341,6 +341,58 @@ func TestQueryTimeout(t *testing.T) {
 	}
 }
 
+func TestQueryTimeoutMany(t *testing.T) {
+	srv := NewTestServer(t, 3)
+	defer srv.Stop()
+
+	cluster := testCluster(srv.Address, 3)
+	// Set the timeout arbitrarily low so that the query hits the timeout in a
+	// timely manner.
+	cluster.Timeout = 5 * time.Millisecond
+	cluster.NumConns = 1
+
+	db, err := cluster.CreateSession()
+	if err != nil {
+		t.Fatalf("NewCluster: %v", err)
+	}
+	defer db.Close()
+
+	for i := 0; i < 128; i++ {
+		err := db.Query("void").Exec()
+		if err != nil {
+			t.Error(err)
+			return
+		}
+	}
+}
+
+func BenchmarkSingleConn(b *testing.B) {
+	srv := NewTestServer(b, 3)
+	defer srv.Stop()
+
+	cluster := testCluster(srv.Address, 3)
+	// Set the timeout arbitrarily low so that the query hits the timeout in a
+	// timely manner.
+	cluster.Timeout = 500 * time.Millisecond
+	cluster.NumConns = 1
+	db, err := cluster.CreateSession()
+	if err != nil {
+		b.Fatalf("NewCluster: %v", err)
+	}
+	defer db.Close()
+
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			err := db.Query("void").Exec()
+			if err != nil {
+				b.Error(err)
+				return
+			}
+		}
+	})
+}
+
 func TestQueryTimeoutReuseStream(t *testing.T) {
 	t.Skip("no longer tests anything")
 	// TODO(zariel): move this to conn test, we really just want to check what
