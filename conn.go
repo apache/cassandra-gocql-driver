@@ -9,7 +9,6 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
-	"github.com/gocql/gocql/internal/lru"
 	"io"
 	"io/ioutil"
 	"log"
@@ -20,6 +19,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/gocql/gocql/internal/lru"
 	"github.com/gocql/gocql/internal/streams"
 )
 
@@ -125,6 +125,9 @@ type Conn struct {
 	timeout time.Duration
 	cfg     *ConnConfig
 
+	timer       *time.Timer
+	seenTimeout bool
+
 	headerBuf []byte
 
 	streams *streams.IDGenerator
@@ -191,6 +194,7 @@ func Connect(host *HostInfo, addr string, cfg *ConnConfig,
 		cfg:          cfg,
 		calls:        make(map[int]*callReq),
 		timeout:      cfg.Timeout,
+		timer:        time.NewTimer(cfg.Timeout),
 		version:      uint8(cfg.ProtoVersion),
 		addr:         conn.RemoteAddr().String(),
 		errorHandler: errorHandler,
@@ -545,7 +549,12 @@ func (c *Conn) exec(req frameWriter, tracer Tracer) (*framer, error) {
 
 	var timeoutCh <-chan time.Time
 	if c.timeout > 0 {
-		timeoutCh = time.After(c.timeout)
+		timeoutCh = c.timer.C
+		if !(c.timer.Reset(c.timeout) || c.seenTimeout) {
+			// get the expired timer value if we didn't already use it
+			<-c.timer.C
+		}
+		c.seenTimeout = false
 	}
 
 	select {
@@ -561,6 +570,7 @@ func (c *Conn) exec(req frameWriter, tracer Tracer) (*framer, error) {
 			return nil, err
 		}
 	case <-timeoutCh:
+		c.seenTimeout = true
 		close(call.timeout)
 		c.handleTimeout()
 		return nil, ErrTimeoutNoResponse
