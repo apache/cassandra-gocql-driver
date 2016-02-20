@@ -9,7 +9,6 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
-	"github.com/gocql/gocql/internal/lru"
 	"io"
 	"io/ioutil"
 	"log"
@@ -19,6 +18,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/gocql/gocql/internal/lru"
 
 	"github.com/gocql/gocql/internal/streams"
 )
@@ -1001,6 +1002,11 @@ func (c *Conn) awaitSchemaAgreement() (err error) {
 
 		var schemaVersion string
 		for iter.Scan(&schemaVersion) {
+			if schemaVersion == "" {
+				log.Println("skipping peer entry with empty schema_version")
+				continue
+			}
+
 			versions[schemaVersion] = struct{}{}
 			schemaVersion = ""
 		}
