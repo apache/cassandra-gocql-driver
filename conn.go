@@ -976,8 +976,7 @@ func (c *Conn) executeBatch(batch *Batch) *Iter {
 
 		return iter
 	case error:
-
-		return &Iter{err: err, framer: framer}
+		return &Iter{err: x, framer: framer}
 	default:
 		return &Iter{err: NewErrProtocol("Unknown type in response to batch statement: %s", x), framer: framer}
 	}
