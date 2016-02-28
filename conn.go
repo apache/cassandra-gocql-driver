@@ -537,6 +537,10 @@ func (c *Conn) exec(req frameWriter, tracer Tracer) (*framer, error) {
 
 	err := req.writeFrame(framer, stream)
 	if err != nil {
+		// closeWithError will block waiting for this stream to either receive a response
+		// or for us to timeout, close the timeout chan here. Im not entirely sure
+		// but we should not get a response after an error on the write side.
+		close(call.timeout)
 		// I think this is the correct thing to do, im not entirely sure. It is not
 		// ideal as readers might still get some data, but they probably wont.
 		// Here we need to be careful as the stream is not available and if all
