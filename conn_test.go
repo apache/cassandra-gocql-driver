@@ -497,6 +497,33 @@ func TestStream0(t *testing.T) {
 	}
 }
 
+func TestConnClosedBlocked(t *testing.T) {
+	// issue 664
+	const proto = 3
+
+	srv := NewTestServer(t, proto)
+	defer srv.Stop()
+	errorHandler := connErrorHandlerFn(func(conn *Conn, err error, closed bool) {
+		t.Log(err)
+	})
+
+	host := &HostInfo{peer: srv.Address}
+	conn, err := Connect(host, srv.Address, &ConnConfig{ProtoVersion: int(srv.protocol)}, errorHandler, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := conn.conn.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	// This will block indefintaly if #664 is not fixed
+	err = conn.executeQuery(&Query{stmt: "void"}).Close()
+	if !strings.HasSuffix(err.Error(), "use of closed network connection") {
+		t.Fatalf("expected to get use of closed networking connection error got: %v\n", err)
+	}
+}
+
 func NewTestServer(t testing.TB, protocol uint8) *TestServer {
 	laddr, err := net.ResolveTCPAddr("tcp", "127.0.0.1:0")
 	if err != nil {
