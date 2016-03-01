@@ -147,8 +147,8 @@ func TestHostPoolHostPolicy(t *testing.T) {
 func TestRoundRobinConnPolicy(t *testing.T) {
 	policy := RoundRobinConnPolicy()()
 
-	conn0 := &Conn{streams: streams.New(1)}
-	conn1 := &Conn{streams: streams.New(1)}
+	conn0 := &Conn{streams: streams.New(1, make(chan struct{}))}
+	conn1 := &Conn{streams: streams.New(1, make(chan struct{}))}
 	conn := []*Conn{
 		conn0,
 		conn1,

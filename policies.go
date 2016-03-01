@@ -538,12 +538,17 @@ func (r *roundRobinConnPolicy) Pick(qry *Query) *Conn {
 		return nil
 	}
 
+	var nextConn *Conn
+
 	for i := 0; i < len(r.conns); i++ {
 		conn := r.conns[(pos+i)%len(r.conns)]
 		if conn.AvailableStreams() > 0 {
 			return conn
+		} else if nextConn == nil {
+			nextConn = conn
 		}
 	}
 
-	return nil
+	// no streams available, fall back to plain round-robin
+	return nextConn
 }

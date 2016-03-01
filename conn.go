@@ -186,6 +186,8 @@ func Connect(host *HostInfo, addr string, cfg *ConnConfig,
 		headerSize = 9
 	}
 
+	quit := make(chan struct{})
+
 	c := &Conn{
 		conn:         conn,
 		r:            bufio.NewReader(conn),
@@ -198,9 +200,9 @@ func Connect(host *HostInfo, addr string, cfg *ConnConfig,
 		compressor:   cfg.Compressor,
 		auth:         cfg.Authenticator,
 		headerBuf:    make([]byte, headerSize),
-		quit:         make(chan struct{}),
+		quit:         quit,
 		session:      session,
-		streams:      streams.New(cfg.ProtoVersion),
+		streams:      streams.New(cfg.ProtoVersion, quit),
 		host:         host,
 	}
 
@@ -506,11 +508,26 @@ type callReq struct {
 }
 
 func (c *Conn) exec(req frameWriter, tracer Tracer) (*framer, error) {
+	timeout := c.timeout
+	start := time.Now()
+
 	// TODO: move tracer onto conn
-	stream, ok := c.streams.GetStream()
+	stream, ok := c.streams.WaitForStream(timeout)
 	if !ok {
-		fmt.Println(c.streams)
-		return nil, ErrNoStreams
+		if c.Closed() {
+			return nil, ErrConnectionClosed
+		} else {
+			return nil, ErrNoStreams
+		}
+	}
+
+	if timeout > 0 {
+		timeout -= time.Since(start)
+		// if we used up our timeout waiting for a stream, the error is "there was no
+		// stream available (in time)"
+		if timeout <= 0 {
+			return nil, ErrNoStreams
+		}
 	}
 
 	// resp is basically a waiting semaphore protecting the framer
@@ -551,7 +568,7 @@ func (c *Conn) exec(req frameWriter, tracer Tracer) (*framer, error) {
 	}
 
 	var timeoutCh <-chan time.Time
-	if c.timeout > 0 {
+	if timeout > 0 {
 		if call.timer == nil {
 			call.timer = time.NewTimer(0)
 			<-call.timer.C
@@ -564,7 +581,7 @@ func (c *Conn) exec(req frameWriter, tracer Tracer) (*framer, error) {
 			}
 		}
 
-		call.timer.Reset(c.timeout)
+		call.timer.Reset(timeout)
 		timeoutCh = call.timer.C
 	}
 

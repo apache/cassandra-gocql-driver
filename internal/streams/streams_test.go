@@ -5,10 +5,11 @@ import (
 	"strconv"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func TestUsesAllStreams(t *testing.T) {
-	streams := New(1)
+	streams := New(1, make(chan struct{}))
 
 	got := make(map[int]struct{})
 
@@ -47,7 +48,7 @@ func TestUsesAllStreams(t *testing.T) {
 }
 
 func TestFullStreams(t *testing.T) {
-	streams := New(1)
+	streams := New(1, make(chan struct{}))
 	for i := range streams.streams {
 		streams.streams[i] = math.MaxUint64
 	}
@@ -59,7 +60,7 @@ func TestFullStreams(t *testing.T) {
 }
 
 func TestClearStreams(t *testing.T) {
-	streams := New(1)
+	streams := New(1, make(chan struct{}))
 	for i := range streams.streams {
 		streams.streams[i] = math.MaxUint64
 	}
@@ -77,7 +78,7 @@ func TestClearStreams(t *testing.T) {
 }
 
 func TestDoubleClear(t *testing.T) {
-	streams := New(1)
+	streams := New(1, make(chan struct{}))
 	stream, ok := streams.GetStream()
 	if !ok {
 		t.Fatal("did not get stream")
@@ -91,8 +92,62 @@ func TestDoubleClear(t *testing.T) {
 	}
 }
 
+func TestWaitForStream(t *testing.T) {
+	quit := make(chan struct{})
+	streams := New(1, quit)
+
+	var (
+		stream int
+		ok     bool
+	)
+	for i := 0; i < 127; i++ {
+		stream, ok = streams.GetStream()
+		if !ok {
+			t.Fatal("did not get stream")
+		}
+	}
+
+	// streams all used up
+	_, ok = streams.GetStream()
+	if ok {
+		t.Fatal("did get stream?")
+	}
+
+	go func() {
+		time.Sleep(10 * time.Millisecond)
+		streams.Clear(stream)
+	}()
+
+	stream, ok = streams.WaitForStream(100 * time.Millisecond)
+	if !ok {
+		t.Fatal("did not get stream")
+	}
+
+	// streams all used up again
+	stream, ok = streams.WaitForStream(10 * time.Millisecond)
+	if ok {
+		t.Fatal("did get stream?")
+	}
+
+	// closing quit channel returns early
+	go func() {
+		time.Sleep(10 * time.Millisecond)
+		close(quit)
+	}()
+
+	start := time.Now()
+	stream, ok = streams.WaitForStream(1 * time.Second)
+	took := time.Since(start)
+	if ok {
+		t.Fatal("did get stream?")
+	}
+	if took > 15*time.Millisecond {
+		t.Errorf("took too long: %s", took)
+	}
+}
+
 func BenchmarkConcurrentUse(b *testing.B) {
-	streams := New(2)
+	streams := New(2, make(chan struct{}))
 
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
