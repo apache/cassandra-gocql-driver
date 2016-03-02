@@ -1977,6 +1977,40 @@ func TestNegativeStream(t *testing.T) {
 	}
 }
 
+func TestProtocolV2StreamExhaustion(t *testing.T) {
+	cluster := createCluster()
+	cluster.ProtoVersion = 2
+
+	session := createSessionFromCluster(cluster, t)
+	defer session.Close()
+
+	if err := createTable(session, "CREATE TABLE gocql_test.test_stream_exhaustion (id int, data text, PRIMARY KEY (id))"); err != nil {
+		t.Fatalf("failed to create test_stream_exhaustion with err: %v", err)
+	}
+
+	query := session.Query("INSERT INTO test_stream_exhaustion (id, data) VALUES (?,?)", 351, "Calliphora-piously")
+	if err := query.Exec(); err != nil {
+		t.Fatalf("failed to insert with err: %v", err)
+	}
+
+	var wg sync.WaitGroup
+
+	for i := 0; i < 1000; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+
+			query := session.Query("SELECT data FROM test_stream_exhaustion WHERE id = ?", 351)
+			if err := query.Scan(nil); err != nil {
+				t.Error(err)
+			}
+
+		}()
+	}
+
+	wg.Wait()
+}
+
 func TestManualQueryPaging(t *testing.T) {
 	const rowsToInsert = 5
 

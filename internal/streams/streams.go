@@ -4,6 +4,7 @@ import (
 	"math"
 	"strconv"
 	"sync/atomic"
+	"time"
 )
 
 const bucketBits = 64
@@ -17,9 +18,12 @@ type IDGenerator struct {
 	// streams is a bitset where each bit represents a stream, a 1 implies in use
 	streams []uint64
 	offset  uint32
+
+	availableCh chan struct{}
+	quit        chan struct{}
 }
 
-func New(protocol int) *IDGenerator {
+func New(protocol int, quit chan struct{}) *IDGenerator {
 	maxStreams := 128
 	if protocol > 2 {
 		maxStreams = 32768
@@ -31,10 +35,12 @@ func New(protocol int) *IDGenerator {
 	streams[0] = 1 << 63
 
 	return &IDGenerator{
-		NumStreams: maxStreams,
-		streams:    streams,
-		numBuckets: uint32(buckets),
-		offset:     uint32(buckets) - 1,
+		NumStreams:  maxStreams,
+		availableCh: make(chan struct{}),
+		streams:     streams,
+		numBuckets:  uint32(buckets),
+		offset:      uint32(buckets) - 1,
+		quit:        quit,
 	}
 }
 
@@ -73,6 +79,39 @@ func (s *IDGenerator) GetStream() (int, bool) {
 	}
 
 	return 0, false
+}
+
+func (s *IDGenerator) WaitForStream(timeout time.Duration) (int, bool) {
+	// try once with no timeout for normal case where a stream is available
+	if stream, ok := s.GetStream(); ok {
+		return stream, ok
+	}
+
+	var timeoutTimer <-chan time.Time
+	if timeout > 0 {
+		timeoutTimer = time.After(timeout)
+	} else {
+		timeoutTimer = make(chan time.Time)
+	}
+
+	for {
+		select {
+		case <-s.availableCh:
+			if stream, ok := s.GetStream(); ok {
+				return stream, ok
+			}
+		case <-time.After(100 * time.Millisecond):
+			// this "handles" the race condition where all streams become
+			// available before we block on <-s.availableCh
+			if stream, ok := s.GetStream(); ok {
+				return stream, ok
+			}
+		case <-timeoutTimer:
+			return 0, false
+		case <-s.quit:
+			return 0, false
+		}
+	}
 }
 
 func bitfmt(b uint64) string {
@@ -130,6 +169,11 @@ func (s *IDGenerator) Clear(stream int) (inuse bool) {
 	if atomic.AddInt32(&s.inuseStreams, -1) < 0 {
 		// TODO(zariel): remove this
 		panic("negative streams inuse")
+	}
+
+	select {
+	case s.availableCh <- struct{}{}:
+	default:
 	}
 
 	return true
