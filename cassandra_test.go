@@ -88,9 +88,6 @@ func TestInvalidPeerEntry(t *testing.T) {
 		"169.254.235.45",
 	)
 
-	// clean up naughty peer
-	defer session.Query("DELETE from system.peers where peer == ?", "169.254.235.45").Exec()
-
 	if err := query.Exec(); err != nil {
 		t.Fatal(err)
 	}
@@ -100,7 +97,10 @@ func TestInvalidPeerEntry(t *testing.T) {
 	cluster := createCluster()
 	cluster.PoolConfig.HostSelectionPolicy = TokenAwareHostPolicy(RoundRobinHostPolicy())
 	session = createSessionFromCluster(cluster, t)
-	defer session.Close()
+	defer func() {
+		session.Query("DELETE from system.peers where peer = ?", "169.254.235.45").Exec()
+		session.Close()
+	}()
 
 	// check we can perform a query
 	iter := session.Query("select peer from system.peers").Iter()
