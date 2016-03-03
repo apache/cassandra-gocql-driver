@@ -1920,8 +1920,18 @@ func TestTokenAwareConnPool(t *testing.T) {
 	session := createSessionFromCluster(cluster, t)
 	defer session.Close()
 
-	if expected := cluster.NumConns * len(session.ring.allHosts()); session.pool.Size() != expected {
-		t.Errorf("Expected pool size %d but was %d", expected, session.pool.Size())
+	expectedPoolSize := cluster.NumConns * len(session.ring.allHosts())
+
+	// wait for pool to fill
+	for i := 0; i < 10; i++ {
+		if session.pool.Size() == expectedPoolSize {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	if expectedPoolSize != session.pool.Size() {
+		t.Errorf("Expected pool size %d but was %d", expectedPoolSize, session.pool.Size())
 	}
 
 	// add another cf so there are two pages when fetching table metadata from our keyspace
