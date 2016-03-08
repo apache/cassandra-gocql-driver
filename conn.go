@@ -570,6 +570,7 @@ func (c *Conn) exec(req frameWriter, tracer Tracer) (*framer, error) {
 
 	select {
 	case err := <-call.resp:
+		close(call.timeout)
 		if err != nil {
 			if !c.Closed() {
 				// if the connection is closed then we cant release the stream,
