@@ -509,7 +509,6 @@ func (c *Conn) exec(req frameWriter, tracer Tracer) (*framer, error) {
 	// TODO: move tracer onto conn
 	stream, ok := c.streams.GetStream()
 	if !ok {
-		fmt.Println(c.streams)
 		return nil, ErrNoStreams
 	}
 
