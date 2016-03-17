@@ -429,7 +429,7 @@ func (pool *hostConnPool) fill() {
 
 		if err != nil {
 			// probably unreachable host
-			pool.fillingStopped()
+			pool.fillingStopped(true)
 
 			// this is calle with the connetion pool mutex held, this call will
 			// then recursivly try to lock it again. FIXME
@@ -439,19 +439,14 @@ func (pool *hostConnPool) fill() {
 
 		// filled one
 		fillCount--
-		// connect all remaining connections to this host
-		pool.connectMany(fillCount)
-
-		pool.fillingStopped()
-		return
 	}
 
 	// fill the rest of the pool asynchronously
 	go func() {
-		pool.connectMany(fillCount)
+		err := pool.connectMany(fillCount)
 
 		// mark the end of filling
-		pool.fillingStopped()
+		pool.fillingStopped(err != nil)
 	}()
 }
 
@@ -469,11 +464,13 @@ func (pool *hostConnPool) logConnectErr(err error) {
 }
 
 // transition back to a not-filling state.
-func (pool *hostConnPool) fillingStopped() {
-	// wait for some time to avoid back-to-back filling
-	// this provides some time between failed attempts
-	// to fill the pool for the host to recover
-	time.Sleep(time.Duration(rand.Int31n(100)+31) * time.Millisecond)
+func (pool *hostConnPool) fillingStopped(hadError bool) {
+	if hadError {
+		// wait for some time to avoid back-to-back filling
+		// this provides some time between failed attempts
+		// to fill the pool for the host to recover
+		time.Sleep(time.Duration(rand.Int31n(100)+31) * time.Millisecond)
+	}
 
 	pool.mu.Lock()
 	pool.filling = false
@@ -481,21 +478,32 @@ func (pool *hostConnPool) fillingStopped() {
 }
 
 // connectMany creates new connections concurrent.
-func (pool *hostConnPool) connectMany(count int) {
+func (pool *hostConnPool) connectMany(count int) error {
 	if count == 0 {
-		return
+		return nil
 	}
-	var wg sync.WaitGroup
+	var (
+		wg         sync.WaitGroup
+		mu         sync.Mutex
+		connectErr error
+	)
 	wg.Add(count)
 	for i := 0; i < count; i++ {
 		go func() {
 			defer wg.Done()
 			err := pool.connect()
 			pool.logConnectErr(err)
+			if err != nil {
+				mu.Lock()
+				connectErr = err
+				mu.Unlock()
+			}
 		}()
 	}
 	// wait for all connections are done
 	wg.Wait()
+
+	return connectErr
 }
 
 // create a new connection to the host and add it to the pool
