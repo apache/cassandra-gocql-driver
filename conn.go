@@ -138,7 +138,6 @@ type Conn struct {
 	addr            string
 	version         uint8
 	currentKeyspace string
-	started         bool
 
 	host *HostInfo
 
@@ -208,13 +207,28 @@ func Connect(host *HostInfo, addr string, cfg *ConnConfig,
 		c.setKeepalive(cfg.Keepalive)
 	}
 
-	go c.serve()
+	started := make(chan error, 1)
+	go func() {
+		started <- c.recv()
+	}()
 
 	if err := c.startup(); err != nil {
 		conn.Close()
 		return nil, err
 	}
-	c.started = true
+	select {
+	case err := <-started:
+		if err != nil {
+			log.Println(err)
+			c.Close()
+			return nil, err
+		}
+	case <-time.After(c.timeout):
+		c.Close()
+		return nil, errors.New("gocql: no response to connection startup within timeout")
+	}
+
+	go c.serve()
 
 	return c, nil
 }
@@ -353,7 +367,7 @@ func (c *Conn) closeWithError(err error) {
 	close(c.quit)
 	c.conn.Close()
 
-	if c.started && err != nil {
+	if err != nil {
 		c.errorHandler.HandleError(c, err, true)
 	}
 }
