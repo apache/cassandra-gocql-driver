@@ -512,9 +512,9 @@ type ConnSelectionPolicy interface {
 }
 
 type roundRobinConnPolicy struct {
-	conns []*Conn
 	pos   uint32
 	mu    sync.RWMutex
+	conns []*Conn
 }
 
 func RoundRobinConnPolicy() func() ConnSelectionPolicy {
@@ -531,6 +531,7 @@ func (r *roundRobinConnPolicy) SetConns(conns []*Conn) {
 
 func (r *roundRobinConnPolicy) Pick(qry *Query) *Conn {
 	pos := int(atomic.AddUint32(&r.pos, 1) - 1)
+
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
@@ -538,12 +539,19 @@ func (r *roundRobinConnPolicy) Pick(qry *Query) *Conn {
 		return nil
 	}
 
+	var (
+		leastBusyConn    *Conn
+		streamsAvailable int
+	)
+
+	// find the conn which has the most available streams, this is racy
 	for i := 0; i < len(r.conns); i++ {
 		conn := r.conns[(pos+i)%len(r.conns)]
-		if conn.AvailableStreams() > 0 {
-			return conn
+		if streams := conn.AvailableStreams(); streams > streamsAvailable {
+			leastBusyConn = conn
+			streamsAvailable = streams
 		}
 	}
 
-	return nil
+	return leastBusyConn
 }
