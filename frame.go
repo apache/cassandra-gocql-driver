@@ -1646,6 +1646,15 @@ func (f *framer) writeByte(b byte) {
 	f.wbuf = append(f.wbuf, b)
 }
 
+func appendBytes(p []byte, d []byte) []byte {
+	if d == nil {
+		return appendInt(p, -1)
+	}
+	p = appendInt(p, int32(len(d)))
+	p = append(p, d...)
+	return p
+}
+
 func appendShort(p []byte, n uint16) []byte {
 	return append(p,
 		byte(n>>8),
