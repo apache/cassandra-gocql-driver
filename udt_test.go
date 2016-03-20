@@ -418,10 +418,32 @@ func TestUDT_EmptyCollections(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	type udt struct {
+		A []string          `cql:"a"`
+		B map[string]string `cql:"b"`
+		C []string          `cql:"c"`
+	}
+
 	id := TimeUUID()
-	err = session.Query("INSERT INTO nil_collections(id, udt_col) VALUES(?, ?)", id, &struct{}{}).Exec()
+	err = session.Query("INSERT INTO nil_collections(id, udt_col) VALUES(?, ?)", id, &udt{}).Exec()
 	if err != nil {
 		t.Fatal(err)
+	}
+
+	var val udt
+	err = session.Query("SELECT udt_col FROM nil_collections WHERE id=?", id).Scan(&val)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if val.A != nil {
+		t.Errorf("expected to get nil got %#+v", val.A)
+	}
+	if val.B != nil {
+		t.Errorf("expected to get nil got %#+v", val.B)
+	}
+	if val.C != nil {
+		t.Errorf("expected to get nil got %#+v", val.C)
 	}
 }
 
