@@ -1363,6 +1363,28 @@ func TestVarint(t *testing.T) {
 		t.Errorf("Expected -1, was %d", result)
 	}
 
+	if err := session.Query(`INSERT INTO varint_test (id, test) VALUES (?, ?)`, "id", nil).Exec(); err != nil {
+		t.Fatalf("insert varint: %v", err)
+	}
+
+	if err := session.Query("SELECT test FROM varint_test").Scan(&result); err != nil {
+		t.Fatalf("select from varint_test failed: %v", err)
+	}
+
+	if result != 0 {
+		t.Errorf("Expected 0, was %d", result)
+	}
+
+	var nullableResult *int
+
+	if err := session.Query("SELECT test FROM varint_test").Scan(&nullableResult); err != nil {
+		t.Fatalf("select from varint_test failed: %v", err)
+	}
+
+	if nullableResult != nil {
+		t.Errorf("Expected nil, was %d", nullableResult)
+	}
+
 	if err := session.Query(`INSERT INTO varint_test (id, test) VALUES (?, ?)`, "id", int64(math.MaxInt32)+1).Exec(); err != nil {
 		t.Fatalf("insert varint: %v", err)
 	}

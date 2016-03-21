@@ -432,7 +432,7 @@ func unmarshalVarint(info TypeInfo, data []byte, value interface{}) error {
 	}
 
 	int64Val := bytesToInt64(data)
-	if len(data) < 8 && data[0]&0x80 > 0 {
+	if len(data) > 0 && len(data) < 8 && data[0]&0x80 > 0 {
 		int64Val -= (1 << uint(len(data)*8))
 	}
 	return unmarshalIntlike(info, int64Val, data, value)
