@@ -91,7 +91,7 @@ Some tips for getting more performance from the driver:
 
 Important Default Keyspace Changes
 ----------------------------------
-gocql no longer supports executing "use <keyspace>" statements to simplfy the library. The user still has the
+gocql no longer supports executing "use <keyspace>" statements to simplify the library. The user still has the
 ability to define the default keyspace for connections but now the keyspace can only be defined before a
 session is created. Queries can still access keyspaces by indicating the keyspace in the query:
 ```sql
