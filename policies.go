@@ -485,15 +485,20 @@ func (r *hostPoolHostPolicy) Pick(qry *Query) NextHost {
 			return nil
 		}
 
-		return selectedHostPoolHost{host, hostR}
+		return selectedHostPoolHost{
+			policy: r,
+			info:   host,
+			hostR:  hostR,
+		}
 	}
 }
 
 // selectedHostPoolHost is a host returned by the hostPoolHostPolicy and
 // implements the SelectedHost interface
 type selectedHostPoolHost struct {
-	info  *HostInfo
-	hostR hostpool.HostPoolResponse
+	policy *hostPoolHostPolicy
+	info   *HostInfo
+	hostR  hostpool.HostPoolResponse
 }
 
 func (host selectedHostPoolHost) Info() *HostInfo {
@@ -501,6 +506,14 @@ func (host selectedHostPoolHost) Info() *HostInfo {
 }
 
 func (host selectedHostPoolHost) Mark(err error) {
+	host.policy.mu.RLock()
+	defer host.policy.mu.RUnlock()
+
+	if _, ok := host.policy.hostMap[host.info.Peer()]; !ok {
+		// host was removed between pick and mark
+		return
+	}
+
 	host.hostR.Mark(err)
 }
 
