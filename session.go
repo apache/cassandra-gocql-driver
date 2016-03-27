@@ -655,7 +655,7 @@ func (q *Query) Trace(trace Tracer) *Query {
 
 // PageSize will tell the iterator to fetch the result in pages of size n.
 // This is useful for iterating over large result sets, but setting the
-// page size to low might decrease the performance. This feature is only
+// page size too low might decrease the performance. This feature is only
 // available in Cassandra 2 and onwards.
 func (q *Query) PageSize(n int) *Query {
 	q.pageSize = n
