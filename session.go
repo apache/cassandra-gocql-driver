@@ -782,8 +782,8 @@ func (q *Query) Bind(v ...interface{}) *Query {
 	return q
 }
 
-// SerialConsistency sets the consistencyc level for the
-// serial phase of conditional updates. That consitency can only be
+// SerialConsistency sets the consistency level for the
+// serial phase of conditional updates. That consistency can only be
 // either SERIAL or LOCAL_SERIAL and if not present, it defaults to
 // SERIAL. This option will be ignored for anything else that a
 // conditional update/insert.
@@ -1118,8 +1118,8 @@ func (b *Batch) Size() int {
 	return len(b.Entries)
 }
 
-// SerialConsistency sets the consistencyc level for the
-// serial phase of conditional updates. That consitency can only be
+// SerialConsistency sets the consistency level for the
+// serial phase of conditional updates. That consistency can only be
 // either SERIAL or LOCAL_SERIAL and if not present, it defaults to
 // SERIAL. This option will be ignored for anything else that a
 // conditional update/insert.
