@@ -1019,6 +1019,14 @@ func TestBatchQueryInfo(t *testing.T) {
 	}
 }
 
+func getRandomConn(t *testing.T, session *Session) *Conn {
+	conn := session.getConn()
+	if conn == nil {
+		t.Fatal("unable to get a connection")
+	}
+	return conn
+}
+
 func injectInvalidPreparedStatement(t *testing.T, session *Session, table string) (string, *Conn) {
 	if err := createTable(session, `CREATE TABLE gocql_test.`+table+` (
 			foo   varchar,
@@ -1029,7 +1037,8 @@ func injectInvalidPreparedStatement(t *testing.T, session *Session, table string
 	}
 
 	stmt := "INSERT INTO " + table + " (foo, bar) VALUES (?, 7)"
-	_, conn := session.pool.Pick(nil)
+
+	conn := getRandomConn(t, session)
 
 	flight := new(inflightPrepare)
 	key := session.stmtsLRU.keyFor(conn.addr, "", stmt)
@@ -1060,7 +1069,7 @@ func injectInvalidPreparedStatement(t *testing.T, session *Session, table string
 
 func TestPrepare_MissingSchemaPrepare(t *testing.T) {
 	s := createSession(t)
-	_, conn := s.pool.Pick(nil)
+	conn := getRandomConn(t, s)
 	defer s.Close()
 
 	insertQry := &Query{stmt: "INSERT INTO invalidschemaprep (val) VALUES (?)", values: []interface{}{5}, cons: s.cons,
@@ -1108,7 +1117,7 @@ func TestQueryInfo(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 
-	_, conn := session.pool.Pick(nil)
+	conn := getRandomConn(t, session)
 	info, err := conn.prepareStatement("SELECT release_version, host_id FROM system.local WHERE key = ?", nil)
 
 	if err != nil {
@@ -1982,18 +1991,7 @@ func TestNegativeStream(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 
-	var conn *Conn
-	for i := 0; i < 5; i++ {
-		if conn != nil {
-			break
-		}
-
-		_, conn = session.pool.Pick(nil)
-	}
-
-	if conn == nil {
-		t.Fatal("no connections available in the pool")
-	}
+	conn := getRandomConn(t, session)
 
 	const stream = -50
 	writer := frameWriterFunc(func(f *framer, streamID int) error {

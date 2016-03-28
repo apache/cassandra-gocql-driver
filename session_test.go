@@ -12,11 +12,16 @@ func TestSessionAPI(t *testing.T) {
 	cfg := &ClusterConfig{}
 
 	s := &Session{
-		cfg:  *cfg,
-		cons: Quorum,
+		cfg:    *cfg,
+		cons:   Quorum,
+		policy: RoundRobinHostPolicy(),
 	}
 
 	s.pool = cfg.PoolConfig.buildPool(s)
+	s.executor = &queryExecutor{
+		pool:   s.pool,
+		policy: s.policy,
+	}
 	defer s.Close()
 
 	s.SetConsistency(All)

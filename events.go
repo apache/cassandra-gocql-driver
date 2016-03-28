@@ -201,6 +201,7 @@ func (s *Session) handleNewNode(host net.IP, port int, waitForBinary bool) {
 	}
 
 	s.pool.addHost(hostInfo)
+	s.policy.AddHost(hostInfo)
 	hostInfo.setState(NodeUp)
 
 	if s.control != nil {
@@ -222,6 +223,7 @@ func (s *Session) handleRemovedNode(ip net.IP, port int) {
 	}
 
 	host.setState(NodeDown)
+	s.policy.RemoveHost(addr)
 	s.pool.removeHost(addr)
 	s.ring.removeHost(addr)
 
@@ -251,6 +253,7 @@ func (s *Session) handleNodeUp(ip net.IP, port int, waitForBinary bool) {
 
 		host.setPort(port)
 		s.pool.hostUp(host)
+		s.policy.HostUp(host)
 		host.setState(NodeUp)
 		return
 	}
@@ -270,5 +273,6 @@ func (s *Session) handleNodeDown(ip net.IP, port int) {
 	}
 
 	host.setState(NodeDown)
+	s.policy.HostDown(addr)
 	s.pool.hostDown(addr)
 }
