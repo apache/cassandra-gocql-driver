@@ -26,6 +26,9 @@ func (r *ring) rrHost() *HostInfo {
 	// for the control connection, should we also provide an iterator?
 	r.mu.RLock()
 	defer r.mu.RUnlock()
+	if len(r.hostList) == 0 {
+		return nil
+	}
 
 	pos := int(atomic.AddUint32(&r.pos, 1) - 1)
 	return r.hostList[pos%len(r.hostList)]
