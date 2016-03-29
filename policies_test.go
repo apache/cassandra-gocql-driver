@@ -241,3 +241,15 @@ func TestCOWList_Add(t *testing.T) {
 		}
 	}
 }
+
+func TestSimpleRetryPolicy(t *testing.T) {
+	q := &Query{}
+	rt := &SimpleRetryPolicy{NumRetries: 2}
+	if !rt.Attempt(q) {
+		t.Fatal("should allow retry after 0 attempts")
+	}
+	q.attempts = 5
+	if rt.Attempt(q) {
+		t.Fatal("should not allow retry after passing threshold")
+	}
+}

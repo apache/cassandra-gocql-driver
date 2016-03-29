@@ -187,8 +187,8 @@ func TestQueryRetry(t *testing.T) {
 		t.Fatalf("expected requests %v to match query attemps %v", requests, attempts)
 	}
 
-	//Minus 1 from the requests variable since there is the initial query attempt
-	if requests-1 != int64(rt.NumRetries) {
+	// the query will only be attempted once, but is being retried
+	if requests != int64(rt.NumRetries) {
 		t.Fatalf("failed to retry the query %v time(s). Query executed %v times", rt.NumRetries, requests-1)
 	}
 }
