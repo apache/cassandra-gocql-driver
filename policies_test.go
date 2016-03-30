@@ -6,7 +6,6 @@ package gocql
 
 import (
 	"fmt"
-	"github.com/gocql/gocql/internal/streams"
 	"testing"
 
 	"github.com/hailocab/go-hostpool"
@@ -16,12 +15,14 @@ import (
 func TestRoundRobinHostPolicy(t *testing.T) {
 	policy := RoundRobinHostPolicy()
 
-	hosts := []*HostInfo{
+	hosts := [...]*HostInfo{
 		{hostId: "0"},
 		{hostId: "1"},
 	}
 
-	policy.SetHosts(hosts)
+	for _, host := range hosts {
+		policy.AddHost(host)
+	}
 
 	// interleaved iteration should always increment the host
 	iterA := policy.Pick(nil)
@@ -65,13 +66,15 @@ func TestTokenAwareHostPolicy(t *testing.T) {
 	}
 
 	// set the hosts
-	hosts := []*HostInfo{
+	hosts := [...]*HostInfo{
 		{peer: "0", tokens: []string{"00"}},
 		{peer: "1", tokens: []string{"25"}},
 		{peer: "2", tokens: []string{"50"}},
 		{peer: "3", tokens: []string{"75"}},
 	}
-	policy.SetHosts(hosts)
+	for _, host := range hosts {
+		policy.AddHost(host)
+	}
 
 	// the token ring is not setup without the partitioner, but the fallback
 	// should work
@@ -108,12 +111,14 @@ func TestTokenAwareHostPolicy(t *testing.T) {
 func TestHostPoolHostPolicy(t *testing.T) {
 	policy := HostPoolHostPolicy(hostpool.New(nil))
 
-	hosts := []*HostInfo{
+	hosts := [...]*HostInfo{
 		{hostId: "0", peer: "0"},
 		{hostId: "1", peer: "1"},
 	}
 
-	policy.SetHosts(hosts)
+	for _, host := range hosts {
+		policy.AddHost(host)
+	}
 
 	// the first host selected is actually at [1], but this is ok for RR
 	// interleaved iteration should always increment the host
@@ -143,35 +148,11 @@ func TestHostPoolHostPolicy(t *testing.T) {
 	actualD.Mark(nil)
 }
 
-// Tests of the round-robin connection selection policy implementation
-func TestRoundRobinConnPolicy(t *testing.T) {
-	policy := RoundRobinConnPolicy()()
-
-	conn0 := &Conn{streams: streams.New(1)}
-	conn1 := &Conn{streams: streams.New(1)}
-	conn := []*Conn{
-		conn0,
-		conn1,
-	}
-
-	policy.SetConns(conn)
-
-	if actual := policy.Pick(nil); actual != conn0 {
-		t.Error("Expected conn1")
-	}
-	if actual := policy.Pick(nil); actual != conn1 {
-		t.Error("Expected conn0")
-	}
-	if actual := policy.Pick(nil); actual != conn0 {
-		t.Error("Expected conn1")
-	}
-}
-
 func TestRoundRobinNilHostInfo(t *testing.T) {
 	policy := RoundRobinHostPolicy()
 
 	host := &HostInfo{hostId: "host-1"}
-	policy.SetHosts([]*HostInfo{host})
+	policy.AddHost(host)
 
 	iter := policy.Pick(nil)
 	next := iter()
@@ -195,13 +176,15 @@ func TestRoundRobinNilHostInfo(t *testing.T) {
 func TestTokenAwareNilHostInfo(t *testing.T) {
 	policy := TokenAwareHostPolicy(RoundRobinHostPolicy())
 
-	hosts := []*HostInfo{
+	hosts := [...]*HostInfo{
 		{peer: "0", tokens: []string{"00"}},
 		{peer: "1", tokens: []string{"25"}},
 		{peer: "2", tokens: []string{"50"}},
 		{peer: "3", tokens: []string{"75"}},
 	}
-	policy.SetHosts(hosts)
+	for _, host := range hosts {
+		policy.AddHost(host)
+	}
 	policy.SetPartitioner("OrderedPartitioner")
 
 	query := &Query{}
@@ -218,8 +201,9 @@ func TestTokenAwareNilHostInfo(t *testing.T) {
 	}
 
 	// Empty the hosts to trigger the panic when using the fallback.
-	hosts = []*HostInfo{}
-	policy.SetHosts(hosts)
+	for _, host := range hosts {
+		policy.RemoveHost(host.Peer())
+	}
 
 	next = iter()
 	if next != nil {
@@ -255,5 +239,17 @@ func TestCOWList_Add(t *testing.T) {
 		if !set[addr] {
 			t.Errorf("addr was not in the host list: %q", addr)
 		}
+	}
+}
+
+func TestSimpleRetryPolicy(t *testing.T) {
+	q := &Query{}
+	rt := &SimpleRetryPolicy{NumRetries: 2}
+	if !rt.Attempt(q) {
+		t.Fatal("should allow retry after 0 attempts")
+	}
+	q.attempts = 5
+	if rt.Attempt(q) {
+		t.Fatal("should not allow retry after passing threshold")
 	}
 }

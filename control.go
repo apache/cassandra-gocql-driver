@@ -238,14 +238,14 @@ func (c *controlConn) reconnect(refreshring bool) {
 	// TODO: should have our own roundrobbin for hosts so that we can try each
 	// in succession and guantee that we get a different host each time.
 	if newConn == nil {
-		_, conn := c.session.pool.Pick(nil)
-		if conn == nil {
+		host := c.session.ring.rrHost()
+		if host == nil {
 			c.connect(c.session.ring.endpoints)
 			return
 		}
 
 		var err error
-		newConn, err = c.session.connect(conn.addr, c, conn.host)
+		newConn, err = c.session.connect(host.Peer(), c, host)
 		if err != nil {
 			// TODO: add log handler for things like this
 			return
