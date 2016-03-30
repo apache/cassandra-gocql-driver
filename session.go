@@ -996,6 +996,24 @@ func (iter *Iter) Scan(dest ...interface{}) bool {
 	return true
 }
 
+// GetCustomPayload returns any parsed custom payload results if given in the
+// response from Cassandra. Note that the result is not a copy.
+//
+// This additional feature of CQL Protocol v4
+// allows additional results and query information to be returned by
+// custom QueryHandlers running in your C* cluster.
+// See https://datastax.github.io/java-driver/manual/custom_payloads/
+func (iter *Iter) GetCustomPayload() map[string][]byte {
+	if iter == nil ||
+		iter.framer == nil ||
+		iter.framer.header == nil ||
+		iter.framer.header.customPayload == nil {
+
+		return nil
+	}
+	return iter.framer.header.customPayload
+}
+
 // Close closes the iterator and returns any errors that happened during
 // the query or the iteration.
 func (iter *Iter) Close() error {
