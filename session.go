@@ -1004,13 +1004,6 @@ func (iter *Iter) Scan(dest ...interface{}) bool {
 // custom QueryHandlers running in your C* cluster.
 // See https://datastax.github.io/java-driver/manual/custom_payloads/
 func (iter *Iter) GetCustomPayload() map[string][]byte {
-	if iter == nil ||
-		iter.framer == nil ||
-		iter.framer.header == nil ||
-		iter.framer.header.customPayload == nil {
-
-		return nil
-	}
 	return iter.framer.header.customPayload
 }
 
