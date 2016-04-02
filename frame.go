@@ -252,11 +252,12 @@ func readShort(p []byte) uint16 {
 }
 
 type frameHeader struct {
-	version protoVersion
-	flags   byte
-	stream  int
-	op      frameOp
-	length  int
+	version       protoVersion
+	flags         byte
+	stream        int
+	op            frameOp
+	length        int
+	customPayload map[string][]byte
 }
 
 func (f frameHeader) String() string {
@@ -444,6 +445,10 @@ func (f *framer) parseFrame() (frame frame, err error) {
 		for _, v := range warnings {
 			log.Println(v)
 		}
+	}
+
+	if f.header.flags&flagCustomPayload == flagCustomPayload {
+		f.header.customPayload = f.readBytesMap()
 	}
 
 	// assumes that the frame body has been read into rbuf
@@ -1623,6 +1628,19 @@ func (f *framer) readStringMap() map[string]string {
 	for i := 0; i < int(size); i++ {
 		k := f.readString()
 		v := f.readString()
+		m[k] = v
+	}
+
+	return m
+}
+
+func (f *framer) readBytesMap() map[string][]byte {
+	size := f.readShort()
+	m := make(map[string][]byte)
+
+	for i := 0; i < int(size); i++ {
+		k := f.readString()
+		v := f.readBytes()
 		m[k] = v
 	}
 
