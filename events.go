@@ -164,7 +164,7 @@ func (s *Session) handleNewNode(host net.IP, port int, waitForBinary bool) {
 	// TODO(zariel): need to be able to filter discovered nodes
 
 	var hostInfo *HostInfo
-	if s.control != nil {
+	if s.control != nil && !s.cfg.IgnorePeerAddr {
 		var err error
 		hostInfo, err = s.control.fetchHostInfo(host, port)
 		if err != nil {
@@ -204,7 +204,7 @@ func (s *Session) handleNewNode(host net.IP, port int, waitForBinary bool) {
 	s.policy.AddHost(hostInfo)
 	hostInfo.setState(NodeUp)
 
-	if s.control != nil {
+	if s.control != nil && !s.cfg.IgnorePeerAddr {
 		s.hostSource.refreshRing()
 	}
 }
@@ -227,7 +227,9 @@ func (s *Session) handleRemovedNode(ip net.IP, port int) {
 	s.pool.removeHost(addr)
 	s.ring.removeHost(addr)
 
-	s.hostSource.refreshRing()
+	if !s.cfg.IgnorePeerAddr {
+		s.hostSource.refreshRing()
+	}
 }
 
 func (s *Session) handleNodeUp(ip net.IP, port int, waitForBinary bool) {
