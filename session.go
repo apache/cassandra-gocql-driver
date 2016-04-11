@@ -569,23 +569,24 @@ func (s *Session) connect(addr string, errorHandler ConnErrorHandler, host *Host
 
 // Query represents a CQL statement that can be executed.
 type Query struct {
-	stmt                string
-	values              []interface{}
-	cons                Consistency
-	pageSize            int
-	routingKey          []byte
-	routingKeyBuffer    []byte
-	pageState           []byte
-	prefetch            float64
-	trace               Tracer
-	session             *Session
-	rt                  RetryPolicy
-	binding             func(q *QueryInfo) ([]interface{}, error)
-	attempts            int
-	totalLatency        int64
-	serialCons          SerialConsistency
-	defaultTimestamp    bool
-	disableSkipMetadata bool
+	stmt                  string
+	values                []interface{}
+	cons                  Consistency
+	pageSize              int
+	routingKey            []byte
+	routingKeyBuffer      []byte
+	pageState             []byte
+	prefetch              float64
+	trace                 Tracer
+	session               *Session
+	rt                    RetryPolicy
+	binding               func(q *QueryInfo) ([]interface{}, error)
+	attempts              int
+	totalLatency          int64
+	serialCons            SerialConsistency
+	defaultTimestamp      bool
+	defaultTimestampValue int64
+	disableSkipMetadata   bool
 
 	disableAutoPage bool
 }
@@ -646,6 +647,18 @@ func (q *Query) PageSize(n int) *Query {
 // Only available on protocol >= 3
 func (q *Query) DefaultTimestamp(enable bool) *Query {
 	q.defaultTimestamp = enable
+	return q
+}
+
+// WithTimestamp will enable the with default timestamp flag on the query
+// like DefaultTimestamp does. But also allows to define value for timestamp.
+// It works the same way as USING TIMESTAMP in the query itself, but
+// should not break prepared query optimization
+//
+// Only available on protocol >= 3
+func (q *Query) WithTimestamp(timestamp int64) *Query {
+	q.DefaultTimestamp(true)
+	q.defaultTimestampValue = timestamp
 	return q
 }
 
