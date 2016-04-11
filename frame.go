@@ -1229,7 +1229,8 @@ type queryParams struct {
 	pagingState       []byte
 	serialConsistency SerialConsistency
 	// v3+
-	defaultTimestamp bool
+	defaultTimestamp      bool
+	defaultTimestampValue int64
 }
 
 func (q queryParams) String() string {
@@ -1301,7 +1302,12 @@ func (f *framer) writeQueryParams(opts *queryParams) {
 
 	if f.proto > protoVersion2 && opts.defaultTimestamp {
 		// timestamp in microseconds
-		ts := time.Now().UnixNano() / 1000
+		var ts int64
+		if opts.defaultTimestampValue != 0 {
+			ts = opts.defaultTimestampValue
+		} else {
+			ts = time.Now().UnixNano() / 1000
+		}
 		f.writeLong(ts)
 	}
 }
