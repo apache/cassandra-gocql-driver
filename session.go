@@ -9,6 +9,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"golang.org/x/net/context"
 	"io"
 	"net"
 	"strconv"
@@ -359,7 +360,7 @@ func (s *Session) getConn() *Conn {
 }
 
 // returns routing key indexes and type info
-func (s *Session) routingKeyInfo(stmt string) (*routingKeyInfo, error) {
+func (s *Session) routingKeyInfo(ctx context.Context, stmt string) (*routingKeyInfo, error) {
 	s.routingKeyInfoCache.mu.Lock()
 
 	entry, cached := s.routingKeyInfoCache.lru.Get(stmt)
@@ -402,7 +403,7 @@ func (s *Session) routingKeyInfo(stmt string) (*routingKeyInfo, error) {
 	}
 
 	// get the query info for the statement
-	info, inflight.err = conn.prepareStatement(stmt, nil)
+	info, inflight.err = conn.prepareStatement(ctx, stmt, nil)
 	if inflight.err != nil {
 		// don't cache this error
 		s.routingKeyInfoCache.Remove(stmt)
@@ -587,6 +588,7 @@ type Query struct {
 	defaultTimestamp      bool
 	defaultTimestampValue int64
 	disableSkipMetadata   bool
+	context               context.Context
 
 	disableAutoPage bool
 }
@@ -669,6 +671,13 @@ func (q *Query) RoutingKey(routingKey []byte) *Query {
 	return q
 }
 
+// WithContext will set the context to use during a query, it will be used to
+// timeout when waiting for responses from Cassandra.
+func (q *Query) WithContext(ctx context.Context) *Query {
+	q.context = ctx
+	return q
+}
+
 func (q *Query) execute(conn *Conn) *Iter {
 	return conn.executeQuery(q)
 }
@@ -700,7 +709,7 @@ func (q *Query) GetRoutingKey() ([]byte, error) {
 	}
 
 	// try to determine the routing key
-	routingKeyInfo, err := q.session.routingKeyInfo(q.stmt)
+	routingKeyInfo, err := q.session.routingKeyInfo(q.context, q.stmt)
 	if err != nil {
 		return nil, err
 	}
@@ -1078,6 +1087,7 @@ type Batch struct {
 	totalLatency     int64
 	serialCons       SerialConsistency
 	defaultTimestamp bool
+	context          context.Context
 }
 
 // NewBatch creates a new batch operation without defaults from the cluster
@@ -1132,6 +1142,13 @@ func (b *Batch) retryPolicy() RetryPolicy {
 // RetryPolicy sets the retry policy to use when executing the batch operation
 func (b *Batch) RetryPolicy(r RetryPolicy) *Batch {
 	b.rt = r
+	return b
+}
+
+// WithContext will set the context to use during a query, it will be used to
+// timeout when waiting for responses from Cassandra.
+func (b *Batch) WithContext(ctx context.Context) *Batch {
+	b.context = ctx
 	return b
 }
 

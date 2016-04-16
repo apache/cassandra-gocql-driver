@@ -4,6 +4,7 @@ package gocql
 
 import (
 	"bytes"
+	"golang.org/x/net/context"
 	"io"
 	"math"
 	"math/big"
@@ -1118,7 +1119,7 @@ func TestQueryInfo(t *testing.T) {
 	defer session.Close()
 
 	conn := getRandomConn(t, session)
-	info, err := conn.prepareStatement("SELECT release_version, host_id FROM system.local WHERE key = ?", nil)
+	info, err := conn.prepareStatement(context.Background(), "SELECT release_version, host_id FROM system.local WHERE key = ?", nil)
 
 	if err != nil {
 		t.Fatalf("Failed to execute query for preparing statement: %v", err)
@@ -1833,7 +1834,7 @@ func TestRoutingKey(t *testing.T) {
 		t.Fatalf("failed to create table with error '%v'", err)
 	}
 
-	routingKeyInfo, err := session.routingKeyInfo("SELECT * FROM test_single_routing_key WHERE second_id=? AND first_id=?")
+	routingKeyInfo, err := session.routingKeyInfo(context.Background(), "SELECT * FROM test_single_routing_key WHERE second_id=? AND first_id=?")
 	if err != nil {
 		t.Fatalf("failed to get routing key info due to error: %v", err)
 	}
@@ -1857,7 +1858,7 @@ func TestRoutingKey(t *testing.T) {
 	}
 
 	// verify the cache is working
-	routingKeyInfo, err = session.routingKeyInfo("SELECT * FROM test_single_routing_key WHERE second_id=? AND first_id=?")
+	routingKeyInfo, err = session.routingKeyInfo(context.Background(), "SELECT * FROM test_single_routing_key WHERE second_id=? AND first_id=?")
 	if err != nil {
 		t.Fatalf("failed to get routing key info due to error: %v", err)
 	}
@@ -1891,7 +1892,7 @@ func TestRoutingKey(t *testing.T) {
 		t.Errorf("Expected routing key %v but was %v", expectedRoutingKey, routingKey)
 	}
 
-	routingKeyInfo, err = session.routingKeyInfo("SELECT * FROM test_composite_routing_key WHERE second_id=? AND first_id=?")
+	routingKeyInfo, err = session.routingKeyInfo(context.Background(), "SELECT * FROM test_composite_routing_key WHERE second_id=? AND first_id=?")
 	if err != nil {
 		t.Fatalf("failed to get routing key info due to error: %v", err)
 	}
@@ -1999,7 +2000,7 @@ func TestNegativeStream(t *testing.T) {
 		return f.finishWrite()
 	})
 
-	frame, err := conn.exec(writer, nil)
+	frame, err := conn.exec(context.Background(), writer, nil)
 	if err == nil {
 		t.Fatalf("expected to get an error on stream %d", stream)
 	} else if frame != nil {
@@ -2411,5 +2412,4 @@ func TestSchemaReset(t *testing.T) {
 	if val != expVal {
 		t.Errorf("expected to get val=%q got=%q", expVal, val)
 	}
-
 }
