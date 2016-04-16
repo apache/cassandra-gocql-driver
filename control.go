@@ -4,6 +4,7 @@ import (
 	crand "crypto/rand"
 	"errors"
 	"fmt"
+	"golang.org/x/net/context"
 	"log"
 	"math/rand"
 	"net"
@@ -193,9 +194,10 @@ func (c *controlConn) registerEvents(conn *Conn) error {
 		return nil
 	}
 
-	framer, err := conn.exec(&writeRegisterFrame{
-		events: events,
-	}, nil)
+	framer, err := conn.exec(context.Background(),
+		&writeRegisterFrame{
+			events: events,
+		}, nil)
 	if err != nil {
 		return err
 	}
@@ -282,7 +284,7 @@ func (c *controlConn) writeFrame(w frameWriter) (frame, error) {
 		return nil, errNoControl
 	}
 
-	framer, err := conn.exec(w, nil)
+	framer, err := conn.exec(context.Background(), w, nil)
 	if err != nil {
 		return nil, err
 	}
