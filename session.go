@@ -1064,6 +1064,13 @@ func (iter *Iter) PageState() []byte {
 	return iter.meta.pagingState
 }
 
+// NumRows returns the number of rows in this pagination, it will update when new
+// pages are fetcehd, it is not the value of the total number of rows this iter
+// will return unless there is only a single page returned.
+func (iter *Iter) NumRows() int {
+	return iter.numRows
+}
+
 type nextIter struct {
 	qry  Query
 	pos  int
