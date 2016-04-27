@@ -124,7 +124,6 @@ func (s *schemaDescriber) clearSchema(keyspaceName string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	log.Printf("clear schema: %v", keyspaceName)
 	delete(s.cache, keyspaceName)
 }
 
