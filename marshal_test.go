@@ -341,6 +341,11 @@ var marshalTests = []struct {
 		bigintize("123456789123456789123456789"), // From the datastax/python-driver test suite
 	},
 	{
+		NativeType{proto: 2, typ: TypeVarint},
+		[]byte(nil),
+		nil,
+	},
+	{
 		NativeType{proto: 2, typ: TypeInet},
 		[]byte("\x7F\x00\x00\x01"),
 		net.ParseIP("127.0.0.1").To4(),

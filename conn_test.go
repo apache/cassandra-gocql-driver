@@ -9,6 +9,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
+	"golang.org/x/net/context"
 	"io"
 	"io/ioutil"
 	"net"
@@ -187,8 +188,8 @@ func TestQueryRetry(t *testing.T) {
 		t.Fatalf("expected requests %v to match query attemps %v", requests, attempts)
 	}
 
-	//Minus 1 from the requests variable since there is the initial query attempt
-	if requests-1 != int64(rt.NumRetries) {
+	// the query will only be attempted once, but is being retried
+	if requests != int64(rt.NumRetries) {
 		t.Fatalf("failed to retry the query %v time(s). Query executed %v times", rt.NumRetries, requests-1)
 	}
 }
@@ -284,7 +285,6 @@ func TestPolicyConnPoolSSL(t *testing.T) {
 
 	cluster := createTestSslCluster(srv.Address, defaultProto, true)
 	cluster.PoolConfig.HostSelectionPolicy = RoundRobinHostPolicy()
-	cluster.PoolConfig.ConnSelectionPolicy = RoundRobinConnPolicy()
 
 	db, err := cluster.CreateSession()
 	if err != nil {
@@ -483,7 +483,7 @@ func TestStream0(t *testing.T) {
 	})
 
 	// need to write out an invalid frame, which we need a connection to do
-	framer, err := conn.exec(writer, nil)
+	framer, err := conn.exec(context.Background(), writer, nil)
 	if err == nil {
 		t.Fatal("expected to get an error on stream 0")
 	} else if !strings.HasPrefix(err.Error(), expErr) {
@@ -521,6 +521,26 @@ func TestConnClosedBlocked(t *testing.T) {
 	err = conn.executeQuery(&Query{stmt: "void"}).Close()
 	if !strings.HasSuffix(err.Error(), "use of closed network connection") {
 		t.Fatalf("expected to get use of closed networking connection error got: %v\n", err)
+	}
+}
+
+func TestContext_Timeout(t *testing.T) {
+	srv := NewTestServer(t, defaultProto)
+	defer srv.Stop()
+
+	cluster := testCluster(srv.Address, defaultProto)
+	cluster.Timeout = 5 * time.Second
+	db, err := cluster.CreateSession()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	err = db.Query("timeout").WithContext(ctx).Exec()
+	if err != context.Canceled {
+		t.Fatalf("expected to get context cancel error: %v got %v", context.Canceled, err)
 	}
 }
 

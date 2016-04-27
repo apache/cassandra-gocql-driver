@@ -4,6 +4,7 @@ package gocql
 
 import (
 	"bytes"
+	"golang.org/x/net/context"
 	"io"
 	"math"
 	"math/big"
@@ -88,9 +89,6 @@ func TestInvalidPeerEntry(t *testing.T) {
 		"169.254.235.45",
 	)
 
-	// clean up naughty peer
-	defer session.Query("DELETE from system.peers where peer == ?", "169.254.235.45").Exec()
-
 	if err := query.Exec(); err != nil {
 		t.Fatal(err)
 	}
@@ -100,7 +98,10 @@ func TestInvalidPeerEntry(t *testing.T) {
 	cluster := createCluster()
 	cluster.PoolConfig.HostSelectionPolicy = TokenAwareHostPolicy(RoundRobinHostPolicy())
 	session = createSessionFromCluster(cluster, t)
-	defer session.Close()
+	defer func() {
+		session.Query("DELETE from system.peers where peer = ?", "169.254.235.45").Exec()
+		session.Close()
+	}()
 
 	// check we can perform a query
 	iter := session.Query("select peer from system.peers").Iter()
@@ -1019,6 +1020,14 @@ func TestBatchQueryInfo(t *testing.T) {
 	}
 }
 
+func getRandomConn(t *testing.T, session *Session) *Conn {
+	conn := session.getConn()
+	if conn == nil {
+		t.Fatal("unable to get a connection")
+	}
+	return conn
+}
+
 func injectInvalidPreparedStatement(t *testing.T, session *Session, table string) (string, *Conn) {
 	if err := createTable(session, `CREATE TABLE gocql_test.`+table+` (
 			foo   varchar,
@@ -1029,7 +1038,8 @@ func injectInvalidPreparedStatement(t *testing.T, session *Session, table string
 	}
 
 	stmt := "INSERT INTO " + table + " (foo, bar) VALUES (?, 7)"
-	_, conn := session.pool.Pick(nil)
+
+	conn := getRandomConn(t, session)
 
 	flight := new(inflightPrepare)
 	key := session.stmtsLRU.keyFor(conn.addr, "", stmt)
@@ -1060,7 +1070,7 @@ func injectInvalidPreparedStatement(t *testing.T, session *Session, table string
 
 func TestPrepare_MissingSchemaPrepare(t *testing.T) {
 	s := createSession(t)
-	_, conn := s.pool.Pick(nil)
+	conn := getRandomConn(t, s)
 	defer s.Close()
 
 	insertQry := &Query{stmt: "INSERT INTO invalidschemaprep (val) VALUES (?)", values: []interface{}{5}, cons: s.cons,
@@ -1108,8 +1118,8 @@ func TestQueryInfo(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 
-	_, conn := session.pool.Pick(nil)
-	info, err := conn.prepareStatement("SELECT release_version, host_id FROM system.local WHERE key = ?", nil)
+	conn := getRandomConn(t, session)
+	info, err := conn.prepareStatement(context.Background(), "SELECT release_version, host_id FROM system.local WHERE key = ?", nil)
 
 	if err != nil {
 		t.Fatalf("Failed to execute query for preparing statement: %v", err)
@@ -1361,6 +1371,28 @@ func TestVarint(t *testing.T) {
 
 	if result != -1 {
 		t.Errorf("Expected -1, was %d", result)
+	}
+
+	if err := session.Query(`INSERT INTO varint_test (id, test) VALUES (?, ?)`, "id", nil).Exec(); err != nil {
+		t.Fatalf("insert varint: %v", err)
+	}
+
+	if err := session.Query("SELECT test FROM varint_test").Scan(&result); err != nil {
+		t.Fatalf("select from varint_test failed: %v", err)
+	}
+
+	if result != 0 {
+		t.Errorf("Expected 0, was %d", result)
+	}
+
+	var nullableResult *int
+
+	if err := session.Query("SELECT test FROM varint_test").Scan(&nullableResult); err != nil {
+		t.Fatalf("select from varint_test failed: %v", err)
+	}
+
+	if nullableResult != nil {
+		t.Errorf("Expected nil, was %d", nullableResult)
 	}
 
 	if err := session.Query(`INSERT INTO varint_test (id, test) VALUES (?, ?)`, "id", int64(math.MaxInt32)+1).Exec(); err != nil {
@@ -1802,7 +1834,7 @@ func TestRoutingKey(t *testing.T) {
 		t.Fatalf("failed to create table with error '%v'", err)
 	}
 
-	routingKeyInfo, err := session.routingKeyInfo("SELECT * FROM test_single_routing_key WHERE second_id=? AND first_id=?")
+	routingKeyInfo, err := session.routingKeyInfo(context.Background(), "SELECT * FROM test_single_routing_key WHERE second_id=? AND first_id=?")
 	if err != nil {
 		t.Fatalf("failed to get routing key info due to error: %v", err)
 	}
@@ -1826,7 +1858,7 @@ func TestRoutingKey(t *testing.T) {
 	}
 
 	// verify the cache is working
-	routingKeyInfo, err = session.routingKeyInfo("SELECT * FROM test_single_routing_key WHERE second_id=? AND first_id=?")
+	routingKeyInfo, err = session.routingKeyInfo(context.Background(), "SELECT * FROM test_single_routing_key WHERE second_id=? AND first_id=?")
 	if err != nil {
 		t.Fatalf("failed to get routing key info due to error: %v", err)
 	}
@@ -1860,7 +1892,7 @@ func TestRoutingKey(t *testing.T) {
 		t.Errorf("Expected routing key %v but was %v", expectedRoutingKey, routingKey)
 	}
 
-	routingKeyInfo, err = session.routingKeyInfo("SELECT * FROM test_composite_routing_key WHERE second_id=? AND first_id=?")
+	routingKeyInfo, err = session.routingKeyInfo(context.Background(), "SELECT * FROM test_composite_routing_key WHERE second_id=? AND first_id=?")
 	if err != nil {
 		t.Fatalf("failed to get routing key info due to error: %v", err)
 	}
@@ -1920,8 +1952,18 @@ func TestTokenAwareConnPool(t *testing.T) {
 	session := createSessionFromCluster(cluster, t)
 	defer session.Close()
 
-	if expected := cluster.NumConns * len(session.ring.allHosts()); session.pool.Size() != expected {
-		t.Errorf("Expected pool size %d but was %d", expected, session.pool.Size())
+	expectedPoolSize := cluster.NumConns * len(session.ring.allHosts())
+
+	// wait for pool to fill
+	for i := 0; i < 10; i++ {
+		if session.pool.Size() == expectedPoolSize {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	if expectedPoolSize != session.pool.Size() {
+		t.Errorf("Expected pool size %d but was %d", expectedPoolSize, session.pool.Size())
 	}
 
 	// add another cf so there are two pages when fetching table metadata from our keyspace
@@ -1950,18 +1992,7 @@ func TestNegativeStream(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 
-	var conn *Conn
-	for i := 0; i < 5; i++ {
-		if conn != nil {
-			break
-		}
-
-		_, conn = session.pool.Pick(nil)
-	}
-
-	if conn == nil {
-		t.Fatal("no connections available in the pool")
-	}
+	conn := getRandomConn(t, session)
 
 	const stream = -50
 	writer := frameWriterFunc(func(f *framer, streamID int) error {
@@ -1969,7 +2000,7 @@ func TestNegativeStream(t *testing.T) {
 		return f.finishWrite()
 	})
 
-	frame, err := conn.exec(writer, nil)
+	frame, err := conn.exec(context.Background(), writer, nil)
 	if err == nil {
 		t.Fatalf("expected to get an error on stream %d", stream)
 	} else if frame != nil {
@@ -2381,5 +2412,4 @@ func TestSchemaReset(t *testing.T) {
 	if val != expVal {
 		t.Errorf("expected to get val=%q got=%q", expVal, val)
 	}
-
 }
