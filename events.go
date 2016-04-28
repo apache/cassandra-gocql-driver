@@ -107,6 +107,17 @@ func (s *Session) handleEvent(framer *framer) {
 }
 
 func (s *Session) handleSchemaEvent(frames []frame) {
+	if s.schemaDescriber == nil {
+		return
+	}
+	for _, frame := range frames {
+		switch f := frame.(type) {
+		case *schemaChangeKeyspace:
+			s.schemaDescriber.clearSchema(f.keyspace)
+		case *schemaChangeTable:
+			s.schemaDescriber.clearSchema(f.keyspace)
+		}
+	}
 }
 
 func (s *Session) handleNodeEvent(frames []frame) {
