@@ -544,6 +544,16 @@ func (f *framer) parseErrorFrame() frame {
 		res.BlockFor = f.readInt()
 		res.DataPresent = f.readByte() != 0
 		return res
+	case errWriteFailure:
+		res := &RequestErrWriteFailure{
+			errorFrame: errD,
+		}
+		res.Consistency = f.readConsistency()
+		res.Received = f.readInt()
+		res.BlockFor = f.readInt()
+		res.NumFailures = f.readInt()
+		res.WriteType = f.readString()
+		return res
 	case errFunctionFailure:
 		res := RequestErrFunctionFailure{
 			errorFrame: errD,
