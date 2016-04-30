@@ -214,16 +214,16 @@ func Connect(host *HostInfo, addr string, cfg *ConnConfig,
 	defer cancel()
 
 	frameTicker := make(chan struct{}, 1)
-	startupErr := make(chan error, 1)
+	startupErr := make(chan error)
 	go func() {
 		for range frameTicker {
 			err := c.recv()
-			select {
-			case startupErr <- err:
-				if err != nil {
-					return
+			if err != nil {
+				select {
+				case startupErr <- err:
+				case <-ctx.Done():
 				}
-			case <-ctx.Done():
+
 				return
 			}
 		}
@@ -232,12 +232,9 @@ func Connect(host *HostInfo, addr string, cfg *ConnConfig,
 	go func() {
 		defer close(frameTicker)
 		err := c.startup(ctx, frameTicker)
-		if err != nil {
-			select {
-			case startupErr <- err:
-			case <-ctx.Done():
-				return
-			}
+		select {
+		case startupErr <- err:
+		case <-ctx.Done():
 		}
 	}()
 
