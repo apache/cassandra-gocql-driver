@@ -202,7 +202,15 @@ func Connect(host *HostInfo, addr string, cfg *ConnConfig,
 		c.setKeepalive(cfg.Keepalive)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
+	var (
+		ctx    context.Context
+		cancel func()
+	)
+	if c.timeout > 0 {
+		ctx, cancel = context.WithTimeout(context.Background(), c.timeout)
+	} else {
+		ctx, cancel = context.WithCancel(context.Background())
+	}
 	defer cancel()
 
 	frameTicker := make(chan struct{}, 1)
