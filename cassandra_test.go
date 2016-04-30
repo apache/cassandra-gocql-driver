@@ -2413,3 +2413,19 @@ func TestSchemaReset(t *testing.T) {
 		t.Errorf("expected to get val=%q got=%q", expVal, val)
 	}
 }
+
+func TestCreateSession_DontSwallowError(t *testing.T) {
+	cluster := createCluster()
+	cluster.ProtoVersion = 100
+	session, err := cluster.CreateSession()
+	if err == nil {
+		session.Close()
+
+		t.Fatal("expected to get an error for unsupported protocol")
+	}
+	// TODO: we should get a distinct error type here which include the underlying
+	// cassandra error about the protocol version, for now check this here.
+	if !strings.Contains(err.Error(), "Invalid or unsupported protocol version (100)") {
+		t.Fatalf("expcted to get error unsupported protocol version got: %v", err)
+	}
+}
