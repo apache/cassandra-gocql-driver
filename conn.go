@@ -175,12 +175,6 @@ func Connect(host *HostInfo, addr string, cfg *ConnConfig,
 		return nil, err
 	}
 
-	// going to default to proto 2
-	if cfg.ProtoVersion < protoVersion1 || cfg.ProtoVersion > protoVersion4 {
-		log.Printf("unsupported protocol version: %d using 2\n", cfg.ProtoVersion)
-		cfg.ProtoVersion = 2
-	}
-
 	headerSize := 8
 	if cfg.ProtoVersion > protoVersion2 {
 		headerSize = 9
