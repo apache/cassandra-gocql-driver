@@ -339,7 +339,7 @@ type frame interface {
 }
 
 func readHeader(r io.Reader, p []byte) (head frameHeader, err error) {
-	_, err = io.ReadFull(r, p)
+	_, err = io.ReadFull(r, p[:1])
 	if err != nil {
 		return frameHeader{}, err
 	}
@@ -349,6 +349,18 @@ func readHeader(r io.Reader, p []byte) (head frameHeader, err error) {
 	if version < protoVersion1 || version > protoVersion4 {
 		return frameHeader{}, fmt.Errorf("gocql: unsupported response version: %d", version)
 	}
+
+	headSize := 9
+	if version < protoVersion3 {
+		headSize = 8
+	}
+
+	_, err = io.ReadFull(r, p[1:headSize])
+	if err != nil {
+		return frameHeader{}, err
+	}
+
+	p = p[:headSize]
 
 	head.version = protoVersion(p[0])
 	head.flags = p[1]
@@ -400,9 +412,9 @@ func (f *framer) readFrame(head *frameHeader) error {
 	}
 
 	// assume the underlying reader takes care of timeouts and retries
-	_, err := io.ReadFull(f.r, f.rbuf)
+	n, err := io.ReadFull(f.r, f.rbuf)
 	if err != nil {
-		return err
+		return fmt.Errorf("unable to read frame body: read %d/%d bytes: %v", n, head.length, err)
 	}
 
 	if head.flags&flagCompress == flagCompress {
