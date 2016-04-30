@@ -2425,7 +2425,7 @@ func TestCreateSession_DontSwallowError(t *testing.T) {
 	}
 	// TODO: we should get a distinct error type here which include the underlying
 	// cassandra error about the protocol version, for now check this here.
-	if !strings.Contains(err.Error(), "Invalid or unsupported protocol version (100)") {
-		t.Fatalf("expcted to get error unsupported protocol version got: %v", err)
+	if !strings.Contains(err.Error(), "Invalid or unsupported protocol version") {
+		t.Fatalf(`expcted to get error "unsupported protocol version" got: %q`, err)
 	}
 }
