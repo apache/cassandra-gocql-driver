@@ -175,12 +175,6 @@ func Connect(host *HostInfo, addr string, cfg *ConnConfig,
 		return nil, err
 	}
 
-	// going to default to proto 2
-	if cfg.ProtoVersion < protoVersion1 || cfg.ProtoVersion > protoVersion4 {
-		log.Printf("unsupported protocol version: %d using 2\n", cfg.ProtoVersion)
-		cfg.ProtoVersion = 2
-	}
-
 	headerSize := 8
 	if cfg.ProtoVersion > protoVersion2 {
 		headerSize = 9
@@ -208,33 +202,49 @@ func Connect(host *HostInfo, addr string, cfg *ConnConfig,
 		c.setKeepalive(cfg.Keepalive)
 	}
 
+	var (
+		ctx    context.Context
+		cancel func()
+	)
+	if c.timeout > 0 {
+		ctx, cancel = context.WithTimeout(context.Background(), c.timeout)
+	} else {
+		ctx, cancel = context.WithCancel(context.Background())
+	}
+	defer cancel()
+
 	frameTicker := make(chan struct{}, 1)
-	startupErr := make(chan error, 1)
+	startupErr := make(chan error)
 	go func() {
 		for range frameTicker {
 			err := c.recv()
-			startupErr <- err
 			if err != nil {
+				select {
+				case startupErr <- err:
+				case <-ctx.Done():
+				}
+
 				return
 			}
 		}
 	}()
 
-	err = c.startup(frameTicker)
-	close(frameTicker)
-	if err != nil {
-		conn.Close()
-		return nil, err
-	}
+	go func() {
+		defer close(frameTicker)
+		err := c.startup(ctx, frameTicker)
+		select {
+		case startupErr <- err:
+		case <-ctx.Done():
+		}
+	}()
 
 	select {
 	case err := <-startupErr:
 		if err != nil {
-			log.Println(err)
 			c.Close()
 			return nil, err
 		}
-	case <-time.After(c.timeout):
+	case <-ctx.Done():
 		c.Close()
 		return nil, errors.New("gocql: no response to connection startup within timeout")
 	}
@@ -275,7 +285,7 @@ func (c *Conn) Read(p []byte) (n int, err error) {
 	return
 }
 
-func (c *Conn) startup(frameTicker chan struct{}) error {
+func (c *Conn) startup(ctx context.Context, frameTicker chan struct{}) error {
 	m := map[string]string{
 		"CQL_VERSION": c.cfg.CQLVersion,
 	}
@@ -284,8 +294,13 @@ func (c *Conn) startup(frameTicker chan struct{}) error {
 		m["COMPRESSION"] = c.compressor.Name()
 	}
 
-	frameTicker <- struct{}{}
-	framer, err := c.exec(context.Background(), &writeStartupFrame{opts: m}, nil)
+	select {
+	case frameTicker <- struct{}{}:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+
+	framer, err := c.exec(ctx, &writeStartupFrame{opts: m}, nil)
 	if err != nil {
 		return err
 	}
@@ -301,13 +316,13 @@ func (c *Conn) startup(frameTicker chan struct{}) error {
 	case *readyFrame:
 		return nil
 	case *authenticateFrame:
-		return c.authenticateHandshake(v, frameTicker)
+		return c.authenticateHandshake(ctx, v, frameTicker)
 	default:
 		return NewErrProtocol("Unknown type of response to startup frame: %s", v)
 	}
 }
 
-func (c *Conn) authenticateHandshake(authFrame *authenticateFrame, frameTicker chan struct{}) error {
+func (c *Conn) authenticateHandshake(ctx context.Context, authFrame *authenticateFrame, frameTicker chan struct{}) error {
 	if c.auth == nil {
 		return fmt.Errorf("authentication required (using %q)", authFrame.class)
 	}
@@ -320,8 +335,13 @@ func (c *Conn) authenticateHandshake(authFrame *authenticateFrame, frameTicker c
 	req := &writeAuthResponseFrame{data: resp}
 
 	for {
-		frameTicker <- struct{}{}
-		framer, err := c.exec(context.Background(), req, nil)
+		select {
+		case frameTicker <- struct{}{}:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+
+		framer, err := c.exec(ctx, req, nil)
 		if err != nil {
 			return err
 		}
