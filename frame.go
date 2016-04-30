@@ -341,14 +341,13 @@ type frame interface {
 func readHeader(r io.Reader, p []byte) (head frameHeader, err error) {
 	_, err = io.ReadFull(r, p)
 	if err != nil {
-		return
+		return frameHeader{}, err
 	}
 
 	version := p[0] & protoVersionMask
 
 	if version < protoVersion1 || version > protoVersion4 {
-		err = fmt.Errorf("gocql: invalid version: %d", version)
-		return
+		return frameHeader{}, fmt.Errorf("gocql: unsupported response version: %d", version)
 	}
 
 	head.version = protoVersion(p[0])
@@ -372,7 +371,7 @@ func readHeader(r io.Reader, p []byte) (head frameHeader, err error) {
 		head.length = int(readInt(p[4:]))
 	}
 
-	return
+	return head, nil
 }
 
 // explicitly enables tracing for the framers outgoing requests
