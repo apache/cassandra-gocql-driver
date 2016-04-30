@@ -574,7 +574,7 @@ func (f *framer) parseErrorFrame() frame {
 		res.ArgTypes = f.readStringList()
 		return res
 	default:
-		return &errD
+		panic(fmt.Errorf("unknown error code: 0x%x", errD.code))
 	}
 }
 
