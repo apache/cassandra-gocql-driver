@@ -341,7 +341,7 @@ func (c *Conn) authenticateHandshake(ctx context.Context, authFrame *authenticat
 			return ctx.Err()
 		}
 
-		framer, err := c.exec(context.Background(), req, nil)
+		framer, err := c.exec(ctx, req, nil)
 		if err != nil {
 			return err
 		}
