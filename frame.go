@@ -573,6 +573,10 @@ func (f *framer) parseErrorFrame() frame {
 		res.Function = f.readString()
 		res.ArgTypes = f.readStringList()
 		return res
+	case errInvalid, errBootstrapping, errConfig, errCredentials, errOverloaded,
+		errProtocol, errServer, errSyntax, errTruncate, errUnauthorized:
+		// TODO(zariel): we should have some distinct types for these errors
+		return errD
 	default:
 		panic(fmt.Errorf("unknown error code: 0x%x", errD.code))
 	}
