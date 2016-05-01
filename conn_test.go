@@ -457,7 +457,7 @@ func TestQueryTimeoutClose(t *testing.T) {
 }
 
 func TestStream0(t *testing.T) {
-	const expErr = "gocql: error on stream 0:"
+	const expErr = "gocql: received frame on stream 0"
 
 	srv := NewTestServer(t, defaultProto)
 	defer srv.Stop()
@@ -475,10 +475,7 @@ func TestStream0(t *testing.T) {
 	}
 
 	writer := frameWriterFunc(func(f *framer, streamID int) error {
-		f.writeHeader(0, opError, 0)
-		f.writeInt(0)
-		f.writeString("i am a bad frame")
-		// f.wbuf[0] = 2
+		f.writeQueryFrame(0, "void", &queryParams{})
 		return f.finishWrite()
 	})
 
