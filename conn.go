@@ -127,7 +127,7 @@ type Conn struct {
 	timeout time.Duration
 	cfg     *ConnConfig
 
-	headerBuf []byte
+	headerBuf [maxFrameHeaderSize]byte
 
 	streams *streams.IDGenerator
 	mu      sync.RWMutex
@@ -175,11 +175,6 @@ func Connect(host *HostInfo, addr string, cfg *ConnConfig,
 		return nil, err
 	}
 
-	headerSize := 8
-	if cfg.ProtoVersion > protoVersion2 {
-		headerSize = 9
-	}
-
 	c := &Conn{
 		conn:         conn,
 		r:            bufio.NewReader(conn),
@@ -191,7 +186,6 @@ func Connect(host *HostInfo, addr string, cfg *ConnConfig,
 		errorHandler: errorHandler,
 		compressor:   cfg.Compressor,
 		auth:         cfg.Authenticator,
-		headerBuf:    make([]byte, headerSize),
 		quit:         make(chan struct{}),
 		session:      session,
 		streams:      streams.New(cfg.ProtoVersion),
@@ -445,7 +439,7 @@ func (c *Conn) recv() error {
 	}
 
 	// were just reading headers over and over and copy bodies
-	head, err := readHeader(c.r, c.headerBuf)
+	head, err := readHeader(c.r, c.headerBuf[:])
 	if err != nil {
 		return err
 	}

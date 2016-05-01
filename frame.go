@@ -231,6 +231,8 @@ var (
 	ErrFrameTooBig = errors.New("frame length is bigger than the maximum allowed")
 )
 
+const maxFrameHeaderSize = 9
+
 func writeInt(p []byte, n int32) {
 	p[0] = byte(n >> 24)
 	p[1] = byte(n >> 16)
@@ -366,7 +368,7 @@ func readHeader(r io.Reader, p []byte) (head frameHeader, err error) {
 	head.flags = p[1]
 
 	if version > protoVersion2 {
-		if len(p) < 9 {
+		if len(p) != 9 {
 			return frameHeader{}, fmt.Errorf("not enough bytes to read header require 9 got: %d", len(p))
 		}
 
@@ -374,7 +376,7 @@ func readHeader(r io.Reader, p []byte) (head frameHeader, err error) {
 		head.op = frameOp(p[4])
 		head.length = int(readInt(p[5:]))
 	} else {
-		if len(p) < 8 {
+		if len(p) != 8 {
 			return frameHeader{}, fmt.Errorf("not enough bytes to read header require 8 got: %d", len(p))
 		}
 
