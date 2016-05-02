@@ -244,6 +244,9 @@ func (s *Session) handleRemovedNode(ip net.IP, port int) {
 }
 
 func (s *Session) handleNodeUp(ip net.IP, port int, waitForBinary bool) {
+	if gocqlDebug {
+		log.Printf("gocql: Session.handleNodeUp: %s:%d\n", ip.String(), port)
+	}
 	addr := ip.String()
 	host := s.ring.getHost(addr)
 	if host != nil {
@@ -275,6 +278,9 @@ func (s *Session) handleNodeUp(ip net.IP, port int, waitForBinary bool) {
 }
 
 func (s *Session) handleNodeDown(ip net.IP, port int) {
+	if gocqlDebug {
+		log.Printf("gocql: Session.handleNodeDown: %s:%d\n", ip.String(), port)
+	}
 	addr := ip.String()
 	host := s.ring.getHost(addr)
 	if host == nil {
