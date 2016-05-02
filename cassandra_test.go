@@ -566,7 +566,7 @@ func TestReconnection(t *testing.T) {
 	defer session.Close()
 
 	h := session.ring.allHosts()[0]
-	session.handleNodeDown(net.ParseIP(h.peer), h.port)
+	session.handleNodeDown(net.ParseIP(h.Peer()), h.Port())
 
 	if h.State() != NodeDown {
 		t.Fatal("Host should be NodeDown but not.")

@@ -178,28 +178,7 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 	}
 
 	if cfg.ReconnectInterval > 0 {
-		go func() {
-			for !s.Closed() {
-				time.Sleep(cfg.ReconnectInterval)
-				hosts := s.ring.allHosts()
-
-				// Print session.ring for debug.
-				if gocqlDebug {
-					buf := bytes.NewBufferString("Session.ring:")
-					for _, h := range hosts {
-						buf.WriteString("[" + h.Peer() + ":" + h.State().String() + "]")
-					}
-					log.Println(buf.String())
-				}
-
-				for _, h := range hosts {
-					if h.IsUp() {
-						continue
-					}
-					s.handleNodeUp(net.ParseIP(h.peer), h.port, true)
-				}
-			}
-		}()
+		go s.reconnectDownedHosts(cfg.ReconnectInterval)
 	}
 
 	// TODO(zariel): we probably dont need this any more as we verify that we
@@ -213,6 +192,30 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 	s.useSystemSchema = hosts[0].Version().Major >= 3
 
 	return s, nil
+}
+
+func (s *Session) reconnectDownedHosts(intv time.Duration) {
+	for !s.Closed() {
+		time.Sleep(intv)
+
+		hosts := s.ring.allHosts()
+
+		// Print session.ring for debug.
+		if gocqlDebug {
+			buf := bytes.NewBufferString("Session.ring:")
+			for _, h := range hosts {
+				buf.WriteString("[" + h.Peer() + ":" + h.State().String() + "]")
+			}
+			log.Println(buf.String())
+		}
+
+		for _, h := range hosts {
+			if h.IsUp() {
+				continue
+			}
+			s.handleNodeUp(net.ParseIP(h.Peer()), h.Port(), true)
+		}
+	}
 }
 
 // SetConsistency sets the default consistency level for this session. This
