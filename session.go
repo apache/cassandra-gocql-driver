@@ -9,8 +9,8 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"golang.org/x/net/context"
 	"io"
+	"log"
 	"net"
 	"strconv"
 	"strings"
@@ -18,6 +18,8 @@ import (
 	"sync/atomic"
 	"time"
 	"unicode"
+
+	"golang.org/x/net/context"
 
 	"github.com/gocql/gocql/internal/lru"
 )
@@ -173,6 +175,31 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 
 			s.handleNodeUp(net.ParseIP(host.Peer()), host.Port(), false)
 		}
+	}
+
+	if cfg.ReconnectInterval > 0 {
+		go func() {
+			for !s.Closed() {
+				time.Sleep(cfg.ReconnectInterval)
+				hosts := s.ring.allHosts()
+
+				// Print session.ring for debug.
+				if gocqlDebug {
+					buf := bytes.NewBufferString("Session.ring:")
+					for _, h := range hosts {
+						buf.WriteString("[" + h.Peer() + ":" + h.State().String() + "]")
+					}
+					log.Println(buf.String())
+				}
+
+				for _, h := range hosts {
+					if h.IsUp() {
+						continue
+					}
+					s.handleNodeUp(net.ParseIP(h.peer), h.port, true)
+				}
+			}
+		}()
 	}
 
 	// TODO(zariel): we probably dont need this any more as we verify that we

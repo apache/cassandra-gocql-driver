@@ -51,6 +51,7 @@ func TestEventNodeDownControl(t *testing.T) {
 	}
 
 	cluster := createCluster()
+	cluster.ReconnectInterval = 0
 	cluster.Hosts = []string{status[targetNode].Addr}
 	session := createSessionFromCluster(cluster, t)
 	defer session.Close()
