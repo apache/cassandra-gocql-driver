@@ -4,7 +4,6 @@ package gocql
 
 import (
 	"fmt"
-	"sync"
 	"testing"
 )
 
