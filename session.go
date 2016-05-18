@@ -968,7 +968,7 @@ func (q *Query) MapScanCAS(dest map[string]interface{}) (applied bool, err error
 // 		qry.Release()
 func (q *Query) Release() {
 	q.reset()
-	pool.Put(q)
+	queryPool.Put(q)
 }
 
 // reset zeroes out all fields of a query so that it can be safely pooled.
