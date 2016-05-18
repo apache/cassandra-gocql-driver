@@ -968,6 +968,7 @@ func (q *Query) Release() {
 		return
 	}
 	pool := q.session.queryPool
+	q.reset()
 	pool.Put(q)
 }
 
