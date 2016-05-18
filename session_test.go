@@ -13,10 +13,9 @@ func TestSessionAPI(t *testing.T) {
 	cfg := &ClusterConfig{}
 
 	s := &Session{
-		cfg:       *cfg,
-		cons:      Quorum,
-		policy:    RoundRobinHostPolicy(),
-		queryPool: &sync.Pool{New: func() interface{} { return new(Query) }},
+		cfg:    *cfg,
+		cons:   Quorum,
+		policy: RoundRobinHostPolicy(),
 	}
 
 	s.pool = cfg.PoolConfig.buildPool(s)
@@ -165,9 +164,8 @@ func TestBatchBasicAPI(t *testing.T) {
 	cfg := &ClusterConfig{RetryPolicy: &SimpleRetryPolicy{NumRetries: 2}}
 
 	s := &Session{
-		cfg:       *cfg,
-		cons:      Quorum,
-		queryPool: &sync.Pool{New: func() interface{} { return new(Query) }},
+		cfg:  *cfg,
+		cons: Quorum,
 	}
 	defer s.Close()
 

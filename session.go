@@ -68,8 +68,12 @@ type Session struct {
 
 	closeMu  sync.RWMutex
 	isClosed bool
+}
 
-	queryPool *sync.Pool
+var queryPool = &sync.Pool{
+	New: func() interface{} {
+		return new(Query)
+	},
 }
 
 func addrsToHosts(addrs []string, defaultPort int) ([]*HostInfo, error) {
@@ -100,12 +104,11 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 	}
 
 	s := &Session{
-		cons:      cfg.Consistency,
-		prefetch:  0.25,
-		cfg:       cfg,
-		pageSize:  cfg.PageSize,
-		stmtsLRU:  &preparedLRU{lru: lru.New(cfg.MaxPreparedStmts)},
-		queryPool: &sync.Pool{New: func() interface{} { return new(Query) }},
+		cons:     cfg.Consistency,
+		prefetch: 0.25,
+		cfg:      cfg,
+		pageSize: cfg.PageSize,
+		stmtsLRU: &preparedLRU{lru: lru.New(cfg.MaxPreparedStmts)},
 	}
 
 	connCfg, err := connConfig(s)
@@ -262,7 +265,7 @@ func (s *Session) SetTrace(trace Tracer) {
 // if it has not previously been executed.
 func (s *Session) Query(stmt string, values ...interface{}) *Query {
 	s.mu.RLock()
-	qry := s.queryPool.Get().(*Query)
+	qry := queryPool.Get().(*Query)
 	qry.stmt = stmt
 	qry.values = values
 	qry.cons = s.cons
@@ -964,10 +967,6 @@ func (q *Query) MapScanCAS(dest map[string]interface{}) (applied bool, err error
 // 		qry.Exec()
 // 		qry.Release()
 func (q *Query) Release() {
-	if q == nil || q.session == nil || q.session.queryPool == nil {
-		return
-	}
-	pool := q.session.queryPool
 	q.reset()
 	pool.Put(q)
 }
