@@ -794,7 +794,7 @@ func (c *Conn) executeQuery(qry *Query) *Iter {
 			// TODO: handle query binding names
 		}
 
-		params.skipMeta = !qry.disableSkipMetadata
+		params.skipMeta = !(c.session.cfg.DisableSkipMetadata || qry.disableSkipMetadata)
 
 		frame = &writeExecuteFrame{
 			preparedID: info.id,
