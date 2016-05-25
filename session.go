@@ -1162,15 +1162,16 @@ func (n *nextIter) fetch() *Iter {
 }
 
 type Batch struct {
-	Type             BatchType
-	Entries          []BatchEntry
-	Cons             Consistency
-	rt               RetryPolicy
-	attempts         int
-	totalLatency     int64
-	serialCons       SerialConsistency
-	defaultTimestamp bool
-	context          context.Context
+	Type                  BatchType
+	Entries               []BatchEntry
+	Cons                  Consistency
+	rt                    RetryPolicy
+	attempts              int
+	totalLatency          int64
+	serialCons            SerialConsistency
+	defaultTimestamp      bool
+	defaultTimestampValue int64
+	context               context.Context
 }
 
 // NewBatch creates a new batch operation without defaults from the cluster
@@ -1260,6 +1261,18 @@ func (b *Batch) SerialConsistency(cons SerialConsistency) *Batch {
 // Only available on protocol >= 3
 func (b *Batch) DefaultTimestamp(enable bool) *Batch {
 	b.defaultTimestamp = enable
+	return b
+}
+
+// WithTimestamp will enable the with default timestamp flag on the query
+// like DefaultTimestamp does. But also allows to define value for timestamp.
+// It works the same way as USING TIMESTAMP in the query itself, but
+// should not break prepared query optimization
+//
+// Only available on protocol >= 3
+func (b *Batch) WithTimestamp(timestamp int64) *Batch {
+	b.DefaultTimestamp(true)
+	b.defaultTimestampValue = timestamp
 	return b
 }
 
