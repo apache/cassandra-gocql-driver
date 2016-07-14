@@ -773,6 +773,7 @@ func TestSmallInt(t *testing.T) {
 		t.Fatal("create table:", err)
 	}
 	m := make(map[string]interface{})
+	m["testsmallint"] = int16(2)
 	sliceMap := []map[string]interface{}{m}
 	if err := session.Query(`INSERT INTO smallint_table (testsmallint) VALUES (?)`,
 		m["testsmallint"]).Exec(); err != nil {
