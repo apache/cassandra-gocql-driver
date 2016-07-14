@@ -651,6 +651,7 @@ func TestSliceMap(t *testing.T) {
 			testfloat      float,
 			testdouble     double,
 			testint        int,
+			testsmallint   smallint,
 			testdecimal    decimal,
 			testlist       list<text>,
 			testset        set<int>,
@@ -676,6 +677,7 @@ func TestSliceMap(t *testing.T) {
 	m["testfloat"] = float32(4.564)
 	m["testdouble"] = float64(4.815162342)
 	m["testint"] = 2343
+	m["testsmallint"] = int16(2)
 	m["testdecimal"] = inf.NewDec(100, 0)
 	m["testlist"] = []string{"quux", "foo", "bar", "baz", "quux"}
 	m["testset"] = []int{1, 2, 3, 4, 5, 6, 7, 8, 9}
@@ -683,8 +685,8 @@ func TestSliceMap(t *testing.T) {
 	m["testvarint"] = bigInt
 	m["testinet"] = "213.212.2.19"
 	sliceMap := []map[string]interface{}{m}
-	if err := session.Query(`INSERT INTO slice_map_table (testuuid, testtimestamp, testvarchar, testbigint, testblob, testbool, testfloat, testdouble, testint, testdecimal, testlist, testset, testmap, testvarint, testinet) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		m["testuuid"], m["testtimestamp"], m["testvarchar"], m["testbigint"], m["testblob"], m["testbool"], m["testfloat"], m["testdouble"], m["testint"], m["testdecimal"], m["testlist"], m["testset"], m["testmap"], m["testvarint"], m["testinet"]).Exec(); err != nil {
+	if err := session.Query(`INSERT INTO slice_map_table (testuuid, testtimestamp, testvarchar, testbigint, testblob, testbool, testfloat, testdouble, testint, testsmallint, testdecimal, testlist, testset, testmap, testvarint, testinet) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		m["testuuid"], m["testtimestamp"], m["testvarchar"], m["testbigint"], m["testblob"], m["testbool"], m["testfloat"], m["testdouble"], m["testint"], m["testsmallint"], m["testdecimal"], m["testlist"], m["testset"], m["testmap"], m["testvarint"], m["testinet"]).Exec(); err != nil {
 		t.Fatal("insert:", err)
 	}
 	if returned, retErr := session.Query(`SELECT * FROM slice_map_table`).Iter().SliceMap(); retErr != nil {
@@ -758,6 +760,9 @@ func matchSliceMap(t *testing.T, sliceMap []map[string]interface{}, testMap map[
 	}
 	if sliceMap[0]["testint"] != testMap["testint"] {
 		t.Fatal("returned testint did not match")
+	}
+	if sliceMap[0]["testsmallint"] != testMap["testsmallint"] {
+		t.Fatal("returned testsmallint did not match")
 	}
 }
 
