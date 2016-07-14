@@ -768,7 +768,7 @@ func TestSmallInt(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 	if err := createTable(session, `CREATE TABLE gocql_test.smallint_table (
-			testsmallint   smallint,
+			testsmallint  smallint PRIMARY KEY,
 		)`); err != nil {
 		t.Fatal("create table:", err)
 	}
