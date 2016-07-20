@@ -101,6 +101,20 @@ func TestRandomPartitioner(t *testing.T) {
 	}
 }
 
+func TestRandomPartitionerMatchesReference(t *testing.T) {
+	// example taken from datastax python driver
+	//    >>> from cassandra.metadata import MD5Token
+	//    >>> MD5Token.hash_fn("test")
+	//    12707736894140473154801792860916528374L
+	var p randomPartitioner
+	expect := "12707736894140473154801792860916528374"
+	actual := p.Hash([]byte("test")).String()
+	if actual != expect {
+		t.Errorf("expected random partitioner to generate tokens in the same way as the reference"+
+			" python client. Expected %s, but got %s", expect, actual)
+	}
+}
+
 // Tests of the randomToken
 func TestRandomToken(t *testing.T) {
 	if ((*randomToken)(big.NewInt(42))).Less((*randomToken)(big.NewInt(42))) {
