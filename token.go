@@ -89,16 +89,15 @@ func (r randomPartitioner) Name() string {
 	return "RandomPartitioner"
 }
 
-func (p randomPartitioner) Hash(partitionKey []byte) token {
-	// 2 ** 128
-	maxInt := new(big.Int)
-	maxInt.SetString("340282366920938463463374607431768211456", 10)
+// 2 ** 128
+var maxHashInt, _ = new(big.Int).SetString("340282366920938463463374607431768211456", 10)
 
+func (p randomPartitioner) Hash(partitionKey []byte) token {
 	sum := md5.Sum(partitionKey)
 	val := new(big.Int)
 	val.SetBytes(sum[:])
 	if sum[0] > 127 {
-		val.Sub(val, maxInt)
+		val.Sub(val, maxHashInt)
 		val.Abs(val)
 	}
 
