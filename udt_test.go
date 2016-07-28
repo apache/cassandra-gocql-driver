@@ -503,3 +503,42 @@ func TestUDT_UpdateField(t *testing.T) {
 		t.Errorf("expected %+v: got %+v", *writeCol, *readCol)
 	}
 }
+
+func TestUDT_ScanNullUDT(t *testing.T) {
+	if *flagProto < protoVersion3 {
+		t.Skip("UDT are only available on protocol >= 3")
+	}
+
+	session := createSession(t)
+	defer session.Close()
+
+	err := createTable(session, `CREATE TYPE gocql_test.scan_null_udt_position(
+		lat int,
+		lon int,
+		padding text);`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = createTable(session, `CREATE TABLE gocql_test.scan_null_udt_houses(
+		id int,
+		name text,
+		loc frozen<position>,
+		primary key(id)
+	);`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = session.Query("INSERT INTO scan_null_udt_houses(id, name) VALUES(?, ?)", 1, "test" ).Exec()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	pos := &position{}
+
+	err = session.Query("SELECT loc FROM scan_null_udt_houses WHERE id = ?", 1).Scan(pos)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
