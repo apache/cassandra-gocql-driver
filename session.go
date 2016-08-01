@@ -195,7 +195,14 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 		return nil, ErrNoConnectionsStarted
 	}
 
-	s.useSystemSchema = hosts[0].Version().Major >= 3
+	// If initial host lookup is disabled, then we should use the ClusterConfig CQL version
+	if cfg.DisableInitialHostLookup {
+		var v cassVersion
+		v.Set(cfg.CQLVersion)
+		s.useSystemSchema = v.Major >= 3
+	} else {
+		s.useSystemSchema = hosts[0].Version().Major >= 3
+	}
 
 	return s, nil
 }
