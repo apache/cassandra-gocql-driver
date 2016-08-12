@@ -761,6 +761,33 @@ func matchSliceMap(t *testing.T, sliceMap []map[string]interface{}, testMap map[
 	}
 }
 
+func TestSmallInt(t *testing.T) {
+	if *flagProto < protoVersion4 {
+		t.Skip("smallint is only supported in cassandra 2.2+")
+	}
+	session := createSession(t)
+	defer session.Close()
+	if err := createTable(session, `CREATE TABLE gocql_test.smallint_table (
+			testsmallint  smallint PRIMARY KEY,
+		)`); err != nil {
+		t.Fatal("create table:", err)
+	}
+	m := make(map[string]interface{})
+	m["testsmallint"] = int16(2)
+	sliceMap := []map[string]interface{}{m}
+	if err := session.Query(`INSERT INTO smallint_table (testsmallint) VALUES (?)`,
+		m["testsmallint"]).Exec(); err != nil {
+		t.Fatal("insert:", err)
+	}
+	if returned, retErr := session.Query(`SELECT * FROM smallint_table`).Iter().SliceMap(); retErr != nil {
+		t.Fatal("select:", retErr)
+	} else {
+		if sliceMap[0]["testsmallint"] != returned[0]["testsmallint"] {
+			t.Fatal("returned testsmallint did not match")
+		}
+	}
+}
+
 func TestScanWithNilArguments(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
