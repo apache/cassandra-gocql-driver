@@ -10,8 +10,6 @@ import (
 	"reflect"
 	"strings"
 	"time"
-
-	"gopkg.in/inf.v0"
 )
 
 type RowData struct {
@@ -247,7 +245,7 @@ func (iter *Iter) SliceMap() ([]map[string]interface{}, error) {
 }
 
 // MapScan takes a map[string]interface{} and populates it with a row
-// That is returned from cassandra.
+// that is returned from cassandra.
 func (iter *Iter) MapScan(m map[string]interface{}) bool {
 	if iter.err != nil {
 		return false
