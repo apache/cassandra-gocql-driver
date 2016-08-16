@@ -363,31 +363,6 @@ func TestQueryTimeout(t *testing.T) {
 	}
 }
 
-func TestQueryTimeoutMany(t *testing.T) {
-	srv := NewTestServer(t, 3, context.Background())
-	defer srv.Stop()
-
-	cluster := testCluster(srv.Address, 3)
-	// Set the timeout arbitrarily low so that the query hits the timeout in a
-	// timely manner.
-	cluster.Timeout = 5 * time.Millisecond
-	cluster.NumConns = 1
-
-	db, err := cluster.CreateSession()
-	if err != nil {
-		t.Fatalf("NewCluster: %v", err)
-	}
-	defer db.Close()
-
-	for i := 0; i < 128; i++ {
-		err := db.Query("void").Exec()
-		if err != nil {
-			t.Error(err)
-			return
-		}
-	}
-}
-
 func BenchmarkSingleConn(b *testing.B) {
 	srv := NewTestServer(b, 3, context.Background())
 	defer srv.Stop()
