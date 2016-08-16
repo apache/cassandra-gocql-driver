@@ -161,7 +161,7 @@ func TestRoundRobinNilHostInfo(t *testing.T) {
 	} else if v := next.Info(); v == nil {
 		t.Fatal("got nil HostInfo")
 	} else if v.HostID() != host.HostID() {
-		t.Fatalf("expected host %v got %v", host, *v)
+		t.Fatalf("expected host %v got %v", host, v)
 	}
 
 	next = iter()
