@@ -9,7 +9,6 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
-	"golang.org/x/net/context"
 	"io"
 	"io/ioutil"
 	"net"
@@ -18,6 +17,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"golang.org/x/net/context"
 )
 
 const (
@@ -149,14 +150,27 @@ func TestTimeout(t *testing.T) {
 	}
 	defer db.Close()
 
+	var wg sync.WaitGroup
+	wg.Add(1)
+
+	ctx, cancel := context.WithCancel(context.Background())
+
 	go func() {
-		<-time.After(2 * time.Second)
-		t.Errorf("no timeout")
+		defer wg.Done()
+
+		select {
+		case <-time.After(5 * time.Second):
+			t.Errorf("no timeout")
+		case <-ctx.Done():
+		}
 	}()
 
 	if err := db.Query("kill").Exec(); err == nil {
-		t.Errorf("expected error")
+		t.Fatal("expected error got nil")
 	}
+	cancel()
+
+	wg.Wait()
 }
 
 // TestQueryRetry will test to make sure that gocql will execute
