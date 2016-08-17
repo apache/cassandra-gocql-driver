@@ -545,9 +545,15 @@ func TestNotEnoughQueryArgs(t *testing.T) {
 // TestCreateSessionTimeout tests to make sure the CreateSession function timeouts out correctly
 // and prevents an infinite loop of connection retries.
 func TestCreateSessionTimeout(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	go func() {
-		<-time.After(2 * time.Second)
-		t.Error("no startup timeout")
+		select {
+		case <-time.After(2 * time.Second):
+			t.Error("no startup timeout")
+		case <-ctx.Done():
+		}
 	}()
 
 	cluster := createCluster()

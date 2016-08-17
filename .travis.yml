@@ -25,8 +25,8 @@ env:
       AUTH=false
 
 go:
-  - 1.5.3
   - 1.6
+  - 1.7
 
 install:
   - pip install --user cql PyYAML six
