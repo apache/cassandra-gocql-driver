@@ -111,14 +111,14 @@ func TestTokenAwareHostPolicy(t *testing.T) {
 func TestHostPoolHostPolicy(t *testing.T) {
 	policy := HostPoolHostPolicy(hostpool.New(nil))
 
-	hosts := [...]*HostInfo{
+	hosts := []*HostInfo{
 		{hostId: "0", peer: "0"},
 		{hostId: "1", peer: "1"},
 	}
 
-	for _, host := range hosts {
-		policy.AddHost(host)
-	}
+	// Using set host to control the ordering of the hosts as calling "AddHost" iterates the map
+	// which will result in an unpredictable ordering
+	policy.(*hostPoolHostPolicy).SetHosts(hosts)
 
 	// the first host selected is actually at [1], but this is ok for RR
 	// interleaved iteration should always increment the host

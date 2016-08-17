@@ -234,7 +234,7 @@ func (h *HostInfo) update(from *HostInfo) {
 }
 
 func (h *HostInfo) IsUp() bool {
-	return h.State() == NodeUp
+	return h != nil && h.State() == NodeUp
 }
 
 func (h *HostInfo) String() string {
