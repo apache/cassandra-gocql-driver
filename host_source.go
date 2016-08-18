@@ -272,6 +272,22 @@ func checkSystemLocal(control *controlConn) (bool, error) {
 	return true, nil
 }
 
+// Returns true if we are using system_schema.keyspaces instead of system.schema_keyspaces
+func checkSystemSchema(control *controlConn) (bool, error) {
+	iter := control.query("SELECT * FROM system_schema.keyspaces")
+	if err := iter.err; err != nil {
+		if errf, ok := err.(*errorFrame); ok {
+			if errf.code == errReadFailure {
+				return false, nil
+			}
+		}
+
+		return false, err
+	}
+
+	return true, nil
+}
+
 func (r *ringDescriber) GetHosts() (hosts []*HostInfo, partitioner string, err error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
