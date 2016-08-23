@@ -29,4 +29,5 @@ func TestEventDebounce(t *testing.T) {
 	if eventCount != eventsSeen {
 		t.Fatalf("expected to see %d events but got %d", eventCount, eventsSeen)
 	}
+	debouncer.stop()
 }
