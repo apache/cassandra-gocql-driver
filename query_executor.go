@@ -33,19 +33,23 @@ func (q *queryExecutor) executeQuery(qry ExecutableQuery) (*Iter, error) {
 	hostIter := q.policy.Pick(qry)
 
 	var iter *Iter
-	for hostResponse := hostIter(); hostResponse != nil; hostResponse = hostIter() {
+	hostResponse := hostIter()
+	for hostResponse != nil {
 		host := hostResponse.Info()
 		if host == nil || !host.IsUp() {
+			hostResponse = hostIter()
 			continue
 		}
 
 		pool, ok := q.pool.getPool(host)
 		if !ok {
+			hostResponse = hostIter()
 			continue
 		}
 
 		conn := pool.Pick()
 		if conn == nil {
+			hostResponse = hostIter()
 			continue
 		}
 
@@ -54,16 +58,24 @@ func (q *queryExecutor) executeQuery(qry ExecutableQuery) (*Iter, error) {
 		// Update host
 		hostResponse.Mark(iter.err)
 
-		// Exit for loop if the query was successful
 		if iter.err == nil {
+			// Exit for loop if the query was successful
 			iter.host = host
 			return iter, nil
 		}
 
-		if rt == nil || !rt.Attempt(qry) {
-			// What do here? Should we just return an error here?
+		if rt == nil {
 			break
 		}
+		shouldRetry, nextHost := rt.Attempt(qry, iter.err)
+		if !shouldRetry {
+			break
+		}
+		if nextHost == false {
+			// Do not iter over hosts
+			continue
+		}
+		hostResponse = hostIter()
 	}
 
 	if iter == nil {

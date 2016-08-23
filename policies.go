@@ -139,7 +139,7 @@ type RetryableQuery interface {
 // See SimpleRetryPolicy as an example of implementing and using a RetryPolicy
 // interface.
 type RetryPolicy interface {
-	Attempt(RetryableQuery) bool
+	Attempt(RetryableQuery, error) (bool, bool)
 }
 
 // SimpleRetryPolicy has simple logic for attempting a query a fixed number of times.
@@ -158,8 +158,8 @@ type SimpleRetryPolicy struct {
 
 // Attempt tells gocql to attempt the query again based on query.Attempts being less
 // than the NumRetries defined in the policy.
-func (s *SimpleRetryPolicy) Attempt(q RetryableQuery) bool {
-	return q.Attempts() <= s.NumRetries
+func (s *SimpleRetryPolicy) Attempt(q RetryableQuery, err error) (bool, bool) {
+	return q.Attempts() <= s.NumRetries, true
 }
 
 // ExponentialBackoffRetryPolicy sleeps between attempts

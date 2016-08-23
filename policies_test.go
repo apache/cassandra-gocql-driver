@@ -265,10 +265,12 @@ func TestSimpleRetryPolicy(t *testing.T) {
 
 	for _, c := range cases {
 		q.attempts = c.attempts
-		if c.allow && !rt.Attempt(q) {
+		retry, _ := rt.Attempt(q, nil)
+		if c.allow && !retry {
 			t.Fatalf("should allow retry after %d attempts", c.attempts)
 		}
-		if !c.allow && rt.Attempt(q) {
+		retry, _ = rt.Attempt(q, nil)
+		if !c.allow && retry {
 			t.Fatalf("should not allow retry after %d attempts", c.attempts)
 		}
 	}

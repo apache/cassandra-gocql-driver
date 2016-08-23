@@ -452,7 +452,8 @@ func (c *controlConn) query(statement string, values ...interface{}) (iter *Iter
 		}
 
 		q.attempts++
-		if iter.err == nil || !c.retry.Attempt(q) {
+		shouldRetry, _ := c.retry.Attempt(q, iter.err)
+		if iter.err == nil || iter.err == ErrNotFound || !shouldRetry {
 			break
 		}
 	}
