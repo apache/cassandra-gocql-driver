@@ -66,8 +66,7 @@ type Session struct {
 
 	cfg ClusterConfig
 
-	reconnectTicker *time.Ticker
-	quit            chan struct{}
+	quit chan struct{}
 
 	closeMu  sync.RWMutex
 	isClosed bool
@@ -186,6 +185,8 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 		}
 	}
 
+	s.quit = make(chan struct{})
+
 	if cfg.ReconnectInterval > 0 {
 		go s.reconnectDownedHosts(cfg.ReconnectInterval)
 	}
@@ -213,11 +214,12 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 }
 
 func (s *Session) reconnectDownedHosts(intv time.Duration) {
-	s.quit = make(chan struct{})
-	s.reconnectTicker = time.NewTicker(intv)
+	reconnectTicker := time.NewTicker(intv)
+	defer reconnectTicker.Stop()
+
 	for {
 		select {
-		case <-s.reconnectTicker.C:
+		case <-reconnectTicker.C:
 			hosts := s.ring.allHosts()
 
 			// Print session.ring for debug.
@@ -236,7 +238,6 @@ func (s *Session) reconnectDownedHosts(intv time.Duration) {
 				s.handleNodeUp(net.ParseIP(h.Peer()), h.Port(), true)
 			}
 		case <-s.quit:
-			s.reconnectTicker.Stop()
 			return
 		}
 	}
