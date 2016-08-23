@@ -448,6 +448,7 @@ func (c *controlConn) withConn(fn func(*Conn) *Iter) *Iter {
 func (c *controlConn) query(statement string, values ...interface{}) (iter *Iter) {
 	q := c.session.Query(statement, values...).Consistency(One).RoutingKey([]byte{}).Trace(nil)
 
+retryLoop:
 	for {
 		iter = c.withConn(func(conn *Conn) *Iter {
 			return conn.executeQuery(context.TODO(), q)
@@ -458,8 +459,15 @@ func (c *controlConn) query(statement string, values ...interface{}) (iter *Iter
 		}
 
 		q.AddAttempts(1, c.getConn().host)
-		if iter.err == nil || !c.retry.Attempt(q) {
-			break
+
+		var shouldRetry bool
+		if drt, ok := c.retry.(DualRetryPolicy); ok {
+			shouldRetry, _ = drt.AttemptWithError(q, iter.err)
+		} else {
+			shouldRetry = c.retry.Attempt(q)
+		}
+		if iter.err == nil || iter.err == ErrNotFound || !shouldRetry {
+			break retryLoop
 		}
 	}
 

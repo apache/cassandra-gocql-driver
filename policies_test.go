@@ -266,10 +266,12 @@ func TestSimpleRetryPolicy(t *testing.T) {
 	q.metrics = &queryMetrics{m: make(map[string]*hostMetrics)}
 	for _, c := range cases {
 		q.metrics.m["127.0.0.1"] = &hostMetrics{Attempts: c.attempts}
-		if c.allow && !rt.Attempt(q) {
+		retry := rt.Attempt(q)
+		if c.allow && !retry {
 			t.Fatalf("should allow retry after %d attempts", c.attempts)
 		}
-		if !c.allow && rt.Attempt(q) {
+		retry = rt.Attempt(q)
+		if !c.allow && retry {
 			t.Fatalf("should not allow retry after %d attempts", c.attempts)
 		}
 	}

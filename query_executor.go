@@ -124,10 +124,22 @@ func (q *queryExecutor) do(ctx context.Context, qry ExecutableQuery) *Iter {
 
 		// Exit if the query was successful
 		// or no retry policy defined or retry attempts were reached
-		if iter.err == nil || rt == nil || !rt.Attempt(qry) {
+		if iter.err == nil || rt == nil {
 			return iter
 		}
 		lastErr = iter.err
+
+		if drt, ok := rt.(DualRetryPolicy); ok {
+			shouldRetry, nextHost := drt.AttemptWithError(qry, iter.err)
+			if !shouldRetry {
+				return iter
+			}
+			if nextHost {
+				// retry on the next host
+				selectedHost = hostIter()
+			}
+			continue
+		}
 
 		// If query is unsuccessful, check the error with RetryPolicy to retry
 		switch rt.GetRetryType(iter.err) {

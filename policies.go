@@ -160,6 +160,10 @@ type RetryPolicy interface {
 	GetRetryType(error) RetryType
 }
 
+type DualRetryPolicy interface {
+	AttemptWithError(RetryableQuery, error) (bool, bool)
+}
+
 // SimpleRetryPolicy has simple logic for attempting a query a fixed number of times.
 //
 // See below for examples of usage:
