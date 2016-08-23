@@ -16,6 +16,7 @@ func TestEventDebounce(t *testing.T) {
 		defer wg.Done()
 		eventsSeen += len(events)
 	})
+	defer debouncer.stop()
 
 	for i := 0; i < eventCount; i++ {
 		debouncer.debounce(&statusChangeEventFrame{
@@ -29,5 +30,4 @@ func TestEventDebounce(t *testing.T) {
 	if eventCount != eventsSeen {
 		t.Fatalf("expected to see %d events but got %d", eventCount, eventsSeen)
 	}
-	debouncer.stop()
 }
