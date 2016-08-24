@@ -16,6 +16,7 @@ func TestEventDebounce(t *testing.T) {
 		defer wg.Done()
 		eventsSeen += len(events)
 	})
+	defer debouncer.stop()
 
 	for i := 0; i < eventCount; i++ {
 		debouncer.debounce(&statusChangeEventFrame{
