@@ -66,6 +66,8 @@ type Session struct {
 
 	cfg ClusterConfig
 
+	quit chan struct{}
+
 	closeMu  sync.RWMutex
 	isClosed bool
 }
@@ -183,6 +185,8 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 		}
 	}
 
+	s.quit = make(chan struct{})
+
 	if cfg.ReconnectInterval > 0 {
 		go s.reconnectDownedHosts(cfg.ReconnectInterval)
 	}
@@ -210,25 +214,31 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 }
 
 func (s *Session) reconnectDownedHosts(intv time.Duration) {
-	for !s.Closed() {
-		time.Sleep(intv)
+	reconnectTicker := time.NewTicker(intv)
+	defer reconnectTicker.Stop()
 
-		hosts := s.ring.allHosts()
+	for {
+		select {
+		case <-reconnectTicker.C:
+			hosts := s.ring.allHosts()
 
-		// Print session.ring for debug.
-		if gocqlDebug {
-			buf := bytes.NewBufferString("Session.ring:")
+			// Print session.ring for debug.
+			if gocqlDebug {
+				buf := bytes.NewBufferString("Session.ring:")
+				for _, h := range hosts {
+					buf.WriteString("[" + h.Peer() + ":" + h.State().String() + "]")
+				}
+				log.Println(buf.String())
+			}
+
 			for _, h := range hosts {
-				buf.WriteString("[" + h.Peer() + ":" + h.State().String() + "]")
+				if h.IsUp() {
+					continue
+				}
+				s.handleNodeUp(net.ParseIP(h.Peer()), h.Port(), true)
 			}
-			log.Println(buf.String())
-		}
-
-		for _, h := range hosts {
-			if h.IsUp() {
-				continue
-			}
-			s.handleNodeUp(net.ParseIP(h.Peer()), h.Port(), true)
+		case <-s.quit:
+			return
 		}
 	}
 }
@@ -340,6 +350,10 @@ func (s *Session) Close() {
 
 	if s.schemaEvents != nil {
 		s.schemaEvents.stop()
+	}
+
+	if s.quit != nil {
+		close(s.quit)
 	}
 }
 
