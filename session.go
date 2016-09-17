@@ -145,7 +145,6 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 	}
 
 	var hosts []*HostInfo
-
 	if !cfg.disableControlConn {
 		s.control = createControlConn(s)
 		if err := s.control.connect(cfg.Hosts); err != nil {
