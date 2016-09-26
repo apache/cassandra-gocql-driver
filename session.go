@@ -31,7 +31,7 @@ import (
 // whole Cassandra cluster.
 //
 // This type extends the Node interface by adding a convinient query builder
-// and automatically sets a default consinstency level on all operations
+// and automatically sets a default consistency level on all operations
 // that do not have a consistency level set.
 type Session struct {
 	cons                Consistency
