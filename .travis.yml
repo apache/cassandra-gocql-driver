@@ -15,13 +15,13 @@ env:
   global:
     - GOMAXPROCS=2
   matrix:
-    - CASS=2.0.17
-      AUTH=false
     - CASS=2.1.12
       AUTH=false
-    - CASS=2.2.4
+    - CASS=2.2.5
       AUTH=true
     - CASS=2.2.5
+      AUTH=false
+    - CASS=3.0.8
       AUTH=false
 
 go:
