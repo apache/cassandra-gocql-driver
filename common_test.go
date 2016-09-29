@@ -8,6 +8,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"net"
 )
 
 var (
@@ -142,4 +143,54 @@ func createSessionFromCluster(cluster *ClusterConfig, tb testing.TB) *Session {
 func createSession(tb testing.TB) *Session {
 	cluster := createCluster()
 	return createSessionFromCluster(cluster, tb)
+}
+
+// createTestSession is hopefully moderately useful in actual unit tests
+func createTestSession() *Session {
+	config := NewCluster()
+	config.NumConns = 1
+	config.Timeout = 0
+	config.DisableInitialHostLookup = true
+	config.IgnorePeerAddr = true
+	config.PoolConfig.HostSelectionPolicy = RoundRobinHostPolicy()
+	session := &Session{
+		cfg:    *config,
+		connCfg: &ConnConfig{
+			Timeout: 10*time.Millisecond,
+			Keepalive: 0,
+		},
+		policy: config.PoolConfig.HostSelectionPolicy,
+	}
+	session.pool = config.PoolConfig.buildPool(session)
+	return session
+}
+
+func staticAddressTranslator(newAddr net.IP, newPort int) AddressTranslator {
+	return AddressTranslatorFunc(func(addr net.IP, port int) (net.IP, int) {
+		return newAddr, newPort
+	})
+}
+
+func assertTrue(t *testing.T, description string, value bool) {
+	if !value {
+		t.Errorf("expected %s to be true", description)
+	}
+}
+
+func assertEqual(t *testing.T, description string, expected, actual interface{}) {
+	if expected != actual {
+		t.Errorf("expected %s to be (%+v) but was (%+v) instead", description, expected, actual)
+	}
+}
+
+func assertNil(t *testing.T, description string, actual interface{}) {
+	if actual != nil {
+		t.Errorf("expected %s to be (nil) but was (%+v) instead", description, actual)
+	}
+}
+
+func assertNotNil(t *testing.T, description string, actual interface{}) {
+	if actual == nil {
+		t.Errorf("expected %s not to be (nil)", description)
+	}
 }
