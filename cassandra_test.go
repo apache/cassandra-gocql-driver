@@ -1656,14 +1656,19 @@ func TestGetTableMetadata(t *testing.T) {
 		if table.Keyspace != "gocql_test" {
 			t.Errorf("Expected keyspace for '%d' table metadata to be 'gocql_test' but was '%s'", table.Name, table.Keyspace)
 		}
-		if table.KeyValidator == "" {
-			t.Errorf("Expected key validator to be set for table %s", table.Name)
-		}
-		if table.Comparator == "" {
-			t.Errorf("Expected comparator to be set for table %s", table.Name)
-		}
-		if table.DefaultValidator == "" {
-			t.Errorf("Expected default validator to be set for table %s", table.Name)
+		if *flagProto < 4 {
+			// TODO(zariel): there has to be a better way to detect what metadata version
+			// we are in, and a better way to structure the code so that it is abstracted away
+			// from us here
+			if table.KeyValidator == "" {
+				t.Errorf("Expected key validator to be set for table %s", table.Name)
+			}
+			if table.Comparator == "" {
+				t.Errorf("Expected comparator to be set for table %s", table.Name)
+			}
+			if table.DefaultValidator == "" {
+				t.Errorf("Expected default validator to be set for table %s", table.Name)
+			}
 		}
 
 		// these fields are not set until the metadata is compiled
@@ -1687,16 +1692,16 @@ func TestGetTableMetadata(t *testing.T) {
 	if testTable == nil {
 		t.Fatal("Expected table metadata for name 'test_table_metadata'")
 	}
-	if testTable.KeyValidator != "org.apache.cassandra.db.marshal.Int32Type" {
-		t.Errorf("Expected test_table_metadata key validator to be 'org.apache.cassandra.db.marshal.Int32Type' but was '%s'", testTable.KeyValidator)
-	}
-	if testTable.Comparator != "org.apache.cassandra.db.marshal.CompositeType(org.apache.cassandra.db.marshal.Int32Type,org.apache.cassandra.db.marshal.UTF8Type)" {
-		t.Errorf("Expected test_table_metadata key validator to be 'org.apache.cassandra.db.marshal.CompositeType(org.apache.cassandra.db.marshal.Int32Type,org.apache.cassandra.db.marshal.UTF8Type)' but was '%s'", testTable.Comparator)
-	}
-	if testTable.DefaultValidator != "org.apache.cassandra.db.marshal.BytesType" {
-		t.Errorf("Expected test_table_metadata key validator to be 'org.apache.cassandra.db.marshal.BytesType' but was '%s'", testTable.DefaultValidator)
-	}
 	if *flagProto < protoVersion4 {
+		if testTable.KeyValidator != "org.apache.cassandra.db.marshal.Int32Type" {
+			t.Errorf("Expected test_table_metadata key validator to be 'org.apache.cassandra.db.marshal.Int32Type' but was '%s'", testTable.KeyValidator)
+		}
+		if testTable.Comparator != "org.apache.cassandra.db.marshal.CompositeType(org.apache.cassandra.db.marshal.Int32Type,org.apache.cassandra.db.marshal.UTF8Type)" {
+			t.Errorf("Expected test_table_metadata key validator to be 'org.apache.cassandra.db.marshal.CompositeType(org.apache.cassandra.db.marshal.Int32Type,org.apache.cassandra.db.marshal.UTF8Type)' but was '%s'", testTable.Comparator)
+		}
+		if testTable.DefaultValidator != "org.apache.cassandra.db.marshal.BytesType" {
+			t.Errorf("Expected test_table_metadata key validator to be 'org.apache.cassandra.db.marshal.BytesType' but was '%s'", testTable.DefaultValidator)
+		}
 		expectedKeyAliases := []string{"first_id"}
 		if !reflect.DeepEqual(testTable.KeyAliases, expectedKeyAliases) {
 			t.Errorf("Expected key aliases %v but was %v", expectedKeyAliases, testTable.KeyAliases)
