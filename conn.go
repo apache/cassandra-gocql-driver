@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"log"
 	"net"
 	"strconv"
 	"strings"
@@ -491,7 +490,7 @@ func (c *Conn) recv() error {
 	call, ok := c.calls[head.stream]
 	c.mu.RUnlock()
 	if call == nil || call.framer == nil || !ok {
-		log.Printf("gocql: received response for stream which has no handler: header=%v\n", head)
+		c.session.cfg.Log.Printf("gocql: received response for stream which has no handler: header=%v\n", head)
 		return c.discardFrame(head)
 	}
 
@@ -871,7 +870,7 @@ func (c *Conn) executeQuery(qry *Query) *Iter {
 		iter := &Iter{framer: framer}
 		if err := c.awaitSchemaAgreement(); err != nil {
 			// TODO: should have this behind a flag
-			log.Println(err)
+			c.session.cfg.Log.Println(err)
 		}
 		// dont return an error from this, might be a good idea to give a warning
 		// though. The impact of this returning an error would be that the cluster
@@ -1082,7 +1081,7 @@ func (c *Conn) awaitSchemaAgreement() (err error) {
 		var schemaVersion string
 		for iter.Scan(&schemaVersion) {
 			if schemaVersion == "" {
-				log.Println("skipping peer entry with empty schema_version")
+				c.session.cfg.Log.Println("skipping peer entry with empty schema_version")
 				continue
 			}
 

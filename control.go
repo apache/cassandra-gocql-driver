@@ -4,7 +4,6 @@ import (
 	crand "crypto/rand"
 	"errors"
 	"fmt"
-	"log"
 	"math/rand"
 	"net"
 	"strconv"
@@ -164,8 +163,7 @@ func (c *controlConn) shuffleDial(endpoints []string) (conn *Conn, err error) {
 		if err == nil {
 			return conn, err
 		}
-
-		log.Printf("gocql: unable to dial control conn %v: %v\n", addr, err)
+		c.session.cfg.Log.Printf("gocql: unable to dial control conn %v: %v\n", addr, err)
 	}
 
 	if err != nil {
@@ -298,7 +296,7 @@ func (c *controlConn) reconnect(refreshring bool) {
 
 	if err := c.setupConn(newConn); err != nil {
 		newConn.Close()
-		log.Printf("gocql: control unable to register events: %v\n", err)
+		c.session.cfg.Log.Printf("gocql: control unable to register events: %v\n", err)
 		return
 	}
 
@@ -367,7 +365,7 @@ func (c *controlConn) query(statement string, values ...interface{}) (iter *Iter
 		})
 
 		if gocqlDebug && iter.err != nil {
-			log.Printf("control: error executing %q: %v\n", statement, iter.err)
+			c.session.cfg.Log.Printf("control: error executing %q: %v\n", statement, iter.err)
 		}
 
 		q.attempts++

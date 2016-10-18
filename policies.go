@@ -307,6 +307,7 @@ func (t *tokenAwareHostPolicy) resetTokenRing() {
 	hosts := t.hosts.get()
 	tokenRing, err := newTokenRing(t.partitioner, hosts)
 	if err != nil {
+		// TODO: use Logger
 		log.Printf("Unable to update the token ring due to error: %s", err)
 		return
 	}

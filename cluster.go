@@ -6,6 +6,8 @@ package gocql
 
 import (
 	"errors"
+	"log"
+	"os"
 	"time"
 )
 
@@ -101,8 +103,17 @@ type ClusterConfig struct {
 	// See https://issues.apache.org/jira/browse/CASSANDRA-10786
 	DisableSkipMetadata bool
 
+	// Log can be set to use a custom logging package.
+	Log Logger
+
 	// internal config for testing
 	disableControlConn bool
+}
+
+// Logging methods used by gocql
+type Logger interface {
+	Printf(string, ...interface{})
+	Println(...interface{})
 }
 
 // NewCluster generates a new config for the default cluster implementation.
@@ -115,6 +126,8 @@ type ClusterConfig struct {
 // resolves to more than 1 IP address then the driver may connect multiple times to
 // the same host, and will not mark the node being down or up from events.
 func NewCluster(hosts ...string) *ClusterConfig {
+	stdLog := log.New(os.Stderr, "", log.LstdFlags)
+
 	cfg := &ClusterConfig{
 		Hosts:                  hosts,
 		CQLVersion:             "3.0.0",
@@ -129,6 +142,7 @@ func NewCluster(hosts ...string) *ClusterConfig {
 		DefaultTimestamp:       true,
 		MaxWaitSchemaAgreement: 60 * time.Second,
 		ReconnectInterval:      60 * time.Second,
+		Log:                    stdLog,
 	}
 	return cfg
 }

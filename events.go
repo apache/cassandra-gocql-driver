@@ -74,6 +74,7 @@ func (e *eventDebouncer) debounce(frame frame) {
 	if len(e.events) < eventBufferSize {
 		e.events = append(e.events, frame)
 	} else {
+		// TODO: use Logger
 		log.Printf("%s: buffer full, dropping event frame: %s", e.name, frame)
 	}
 
@@ -86,13 +87,12 @@ func (s *Session) handleEvent(framer *framer) {
 
 	frame, err := framer.parseFrame()
 	if err != nil {
-		// TODO: logger
-		log.Printf("gocql: unable to parse event frame: %v\n", err)
+		s.cfg.Log.Printf("gocql: unable to parse event frame: %v\n", err)
 		return
 	}
 
 	if gocqlDebug {
-		log.Printf("gocql: handling frame: %v\n", frame)
+		s.cfg.Log.Printf("gocql: handling frame: %v\n", frame)
 	}
 
 	// TODO: handle medatadata events
@@ -102,7 +102,7 @@ func (s *Session) handleEvent(framer *framer) {
 	case *topologyChangeEventFrame, *statusChangeEventFrame:
 		s.nodeEvents.debounce(frame)
 	default:
-		log.Printf("gocql: invalid event frame (%T): %v\n", f, f)
+		s.cfg.Log.Printf("gocql: invalid event frame (%T): %v\n", f, f)
 	}
 }
 
@@ -152,7 +152,7 @@ func (s *Session) handleNodeEvent(frames []frame) {
 
 	for _, f := range events {
 		if gocqlDebug {
-			log.Printf("gocql: dispatching event: %+v\n", f)
+			s.cfg.Log.Printf("gocql: dispatching event: %+v\n", f)
 		}
 
 		switch f.change {
@@ -177,7 +177,7 @@ func (s *Session) handleNewNode(ip net.IP, port int, waitForBinary bool) {
 		var err error
 		hostInfo, err = s.control.fetchHostInfo(ip, port)
 		if err != nil {
-			log.Printf("gocql: events: unable to fetch host info for (%s:%d): %v\n", ip, port, err)
+			s.cfg.Log.Printf("gocql: events: unable to fetch host info for (%s:%d): %v\n", ip, port, err)
 			return
 		}
 	} else {
@@ -234,7 +234,7 @@ func (s *Session) handleRemovedNode(ip net.IP, port int) {
 
 func (s *Session) handleNodeUp(ip net.IP, port int, waitForBinary bool) {
 	if gocqlDebug {
-		log.Printf("gocql: Session.handleNodeUp: %s:%d\n", ip.String(), port)
+		s.cfg.Log.Printf("gocql: Session.handleNodeUp: %s:%d\n", ip.String(), port)
 	}
 
 	host := s.ring.getHost(ip)
@@ -263,7 +263,7 @@ func (s *Session) handleNodeUp(ip net.IP, port int, waitForBinary bool) {
 
 func (s *Session) handleNodeDown(ip net.IP, port int) {
 	if gocqlDebug {
-		log.Printf("gocql: Session.handleNodeDown: %s:%d\n", ip.String(), port)
+		s.cfg.Log.Printf("gocql: Session.handleNodeDown: %s:%d\n", ip.String(), port)
 	}
 
 	host := s.ring.getHost(ip)
