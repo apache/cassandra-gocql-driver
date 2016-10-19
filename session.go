@@ -57,8 +57,8 @@ type Session struct {
 	control *controlConn
 
 	// event handlers
-	nodeEvents   *eventDeouncer
-	schemaEvents *eventDeouncer
+	nodeEvents   *eventDebouncer
+	schemaEvents *eventDebouncer
 
 	// ring metadata
 	hosts           []HostInfo
@@ -120,8 +120,8 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 	}
 	s.connCfg = connCfg
 
-	s.nodeEvents = newEventDeouncer("NodeEvents", s.handleNodeEvent)
-	s.schemaEvents = newEventDeouncer("SchemaEvents", s.handleSchemaEvent)
+	s.nodeEvents = newEventDebouncer("NodeEvents", s.handleNodeEvent)
+	s.schemaEvents = newEventDebouncer("SchemaEvents", s.handleSchemaEvent)
 
 	s.routingKeyInfoCache.lru = lru.New(cfg.MaxRoutingKeyInfo)
 
