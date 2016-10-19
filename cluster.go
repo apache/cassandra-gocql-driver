@@ -23,7 +23,7 @@ func (p PoolConfig) buildPool(session *Session) *policyConnPool {
 }
 
 // ClusterConfig is a struct to configure the default cluster implementation
-// of gocoql. It has a variety of attributes that can be used to modify the
+// of gocql. It has a variety of attributes that can be used to modify the
 // behavior to fit the most common use cases. Applications that require a
 // different setup must implement their own cluster.
 type ClusterConfig struct {
