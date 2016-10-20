@@ -4,13 +4,14 @@ import (
 	crand "crypto/rand"
 	"errors"
 	"fmt"
-	"golang.org/x/net/context"
 	"log"
 	"math/rand"
 	"net"
 	"strconv"
 	"sync/atomic"
 	"time"
+
+	"golang.org/x/net/context"
 )
 
 var (
@@ -185,7 +186,10 @@ func (c *controlConn) setupConn(conn *Conn) error {
 		return err
 	}
 
-	c.session.handleNodeUp(net.ParseIP(host), port, false)
+	hostAddr, err := lookupHostAddress(host)
+	if err == nil {
+		c.session.handleNodeUp(hostAddr, port, false)
+	}
 
 	return nil
 }
@@ -242,9 +246,12 @@ func (c *controlConn) reconnect(refreshring bool) {
 		if err != nil {
 			// host is dead
 			// TODO: this is replicated in a few places
-			ip, portStr, _ := net.SplitHostPort(addr)
+			host, portStr, _ := net.SplitHostPort(addr)
 			port, _ := strconv.Atoi(portStr)
-			c.session.handleNodeDown(net.ParseIP(ip), port)
+			hostAddr, err := lookupHostAddress(host)
+			if err == nil {
+				c.session.handleNodeDown(hostAddr, port)
+			}
 		} else {
 			newConn = conn
 		}
