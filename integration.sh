@@ -1,6 +1,6 @@
 #!/bin/bash
 
-set -e
+set -eux
 
 function run_tests() {
 	local clusterSize=3
@@ -47,7 +47,7 @@ function run_tests() {
 		proto=2
 	elif [[ $version == 2.1.* ]]; then
 		proto=3
-	elif [[ $version == 2.2.* || $version == 3.0.* ]]; then
+	elif [[ $version == 2.2.* ]]; then
 		proto=4
 		ccm updateconf 'enable_user_defined_functions: true'
 	elif [[ $version == 3.*.* ]]; then
