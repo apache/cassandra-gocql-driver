@@ -1812,7 +1812,8 @@ func TestGetColumnMetadata(t *testing.T) {
 			t.Errorf("Expected %s column kind to be '%s' but it was '%s'", thirdID.Name, ColumnRegular, thirdID.Kind)
 		}
 
-		if thirdID.Index.Name != "index_column_metadata" {
+		if !session.useSystemSchema && thirdID.Index.Name != "index_column_metadata" {
+			// TODO(zariel): update metadata to scan index from system_schema
 			t.Errorf("Expected %s column index name to be 'index_column_metadata' but it was '%s'", thirdID.Name, thirdID.Index.Name)
 		}
 	}
@@ -1876,7 +1877,8 @@ func TestKeyspaceMetadata(t *testing.T) {
 	if !found {
 		t.Fatalf("Expected a column definition for 'third_id'")
 	}
-	if thirdColumn.Index.Name != "index_metadata" {
+	if !session.useSystemSchema && thirdColumn.Index.Name != "index_metadata" {
+		// TODO(zariel): scan index info from system_schema
 		t.Errorf("Expected column index named 'index_metadata' but was '%s'", thirdColumn.Index.Name)
 	}
 }
