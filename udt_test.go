@@ -147,56 +147,15 @@ func TestUDT_Reflect(t *testing.T) {
 	}
 
 	if *retrievedHorse != *insertedHorse {
-		t.Fatal("exepcted to get %+v got %+v", insertedHorse, retrievedHorse)
+		t.Fatalf("exepcted to get %+v got %+v", insertedHorse, retrievedHorse)
 	}
 }
 
 func TestUDT_Proto2error(t *testing.T) {
-	if *flagProto > protoVersion2 {
-		t.Skip("UDT are only available on protocol >= 3")
-	}
-
-	cluster := createCluster()
-	cluster.ProtoVersion = 2
-	cluster.Keyspace = "gocql_test"
-
-	// Uses reflection instead of implementing the marshaling type
-	session, err := cluster.CreateSession()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer session.Close()
-
-	err = createTable(session, `CREATE TYPE gocql_test.fish(
-		name text,
-		owner text);`)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	err = createTable(session, `CREATE TABLE gocql_test.fish_race(
-		position int,
-		fish frozen<fish>,
-
-		primary key(position)
-	);`)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	type fish struct {
-		Name  string `cql:"name"`
-		Owner string `cql:"owner"`
-	}
-
-	insertedFish := &fish{
-		Name:  "pony",
-		Owner: "jim",
-	}
-
-	err = session.Query("INSERT INTO fish_race(position, fish) VALUES(?, ?)", 1, insertedFish).Exec()
+	// TODO(zariel): move this to marshal test?
+	_, err := Marshal(NativeType{custom: "org.apache.cassandra.db.marshal.UserType.Type", proto: 2}, 1)
 	if err != ErrorUDTUnavailable {
-		t.Fatalf("expected to get %v got %v", ErrorUDTUnavailable, err)
+		t.Fatalf("expected %v got %v", ErrUnavailable, err)
 	}
 }
 
@@ -530,7 +489,7 @@ func TestUDT_ScanNullUDT(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err = session.Query("INSERT INTO scan_null_udt_houses(id, name) VALUES(?, ?)", 1, "test" ).Exec()
+	err = session.Query("INSERT INTO scan_null_udt_houses(id, name) VALUES(?, ?)", 1, "test").Exec()
 	if err != nil {
 		t.Fatal(err)
 	}
