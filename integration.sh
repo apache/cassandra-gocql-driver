@@ -58,7 +58,7 @@ function run_tests() {
 	sleep 1s
 
 	ccm list
-	ccm start
+	ccm start --wait-for-binary-proto
 	ccm status
 	ccm node1 nodetool status
 
