@@ -396,6 +396,7 @@ func TestBatch(t *testing.T) {
 }
 
 func TestUnpreparedBatch(t *testing.T) {
+	t.Skip("FLAKE skipping")
 	if *flagProto == 1 {
 		t.Skip("atomic batches not supported. Please use Cassandra >= 2.0")
 	}
