@@ -1657,14 +1657,19 @@ func TestGetTableMetadata(t *testing.T) {
 		if table.Keyspace != "gocql_test" {
 			t.Errorf("Expected keyspace for '%d' table metadata to be 'gocql_test' but was '%s'", table.Name, table.Keyspace)
 		}
-		if table.KeyValidator == "" {
-			t.Errorf("Expected key validator to be set for table %s", table.Name)
-		}
-		if table.Comparator == "" {
-			t.Errorf("Expected comparator to be set for table %s", table.Name)
-		}
-		if table.DefaultValidator == "" {
-			t.Errorf("Expected default validator to be set for table %s", table.Name)
+		if *flagProto < 4 {
+			// TODO(zariel): there has to be a better way to detect what metadata version
+			// we are in, and a better way to structure the code so that it is abstracted away
+			// from us here
+			if table.KeyValidator == "" {
+				t.Errorf("Expected key validator to be set for table %s", table.Name)
+			}
+			if table.Comparator == "" {
+				t.Errorf("Expected comparator to be set for table %s", table.Name)
+			}
+			if table.DefaultValidator == "" {
+				t.Errorf("Expected default validator to be set for table %s", table.Name)
+			}
 		}
 
 		// these fields are not set until the metadata is compiled
@@ -1688,16 +1693,16 @@ func TestGetTableMetadata(t *testing.T) {
 	if testTable == nil {
 		t.Fatal("Expected table metadata for name 'test_table_metadata'")
 	}
-	if testTable.KeyValidator != "org.apache.cassandra.db.marshal.Int32Type" {
-		t.Errorf("Expected test_table_metadata key validator to be 'org.apache.cassandra.db.marshal.Int32Type' but was '%s'", testTable.KeyValidator)
-	}
-	if testTable.Comparator != "org.apache.cassandra.db.marshal.CompositeType(org.apache.cassandra.db.marshal.Int32Type,org.apache.cassandra.db.marshal.UTF8Type)" {
-		t.Errorf("Expected test_table_metadata key validator to be 'org.apache.cassandra.db.marshal.CompositeType(org.apache.cassandra.db.marshal.Int32Type,org.apache.cassandra.db.marshal.UTF8Type)' but was '%s'", testTable.Comparator)
-	}
-	if testTable.DefaultValidator != "org.apache.cassandra.db.marshal.BytesType" {
-		t.Errorf("Expected test_table_metadata key validator to be 'org.apache.cassandra.db.marshal.BytesType' but was '%s'", testTable.DefaultValidator)
-	}
 	if *flagProto < protoVersion4 {
+		if testTable.KeyValidator != "org.apache.cassandra.db.marshal.Int32Type" {
+			t.Errorf("Expected test_table_metadata key validator to be 'org.apache.cassandra.db.marshal.Int32Type' but was '%s'", testTable.KeyValidator)
+		}
+		if testTable.Comparator != "org.apache.cassandra.db.marshal.CompositeType(org.apache.cassandra.db.marshal.Int32Type,org.apache.cassandra.db.marshal.UTF8Type)" {
+			t.Errorf("Expected test_table_metadata key validator to be 'org.apache.cassandra.db.marshal.CompositeType(org.apache.cassandra.db.marshal.Int32Type,org.apache.cassandra.db.marshal.UTF8Type)' but was '%s'", testTable.Comparator)
+		}
+		if testTable.DefaultValidator != "org.apache.cassandra.db.marshal.BytesType" {
+			t.Errorf("Expected test_table_metadata key validator to be 'org.apache.cassandra.db.marshal.BytesType' but was '%s'", testTable.DefaultValidator)
+		}
 		expectedKeyAliases := []string{"first_id"}
 		if !reflect.DeepEqual(testTable.KeyAliases, expectedKeyAliases) {
 			t.Errorf("Expected key aliases %v but was %v", expectedKeyAliases, testTable.KeyAliases)
@@ -1748,10 +1753,10 @@ func TestGetColumnMetadata(t *testing.T) {
 		if column.Keyspace != "gocql_test" {
 			t.Errorf("Expected column %s keyspace name to be 'gocql_test', but it was '%s'", column.Name, column.Keyspace)
 		}
-		if column.Kind == "" {
+		if column.Kind == ColumnUnkownKind {
 			t.Errorf("Expected column %s kind to be set, but it was empty", column.Name)
 		}
-		if session.cfg.ProtoVersion == 1 && column.Kind != "regular" {
+		if session.cfg.ProtoVersion == 1 && column.Kind != ColumnRegular {
 			t.Errorf("Expected column %s kind to be set to 'regular' for proto V1 but it was '%s'", column.Name, column.Kind)
 		}
 		if column.Validator == "" {
@@ -1774,8 +1779,8 @@ func TestGetColumnMetadata(t *testing.T) {
 			t.Fatalf("Expected to find column 'third_id' metadata but there was only %v", testColumns)
 		}
 
-		if thirdID.Kind != REGULAR {
-			t.Errorf("Expected %s column kind to be '%s' but it was '%s'", thirdID.Name, REGULAR, thirdID.Kind)
+		if thirdID.Kind != ColumnRegular {
+			t.Errorf("Expected %s column kind to be '%s' but it was '%s'", thirdID.Name, ColumnRegular, thirdID.Kind)
 		}
 
 		if thirdID.Index.Name != "index_column_metadata" {
@@ -1798,17 +1803,18 @@ func TestGetColumnMetadata(t *testing.T) {
 			t.Fatalf("Expected to find column 'third_id' metadata but there was only %v", testColumns)
 		}
 
-		if firstID.Kind != PARTITION_KEY {
-			t.Errorf("Expected %s column kind to be '%s' but it was '%s'", firstID.Name, PARTITION_KEY, firstID.Kind)
+		if firstID.Kind != ColumnPartitionKey {
+			t.Errorf("Expected %s column kind to be '%s' but it was '%s'", firstID.Name, ColumnPartitionKey, firstID.Kind)
 		}
-		if secondID.Kind != CLUSTERING_KEY {
-			t.Errorf("Expected %s column kind to be '%s' but it was '%s'", secondID.Name, CLUSTERING_KEY, secondID.Kind)
+		if secondID.Kind != ColumnClusteringKey {
+			t.Errorf("Expected %s column kind to be '%s' but it was '%s'", secondID.Name, ColumnClusteringKey, secondID.Kind)
 		}
-		if thirdID.Kind != REGULAR {
-			t.Errorf("Expected %s column kind to be '%s' but it was '%s'", thirdID.Name, REGULAR, thirdID.Kind)
+		if thirdID.Kind != ColumnRegular {
+			t.Errorf("Expected %s column kind to be '%s' but it was '%s'", thirdID.Name, ColumnRegular, thirdID.Kind)
 		}
 
-		if thirdID.Index.Name != "index_column_metadata" {
+		if !session.useSystemSchema && thirdID.Index.Name != "index_column_metadata" {
+			// TODO(zariel): update metadata to scan index from system_schema
 			t.Errorf("Expected %s column index name to be 'index_column_metadata' but it was '%s'", thirdID.Name, thirdID.Index.Name)
 		}
 	}
@@ -1872,7 +1878,8 @@ func TestKeyspaceMetadata(t *testing.T) {
 	if !found {
 		t.Fatalf("Expected a column definition for 'third_id'")
 	}
-	if thirdColumn.Index.Name != "index_metadata" {
+	if !session.useSystemSchema && thirdColumn.Index.Name != "index_metadata" {
+		// TODO(zariel): scan index info from system_schema
 		t.Errorf("Expected column index named 'index_metadata' but was '%s'", thirdColumn.Index.Name)
 	}
 }

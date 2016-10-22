@@ -152,7 +152,7 @@ func TestUDT_Reflect(t *testing.T) {
 }
 
 func TestUDT_Proto2error(t *testing.T) {
-	if *flagProto < protoVersion3 {
+	if *flagProto > protoVersion2 {
 		t.Skip("UDT are only available on protocol >= 3")
 	}
 

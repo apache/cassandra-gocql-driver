@@ -1,6 +1,6 @@
 #!/bin/bash
 
-set -e
+set -eux
 
 function run_tests() {
 	local clusterSize=3
@@ -50,12 +50,15 @@ function run_tests() {
 	elif [[ $version == 2.2.* ]]; then
 		proto=4
 		ccm updateconf 'enable_user_defined_functions: true'
+	elif [[ $version == 3.*.* ]]; then
+		proto=4
+		ccm updateconf 'enable_user_defined_functions: true'
 	fi
 
 	sleep 1s
 
 	ccm list
-	ccm start
+	ccm start --wait-for-binary-proto
 	ccm status
 	ccm node1 nodetool status
 

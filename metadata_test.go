@@ -86,13 +86,13 @@ func TestCompileMetadata(t *testing.T) {
 	}
 	columns := []ColumnMetadata{
 		// Here are the regular columns from the peers table for testing regular columns
-		{Keyspace: "V1Keyspace", Table: "peers", Kind: REGULAR, Name: "data_center", ComponentIndex: 0, Validator: "org.apache.cassandra.db.marshal.UTF8Type"},
-		{Keyspace: "V1Keyspace", Table: "peers", Kind: REGULAR, Name: "host_id", ComponentIndex: 0, Validator: "org.apache.cassandra.db.marshal.UUIDType"},
-		{Keyspace: "V1Keyspace", Table: "peers", Kind: REGULAR, Name: "rack", ComponentIndex: 0, Validator: "org.apache.cassandra.db.marshal.UTF8Type"},
-		{Keyspace: "V1Keyspace", Table: "peers", Kind: REGULAR, Name: "release_version", ComponentIndex: 0, Validator: "org.apache.cassandra.db.marshal.UTF8Type"},
-		{Keyspace: "V1Keyspace", Table: "peers", Kind: REGULAR, Name: "rpc_address", ComponentIndex: 0, Validator: "org.apache.cassandra.db.marshal.InetAddressType"},
-		{Keyspace: "V1Keyspace", Table: "peers", Kind: REGULAR, Name: "schema_version", ComponentIndex: 0, Validator: "org.apache.cassandra.db.marshal.UUIDType"},
-		{Keyspace: "V1Keyspace", Table: "peers", Kind: REGULAR, Name: "tokens", ComponentIndex: 0, Validator: "org.apache.cassandra.db.marshal.SetType(org.apache.cassandra.db.marshal.UTF8Type)"},
+		{Keyspace: "V1Keyspace", Table: "peers", Kind: ColumnRegular, Name: "data_center", ComponentIndex: 0, Validator: "org.apache.cassandra.db.marshal.UTF8Type"},
+		{Keyspace: "V1Keyspace", Table: "peers", Kind: ColumnRegular, Name: "host_id", ComponentIndex: 0, Validator: "org.apache.cassandra.db.marshal.UUIDType"},
+		{Keyspace: "V1Keyspace", Table: "peers", Kind: ColumnRegular, Name: "rack", ComponentIndex: 0, Validator: "org.apache.cassandra.db.marshal.UTF8Type"},
+		{Keyspace: "V1Keyspace", Table: "peers", Kind: ColumnRegular, Name: "release_version", ComponentIndex: 0, Validator: "org.apache.cassandra.db.marshal.UTF8Type"},
+		{Keyspace: "V1Keyspace", Table: "peers", Kind: ColumnRegular, Name: "rpc_address", ComponentIndex: 0, Validator: "org.apache.cassandra.db.marshal.InetAddressType"},
+		{Keyspace: "V1Keyspace", Table: "peers", Kind: ColumnRegular, Name: "schema_version", ComponentIndex: 0, Validator: "org.apache.cassandra.db.marshal.UUIDType"},
+		{Keyspace: "V1Keyspace", Table: "peers", Kind: ColumnRegular, Name: "tokens", ComponentIndex: 0, Validator: "org.apache.cassandra.db.marshal.SetType(org.apache.cassandra.db.marshal.UTF8Type)"},
 	}
 	compileMetadata(1, keyspace, tables, columns)
 	assertKeyspaceMetadata(
@@ -113,7 +113,7 @@ func TestCompileMetadata(t *testing.T) {
 						"key": {
 							Name: "key",
 							Type: NativeType{typ: TypeBlob},
-							Kind: PARTITION_KEY,
+							Kind: ColumnPartitionKey,
 						},
 					},
 				},
@@ -140,24 +140,24 @@ func TestCompileMetadata(t *testing.T) {
 						"target_id": {
 							Name: "target_id",
 							Type: NativeType{typ: TypeUUID},
-							Kind: PARTITION_KEY,
+							Kind: ColumnPartitionKey,
 						},
 						"hint_id": {
 							Name:  "hint_id",
 							Type:  NativeType{typ: TypeTimeUUID},
 							Order: ASC,
-							Kind:  CLUSTERING_KEY,
+							Kind:  ColumnClusteringKey,
 						},
 						"message_version": {
 							Name:  "message_version",
 							Type:  NativeType{typ: TypeInt},
 							Order: ASC,
-							Kind:  CLUSTERING_KEY,
+							Kind:  ColumnClusteringKey,
 						},
 						"mutation": {
 							Name: "mutation",
 							Type: NativeType{typ: TypeBlob},
-							Kind: REGULAR,
+							Kind: ColumnRegular,
 						},
 					},
 				},
@@ -173,15 +173,15 @@ func TestCompileMetadata(t *testing.T) {
 						"peer": {
 							Name: "peer",
 							Type: NativeType{typ: TypeInet},
-							Kind: PARTITION_KEY,
+							Kind: ColumnPartitionKey,
 						},
-						"data_center":     {Keyspace: "V1Keyspace", Table: "peers", Kind: REGULAR, Name: "data_center", ComponentIndex: 0, Validator: "org.apache.cassandra.db.marshal.UTF8Type", Type: NativeType{typ: TypeVarchar}},
-						"host_id":         {Keyspace: "V1Keyspace", Table: "peers", Kind: REGULAR, Name: "host_id", ComponentIndex: 0, Validator: "org.apache.cassandra.db.marshal.UUIDType", Type: NativeType{typ: TypeUUID}},
-						"rack":            {Keyspace: "V1Keyspace", Table: "peers", Kind: REGULAR, Name: "rack", ComponentIndex: 0, Validator: "org.apache.cassandra.db.marshal.UTF8Type", Type: NativeType{typ: TypeVarchar}},
-						"release_version": {Keyspace: "V1Keyspace", Table: "peers", Kind: REGULAR, Name: "release_version", ComponentIndex: 0, Validator: "org.apache.cassandra.db.marshal.UTF8Type", Type: NativeType{typ: TypeVarchar}},
-						"rpc_address":     {Keyspace: "V1Keyspace", Table: "peers", Kind: REGULAR, Name: "rpc_address", ComponentIndex: 0, Validator: "org.apache.cassandra.db.marshal.InetAddressType", Type: NativeType{typ: TypeInet}},
-						"schema_version":  {Keyspace: "V1Keyspace", Table: "peers", Kind: REGULAR, Name: "schema_version", ComponentIndex: 0, Validator: "org.apache.cassandra.db.marshal.UUIDType", Type: NativeType{typ: TypeUUID}},
-						"tokens":          {Keyspace: "V1Keyspace", Table: "peers", Kind: REGULAR, Name: "tokens", ComponentIndex: 0, Validator: "org.apache.cassandra.db.marshal.SetType(org.apache.cassandra.db.marshal.UTF8Type)", Type: CollectionType{NativeType: NativeType{typ: TypeSet}}},
+						"data_center":     {Keyspace: "V1Keyspace", Table: "peers", Kind: ColumnRegular, Name: "data_center", ComponentIndex: 0, Validator: "org.apache.cassandra.db.marshal.UTF8Type", Type: NativeType{typ: TypeVarchar}},
+						"host_id":         {Keyspace: "V1Keyspace", Table: "peers", Kind: ColumnRegular, Name: "host_id", ComponentIndex: 0, Validator: "org.apache.cassandra.db.marshal.UUIDType", Type: NativeType{typ: TypeUUID}},
+						"rack":            {Keyspace: "V1Keyspace", Table: "peers", Kind: ColumnRegular, Name: "rack", ComponentIndex: 0, Validator: "org.apache.cassandra.db.marshal.UTF8Type", Type: NativeType{typ: TypeVarchar}},
+						"release_version": {Keyspace: "V1Keyspace", Table: "peers", Kind: ColumnRegular, Name: "release_version", ComponentIndex: 0, Validator: "org.apache.cassandra.db.marshal.UTF8Type", Type: NativeType{typ: TypeVarchar}},
+						"rpc_address":     {Keyspace: "V1Keyspace", Table: "peers", Kind: ColumnRegular, Name: "rpc_address", ComponentIndex: 0, Validator: "org.apache.cassandra.db.marshal.InetAddressType", Type: NativeType{typ: TypeInet}},
+						"schema_version":  {Keyspace: "V1Keyspace", Table: "peers", Kind: ColumnRegular, Name: "schema_version", ComponentIndex: 0, Validator: "org.apache.cassandra.db.marshal.UUIDType", Type: NativeType{typ: TypeUUID}},
+						"tokens":          {Keyspace: "V1Keyspace", Table: "peers", Kind: ColumnRegular, Name: "tokens", ComponentIndex: 0, Validator: "org.apache.cassandra.db.marshal.SetType(org.apache.cassandra.db.marshal.UTF8Type)", Type: CollectionType{NativeType: NativeType{typ: TypeSet}}},
 					},
 				},
 				"IndexInfo": {
@@ -202,18 +202,18 @@ func TestCompileMetadata(t *testing.T) {
 						"table_name": {
 							Name: "table_name",
 							Type: NativeType{typ: TypeVarchar},
-							Kind: PARTITION_KEY,
+							Kind: ColumnPartitionKey,
 						},
 						"index_name": {
 							Name:  "index_name",
 							Type:  NativeType{typ: TypeVarchar},
 							Order: DESC,
-							Kind:  CLUSTERING_KEY,
+							Kind:  ColumnClusteringKey,
 						},
 						"value": {
 							Name: "value",
 							Type: NativeType{typ: TypeBlob},
-							Kind: REGULAR,
+							Kind: ColumnRegular,
 						},
 					},
 				},
@@ -235,12 +235,12 @@ func TestCompileMetadata(t *testing.T) {
 						"title": {
 							Name: "title",
 							Type: NativeType{typ: TypeVarchar},
-							Kind: PARTITION_KEY,
+							Kind: ColumnPartitionKey,
 						},
 						"revid": {
 							Name: "revid",
 							Type: NativeType{typ: TypeTimeUUID},
-							Kind: CLUSTERING_KEY,
+							Kind: ColumnClusteringKey,
 						},
 					},
 				},
@@ -276,35 +276,35 @@ func TestCompileMetadata(t *testing.T) {
 						"key": {
 							Name: "key",
 							Type: NativeType{typ: TypeUUID},
-							Kind: PARTITION_KEY,
+							Kind: ColumnPartitionKey,
 						},
 						"key2": {
 							Name: "key2",
 							Type: NativeType{typ: TypeUUID},
-							Kind: PARTITION_KEY,
+							Kind: ColumnPartitionKey,
 						},
 						"column": {
 							Name:  "column",
 							Type:  NativeType{typ: TypeInt},
 							Order: ASC,
-							Kind:  CLUSTERING_KEY,
+							Kind:  ColumnClusteringKey,
 						},
 						"column2": {
 							Name:  "column2",
 							Type:  NativeType{typ: TypeInt},
 							Order: ASC,
-							Kind:  CLUSTERING_KEY,
+							Kind:  ColumnClusteringKey,
 						},
 						"column3": {
 							Name:  "column3",
 							Type:  NativeType{typ: TypeInt},
 							Order: ASC,
-							Kind:  CLUSTERING_KEY,
+							Kind:  ColumnClusteringKey,
 						},
 						"value": {
 							Name: "value",
 							Type: NativeType{typ: TypeBlob},
-							Kind: REGULAR,
+							Kind: ColumnRegular,
 						},
 					},
 				},
@@ -331,7 +331,7 @@ func TestCompileMetadata(t *testing.T) {
 			Keyspace:       "V2Keyspace",
 			Table:          "Table1",
 			Name:           "KEY1",
-			Kind:           PARTITION_KEY,
+			Kind:           ColumnPartitionKey,
 			ComponentIndex: 0,
 			Validator:      "org.apache.cassandra.db.marshal.UTF8Type",
 		},
@@ -339,7 +339,7 @@ func TestCompileMetadata(t *testing.T) {
 			Keyspace:       "V2Keyspace",
 			Table:          "Table1",
 			Name:           "Key1",
-			Kind:           PARTITION_KEY,
+			Kind:           ColumnPartitionKey,
 			ComponentIndex: 0,
 			Validator:      "org.apache.cassandra.db.marshal.UTF8Type",
 		},
@@ -347,7 +347,7 @@ func TestCompileMetadata(t *testing.T) {
 			Keyspace:       "V2Keyspace",
 			Table:          "Table2",
 			Name:           "Column1",
-			Kind:           PARTITION_KEY,
+			Kind:           ColumnPartitionKey,
 			ComponentIndex: 0,
 			Validator:      "org.apache.cassandra.db.marshal.UTF8Type",
 		},
@@ -355,7 +355,7 @@ func TestCompileMetadata(t *testing.T) {
 			Keyspace:       "V2Keyspace",
 			Table:          "Table2",
 			Name:           "Column2",
-			Kind:           CLUSTERING_KEY,
+			Kind:           ColumnClusteringKey,
 			ComponentIndex: 0,
 			Validator:      "org.apache.cassandra.db.marshal.UTF8Type",
 		},
@@ -363,7 +363,7 @@ func TestCompileMetadata(t *testing.T) {
 			Keyspace:       "V2Keyspace",
 			Table:          "Table2",
 			Name:           "Column3",
-			Kind:           CLUSTERING_KEY,
+			Kind:           ColumnClusteringKey,
 			ComponentIndex: 1,
 			Validator:      "org.apache.cassandra.db.marshal.ReversedType(org.apache.cassandra.db.marshal.UTF8Type)",
 		},
@@ -371,7 +371,7 @@ func TestCompileMetadata(t *testing.T) {
 			Keyspace:  "V2Keyspace",
 			Table:     "Table2",
 			Name:      "Column4",
-			Kind:      REGULAR,
+			Kind:      ColumnRegular,
 			Validator: "org.apache.cassandra.db.marshal.UTF8Type",
 		},
 	}
@@ -394,12 +394,12 @@ func TestCompileMetadata(t *testing.T) {
 						"KEY1": {
 							Name: "KEY1",
 							Type: NativeType{typ: TypeVarchar},
-							Kind: PARTITION_KEY,
+							Kind: ColumnPartitionKey,
 						},
 						"Key1": {
 							Name: "Key1",
 							Type: NativeType{typ: TypeVarchar},
-							Kind: PARTITION_KEY,
+							Kind: ColumnPartitionKey,
 						},
 					},
 				},
@@ -426,24 +426,24 @@ func TestCompileMetadata(t *testing.T) {
 						"Column1": {
 							Name: "Column1",
 							Type: NativeType{typ: TypeVarchar},
-							Kind: PARTITION_KEY,
+							Kind: ColumnPartitionKey,
 						},
 						"Column2": {
 							Name:  "Column2",
 							Type:  NativeType{typ: TypeVarchar},
 							Order: ASC,
-							Kind:  CLUSTERING_KEY,
+							Kind:  ColumnClusteringKey,
 						},
 						"Column3": {
 							Name:  "Column3",
 							Type:  NativeType{typ: TypeVarchar},
 							Order: DESC,
-							Kind:  CLUSTERING_KEY,
+							Kind:  ColumnClusteringKey,
 						},
 						"Column4": {
 							Name: "Column4",
 							Type: NativeType{typ: TypeVarchar},
-							Kind: REGULAR,
+							Kind: ColumnRegular,
 						},
 					},
 				},
@@ -486,8 +486,8 @@ func assertKeyspaceMetadata(t *testing.T, actual, expected *KeyspaceMetadata) {
 					if i != at.PartitionKey[i].ComponentIndex {
 						t.Errorf("Expected %s.Tables[%s].PartitionKey[%d].ComponentIndex to be %v but was %v", expected.Name, keyT, i, i, at.PartitionKey[i].ComponentIndex)
 					}
-					if PARTITION_KEY != at.PartitionKey[i].Kind {
-						t.Errorf("Expected %s.Tables[%s].PartitionKey[%d].Kind to be '%v' but was '%v'", expected.Name, keyT, i, PARTITION_KEY, at.PartitionKey[i].Kind)
+					if ColumnPartitionKey != at.PartitionKey[i].Kind {
+						t.Errorf("Expected %s.Tables[%s].PartitionKey[%d].Kind to be '%v' but was '%v'", expected.Name, keyT, i, ColumnPartitionKey, at.PartitionKey[i].Kind)
 					}
 				}
 			}
@@ -516,8 +516,8 @@ func assertKeyspaceMetadata(t *testing.T, actual, expected *KeyspaceMetadata) {
 					if et.ClusteringColumns[i].Order != at.ClusteringColumns[i].Order {
 						t.Errorf("Expected %s.Tables[%s].ClusteringColumns[%d].Order to be %v but was %v", expected.Name, keyT, i, et.ClusteringColumns[i].Order, at.ClusteringColumns[i].Order)
 					}
-					if CLUSTERING_KEY != at.ClusteringColumns[i].Kind {
-						t.Errorf("Expected %s.Tables[%s].ClusteringColumns[%d].Kind to be '%v' but was '%v'", expected.Name, keyT, i, CLUSTERING_KEY, at.ClusteringColumns[i].Kind)
+					if ColumnClusteringKey != at.ClusteringColumns[i].Kind {
+						t.Errorf("Expected %s.Tables[%s].ClusteringColumns[%d].Kind to be '%v' but was '%v'", expected.Name, keyT, i, ColumnClusteringKey, at.ClusteringColumns[i].Kind)
 					}
 				}
 			}
