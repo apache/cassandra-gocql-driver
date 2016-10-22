@@ -45,7 +45,7 @@ type ColumnMetadata struct {
 	Table           string
 	Name            string
 	ComponentIndex  int
-	Kind            string
+	Kind            ColumnKind
 	Validator       string
 	Type            TypeInfo
 	ClusteringOrder string
@@ -67,13 +67,59 @@ type ColumnIndexMetadata struct {
 	Options map[string]interface{}
 }
 
-// Column kind values
+type ColumnKind int
+
 const (
-	PARTITION_KEY  = "partition_key"
-	CLUSTERING_KEY = "clustering_key"
-	REGULAR        = "regular"
-	COMPACT_VALUE  = "compact_value"
+	ColumnUnkownKind ColumnKind = iota
+	ColumnPartitionKey
+	ColumnClusteringKey
+	ColumnRegular
+	ColumnCompact
 )
+
+func (c ColumnKind) String() string {
+	switch c {
+	case ColumnPartitionKey:
+		return "partition_key"
+	case ColumnClusteringKey:
+		return "clustering_key"
+	case ColumnRegular:
+		return "regular"
+	case ColumnCompact:
+		return "compact"
+	default:
+		return fmt.Sprintf("unkown_column_%d", c)
+	}
+}
+
+func (c *ColumnKind) UnmarshalCQL(typ TypeInfo, p []byte) error {
+	if typ.Type() != TypeVarchar {
+		return unmarshalErrorf("unable to marshall %s into ColumnKind, expected Varchar", typ)
+	}
+
+	kind, err := columnKindFromSchema(string(p))
+	if err != nil {
+		return err
+	}
+	*c = kind
+
+	return nil
+}
+
+func columnKindFromSchema(kind string) (ColumnKind, error) {
+	switch kind {
+	case "partition_key":
+		return ColumnPartitionKey, nil
+	case "clustering_key", "clustering":
+		return ColumnClusteringKey, nil
+	case "regular":
+		return ColumnRegular, nil
+	case "compact_value":
+		return ColumnCompact, nil
+	default:
+		return -1, fmt.Errorf("unknown column kind: %q", kind)
+	}
+}
 
 // default alias values
 const (
@@ -243,7 +289,7 @@ func compileV1Metadata(tables []TableMetadata) {
 				Table:          table.Name,
 				Name:           alias,
 				Type:           keyValidatorParsed.types[i],
-				Kind:           PARTITION_KEY,
+				Kind:           ColumnPartitionKey,
 				ComponentIndex: i,
 			}
 
@@ -288,7 +334,7 @@ func compileV1Metadata(tables []TableMetadata) {
 				Name:           alias,
 				Type:           comparatorParsed.types[i],
 				Order:          order,
-				Kind:           CLUSTERING_KEY,
+				Kind:           ColumnClusteringKey,
 				ComponentIndex: i,
 			}
 
@@ -308,7 +354,7 @@ func compileV1Metadata(tables []TableMetadata) {
 				Table:    table.Name,
 				Name:     alias,
 				Type:     defaultValidatorParsed.types[0],
-				Kind:     REGULAR,
+				Kind:     ColumnRegular,
 			}
 			table.Columns[alias] = column
 		}
@@ -320,22 +366,22 @@ func compileV2Metadata(tables []TableMetadata) {
 	for i := range tables {
 		table := &tables[i]
 
-		clusteringColumnCount := componentColumnCountOfType(table.Columns, CLUSTERING_KEY)
+		clusteringColumnCount := componentColumnCountOfType(table.Columns, ColumnClusteringKey)
 		table.ClusteringColumns = make([]*ColumnMetadata, clusteringColumnCount)
 
 		if table.KeyValidator != "" {
 			keyValidatorParsed := parseType(table.KeyValidator)
 			table.PartitionKey = make([]*ColumnMetadata, len(keyValidatorParsed.types))
 		} else { // Cassandra 3.x+
-			partitionKeyCount := componentColumnCountOfType(table.Columns, PARTITION_KEY)
+			partitionKeyCount := componentColumnCountOfType(table.Columns, ColumnPartitionKey)
 			table.PartitionKey = make([]*ColumnMetadata, partitionKeyCount)
 		}
 
 		for _, columnName := range table.OrderedColumns {
 			column := table.Columns[columnName]
-			if column.Kind == PARTITION_KEY {
+			if column.Kind == ColumnPartitionKey {
 				table.PartitionKey[column.ComponentIndex] = column
-			} else if column.Kind == CLUSTERING_KEY {
+			} else if column.Kind == ColumnClusteringKey {
 				table.ClusteringColumns[column.ComponentIndex] = column
 			}
 		}
@@ -343,7 +389,7 @@ func compileV2Metadata(tables []TableMetadata) {
 }
 
 // returns the count of coluns with the given "kind" value.
-func componentColumnCountOfType(columns map[string]*ColumnMetadata, kind string) int {
+func componentColumnCountOfType(columns map[string]*ColumnMetadata, kind ColumnKind) int {
 	maxComponentIndex := -1
 	for _, column := range columns {
 		if column.Kind == kind && column.ComponentIndex > maxComponentIndex {
@@ -570,7 +616,7 @@ func getColumnMetadata(
 			indexOptionsJSON *[]byte,
 		) bool {
 			// all columns returned by V1 are regular
-			column.Kind = REGULAR
+			column.Kind = ColumnRegular
 			return iter.Scan(
 				&column.Table,
 				&column.Name,

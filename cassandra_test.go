@@ -1752,10 +1752,10 @@ func TestGetColumnMetadata(t *testing.T) {
 		if column.Keyspace != "gocql_test" {
 			t.Errorf("Expected column %s keyspace name to be 'gocql_test', but it was '%s'", column.Name, column.Keyspace)
 		}
-		if column.Kind == "" {
+		if column.Kind == ColumnUnkownKind {
 			t.Errorf("Expected column %s kind to be set, but it was empty", column.Name)
 		}
-		if session.cfg.ProtoVersion == 1 && column.Kind != "regular" {
+		if session.cfg.ProtoVersion == 1 && column.Kind != ColumnRegular {
 			t.Errorf("Expected column %s kind to be set to 'regular' for proto V1 but it was '%s'", column.Name, column.Kind)
 		}
 		if column.Validator == "" {
@@ -1778,8 +1778,8 @@ func TestGetColumnMetadata(t *testing.T) {
 			t.Fatalf("Expected to find column 'third_id' metadata but there was only %v", testColumns)
 		}
 
-		if thirdID.Kind != REGULAR {
-			t.Errorf("Expected %s column kind to be '%s' but it was '%s'", thirdID.Name, REGULAR, thirdID.Kind)
+		if thirdID.Kind != ColumnRegular {
+			t.Errorf("Expected %s column kind to be '%s' but it was '%s'", thirdID.Name, ColumnRegular, thirdID.Kind)
 		}
 
 		if thirdID.Index.Name != "index_column_metadata" {
@@ -1802,14 +1802,14 @@ func TestGetColumnMetadata(t *testing.T) {
 			t.Fatalf("Expected to find column 'third_id' metadata but there was only %v", testColumns)
 		}
 
-		if firstID.Kind != PARTITION_KEY {
-			t.Errorf("Expected %s column kind to be '%s' but it was '%s'", firstID.Name, PARTITION_KEY, firstID.Kind)
+		if firstID.Kind != ColumnPartitionKey {
+			t.Errorf("Expected %s column kind to be '%s' but it was '%s'", firstID.Name, ColumnPartitionKey, firstID.Kind)
 		}
-		if secondID.Kind != CLUSTERING_KEY {
-			t.Errorf("Expected %s column kind to be '%s' but it was '%s'", secondID.Name, CLUSTERING_KEY, secondID.Kind)
+		if secondID.Kind != ColumnClusteringKey {
+			t.Errorf("Expected %s column kind to be '%s' but it was '%s'", secondID.Name, ColumnClusteringKey, secondID.Kind)
 		}
-		if thirdID.Kind != REGULAR {
-			t.Errorf("Expected %s column kind to be '%s' but it was '%s'", thirdID.Name, REGULAR, thirdID.Kind)
+		if thirdID.Kind != ColumnRegular {
+			t.Errorf("Expected %s column kind to be '%s' but it was '%s'", thirdID.Name, ColumnRegular, thirdID.Kind)
 		}
 
 		if thirdID.Index.Name != "index_column_metadata" {
