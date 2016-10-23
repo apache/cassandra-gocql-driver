@@ -4,13 +4,14 @@ import (
 	crand "crypto/rand"
 	"errors"
 	"fmt"
-	"golang.org/x/net/context"
 	"log"
 	"math/rand"
 	"net"
 	"strconv"
 	"sync/atomic"
 	"time"
+
+	"golang.org/x/net/context"
 )
 
 var (
@@ -89,6 +90,8 @@ func (c *controlConn) heartBeat() {
 	}
 }
 
+var hostLookupPreferV4 = false
+
 func hostInfo(addr string, defaultPort int) (*HostInfo, error) {
 	var port int
 	host, portStr, err := net.SplitHostPort(addr)
@@ -102,10 +105,37 @@ func hostInfo(addr string, defaultPort int) (*HostInfo, error) {
 		}
 	}
 
-	return &HostInfo{peer: host, port: port}, nil
+	ip := net.ParseIP(host)
+	if ip == nil {
+		ips, err := net.LookupIP(host)
+		if err != nil {
+			return nil, err
+		} else if len(ips) == 0 {
+			return nil, fmt.Errorf("No IP's returned from DNS lookup for %q", addr)
+		}
+
+		if hostLookupPreferV4 {
+			for _, v := range ips {
+				if v4 := v.To4(); v4 != nil {
+					ip = v4
+					break
+				}
+			}
+			if ip == nil {
+				ip = ips[0]
+			}
+		} else {
+			// TODO(zariel): should we check that we can connect to any of the ips?
+			ip = ips[0]
+		}
+
+	}
+
+	return &HostInfo{peer: ip, port: port}, nil
 }
 
 func (c *controlConn) shuffleDial(endpoints []string) (conn *Conn, err error) {
+	// TODO: accept a []*HostInfo
 	perm := randr.Perm(len(endpoints))
 	shuffled := make([]string, len(endpoints))
 
@@ -130,7 +160,7 @@ func (c *controlConn) shuffleDial(endpoints []string) (conn *Conn, err error) {
 		}
 
 		hostInfo, _ := c.session.ring.addHostIfMissing(host)
-		conn, err = c.session.connect(addr, c, hostInfo)
+		conn, err = c.session.connect(hostInfo, c)
 		if err == nil {
 			return conn, err
 		}
@@ -229,22 +259,21 @@ func (c *controlConn) reconnect(refreshring bool) {
 	// TODO: simplify this function, use session.ring to get hosts instead of the
 	// connection pool
 
-	addr := c.addr()
+	var host *HostInfo
 	oldConn := c.conn.Load().(*Conn)
 	if oldConn != nil {
+		host = oldConn.host
 		oldConn.Close()
 	}
 
 	var newConn *Conn
-	if addr != "" {
+	if host != nil {
 		// try to connect to the old host
-		conn, err := c.session.connect(addr, c, oldConn.host)
+		conn, err := c.session.connect(host, c)
 		if err != nil {
 			// host is dead
 			// TODO: this is replicated in a few places
-			ip, portStr, _ := net.SplitHostPort(addr)
-			port, _ := strconv.Atoi(portStr)
-			c.session.handleNodeDown(net.ParseIP(ip), port)
+			c.session.handleNodeDown(host.Peer(), host.Port())
 		} else {
 			newConn = conn
 		}
@@ -260,7 +289,7 @@ func (c *controlConn) reconnect(refreshring bool) {
 		}
 
 		var err error
-		newConn, err = c.session.connect(host.Peer(), c, host)
+		newConn, err = c.session.connect(host, c)
 		if err != nil {
 			// TODO: add log handler for things like this
 			return
@@ -350,29 +379,28 @@ func (c *controlConn) query(statement string, values ...interface{}) (iter *Iter
 	return
 }
 
-func (c *controlConn) fetchHostInfo(addr net.IP, port int) (*HostInfo, error) {
+func (c *controlConn) fetchHostInfo(ip net.IP, port int) (*HostInfo, error) {
 	// TODO(zariel): we should probably move this into host_source or atleast
 	// share code with it.
-	hostname, _, err := net.SplitHostPort(c.addr())
-	if err != nil {
-		return nil, fmt.Errorf("unable to fetch host info, invalid conn addr: %q: %v", c.addr(), err)
+	localHost := c.host()
+	if localHost == nil {
+		return nil, errors.New("unable to fetch host info, invalid conn host")
 	}
 
-	isLocal := hostname == addr.String()
+	isLocal := localHost.Peer().Equal(ip)
 
 	var fn func(*HostInfo) error
 
+	// TODO(zariel): fetch preferred_ip address (is it >3.x only?)
 	if isLocal {
 		fn = func(host *HostInfo) error {
-			// TODO(zariel): should we fetch rpc_address from here?
 			iter := c.query("SELECT data_center, rack, host_id, tokens, release_version FROM system.local WHERE key='local'")
 			iter.Scan(&host.dataCenter, &host.rack, &host.hostId, &host.tokens, &host.version)
 			return iter.Close()
 		}
 	} else {
 		fn = func(host *HostInfo) error {
-			// TODO(zariel): should we fetch rpc_address from here?
-			iter := c.query("SELECT data_center, rack, host_id, tokens, release_version FROM system.peers WHERE peer=?", addr)
+			iter := c.query("SELECT data_center, rack, host_id, tokens, release_version FROM system.peers WHERE peer=?", ip)
 			iter.Scan(&host.dataCenter, &host.rack, &host.hostId, &host.tokens, &host.version)
 			return iter.Close()
 		}
@@ -380,12 +408,12 @@ func (c *controlConn) fetchHostInfo(addr net.IP, port int) (*HostInfo, error) {
 
 	host := &HostInfo{
 		port: port,
+		peer: ip,
 	}
 
 	if err := fn(host); err != nil {
 		return nil, err
 	}
-	host.peer = addr.String()
 
 	return host, nil
 }
@@ -396,12 +424,12 @@ func (c *controlConn) awaitSchemaAgreement() error {
 	}).err
 }
 
-func (c *controlConn) addr() string {
+func (c *controlConn) host() *HostInfo {
 	conn := c.conn.Load().(*Conn)
 	if conn == nil {
-		return ""
+		return nil
 	}
-	return conn.addr
+	return conn.host
 }
 
 func (c *controlConn) close() {

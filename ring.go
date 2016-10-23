@@ -1,6 +1,7 @@
 package gocql
 
 import (
+	"net"
 	"sync"
 	"sync/atomic"
 )
@@ -34,9 +35,9 @@ func (r *ring) rrHost() *HostInfo {
 	return r.hostList[pos%len(r.hostList)]
 }
 
-func (r *ring) getHost(addr string) *HostInfo {
+func (r *ring) getHost(ip net.IP) *HostInfo {
 	r.mu.RLock()
-	host := r.hosts[addr]
+	host := r.hosts[ip.String()]
 	r.mu.RUnlock()
 	return host
 }
@@ -52,42 +53,58 @@ func (r *ring) allHosts() []*HostInfo {
 }
 
 func (r *ring) addHost(host *HostInfo) bool {
+	ip := host.Peer().String()
+
 	r.mu.Lock()
 	if r.hosts == nil {
 		r.hosts = make(map[string]*HostInfo)
 	}
 
-	addr := host.Peer()
-	_, ok := r.hosts[addr]
-	r.hosts[addr] = host
+	_, ok := r.hosts[ip]
+	if !ok {
+		r.hostList = append(r.hostList, host)
+	}
+
+	r.hosts[ip] = host
 	r.mu.Unlock()
 	return ok
 }
 
 func (r *ring) addHostIfMissing(host *HostInfo) (*HostInfo, bool) {
+	ip := host.Peer().String()
+
 	r.mu.Lock()
 	if r.hosts == nil {
 		r.hosts = make(map[string]*HostInfo)
 	}
 
-	addr := host.Peer()
-	existing, ok := r.hosts[addr]
+	existing, ok := r.hosts[ip]
 	if !ok {
-		r.hosts[addr] = host
+		r.hosts[ip] = host
 		existing = host
+		r.hostList = append(r.hostList, host)
 	}
 	r.mu.Unlock()
 	return existing, ok
 }
 
-func (r *ring) removeHost(addr string) bool {
+func (r *ring) removeHost(ip net.IP) bool {
 	r.mu.Lock()
 	if r.hosts == nil {
 		r.hosts = make(map[string]*HostInfo)
 	}
 
-	_, ok := r.hosts[addr]
-	delete(r.hosts, addr)
+	k := ip.String()
+	_, ok := r.hosts[k]
+	if ok {
+		for i, host := range r.hostList {
+			if host.Peer().Equal(ip) {
+				r.hostList = append(r.hostList[:i], r.hostList[i+1:]...)
+				break
+			}
+		}
+	}
+	delete(r.hosts, k)
 	r.mu.Unlock()
 	return ok
 }

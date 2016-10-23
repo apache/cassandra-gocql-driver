@@ -473,8 +473,7 @@ func TestStream0(t *testing.T) {
 		}
 	})
 
-	host := &HostInfo{peer: srv.Address}
-	conn, err := Connect(host, srv.Address, &ConnConfig{ProtoVersion: int(srv.protocol)}, errorHandler, nil)
+	conn, err := Connect(srv.host(), &ConnConfig{ProtoVersion: int(srv.protocol)}, errorHandler, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -509,8 +508,7 @@ func TestConnClosedBlocked(t *testing.T) {
 		t.Log(err)
 	})
 
-	host := &HostInfo{peer: srv.Address}
-	conn, err := Connect(host, srv.Address, &ConnConfig{ProtoVersion: int(srv.protocol)}, errorHandler, nil)
+	conn, err := Connect(srv.host(), &ConnConfig{ProtoVersion: int(srv.protocol)}, errorHandler, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -635,6 +633,14 @@ type TestServer struct {
 	quit   chan struct{}
 	mu     sync.Mutex
 	closed bool
+}
+
+func (srv *TestServer) host() *HostInfo {
+	host, err := hostInfo(srv.Address, 9042)
+	if err != nil {
+		srv.t.Fatal(err)
+	}
+	return host
 }
 
 func (srv *TestServer) closeWatch() {
