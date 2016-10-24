@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-type eventDeouncer struct {
+type eventDebouncer struct {
 	name   string
 	timer  *time.Timer
 	mu     sync.Mutex
@@ -17,8 +17,8 @@ type eventDeouncer struct {
 	quit     chan struct{}
 }
 
-func newEventDeouncer(name string, eventHandler func([]frame)) *eventDeouncer {
-	e := &eventDeouncer{
+func newEventDebouncer(name string, eventHandler func([]frame)) *eventDebouncer {
+	e := &eventDebouncer{
 		name:     name,
 		quit:     make(chan struct{}),
 		timer:    time.NewTimer(eventDebounceTime),
@@ -30,12 +30,12 @@ func newEventDeouncer(name string, eventHandler func([]frame)) *eventDeouncer {
 	return e
 }
 
-func (e *eventDeouncer) stop() {
+func (e *eventDebouncer) stop() {
 	e.quit <- struct{}{} // sync with flusher
 	close(e.quit)
 }
 
-func (e *eventDeouncer) flusher() {
+func (e *eventDebouncer) flusher() {
 	for {
 		select {
 		case <-e.timer.C:
@@ -54,7 +54,7 @@ const (
 )
 
 // flush must be called with mu locked
-func (e *eventDeouncer) flush() {
+func (e *eventDebouncer) flush() {
 	if len(e.events) == 0 {
 		return
 	}
@@ -66,7 +66,7 @@ func (e *eventDeouncer) flush() {
 	e.events = make([]frame, 0, eventBufferSize)
 }
 
-func (e *eventDeouncer) debounce(frame frame) {
+func (e *eventDebouncer) debounce(frame frame) {
 	e.mu.Lock()
 	e.timer.Reset(eventDebounceTime)
 
