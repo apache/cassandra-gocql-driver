@@ -1,4 +1,4 @@
-// +build ccm
+// +build ccm, ignore
 
 package gocql
 

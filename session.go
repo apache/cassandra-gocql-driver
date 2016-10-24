@@ -11,8 +11,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"net"
-	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -81,18 +79,12 @@ var queryPool = &sync.Pool{
 func addrsToHosts(addrs []string, defaultPort int) ([]*HostInfo, error) {
 	hosts := make([]*HostInfo, len(addrs))
 	for i, hostport := range addrs {
-		// TODO: remove duplication
-		addr, portStr, err := net.SplitHostPort(JoinHostPort(hostport, defaultPort))
+		host, err := hostInfo(hostport, defaultPort)
 		if err != nil {
-			return nil, fmt.Errorf("NewSession: unable to parse hostport of addr %q: %v", hostport, err)
+			return nil, err
 		}
 
-		port, err := strconv.Atoi(portStr)
-		if err != nil {
-			return nil, fmt.Errorf("NewSession: invalid port for hostport of addr %q: %v", hostport, err)
-		}
-
-		hosts[i] = &HostInfo{peer: addr, port: port, state: NodeUp}
+		hosts[i] = host
 	}
 
 	return hosts, nil
@@ -156,7 +148,6 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 		localHasRPCAddr, _ := checkSystemLocal(s.control)
 		s.hostSource.localHasRpcAddr = localHasRPCAddr
 
-		var err error
 		if cfg.DisableInitialHostLookup {
 			// TODO: we could look at system.local to get token and other metadata
 			// in this case.
@@ -165,13 +156,14 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 			hosts, _, err = s.hostSource.GetHosts()
 		}
 
-		if err != nil {
-			s.Close()
-			return nil, fmt.Errorf("gocql: unable to create session: %v", err)
-		}
 	} else {
 		// we dont get host info
 		hosts, err = addrsToHosts(cfg.Hosts, cfg.Port)
+	}
+
+	if err != nil {
+		s.Close()
+		return nil, fmt.Errorf("gocql: unable to create session: %v", err)
 	}
 
 	for _, host := range hosts {
@@ -180,7 +172,7 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 				existingHost.update(host)
 			}
 
-			s.handleNodeUp(net.ParseIP(host.Peer()), host.Port(), false)
+			s.handleNodeUp(host.Peer(), host.Port(), false)
 		}
 	}
 
@@ -203,6 +195,7 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 	// connection is disable, we really have no choice, so we just make our
 	// best guess...
 	if !cfg.disableControlConn && cfg.DisableInitialHostLookup {
+		// TODO(zariel): we dont need to do this twice
 		newer, _ := checkSystemSchema(s.control)
 		s.useSystemSchema = newer
 	} else {
@@ -225,7 +218,7 @@ func (s *Session) reconnectDownedHosts(intv time.Duration) {
 			if gocqlDebug {
 				buf := bytes.NewBufferString("Session.ring:")
 				for _, h := range hosts {
-					buf.WriteString("[" + h.Peer() + ":" + h.State().String() + "]")
+					buf.WriteString("[" + h.Peer().String() + ":" + h.State().String() + "]")
 				}
 				log.Println(buf.String())
 			}
@@ -234,7 +227,7 @@ func (s *Session) reconnectDownedHosts(intv time.Duration) {
 				if h.IsUp() {
 					continue
 				}
-				s.handleNodeUp(net.ParseIP(h.Peer()), h.Port(), true)
+				s.handleNodeUp(h.Peer(), h.Port(), true)
 			}
 		case <-s.quit:
 			return
@@ -409,7 +402,7 @@ func (s *Session) getConn() *Conn {
 			continue
 		}
 
-		pool, ok := s.pool.getPool(host.Peer())
+		pool, ok := s.pool.getPool(host)
 		if !ok {
 			continue
 		}
@@ -628,8 +621,8 @@ func (s *Session) MapExecuteBatchCAS(batch *Batch, dest map[string]interface{}) 
 	return applied, iter, iter.err
 }
 
-func (s *Session) connect(addr string, errorHandler ConnErrorHandler, host *HostInfo) (*Conn, error) {
-	return Connect(host, addr, s.connCfg, errorHandler, s)
+func (s *Session) connect(host *HostInfo, errorHandler ConnErrorHandler) (*Conn, error) {
+	return Connect(host, s.connCfg, errorHandler, s)
 }
 
 // Query represents a CQL statement that can be executed.

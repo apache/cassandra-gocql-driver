@@ -1,16 +1,19 @@
 package gocql
 
-import "testing"
+import (
+	"net"
+	"testing"
+)
 
 func TestFilter_WhiteList(t *testing.T) {
-	f := WhiteListHostFilter("addr1", "addr2")
+	f := WhiteListHostFilter("127.0.0.1", "127.0.0.2")
 	tests := [...]struct {
-		addr   string
+		addr   net.IP
 		accept bool
 	}{
-		{"addr1", true},
-		{"addr2", true},
-		{"addr3", false},
+		{net.ParseIP("127.0.0.1"), true},
+		{net.ParseIP("127.0.0.2"), true},
+		{net.ParseIP("127.0.0.3"), false},
 	}
 
 	for i, test := range tests {
@@ -27,12 +30,12 @@ func TestFilter_WhiteList(t *testing.T) {
 func TestFilter_AllowAll(t *testing.T) {
 	f := AcceptAllFilter()
 	tests := [...]struct {
-		addr   string
+		addr   net.IP
 		accept bool
 	}{
-		{"addr1", true},
-		{"addr2", true},
-		{"addr3", true},
+		{net.ParseIP("127.0.0.1"), true},
+		{net.ParseIP("127.0.0.2"), true},
+		{net.ParseIP("127.0.0.3"), true},
 	}
 
 	for i, test := range tests {
@@ -49,12 +52,12 @@ func TestFilter_AllowAll(t *testing.T) {
 func TestFilter_DenyAll(t *testing.T) {
 	f := DenyAllFilter()
 	tests := [...]struct {
-		addr   string
+		addr   net.IP
 		accept bool
 	}{
-		{"addr1", false},
-		{"addr2", false},
-		{"addr3", false},
+		{net.ParseIP("127.0.0.1"), false},
+		{net.ParseIP("127.0.0.2"), false},
+		{net.ParseIP("127.0.0.3"), false},
 	}
 
 	for i, test := range tests {
