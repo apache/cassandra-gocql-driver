@@ -22,7 +22,6 @@ import (
 	"golang.org/x/net/context"
 
 	"github.com/gocql/gocql/internal/lru"
-
 	"github.com/gocql/gocql/internal/streams"
 )
 
@@ -1120,5 +1119,26 @@ var (
 	ErrTimeoutNoResponse = errors.New("gocql: no response received from cassandra within timeout period")
 	ErrTooManyTimeouts   = errors.New("gocql: too many query timeouts on the connection")
 	ErrConnectionClosed  = errors.New("gocql: connection closed waiting for response")
+	ErrHostLookupFailed  = errors.New("gocql: failed to lookup host")
 	ErrNoStreams         = errors.New("gocql: no streams available on connection")
 )
+
+func lookupHostAddress(host string) (ip net.IP, err error) {
+	ip = net.ParseIP(host)
+	// If the host was not a valid IP address assume it is a hostname
+	if ip == nil {
+		addrs, err := net.LookupHost(host)
+		if err != nil {
+			return nil, err
+		}
+		if len(addrs) > 0 {
+			ip = net.ParseIP(addrs[0])
+		}
+	}
+
+	if ip == nil {
+		return nil, ErrHostLookupFailed
+	}
+
+	return ip, nil
+}

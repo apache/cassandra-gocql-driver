@@ -396,7 +396,12 @@ func (pool *hostConnPool) fill() {
 
 			// this is calle with the connetion pool mutex held, this call will
 			// then recursivly try to lock it again. FIXME
-			go pool.session.handleNodeDown(net.ParseIP(pool.host.Peer()), pool.port)
+			go func(host string) {
+				hostAddr, err := lookupHostAddress(host)
+				if err == nil {
+					pool.session.handleNodeDown(hostAddr, pool.port)
+				}
+			}(pool.host.Peer())
 			return
 		}
 

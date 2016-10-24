@@ -180,7 +180,10 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 				existingHost.update(host)
 			}
 
-			s.handleNodeUp(net.ParseIP(host.Peer()), host.Port(), false)
+			hostAddr, err := lookupHostAddress(host.Peer())
+			if err == nil {
+				s.handleNodeUp(hostAddr, host.Port(), false)
+			}
 		}
 	}
 
@@ -234,7 +237,10 @@ func (s *Session) reconnectDownedHosts(intv time.Duration) {
 				if h.IsUp() {
 					continue
 				}
-				s.handleNodeUp(net.ParseIP(h.Peer()), h.Port(), true)
+				hostAddr, err := lookupHostAddress(h.Peer())
+				if err == nil {
+					s.handleNodeUp(hostAddr, h.Port(), true)
+				}
 			}
 		case <-s.quit:
 			return
