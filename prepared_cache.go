@@ -57,6 +57,9 @@ func (p *preparedLRU) execIfMissing(key string, fn func(lru *lru.Cache) *infligh
 
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	if val, ok := p.lru.Get(key); ok {
+		return val.(*inflightPrepare), true
+	}
 	return fn(p.lru), false
 }
 
