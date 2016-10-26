@@ -243,14 +243,32 @@ func TestCOWList_Add(t *testing.T) {
 	}
 }
 
+// TestSimpleRetryPolicy makes sure that we only allow 1 + numRetries attempts
 func TestSimpleRetryPolicy(t *testing.T) {
 	q := &Query{}
+
+	// this should allow a total of 3 tries.
 	rt := &SimpleRetryPolicy{NumRetries: 2}
-	if !rt.Attempt(q) {
-		t.Fatal("should allow retry after 0 attempts")
+
+	cases := []struct {
+		attempts int
+		allow    bool
+	}{
+		{0, true},
+		{1, true},
+		{2, true},
+		{3, false},
+		{4, false},
+		{5, false},
 	}
-	q.attempts = 5
-	if rt.Attempt(q) {
-		t.Fatal("should not allow retry after passing threshold")
+
+	for _, c := range cases {
+		q.attempts = c.attempts
+		if c.allow && !rt.Attempt(q) {
+			t.Fatalf("should allow retry after %d attempts", c.attempts)
+		}
+		if !c.allow && rt.Attempt(q) {
+			t.Fatalf("should not allow retry after %d attempts", c.attempts)
+		}
 	}
 }
