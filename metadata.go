@@ -850,6 +850,7 @@ func (t *typeParser) parse() typeParserResult {
 				var name string
 				decoded, err := hex.DecodeString(*param.name)
 				if err != nil {
+					// TODO: use Logger
 					log.Printf(
 						"Error parsing type '%s', contains collection name '%s' with an invalid format: %v",
 						t.input,

@@ -472,6 +472,7 @@ func (f *framer) parseFrame() (frame frame, err error) {
 		warnings := f.readStringList()
 		// what to do with warnings?
 		for _, v := range warnings {
+			// TODO: use Logger
 			log.Println(v)
 		}
 	}
