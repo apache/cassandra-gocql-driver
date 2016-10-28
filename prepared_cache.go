@@ -9,7 +9,7 @@ const defaultMaxPreparedStmts = 1000
 
 // preparedLRU is the prepared statement cache
 type preparedLRU struct {
-	mu  sync.RWMutex
+	mu  sync.Mutex
 	lru *lru.Cache
 }
 
@@ -47,19 +47,14 @@ func (p *preparedLRU) remove(key string) bool {
 }
 
 func (p *preparedLRU) execIfMissing(key string, fn func(lru *lru.Cache) *inflightPrepare) (*inflightPrepare, bool) {
-	p.mu.RLock()
-	val, ok := p.lru.Get(key)
-	p.mu.RUnlock()
+	p.mu.Lock()
+	defer p.mu.Unlock()
 
+	val, ok := p.lru.Get(key)
 	if ok {
 		return val.(*inflightPrepare), true
 	}
 
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	if val, ok := p.lru.Get(key); ok {
-		return val.(*inflightPrepare), true
-	}
 	return fn(p.lru), false
 }
 
