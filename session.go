@@ -92,7 +92,7 @@ func addrsToHosts(addrs []string, defaultPort int) ([]*HostInfo, error) {
 
 // NewSession wraps an existing Node.
 func NewSession(cfg ClusterConfig) (*Session, error) {
-	//Check that hosts in the ClusterConfig is not empty
+	// Check that hosts in the ClusterConfig is not empty
 	if len(cfg.Hosts) < 1 {
 		return nil, ErrNoHosts
 	}
@@ -103,106 +103,117 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 		cfg:      cfg,
 		pageSize: cfg.PageSize,
 		stmtsLRU: &preparedLRU{lru: lru.New(cfg.MaxPreparedStmts)},
+		quit:     make(chan struct{}),
 	}
-
-	connCfg, err := connConfig(s)
-	if err != nil {
-		s.Close()
-		return nil, fmt.Errorf("gocql: unable to create session: %v", err)
-	}
-	s.connCfg = connCfg
 
 	s.nodeEvents = newEventDebouncer("NodeEvents", s.handleNodeEvent)
 	s.schemaEvents = newEventDebouncer("SchemaEvents", s.handleSchemaEvent)
 
 	s.routingKeyInfoCache.lru = lru.New(cfg.MaxRoutingKeyInfo)
 
-	// I think it might be a good idea to simplify this and make it always discover
-	// hosts, maybe with more filters.
 	s.hostSource = &ringDescriber{
 		session:   s,
 		closeChan: make(chan bool),
 	}
 
-	pool := cfg.PoolConfig.buildPool(s)
 	if cfg.PoolConfig.HostSelectionPolicy == nil {
 		cfg.PoolConfig.HostSelectionPolicy = RoundRobinHostPolicy()
 	}
+	s.pool = cfg.PoolConfig.buildPool(s)
 
-	s.pool = pool
 	s.policy = cfg.PoolConfig.HostSelectionPolicy
 	s.executor = &queryExecutor{
-		pool:   pool,
+		pool:   s.pool,
 		policy: cfg.PoolConfig.HostSelectionPolicy,
 	}
 
-	var hosts []*HostInfo
-	if !cfg.disableControlConn {
+	if err := s.init(); err != nil {
+		// TODO(zariel): dont wrap this error in fmt.Errorf, return a typed error
+		s.Close()
+		return nil, fmt.Errorf("gocql: unable to create session: %v", err)
+	}
+
+	if s.pool.Size() == 0 {
+		// TODO(zariel): move this to init
+		s.Close()
+		return nil, ErrNoConnectionsStarted
+	}
+
+	return s, nil
+}
+
+func (s *Session) init() error {
+	hosts, err := addrsToHosts(s.cfg.Hosts, s.cfg.Port)
+	if err != nil {
+		return err
+	}
+
+	connCfg, err := connConfig(s)
+	if err != nil {
+		return err
+	}
+	s.connCfg = connCfg
+
+	if !s.cfg.disableControlConn {
 		s.control = createControlConn(s)
-		if err := s.control.connect(cfg.Hosts); err != nil {
-			s.Close()
-			return nil, fmt.Errorf("gocql: unable to create session: %v", err)
+		if s.cfg.ProtoVersion == 0 {
+			proto, err := s.control.discoverProtocol(hosts)
+			if err != nil {
+				return fmt.Errorf("unable to discover protocol version: %v", err)
+			} else if proto == 0 {
+				return errors.New("unable to discovery protocol version")
+			}
+
+			// TODO(zariel): we really only need this in 1 place
+			s.cfg.ProtoVersion = proto
+			connCfg.ProtoVersion = proto
+		}
+
+		if err := s.control.connect(hosts); err != nil {
+			return err
 		}
 
 		// need to setup host source to check for broadcast_address in system.local
 		localHasRPCAddr, _ := checkSystemLocal(s.control)
 		s.hostSource.localHasRpcAddr = localHasRPCAddr
 
-		if cfg.DisableInitialHostLookup {
-			// TODO: we could look at system.local to get token and other metadata
-			// in this case.
-			hosts, err = addrsToHosts(cfg.Hosts, cfg.Port)
-		} else {
-			hosts, _, err = s.hostSource.GetHosts()
+		if !s.cfg.DisableInitialHostLookup {
+			// TODO(zariel): we need to get the partitioner from here
+			var p string
+			hosts, p, err = s.hostSource.GetHosts()
+			if err != nil {
+				return err
+			}
+			s.policy.SetPartitioner(p)
 		}
-
-	} else {
-		// we dont get host info
-		hosts, err = addrsToHosts(cfg.Hosts, cfg.Port)
-	}
-
-	if err != nil {
-		s.Close()
-		return nil, fmt.Errorf("gocql: unable to create session: %v", err)
 	}
 
 	for _, host := range hosts {
 		if s.cfg.HostFilter == nil || s.cfg.HostFilter.Accept(host) {
-			if existingHost, ok := s.ring.addHostIfMissing(host); ok {
-				existingHost.update(host)
-			}
-
+			host = s.ring.addOrUpdate(host)
 			s.handleNodeUp(host.Peer(), host.Port(), false)
 		}
-	}
-
-	s.quit = make(chan struct{})
-
-	if cfg.ReconnectInterval > 0 {
-		go s.reconnectDownedHosts(cfg.ReconnectInterval)
 	}
 
 	// TODO(zariel): we probably dont need this any more as we verify that we
 	// can connect to one of the endpoints supplied by using the control conn.
 	// See if there are any connections in the pool
-	if s.pool.Size() == 0 {
-		s.Close()
-		return nil, ErrNoConnectionsStarted
+	if s.cfg.ReconnectInterval > 0 {
+		go s.reconnectDownedHosts(s.cfg.ReconnectInterval)
 	}
 
 	// If we disable the initial host lookup, we need to still check if the
 	// cluster is using the newer system schema or not... however, if control
 	// connection is disable, we really have no choice, so we just make our
 	// best guess...
-	if !cfg.disableControlConn && cfg.DisableInitialHostLookup {
-		// TODO(zariel): we dont need to do this twice
+	if !s.cfg.disableControlConn && s.cfg.DisableInitialHostLookup {
 		newer, _ := checkSystemSchema(s.control)
 		s.useSystemSchema = newer
 	} else {
 		s.useSystemSchema = hosts[0].Version().Major >= 3
 	}
 
-	return s, nil
+	return nil
 }
 
 func (s *Session) reconnectDownedHosts(intv time.Duration) {
