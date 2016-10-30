@@ -454,7 +454,8 @@ func TestQueryTimeoutClose(t *testing.T) {
 }
 
 func TestStream0(t *testing.T) {
-	const expErr = "gocql: received frame on stream 0"
+	// TODO: replace this with type check
+	const expErr = "gocql: received unexpected frame on stream 0"
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

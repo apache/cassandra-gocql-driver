@@ -33,9 +33,17 @@ type ClusterConfig struct {
 	// address, which is used to index connected hosts. If the domain name specified
 	// resolves to more than 1 IP address then the driver may connect multiple times to
 	// the same host, and will not mark the node being down or up from events.
-	Hosts             []string
-	CQLVersion        string            // CQL version (default: 3.0.0)
-	ProtoVersion      int               // version of the native protocol (default: 2)
+	Hosts      []string
+	CQLVersion string // CQL version (default: 3.0.0)
+
+	// ProtoVersion sets the version of the native protocol to use, this will
+	// enable features in the driver for specific protocol versions, generally this
+	// should be set to a known version (2,3,4) for the cluster being connected to.
+	//
+	// If it is 0 or unset (the default) then the driver will attempt to discover the
+	// highest supported protocol for the cluster. In clusters with nodes of different
+	// versions the protocol selected is not defined (ie, it can be any of the supported in the cluster)
+	ProtoVersion      int
 	Timeout           time.Duration     // connection timeout (default: 600ms)
 	Port              int               // port (default: 9042)
 	Keyspace          string            // initial keyspace (optional)
@@ -118,7 +126,6 @@ func NewCluster(hosts ...string) *ClusterConfig {
 	cfg := &ClusterConfig{
 		Hosts:                  hosts,
 		CQLVersion:             "3.0.0",
-		ProtoVersion:           2,
 		Timeout:                600 * time.Millisecond,
 		Port:                   9042,
 		NumConns:               2,

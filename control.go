@@ -7,6 +7,7 @@ import (
 	"log"
 	"math/rand"
 	"net"
+	"regexp"
 	"strconv"
 	"sync/atomic"
 	"time"
@@ -134,53 +135,91 @@ func hostInfo(addr string, defaultPort int) (*HostInfo, error) {
 	return &HostInfo{peer: ip, port: port}, nil
 }
 
-func (c *controlConn) shuffleDial(endpoints []string) (conn *Conn, err error) {
-	// TODO: accept a []*HostInfo
-	perm := randr.Perm(len(endpoints))
-	shuffled := make([]string, len(endpoints))
+func shuffleHosts(hosts []*HostInfo) []*HostInfo {
+	perm := randr.Perm(len(hosts))
+	shuffled := make([]*HostInfo, len(hosts))
 
-	for i, endpoint := range endpoints {
-		shuffled[perm[i]] = endpoint
+	for i, host := range hosts {
+		shuffled[perm[i]] = host
 	}
 
-	// shuffle endpoints so not all drivers will connect to the same initial
-	// node.
-	for _, addr := range shuffled {
-		if addr == "" {
-			return nil, fmt.Errorf("invalid address: %q", addr)
-		}
-
-		port := c.session.cfg.Port
-		addr = JoinHostPort(addr, port)
-
-		var host *HostInfo
-		host, err = hostInfo(addr, port)
-		if err != nil {
-			return nil, fmt.Errorf("invalid address: %q: %v", addr, err)
-		}
-
-		hostInfo, _ := c.session.ring.addHostIfMissing(host)
-		conn, err = c.session.connect(hostInfo, c)
-		if err == nil {
-			return conn, err
-		}
-
-		log.Printf("gocql: unable to dial control conn %v: %v\n", addr, err)
-	}
-
-	if err != nil {
-		return nil, err
-	}
-
-	return conn, nil
+	return shuffled
 }
 
-func (c *controlConn) connect(endpoints []string) error {
-	if len(endpoints) == 0 {
+func (c *controlConn) shuffleDial(endpoints []*HostInfo) (*Conn, error) {
+	// shuffle endpoints so not all drivers will connect to the same initial
+	// node.
+	shuffled := shuffleHosts(endpoints)
+
+	var err error
+	for _, host := range shuffled {
+		var conn *Conn
+		conn, err = c.session.connect(host, c)
+		if err == nil {
+			return conn, nil
+		}
+
+		log.Printf("gocql: unable to dial control conn %v: %v\n", host.Peer(), err)
+	}
+
+	return nil, err
+}
+
+// this is going to be version dependant and a nightmare to maintain :(
+var protocolSupportRe = regexp.MustCompile(`the lowest supported version is \d+ and the greatest is (\d+)$`)
+
+func parseProtocolFromError(err error) int {
+	// I really wish this had the actual info in the error frame...
+	matches := protocolSupportRe.FindAllStringSubmatch(err.Error(), -1)
+	if len(matches) != 1 || len(matches[0]) != 2 {
+		if verr, ok := err.(*protocolError); ok {
+			return int(verr.frame.Header().version.version())
+		}
+		return 0
+	}
+
+	max, err := strconv.Atoi(matches[0][1])
+	if err != nil {
+		return 0
+	}
+
+	return max
+}
+
+func (c *controlConn) discoverProtocol(hosts []*HostInfo) (int, error) {
+	hosts = shuffleHosts(hosts)
+
+	connCfg := *c.session.connCfg
+	connCfg.ProtoVersion = 4 // TODO: define maxProtocol
+
+	handler := connErrorHandlerFn(func(c *Conn, err error, closed bool) {
+		// we should never get here, but if we do it means we connected to a
+		// host successfully which means our attempted protocol version worked
+	})
+
+	var err error
+	for _, host := range hosts {
+		var conn *Conn
+		conn, err = Connect(host, &connCfg, handler, c.session)
+		if err == nil {
+			conn.Close()
+			return connCfg.ProtoVersion, nil
+		}
+
+		if proto := parseProtocolFromError(err); proto > 0 {
+			return proto, nil
+		}
+	}
+
+	return 0, err
+}
+
+func (c *controlConn) connect(hosts []*HostInfo) error {
+	if len(hosts) == 0 {
 		return errors.New("control: no endpoints specified")
 	}
 
-	conn, err := c.shuffleDial(endpoints)
+	conn, err := c.shuffleDial(hosts)
 	if err != nil {
 		return fmt.Errorf("control: unable to connect to initial hosts: %v", err)
 	}

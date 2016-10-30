@@ -2502,5 +2502,19 @@ func TestCreateSession_DontSwallowError(t *testing.T) {
 			t.Fatalf(`expcted to get error "unsupported response version" got: %q`, err)
 		}
 	}
+}
 
+func TestControl_DiscoverProtocol(t *testing.T) {
+	cluster := createCluster()
+	cluster.ProtoVersion = 0
+
+	session, err := cluster.CreateSession()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close()
+
+	if session.cfg.ProtoVersion == 0 {
+		t.Fatal("did not discovery protocol")
+	}
 }

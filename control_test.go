@@ -29,3 +29,38 @@ func TestHostInfo_Lookup(t *testing.T) {
 		}
 	}
 }
+
+func TestParseProtocol(t *testing.T) {
+	tests := [...]struct {
+		err   error
+		proto int
+	}{
+		{
+			err: &protocolError{
+				frame: errorFrame{
+					code:    0x10,
+					message: "Invalid or unsupported protocol version (5); the lowest supported version is 3 and the greatest is 4",
+				},
+			},
+			proto: 4,
+		},
+		{
+			err: &protocolError{
+				frame: errorFrame{
+					frameHeader: frameHeader{
+						version: 0x83,
+					},
+					code:    0x10,
+					message: "Invalid or unsupported protocol version: 5",
+				},
+			},
+			proto: 3,
+		},
+	}
+
+	for i, test := range tests {
+		if proto := parseProtocolFromError(test.err); proto != test.proto {
+			t.Errorf("%d: exepcted proto %d got %d", i, test.proto, proto)
+		}
+	}
+}

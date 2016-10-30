@@ -440,6 +440,17 @@ func (c *Conn) discardFrame(head frameHeader) error {
 	return nil
 }
 
+type protocolError struct {
+	frame frame
+}
+
+func (p *protocolError) Error() string {
+	if err, ok := p.frame.(error); ok {
+		return err.Error()
+	}
+	return fmt.Sprintf("gocql: received unexpected frame on stream %d: %v", p.frame.Header().stream, p.frame)
+}
+
 func (c *Conn) recv() error {
 	// not safe for concurrent reads
 
@@ -479,11 +490,8 @@ func (c *Conn) recv() error {
 			return err
 		}
 
-		switch v := frame.(type) {
-		case error:
-			return fmt.Errorf("gocql: error on stream %d: %v", head.stream, v)
-		default:
-			return fmt.Errorf("gocql: received frame on stream %d: %v", head.stream, frame)
+		return &protocolError{
+			frame: frame,
 		}
 	}
 
