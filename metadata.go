@@ -75,6 +75,7 @@ const (
 	ColumnClusteringKey
 	ColumnRegular
 	ColumnCompact
+	ColumnStatic
 )
 
 func (c ColumnKind) String() string {
@@ -87,6 +88,8 @@ func (c ColumnKind) String() string {
 		return "regular"
 	case ColumnCompact:
 		return "compact"
+	case ColumnStatic:
+		return "static"
 	default:
 		return fmt.Sprintf("unkown_column_%d", c)
 	}
