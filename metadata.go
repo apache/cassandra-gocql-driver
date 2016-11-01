@@ -75,6 +75,7 @@ const (
 	ColumnClusteringKey
 	ColumnRegular
 	ColumnCompact
+	ColumnStatic
 )
 
 func (c ColumnKind) String() string {
@@ -87,6 +88,8 @@ func (c ColumnKind) String() string {
 		return "regular"
 	case ColumnCompact:
 		return "compact"
+	case ColumnStatic:
+		return "static"
 	default:
 		return fmt.Sprintf("unkown_column_%d", c)
 	}
@@ -116,6 +119,8 @@ func columnKindFromSchema(kind string) (ColumnKind, error) {
 		return ColumnRegular, nil
 	case "compact_value":
 		return ColumnCompact, nil
+	case "static":
+		return ColumnStatic, nil
 	default:
 		return -1, fmt.Errorf("unknown column kind: %q", kind)
 	}
