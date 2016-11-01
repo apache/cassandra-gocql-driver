@@ -119,6 +119,8 @@ func columnKindFromSchema(kind string) (ColumnKind, error) {
 		return ColumnRegular, nil
 	case "compact_value":
 		return ColumnCompact, nil
+	case "static":
+		return ColumnStatic, nil
 	default:
 		return -1, fmt.Errorf("unknown column kind: %q", kind)
 	}
