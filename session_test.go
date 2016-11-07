@@ -8,7 +8,6 @@ import (
 )
 
 func TestSessionAPI(t *testing.T) {
-
 	cfg := &ClusterConfig{}
 
 	s := &Session{
