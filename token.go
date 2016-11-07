@@ -203,13 +203,13 @@ func (t *tokenRing) GetHostForToken(token token) *HostInfo {
 	if t == nil {
 		return nil
 	}
-	
+
 	l := len(t.tokens)
 	// no host tokens, no available hosts
-	if l == 0{
+	if l == 0 {
 		return nil
 	}
-	
+
 	// find the primary replica
 	ringIndex := sort.Search(
 		l,
@@ -217,7 +217,7 @@ func (t *tokenRing) GetHostForToken(token token) *HostInfo {
 			return !t.tokens[i].Less(token)
 		},
 	)
-	
+
 	if ringIndex == l {
 		// wrap around to the first in the ring
 		ringIndex = 0
