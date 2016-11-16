@@ -10,7 +10,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -231,7 +230,7 @@ func (s *Session) reconnectDownedHosts(intv time.Duration) {
 				for _, h := range hosts {
 					buf.WriteString("[" + h.Peer().String() + ":" + h.State().String() + "]")
 				}
-				log.Println(buf.String())
+				Logger.Println(buf.String())
 			}
 
 			for _, h := range hosts {
