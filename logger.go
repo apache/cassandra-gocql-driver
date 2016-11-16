@@ -5,10 +5,10 @@ import (
 	"log"
 )
 
-type stdLogger interface {
+type StdLogger interface {
 	Print(v ...interface{})
 	Printf(format string, v ...interface{})
 	Println(v ...interface{})
 }
 
-var Logger stdLogger = log.New(ioutil.Discard, "", log.LstdFlags)
+var Logger StdLogger = log.New(ioutil.Discard, "", log.LstdFlags)
