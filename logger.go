@@ -1,9 +1,6 @@
 package gocql
 
-import (
-	"io/ioutil"
-	"log"
-)
+import "log"
 
 type StdLogger interface {
 	Print(v ...interface{})
@@ -11,4 +8,10 @@ type StdLogger interface {
 	Println(v ...interface{})
 }
 
-var Logger StdLogger = log.New(ioutil.Discard, "", log.LstdFlags)
+type defaultLogger struct{}
+
+func (l *defaultLogger) Print(v ...interface{})                 { log.Print(v...) }
+func (l *defaultLogger) Printf(format string, v ...interface{}) { log.Printf(format, v...) }
+func (l *defaultLogger) Println(v ...interface{})               { log.Println(v...) }
+
+var Logger StdLogger = &defaultLogger{}
