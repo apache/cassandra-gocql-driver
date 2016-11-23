@@ -127,15 +127,15 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 	}
 
 	if err := s.init(); err != nil {
-		// TODO(zariel): dont wrap this error in fmt.Errorf, return a typed error
 		s.Close()
-		return nil, fmt.Errorf("gocql: unable to create session: %v", err)
-	}
-
-	if s.pool.Size() == 0 {
-		// TODO(zariel): move this to init
-		s.Close()
-		return nil, ErrNoConnectionsStarted
+		if err == ErrNoConnectionsStarted {
+			//This error used to be generated inside NewSession & returned directly
+			//Forward it on up to be backwards compatible
+			return nil, ErrNoConnectionsStarted
+		} else {
+			// TODO(zariel): dont wrap this error in fmt.Errorf, return a typed error
+			return nil, fmt.Errorf("gocql: unable to create session: %v", err)
+		}
 	}
 
 	return s, nil
@@ -210,6 +210,10 @@ func (s *Session) init() error {
 		s.useSystemSchema = newer
 	} else {
 		s.useSystemSchema = hosts[0].Version().Major >= 3
+	}
+
+	if s.pool.Size() == 0 {
+		return ErrNoConnectionsStarted
 	}
 
 	return nil
