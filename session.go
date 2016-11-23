@@ -126,6 +126,14 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 		policy: cfg.PoolConfig.HostSelectionPolicy,
 	}
 
+	//Check the TLS Config before trying to connect to anything external
+	connCfg, err := connConfig(&s.cfg)
+	if err != nil {
+		//TODO: Return a typed error
+		return nil, fmt.Errorf("gocql: unable to create session: %v", err)
+	}
+	s.connCfg = connCfg
+
 	if err := s.init(); err != nil {
 		s.Close()
 		if err == ErrNoConnectionsStarted {
@@ -147,12 +155,6 @@ func (s *Session) init() error {
 		return err
 	}
 
-	connCfg, err := connConfig(s)
-	if err != nil {
-		return err
-	}
-	s.connCfg = connCfg
-
 	if !s.cfg.disableControlConn {
 		s.control = createControlConn(s)
 		if s.cfg.ProtoVersion == 0 {
@@ -165,7 +167,7 @@ func (s *Session) init() error {
 
 			// TODO(zariel): we really only need this in 1 place
 			s.cfg.ProtoVersion = proto
-			connCfg.ProtoVersion = proto
+			s.connCfg.ProtoVersion = proto
 		}
 
 		if err := s.control.connect(hosts); err != nil {
