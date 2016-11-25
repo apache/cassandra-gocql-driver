@@ -1238,7 +1238,10 @@ func (iter *Iter) GetCustomPayload() map[string][]byte {
 //
 // This is only available starting with CQL Protocol v4.
 func (iter *Iter) Warnings() []string {
-	return iter.framer.header.warnings
+	if iter.framer != nil {
+		return iter.framer.header.warnings
+	}
+	return nil
 }
 
 // Close closes the iterator and returns any errors that happened during
