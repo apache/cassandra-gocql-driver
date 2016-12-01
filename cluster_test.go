@@ -1,16 +1,16 @@
 package gocql
 
 import (
+	"net"
 	"testing"
 	"time"
-	"net"
 )
 
 func TestNewCluster_Defaults(t *testing.T) {
 	cfg := NewCluster()
 	assertEqual(t, "cluster config cql version", "3.0.0", cfg.CQLVersion)
 	assertEqual(t, "cluster config timeout", 600*time.Millisecond, cfg.Timeout)
-	assertEqual(t, "cluster config port", 9042, cfg.Port)
+	assertEqual(t, "cluster config native transport port", 9042, cfg.NativeTransportPort)
 	assertEqual(t, "cluster config num-conns", 2, cfg.NumConns)
 	assertEqual(t, "cluster config consistency", Quorum, cfg.Consistency)
 	assertEqual(t, "cluster config max prepared statements", defaultMaxPreparedStmts, cfg.MaxPreparedStmts)
@@ -24,8 +24,20 @@ func TestNewCluster_Defaults(t *testing.T) {
 func TestNewCluster_WithHosts(t *testing.T) {
 	cfg := NewCluster("addr1", "addr2")
 	assertEqual(t, "cluster config hosts length", 2, len(cfg.Hosts))
-	assertEqual(t, "cluster config host 0", "addr1", cfg.Hosts[0])
-	assertEqual(t, "cluster config host 1", "addr2", cfg.Hosts[1])
+	assertEqual(t, "cluster config host 0", "addr1", cfg.Hosts[0].Host)
+	assertEqual(t, "cluster config port 0", 9042, cfg.Hosts[0].Port)
+	assertEqual(t, "cluster config host 1", "addr2", cfg.Hosts[1].Host)
+	assertEqual(t, "cluster config port 0", 9042, cfg.Hosts[1].Port)
+}
+
+func TestNewCluster_WithHostsAndPorts(t *testing.T) {
+	cfg, err := NewClusterWithPort("addr1:1", "addr2:2")
+	assertNil(t, "new cluster should not error", err)
+	assertEqual(t, "cluster config hosts length", 2, len(cfg.Hosts))
+	assertEqual(t, "cluster config host 0", "addr1", cfg.Hosts[0].Host)
+	assertEqual(t, "cluster config port 0", 1, cfg.Hosts[0].Port)
+	assertEqual(t, "cluster config host 1", "addr2", cfg.Hosts[1].Host)
+	assertEqual(t, "cluster config port 0", 2, cfg.Hosts[1].Port)
 }
 
 func TestClusterConfig_translateAddressAndPort_NilTranslator(t *testing.T) {
