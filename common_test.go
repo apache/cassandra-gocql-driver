@@ -12,7 +12,7 @@ import (
 )
 
 var (
-	flagCluster      = flag.String("cluster", "127.0.0.1:9042", "a comma-separated list of host:port tuples")
+	flagCluster      = flag.String("cluster", "127.0.0.1", "a comma-separated list of host:port tuples")
 	flagProto        = flag.Int("proto", 2, "protcol version")
 	flagCQL          = flag.String("cql", "3.0.0", "CQL version")
 	flagRF           = flag.Int("rf", 1, "replication factor for test keyspace")
