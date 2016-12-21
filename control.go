@@ -1,6 +1,7 @@
 package gocql
 
 import (
+	"context"
 	crand "crypto/rand"
 	"errors"
 	"fmt"
@@ -10,8 +11,6 @@ import (
 	"strconv"
 	"sync/atomic"
 	"time"
-
-	"golang.org/x/net/context"
 )
 
 var (

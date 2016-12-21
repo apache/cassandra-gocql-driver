@@ -6,6 +6,7 @@ package gocql
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -15,8 +16,6 @@ import (
 	"sync/atomic"
 	"time"
 	"unicode"
-
-	"golang.org/x/net/context"
 
 	"github.com/gocql/gocql/internal/lru"
 )
