@@ -4,6 +4,7 @@ package gocql
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"math"
 	"math/big"
@@ -15,8 +16,6 @@ import (
 	"testing"
 	"time"
 	"unicode"
-
-	"golang.org/x/net/context"
 
 	"gopkg.in/inf.v0"
 )
