@@ -1640,7 +1640,7 @@ func TestGetKeyspaceMetadataFails(t *testing.T) {
 	keyspaceMetadata, err := getKeyspaceMetadata(session, "gocql_keyspace_does_not_exist")
 
 	if err != ErrKeyspaceDoesNotExist || err == nil {
-		t.Failf("Expected error of type ErrKeySpaceDoesNotExist. Instead, error was %v", err)
+		t.Fatalf("Expected error of type ErrKeySpaceDoesNotExist. Instead, error was %v", err)
 	}
 }
 
