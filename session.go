@@ -389,7 +389,7 @@ func (s *Session) executeQuery(qry *Query) *Iter {
 	return iter
 }
 
-// KeyspaceMetadata returns the schema metadata for the keyspace specified.
+// KeyspaceMetadata returns the schema metadata for the keyspace specified. Returns an error if the keyspace does not exist.
 func (s *Session) KeyspaceMetadata(keyspace string) (*KeyspaceMetadata, error) {
 	// fail fast
 	if s.Closed() {
