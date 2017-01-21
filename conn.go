@@ -536,6 +536,7 @@ func (c *Conn) releaseStream(stream int) {
 	delete(c.calls, stream)
 	c.mu.Unlock()
 
+	call.timer.Stop()
 	streamPool.Put(call)
 	c.streams.Clear(stream)
 }
