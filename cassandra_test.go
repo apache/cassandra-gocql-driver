@@ -1598,7 +1598,7 @@ func TestEmptyTimestamp(t *testing.T) {
 	}
 }
 
-// Integration test of just querying for data from the system.schema_keyspace table
+// Integration test of just querying for data from the system.schema_keyspace table where the keyspace DOES exist.
 func TestGetKeyspaceMetadata(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
@@ -1629,6 +1629,18 @@ func TestGetKeyspaceMetadata(t *testing.T) {
 	}
 	if rfInt != *flagRF {
 		t.Errorf("Expected replication factor to be %d but was %d", *flagRF, rfInt)
+	}
+}
+
+// Integration test of just querying for data from the system.schema_keyspace table where the keyspace DOES NOT exist.
+func TestGetKeyspaceMetadataFails(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+
+	_, err := getKeyspaceMetadata(session, "gocql_keyspace_does_not_exist")
+
+	if err != ErrKeyspaceDoesNotExist || err == nil {
+		t.Fatalf("Expected error of type ErrKeySpaceDoesNotExist. Instead, error was %v", err)
 	}
 }
 

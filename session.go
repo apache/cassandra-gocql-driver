@@ -389,7 +389,7 @@ func (s *Session) executeQuery(qry *Query) *Iter {
 	return iter
 }
 
-// KeyspaceMetadata returns the schema metadata for the keyspace specified.
+// KeyspaceMetadata returns the schema metadata for the keyspace specified. Returns an error if the keyspace does not exist.
 func (s *Session) KeyspaceMetadata(keyspace string) (*KeyspaceMetadata, error) {
 	// fail fast
 	if s.Closed() {
@@ -1570,15 +1570,16 @@ func (e Error) Error() string {
 }
 
 var (
-	ErrNotFound      = errors.New("not found")
-	ErrUnavailable   = errors.New("unavailable")
-	ErrUnsupported   = errors.New("feature not supported")
-	ErrTooManyStmts  = errors.New("too many statements")
-	ErrUseStmt       = errors.New("use statements aren't supported. Please see https://github.com/gocql/gocql for explaination.")
-	ErrSessionClosed = errors.New("session has been closed")
-	ErrNoConnections = errors.New("gocql: no hosts available in the pool")
-	ErrNoKeyspace    = errors.New("no keyspace provided")
-	ErrNoMetadata    = errors.New("no metadata available")
+	ErrNotFound             = errors.New("not found")
+	ErrUnavailable          = errors.New("unavailable")
+	ErrUnsupported          = errors.New("feature not supported")
+	ErrTooManyStmts         = errors.New("too many statements")
+	ErrUseStmt              = errors.New("use statements aren't supported. Please see https://github.com/gocql/gocql for explanation.")
+	ErrSessionClosed        = errors.New("session has been closed")
+	ErrNoConnections        = errors.New("gocql: no hosts available in the pool")
+	ErrNoKeyspace           = errors.New("no keyspace provided")
+	ErrKeyspaceDoesNotExist = errors.New("keyspace does not exist")
+	ErrNoMetadata           = errors.New("no metadata available")
 )
 
 type ErrProtocol struct{ error }
