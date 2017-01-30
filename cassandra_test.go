@@ -4,6 +4,7 @@ package gocql
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"math"
 	"math/big"
@@ -51,7 +52,14 @@ func TestAuthentication(t *testing.T) {
 //TestRingDiscovery makes sure that you can autodiscover other cluster members when you seed a cluster config with just one node
 func TestRingDiscovery(t *testing.T) {
 	cluster := createCluster()
-	cluster.Hosts = clusterHosts[:1]
+	hosts := make([]Host, len(clusterHosts[:1]))
+	for i, h := range clusterHosts[:1] {
+		hosts[i] = Host{
+			Host: h,
+			Port: 9042,
+		}
+	}
+	cluster.Hosts = hosts
 
 	session := createSessionFromCluster(cluster, t)
 	defer session.Close()
@@ -562,7 +570,12 @@ func TestCreateSessionTimeout(t *testing.T) {
 	}()
 
 	cluster := createCluster()
-	cluster.Hosts = []string{"127.0.0.1:1"}
+	cluster.Hosts = []Host{
+		{
+			Host: "127.0.0.1",
+			Port: 1,
+		},
+	}
 	session, err := cluster.CreateSession()
 	if err == nil {
 		session.Close()
@@ -1203,7 +1216,12 @@ func TestPrepare_PreparedCacheEviction(t *testing.T) {
 	cluster := createCluster()
 	cluster.MaxPreparedStmts = maxPrepared
 	cluster.Events.DisableSchemaEvents = true
-	cluster.Hosts = []string{host}
+	cluster.Hosts = []Host{
+		{
+			Host: host,
+			Port: 9042,
+		},
+	}
 
 	cluster.HostFilter = WhiteListHostFilter(host)
 
@@ -1259,29 +1277,29 @@ func TestPrepare_PreparedCacheEviction(t *testing.T) {
 
 	// Walk through all the configured hosts and test cache retention and eviction
 	for _, host := range session.cfg.Hosts {
-		_, ok := session.stmtsLRU.lru.Get(session.stmtsLRU.keyFor(host+":9042", session.cfg.Keyspace, "SELECT id,mod FROM prepcachetest WHERE id = 0"))
+		_, ok := session.stmtsLRU.lru.Get(session.stmtsLRU.keyFor(fmt.Sprintf("%s:%d", host.Host, host.Port), session.cfg.Keyspace, "SELECT id,mod FROM prepcachetest WHERE id = 0"))
 		if ok {
-			t.Errorf("expected first select to be purged but was in cache for host=%q", host)
+			t.Errorf("expected first select to be purged but was in cache for host=%+v", host)
 		}
 
-		_, ok = session.stmtsLRU.lru.Get(session.stmtsLRU.keyFor(host+":9042", session.cfg.Keyspace, "SELECT id,mod FROM prepcachetest WHERE id = 1"))
+		_, ok = session.stmtsLRU.lru.Get(session.stmtsLRU.keyFor(fmt.Sprintf("%s:%d", host.Host, host.Port), session.cfg.Keyspace, "SELECT id,mod FROM prepcachetest WHERE id = 1"))
 		if !ok {
-			t.Errorf("exepected second select to be in cache for host=%q", host)
+			t.Errorf("exepected second select to be in cache for host=%+v", host)
 		}
 
-		_, ok = session.stmtsLRU.lru.Get(session.stmtsLRU.keyFor(host+":9042", session.cfg.Keyspace, "INSERT INTO prepcachetest (id,mod) VALUES (?, ?)"))
+		_, ok = session.stmtsLRU.lru.Get(session.stmtsLRU.keyFor(fmt.Sprintf("%s:%d", host.Host, host.Port), session.cfg.Keyspace, "INSERT INTO prepcachetest (id,mod) VALUES (?, ?)"))
 		if !ok {
-			t.Errorf("expected insert to be in cache for host=%q", host)
+			t.Errorf("expected insert to be in cache for host=%+v", host)
 		}
 
-		_, ok = session.stmtsLRU.lru.Get(session.stmtsLRU.keyFor(host+":9042", session.cfg.Keyspace, "UPDATE prepcachetest SET mod = ? WHERE id = ?"))
+		_, ok = session.stmtsLRU.lru.Get(session.stmtsLRU.keyFor(fmt.Sprintf("%s:%d", host.Host, host.Port), session.cfg.Keyspace, "UPDATE prepcachetest SET mod = ? WHERE id = ?"))
 		if !ok {
-			t.Errorf("expected update to be in cached for host=%q", host)
+			t.Errorf("expected update to be in cached for host=%+v", host)
 		}
 
-		_, ok = session.stmtsLRU.lru.Get(session.stmtsLRU.keyFor(host+":9042", session.cfg.Keyspace, "DELETE FROM prepcachetest WHERE id = ?"))
+		_, ok = session.stmtsLRU.lru.Get(session.stmtsLRU.keyFor(fmt.Sprintf("%s:%d", host.Host, host.Port), session.cfg.Keyspace, "DELETE FROM prepcachetest WHERE id = ?"))
 		if !ok {
-			t.Errorf("expected delete to be cached for host=%q", host)
+			t.Errorf("expected delete to be cached for host=%+v", host)
 		}
 	}
 }
@@ -2358,13 +2376,16 @@ func TestDiscoverViaProxy(t *testing.T) {
 	}(&wg)
 
 	defer wg.Wait()
-
 	proxyAddr := proxy.Addr().String()
 
 	cluster := createCluster()
 	cluster.NumConns = 1
 	// initial host is the proxy address
-	cluster.Hosts = []string{proxyAddr}
+	cluster.Hosts = []Host{
+		{
+			Host: proxyAddr,
+		},
+	}
 
 	session := createSessionFromCluster(cluster, t)
 	defer session.Close()

@@ -75,18 +75,16 @@ var queryPool = &sync.Pool{
 	},
 }
 
-func addrsToHosts(addrs []string, defaultPort int) ([]*HostInfo, error) {
-	hosts := make([]*HostInfo, len(addrs))
-	for i, hostport := range addrs {
-		host, err := hostInfo(hostport, defaultPort)
+func addrsToHosts(hosts []Host) ([]*HostInfo, error) {
+	hostinfo := make([]*HostInfo, len(hosts))
+	for i, host := range hosts {
+		h, err := hostInfo(host.Host, host.Port)
 		if err != nil {
 			return nil, err
 		}
-
-		hosts[i] = host
+		hostinfo[i] = h
 	}
-
-	return hosts, nil
+	return hostinfo, nil
 }
 
 // NewSession wraps an existing Node.
@@ -150,7 +148,7 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 }
 
 func (s *Session) init() error {
-	hosts, err := addrsToHosts(s.cfg.Hosts, s.cfg.Port)
+	hosts, err := addrsToHosts(s.cfg.Hosts)
 	if err != nil {
 		return err
 	}
@@ -169,7 +167,6 @@ func (s *Session) init() error {
 			s.cfg.ProtoVersion = proto
 			s.connCfg.ProtoVersion = proto
 		}
-
 		if err := s.control.connect(hosts); err != nil {
 			return err
 		}

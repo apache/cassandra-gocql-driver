@@ -60,14 +60,13 @@ func setupTLSConfig(sslOpts *SslOptions) (*tls.Config, error) {
 type policyConnPool struct {
 	session *Session
 
-	port     int
 	numConns int
 	keyspace string
 
 	mu            sync.RWMutex
 	hostConnPools map[string]*hostConnPool
 
-	endpoints []string
+	endpoints []Host
 }
 
 func connConfig(cfg *ClusterConfig) (*ConnConfig, error) {
@@ -99,13 +98,12 @@ func newPolicyConnPool(session *Session) *policyConnPool {
 	// create the pool
 	pool := &policyConnPool{
 		session:       session,
-		port:          session.cfg.Port,
 		numConns:      session.cfg.NumConns,
 		keyspace:      session.cfg.Keyspace,
 		hostConnPools: map[string]*hostConnPool{},
 	}
 
-	pool.endpoints = make([]string, len(session.cfg.Hosts))
+	pool.endpoints = make([]Host, len(session.cfg.Hosts))
 	copy(pool.endpoints, session.cfg.Hosts)
 
 	return pool
@@ -140,7 +138,7 @@ func (p *policyConnPool) SetHosts(hosts []*HostInfo) {
 			pools <- newHostConnPool(
 				p.session,
 				host,
-				p.port,
+				host.Port(),
 				p.numConns,
 				p.keyspace,
 			)

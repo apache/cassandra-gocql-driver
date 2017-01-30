@@ -40,7 +40,13 @@ func DataCentreHostFilter(dataCentre string) HostFilter {
 // WhiteListHostFilter filters incoming hosts by checking that their address is
 // in the initial hosts whitelist.
 func WhiteListHostFilter(hosts ...string) HostFilter {
-	hostInfos, err := addrsToHosts(hosts, 9042)
+	h := make([]Host, len(hosts))
+	for i, host := range hosts {
+		h[i] = Host{
+			Host: host,
+		}
+	}
+	hostInfos, err := addrsToHosts(h)
 	if err != nil {
 		// dont want to panic here, but rather not break the API
 		panic(fmt.Errorf("unable to lookup host info from address: %v", err))

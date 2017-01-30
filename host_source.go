@@ -328,9 +328,7 @@ func (r *ringDescriber) GetHosts() (hosts []*HostInfo, partitioner string, err e
 			return nil, "", err
 		}
 	}
-
-	localHost.port = r.session.cfg.Port
-
+	localHost.port = r.session.cfg.NativeTransportPort
 	hosts = []*HostInfo{localHost}
 
 	rows := r.session.control.query("SELECT rpc_address, data_center, rack, host_id, tokens, release_version FROM system.peers").Scanner()
@@ -339,7 +337,7 @@ func (r *ringDescriber) GetHosts() (hosts []*HostInfo, partitioner string, err e
 	}
 
 	for rows.Next() {
-		host := &HostInfo{port: r.session.cfg.Port}
+		host := &HostInfo{port: r.session.cfg.NativeTransportPort}
 		err := rows.Scan(&host.peer, &host.dataCenter, &host.rack, &host.hostId, &host.tokens, &host.version)
 		if err != nil {
 			Logger.Println(err)
