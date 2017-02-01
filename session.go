@@ -196,13 +196,6 @@ func (s *Session) init() error {
 		}
 	}
 
-	// TODO(zariel): we probably dont need this any more as we verify that we
-	// can connect to one of the endpoints supplied by using the control conn.
-	// See if there are any connections in the pool
-	if s.cfg.ReconnectInterval > 0 {
-		go s.reconnectDownedHosts(s.cfg.ReconnectInterval)
-	}
-
 	// If we disable the initial host lookup, we need to still check if the
 	// cluster is using the newer system schema or not... however, if control
 	// connection is disable, we really have no choice, so we just make our
@@ -219,36 +212,6 @@ func (s *Session) init() error {
 	}
 
 	return nil
-}
-
-func (s *Session) reconnectDownedHosts(intv time.Duration) {
-	reconnectTicker := time.NewTicker(intv)
-	defer reconnectTicker.Stop()
-
-	for {
-		select {
-		case <-reconnectTicker.C:
-			hosts := s.ring.allHosts()
-
-			// Print session.ring for debug.
-			if gocqlDebug {
-				buf := bytes.NewBufferString("Session.ring:")
-				for _, h := range hosts {
-					buf.WriteString("[" + h.Peer().String() + ":" + h.State().String() + "]")
-				}
-				Logger.Println(buf.String())
-			}
-
-			for _, h := range hosts {
-				if h.IsUp() {
-					continue
-				}
-				s.handleNodeUp(h.Peer(), h.Port(), true)
-			}
-		case <-s.quit:
-			return
-		}
-	}
 }
 
 // SetConsistency sets the default consistency level for this session. This
