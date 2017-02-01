@@ -570,26 +570,6 @@ func TestCreateSessionTimeout(t *testing.T) {
 	}
 }
 
-func TestReconnection(t *testing.T) {
-	cluster := createCluster()
-	cluster.ReconnectInterval = 1 * time.Second
-	session := createSessionFromCluster(cluster, t)
-	defer session.Close()
-
-	h := session.ring.allHosts()[0]
-	session.handleNodeDown(h.Peer(), h.Port())
-
-	if h.State() != NodeDown {
-		t.Fatal("Host should be NodeDown but not.")
-	}
-
-	time.Sleep(cluster.ReconnectInterval + h.Version().nodeUpDelay() + 1*time.Second)
-
-	if h.State() != NodeUp {
-		t.Fatal("Host should be NodeUp but not. Failed to reconnect.")
-	}
-}
-
 type FullName struct {
 	FirstName string
 	LastName  string

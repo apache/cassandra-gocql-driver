@@ -64,9 +64,6 @@ type ClusterConfig struct {
 	// configuration of host selection and connection selection policies.
 	PoolConfig PoolConfig
 
-	// If not zero, gocql attempt to reconnect known DOWN nodes in every ReconnectSleep.
-	ReconnectInterval time.Duration
-
 	// The maximum amount of time to wait for schema agreement in a cluster after
 	// receiving a schema change frame. (deault: 60s)
 	MaxWaitSchemaAgreement time.Duration
@@ -140,7 +137,6 @@ func NewCluster(hosts ...string) *ClusterConfig {
 		PageSize:               5000,
 		DefaultTimestamp:       true,
 		MaxWaitSchemaAgreement: 60 * time.Second,
-		ReconnectInterval:      60 * time.Second,
 	}
 	return cfg
 }

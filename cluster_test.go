@@ -1,9 +1,9 @@
 package gocql
 
 import (
+	"net"
 	"testing"
 	"time"
-	"net"
 )
 
 func TestNewCluster_Defaults(t *testing.T) {
@@ -18,7 +18,6 @@ func TestNewCluster_Defaults(t *testing.T) {
 	assertEqual(t, "cluster config page-size", 5000, cfg.PageSize)
 	assertEqual(t, "cluster config default timestamp", true, cfg.DefaultTimestamp)
 	assertEqual(t, "cluster config max wait schema agreement", 60*time.Second, cfg.MaxWaitSchemaAgreement)
-	assertEqual(t, "cluster config reconnect interval", 60*time.Second, cfg.ReconnectInterval)
 }
 
 func TestNewCluster_WithHosts(t *testing.T) {
