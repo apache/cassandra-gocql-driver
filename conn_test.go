@@ -140,6 +140,50 @@ func newTestSession(addr string, proto protoVersion) (*Session, error) {
 	return testCluster(addr, proto).CreateSession()
 }
 
+func TestStartupTimeout(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	log := &testLogger{}
+	Logger = log
+	defer func() {
+		Logger = &defaultLogger{}
+	}()
+
+	srv := NewTestServer(t, defaultProto, ctx)
+	defer srv.Stop()
+
+	// Tell the server to never respond to Startup frame
+	atomic.StoreInt32(&srv.TimeoutOnStartup, 1)
+
+	startTime := time.Now()
+	cluster := NewCluster(srv.Address)
+	cluster.ProtoVersion = int(defaultProto)
+	cluster.disableControlConn = true
+	// Set very long query connection timeout
+	// so we know CreateSession() is using the ConnectTimeout
+	cluster.Timeout = time.Second * 5
+
+	// Create session should timeout during connect attempt
+	_, err := cluster.CreateSession()
+	if err == nil {
+		t.Fatal("CreateSession() should have returned a timeout error")
+	}
+
+	elapsed := time.Since(startTime)
+	if elapsed > time.Second*5 {
+		t.Fatal("ConnectTimeout is not respected")
+	}
+
+	if !strings.Contains(err.Error(), "no connections were made when creating the session") {
+		t.Fatalf("Expected to receive no connections error - got '%s'", err)
+	}
+
+	if !strings.Contains(log.String(), "no response to connection startup within timeout") {
+		t.Fatalf("Expected to receive timeout log message  - got '%s'", log.String())
+	}
+
+	cancel()
+}
+
 func TestTimeout(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -619,12 +663,13 @@ func NewSSLTestServer(t testing.TB, protocol uint8, ctx context.Context) *TestSe
 }
 
 type TestServer struct {
-	Address    string
-	t          testing.TB
-	nreq       uint64
-	listen     net.Listener
-	nKillReq   int64
-	compressor Compressor
+	Address          string
+	TimeoutOnStartup int32
+	t                testing.TB
+	nreq             uint64
+	listen           net.Listener
+	nKillReq         int64
+	compressor       Compressor
 
 	protocol   byte
 	headerSize int
@@ -738,6 +783,14 @@ func (srv *TestServer) process(f *framer) {
 
 	switch head.op {
 	case opStartup:
+		if atomic.LoadInt32(&srv.TimeoutOnStartup) > 0 {
+			// Do not respond to startup command
+			// wait until we get a cancel signal
+			select {
+			case <-srv.ctx.Done():
+				return
+			}
+		}
 		f.writeHeader(0, opReady, head.stream)
 	case opOptions:
 		f.writeHeader(0, opSupported, head.stream)
