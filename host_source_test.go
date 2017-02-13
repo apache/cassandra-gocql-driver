@@ -1,6 +1,12 @@
+// +build all integration
+
 package gocql
 
-import "testing"
+import (
+	"fmt"
+	"net"
+	"testing"
+)
 
 func TestUnmarshalCassVersion(t *testing.T) {
 	tests := [...]struct {
@@ -41,4 +47,60 @@ func TestCassVersionBefore(t *testing.T) {
 		}
 	}
 
+}
+
+func TestIsValidPeer(t *testing.T) {
+	ring := ringDescriber{}
+	host := &HostInfo{
+		rpcAddress: net.ParseIP("0.0.0.0"),
+		rack:       "myRack",
+		hostId:     "0",
+		dataCenter: "datacenter",
+		tokens:     []string{"0", "1"},
+	}
+
+	if !ring.IsValidPeer(host) {
+		t.Errorf("expected %+v to be a valid peer", host)
+	}
+
+	host.rack = ""
+	if ring.IsValidPeer(host) {
+		t.Errorf("expected %+v to NOT be a valid peer", host)
+	}
+}
+
+func TestGetHosts(t *testing.T) {
+	cluster := createCluster()
+	session := createSessionFromCluster(cluster, t)
+
+	hosts, partitioner, err := session.hostSource.GetHosts()
+
+	assertTrue(t, "err == nil", err == nil)
+	assertTrue(t, "len(hosts) == 3", len(hosts) == 3)
+	assertTrue(t, "len(partitioner) != 0", len(partitioner) != 0)
+
+}
+
+func TestGetHostsWithFilter(t *testing.T) {
+	filterHostIP := net.ParseIP("127.0.0.3")
+	cluster := createCluster()
+
+	// Filter to remove one of the localhost nodes
+	cluster.HostFilter = HostFilterFunc(func(host *HostInfo) bool {
+		if host.ConnectAddress().Equal(filterHostIP) {
+			return false
+		}
+		return true
+	})
+	session := createSessionFromCluster(cluster, t)
+
+	hosts, partitioner, err := session.hostSource.GetHosts()
+	assertTrue(t, "err == nil", err == nil)
+	assertTrue(t, "len(hosts) == 2", len(hosts) == 2)
+	assertTrue(t, "len(partitioner) != 0", len(partitioner) != 0)
+	for _, host := range hosts {
+		if host.ConnectAddress().Equal(filterHostIP) {
+			t.Fatal(fmt.Sprintf("Did not expect to see '%q' in host list", filterHostIP))
+		}
+	}
 }
