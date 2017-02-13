@@ -67,7 +67,7 @@ func TestRingDiscovery(t *testing.T) {
 
 	if *clusterSize != size {
 		for p, pool := range session.pool.hostConnPools {
-			t.Logf("p=%q host=%v ips=%s", p, pool.host, pool.host.Peer().String())
+			t.Logf("p=%q host=%v ips=%s", p, pool.host, pool.host.ConnectAddress().String())
 
 		}
 		t.Errorf("Expected a cluster size of %d, but actual size was %d", *clusterSize, size)
@@ -577,7 +577,7 @@ func TestReconnection(t *testing.T) {
 	defer session.Close()
 
 	h := session.ring.allHosts()[0]
-	session.handleNodeDown(h.Peer(), h.Port())
+	session.handleNodeDown(h.ConnectAddress(), h.Port())
 
 	if h.State() != NodeDown {
 		t.Fatal("Host should be NodeDown but not.")
@@ -2369,8 +2369,8 @@ func TestDiscoverViaProxy(t *testing.T) {
 	session := createSessionFromCluster(cluster, t)
 	defer session.Close()
 
-	if !session.hostSource.localHasRpcAddr {
-		t.Skip("Target cluster does not have rpc_address in system.local.")
+	if session.hostSource.localHost.BroadcastAddress() == nil {
+		t.Skip("Target cluster does not have broadcast_address in system.local.")
 		goto close
 	}
 

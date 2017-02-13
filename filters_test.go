@@ -17,7 +17,7 @@ func TestFilter_WhiteList(t *testing.T) {
 	}
 
 	for i, test := range tests {
-		if f.Accept(&HostInfo{peer: test.addr}) {
+		if f.Accept(&HostInfo{connectAddress: test.addr}) {
 			if !test.accept {
 				t.Errorf("%d: should not have been accepted but was", i)
 			}
@@ -39,7 +39,7 @@ func TestFilter_AllowAll(t *testing.T) {
 	}
 
 	for i, test := range tests {
-		if f.Accept(&HostInfo{peer: test.addr}) {
+		if f.Accept(&HostInfo{connectAddress: test.addr}) {
 			if !test.accept {
 				t.Errorf("%d: should not have been accepted but was", i)
 			}
@@ -61,7 +61,7 @@ func TestFilter_DenyAll(t *testing.T) {
 	}
 
 	for i, test := range tests {
-		if f.Accept(&HostInfo{peer: test.addr}) {
+		if f.Accept(&HostInfo{connectAddress: test.addr}) {
 			if !test.accept {
 				t.Errorf("%d: should not have been accepted but was", i)
 			}
