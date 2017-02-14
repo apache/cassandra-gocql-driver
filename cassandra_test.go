@@ -620,7 +620,8 @@ func TestMapScanWithRefMap(t *testing.T) {
 	m["testfullname"] = FullName{"John", "Doe"}
 	m["testint"] = 100
 
-	if err := session.Query(`INSERT INTO scan_map_ref_table (testtext, testfullname, testint) values (?,?,?)`, m["testtext"], m["testfullname"], m["testint"]).Exec(); err != nil {
+	if err := session.Query(`INSERT INTO scan_map_ref_table (testtext, testfullname, testint) values (?,?,?)`,
+		m["testtext"], m["testfullname"], m["testint"]).Exec(); err != nil {
 		t.Fatal("insert:", err)
 	}
 
@@ -646,7 +647,53 @@ func TestMapScanWithRefMap(t *testing.T) {
 			t.Fatal("returned testinit did not match")
 		}
 	}
+	if testText != "testtext" {
+		t.Fatal("returned testtext did not match")
+	}
+	if testFullName.FirstName != "John" || testFullName.LastName != "Doe" {
+		t.Fatal("returned testfullname did not match")
+	}
+}
 
+func TestMapScan(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+	if err := createTable(session, `CREATE TABLE gocql_test.scan_map_table (
+			fullname       text PRIMARY KEY,
+			age            int,
+			address        inet,
+		)`); err != nil {
+		t.Fatal("create table:", err)
+	}
+
+	if err := session.Query(`INSERT INTO scan_map_table (fullname, age, address) values (?,?,?)`,
+		"Grace Hopper", 31, net.ParseIP("10.0.0.1")).Exec(); err != nil {
+		t.Fatal("insert:", err)
+	}
+	if err := session.Query(`INSERT INTO scan_map_table (fullname, age, address) values (?,?,?)`,
+		"Ada Lovelace", 30, net.ParseIP("10.0.0.2")).Exec(); err != nil {
+		t.Fatal("insert:", err)
+	}
+
+	iter := session.Query(`SELECT * FROM scan_map_table`).Iter()
+
+	// First iteration
+	row := make(map[string]interface{})
+	if !iter.MapScan(row) {
+		t.Fatal("select:", iter.Close())
+	}
+	assertEqual(t, "fullname", "Ada Lovelace", row["fullname"])
+	assertEqual(t, "age", 30, row["age"])
+	assertEqual(t, "address", "10.0.0.2", row["address"])
+
+	// Second iteration using a new map
+	row = make(map[string]interface{})
+	if !iter.MapScan(row) {
+		t.Fatal("select:", iter.Close())
+	}
+	assertEqual(t, "fullname", "Grace Hopper", row["fullname"])
+	assertEqual(t, "age", 31, row["age"])
+	assertEqual(t, "address", "10.0.0.1", row["address"])
 }
 
 func TestSliceMap(t *testing.T) {
