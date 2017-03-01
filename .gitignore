@@ -3,3 +3,5 @@ fuzz-corpus
 fuzz-work
 gocql.test
 .idea
+.*.un*
+.*.sw*
