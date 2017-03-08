@@ -90,7 +90,7 @@ func (c ColumnKind) String() string {
 	case ColumnStatic:
 		return "static"
 	default:
-		return fmt.Sprintf("unkown_column_%d", c)
+		return fmt.Sprintf("unknown_column_%d", c)
 	}
 }
 
