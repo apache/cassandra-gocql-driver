@@ -78,7 +78,7 @@ const (
 )
 
 func Status() (map[string]Host, error) {
-	// TODO: parse into struct o maniuplate
+	// TODO: parse into struct to manipulate
 	out, err := execCmd("status", "-v")
 	if err != nil {
 		return nil, err

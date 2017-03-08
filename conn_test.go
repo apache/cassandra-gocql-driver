@@ -251,7 +251,7 @@ func TestQueryRetry(t *testing.T) {
 	requests := atomic.LoadInt64(&srv.nKillReq)
 	attempts := qry.Attempts()
 	if requests != int64(attempts) {
-		t.Fatalf("expected requests %v to match query attemps %v", requests, attempts)
+		t.Fatalf("expected requests %v to match query attempts %v", requests, attempts)
 	}
 
 	// the query will only be attempted once, but is being retried
