@@ -232,8 +232,8 @@ func hostsForTests(n int) []*HostInfo {
 	hosts := make([]*HostInfo, n)
 	for i := 0; i < n; i++ {
 		host := &HostInfo{
-			peer:   net.IPv4(1, 1, 1, byte(n)),
-			tokens: []string{fmt.Sprintf("%d", n)},
+			connectAddress: net.IPv4(1, 1, 1, byte(n)),
+			tokens:         []string{fmt.Sprintf("%d", n)},
 		}
 
 		hosts[i] = host
@@ -254,19 +254,20 @@ func TestMurmur3TokenRing(t *testing.T) {
 
 	for _, host := range hosts {
 		actual := ring.GetHostForToken(p.ParseString(host.tokens[0]))
-		if !actual.Peer().Equal(host.peer) {
-			t.Errorf("Expected peer %v for token %q, but was %v", host.peer, host.tokens[0], actual.peer)
+		if !actual.ConnectAddress().Equal(host.ConnectAddress()) {
+			t.Errorf("Expected address %v for token %q, but was %v", host.ConnectAddress(),
+				host.tokens[0], actual.ConnectAddress())
 		}
 	}
 
 	actual := ring.GetHostForToken(p.ParseString("12"))
-	if !actual.Peer().Equal(hosts[1].peer) {
-		t.Errorf("Expected peer 1 for token \"12\", but was %s", actual.Peer())
+	if !actual.ConnectAddress().Equal(hosts[1].ConnectAddress()) {
+		t.Errorf("Expected address 1 for token \"12\", but was %s", actual.ConnectAddress())
 	}
 
 	actual = ring.GetHostForToken(p.ParseString("24324545443332"))
-	if !actual.Peer().Equal(hosts[0].peer) {
-		t.Errorf("Expected peer 0 for token \"24324545443332\", but was %s", actual.Peer())
+	if !actual.ConnectAddress().Equal(hosts[0].ConnectAddress()) {
+		t.Errorf("Expected address 0 for token \"24324545443332\", but was %s", actual.ConnectAddress())
 	}
 }
 
@@ -285,19 +286,20 @@ func TestOrderedTokenRing(t *testing.T) {
 	var actual *HostInfo
 	for _, host := range hosts {
 		actual = ring.GetHostForToken(p.ParseString(host.tokens[0]))
-		if !actual.Peer().Equal(host.peer) {
-			t.Errorf("Expected peer %v for token %q, but was %v", host.peer, host.tokens[0], actual.peer)
+		if !actual.ConnectAddress().Equal(host.ConnectAddress()) {
+			t.Errorf("Expected address %v for token %q, but was %v", host.ConnectAddress(),
+				host.tokens[0], actual.ConnectAddress())
 		}
 	}
 
 	actual = ring.GetHostForToken(p.ParseString("12"))
 	if !actual.peer.Equal(hosts[1].peer) {
-		t.Errorf("Expected peer 1 for token \"12\", but was %s", actual.Peer())
+		t.Errorf("Expected address 1 for token \"12\", but was %s", actual.ConnectAddress())
 	}
 
 	actual = ring.GetHostForToken(p.ParseString("24324545443332"))
-	if !actual.peer.Equal(hosts[1].peer) {
-		t.Errorf("Expected peer 1 for token \"24324545443332\", but was %s", actual.Peer())
+	if !actual.ConnectAddress().Equal(hosts[1].ConnectAddress()) {
+		t.Errorf("Expected address 1 for token \"24324545443332\", but was %s", actual.ConnectAddress())
 	}
 }
 
@@ -315,18 +317,19 @@ func TestRandomTokenRing(t *testing.T) {
 	var actual *HostInfo
 	for _, host := range hosts {
 		actual = ring.GetHostForToken(p.ParseString(host.tokens[0]))
-		if !actual.Peer().Equal(host.peer) {
-			t.Errorf("Expected peer %v for token %q, but was %v", host.peer, host.tokens[0], actual.peer)
+		if !actual.ConnectAddress().Equal(host.ConnectAddress()) {
+			t.Errorf("Expected address %v for token %q, but was %v", host.ConnectAddress(),
+				host.tokens[0], actual.ConnectAddress())
 		}
 	}
 
 	actual = ring.GetHostForToken(p.ParseString("12"))
 	if !actual.peer.Equal(hosts[1].peer) {
-		t.Errorf("Expected peer 1 for token \"12\", but was %s", actual.Peer())
+		t.Errorf("Expected address 1 for token \"12\", but was %s", actual.ConnectAddress())
 	}
 
 	actual = ring.GetHostForToken(p.ParseString("24324545443332"))
-	if !actual.peer.Equal(hosts[0].peer) {
-		t.Errorf("Expected peer 1 for token \"24324545443332\", but was %s", actual.Peer())
+	if !actual.ConnectAddress().Equal(hosts[0].ConnectAddress()) {
+		t.Errorf("Expected address 1 for token \"24324545443332\", but was %s", actual.ConnectAddress())
 	}
 }

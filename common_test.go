@@ -4,11 +4,11 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net"
 	"strings"
 	"sync"
 	"testing"
 	"time"
-	"net"
 )
 
 var (
@@ -154,9 +154,9 @@ func createTestSession() *Session {
 	config.IgnorePeerAddr = true
 	config.PoolConfig.HostSelectionPolicy = RoundRobinHostPolicy()
 	session := &Session{
-		cfg:    *config,
+		cfg: *config,
 		connCfg: &ConnConfig{
-			Timeout: 10*time.Millisecond,
+			Timeout:   10 * time.Millisecond,
 			Keepalive: 0,
 		},
 		policy: config.PoolConfig.HostSelectionPolicy,
