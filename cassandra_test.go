@@ -2155,7 +2155,7 @@ func TestManualQueryPaging(t *testing.T) {
 	var id, count, fetched int
 
 	iter := query.Iter()
-	// NOTE: this isnt very indicitive of how it should be used, the idea is that
+	// NOTE: this isnt very indicative of how it should be used, the idea is that
 	// the page state is returned to some client who will send it back to manually
 	// page through the results.
 	for {
