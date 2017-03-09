@@ -24,8 +24,8 @@ func TestHostInfo_Lookup(t *testing.T) {
 			continue
 		}
 
-		if !host.ConnectAddress().Equal(test.ip) {
-			t.Errorf("expected ip %v got %v for addr %q", test.ip, host.ConnectAddress(), test.addr)
+		if !host.peer.Equal(test.ip) {
+			t.Errorf("expected ip %v got %v for addr %q", test.ip, host.peer, test.addr)
 		}
 	}
 }
