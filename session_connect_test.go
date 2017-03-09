@@ -1,13 +1,12 @@
 package gocql
 
 import (
+	"golang.org/x/net/context"
 	"net"
 	"strconv"
 	"sync"
 	"testing"
 	"time"
-
-	"golang.org/x/net/context"
 )
 
 type OneConnTestServer struct {
@@ -104,8 +103,8 @@ func TestSession_connect_WithNoTranslator(t *testing.T) {
 	go srvr.Serve()
 
 	Connect(&HostInfo{
-		connectAddress: srvr.Addr,
-		port:           srvr.Port,
+		peer: srvr.Addr,
+		port: srvr.Port,
 	}, session.connCfg, testConnErrorHandler(t), session)
 
 	assertConnectionEventually(t, 500*time.Millisecond, srvr)
@@ -124,8 +123,8 @@ func TestSession_connect_WithTranslator(t *testing.T) {
 
 	// the provided address will be translated
 	Connect(&HostInfo{
-		connectAddress: net.ParseIP("10.10.10.10"),
-		port:           5432,
+		peer: net.ParseIP("10.10.10.10"),
+		port: 5432,
 	}, session.connCfg, testConnErrorHandler(t), session)
 
 	assertConnectionEventually(t, 500*time.Millisecond, srvr)
