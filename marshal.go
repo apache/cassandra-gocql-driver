@@ -155,6 +155,8 @@ func Unmarshal(info TypeInfo, data []byte, value interface{}) error {
 		return unmarshalTuple(info, data, value)
 	case TypeUDT:
 		return unmarshalUDT(info, data, value)
+	case TypeDate:
+		return unmarshalDate(info, data, value)
 	}
 
 	// detect protocol 2 UDT
@@ -1111,6 +1113,18 @@ func unmarshalTimestamp(info TypeInfo, data []byte, value interface{}) error {
 	switch rv.Type().Kind() {
 	case reflect.Int64:
 		rv.SetInt(decBigInt(data))
+		return nil
+	}
+	return unmarshalErrorf("can not unmarshal %s into %T", info, value)
+}
+
+func unmarshalDate(info TypeInfo, data []byte, value interface{}) error {
+	switch v := value.(type) {
+	case *time.Time:
+		var origin uint32 = 1 << 31
+		var current uint32 = binary.BigEndian.Uint32(data)
+		timestamp := (int64(current) - int64(origin)) * 86400000
+		*v = time.Unix(0, timestamp*int64(time.Millisecond)).In(time.UTC)
 		return nil
 	}
 	return unmarshalErrorf("can not unmarshal %s into %T", info, value)
