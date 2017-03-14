@@ -961,11 +961,12 @@ func (c *Conn) executeBatch(batch *Batch) *Iter {
 
 	n := len(batch.Entries)
 	req := &writeBatchFrame{
-		typ:               batch.Type,
-		statements:        make([]batchStatment, n),
-		consistency:       batch.Cons,
-		serialConsistency: batch.serialCons,
-		defaultTimestamp:  batch.defaultTimestamp,
+		typ:                   batch.Type,
+		statements:            make([]batchStatment, n),
+		consistency:           batch.Cons,
+		serialConsistency:     batch.serialCons,
+		defaultTimestamp:      batch.defaultTimestamp,
+		defaultTimestampValue: batch.defaultTimestampValue,
 	}
 
 	stmts := make(map[string]string, len(batch.Entries))
