@@ -1813,6 +1813,10 @@ type NativeType struct {
 	custom string // only used for TypeCustom
 }
 
+func NewNativeType(proto byte, typ Type, custom string) NativeType {
+	return NativeType{proto, typ, custom}
+}
+
 func (t NativeType) New() interface{} {
 	return reflect.New(goType(t)).Interface()
 }
