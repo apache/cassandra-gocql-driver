@@ -173,6 +173,16 @@ func TestTracing(t *testing.T) {
 	} else if buf.Len() == 0 {
 		t.Fatal("select: failed to obtain any tracing")
 	}
+
+	// also works from session tracer
+	session.SetTrace(trace)
+	buf.Reset()
+	if err := session.Query(`SELECT id FROM trace WHERE id = ?`, 42).Scan(&value); err != nil {
+		t.Fatal("select:", err)
+	}
+	if buf.Len() == 0 {
+		t.Fatal("select: failed to obtain any tracing")
+	}
 }
 
 func TestPaging(t *testing.T) {
