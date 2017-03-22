@@ -724,7 +724,7 @@ func (c *Conn) prepareStatement(ctx context.Context, stmt string, tracer Tracer)
 
 	// TODO(zariel): tidy this up, simplify handling of frame parsing so its not duplicated
 	// everytime we need to parse a frame.
-	if len(framer.traceID) > 0 {
+	if len(framer.traceID) > 0 && tracer != nil {
 		tracer.Trace(framer.traceID)
 	}
 
