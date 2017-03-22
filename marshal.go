@@ -96,6 +96,8 @@ func Marshal(info TypeInfo, value interface{}) ([]byte, error) {
 		return marshalTuple(info, value)
 	case TypeUDT:
 		return marshalUDT(info, value)
+	case TypeDate:
+		return marshalDate(info, value)
 	}
 
 	// detect protocol 2 UDT
@@ -1116,6 +1118,48 @@ func unmarshalTimestamp(info TypeInfo, data []byte, value interface{}) error {
 		return nil
 	}
 	return unmarshalErrorf("can not unmarshal %s into %T", info, value)
+}
+
+func marshalDate(info TypeInfo, value interface{}) ([]byte, error) {
+	var timestamp int64
+	switch v := value.(type) {
+	case Marshaler:
+		return v.MarshalCQL(info)
+	case int64:
+		timestamp = v
+		x := timestamp/86400000 + int64(1 << 31)
+		return encInt(int32(x)), nil
+	case time.Time:
+		if v.IsZero() {
+			return []byte{}, nil
+		}
+		timestamp = int64(v.UTC().Unix()*1e3) + int64(v.UTC().Nanosecond()/1e6)
+		x := timestamp/86400000 + int64(1 << 31)
+		return encInt(int32(x)), nil
+	case *time.Time:
+		if v.IsZero() {
+			return []byte{}, nil
+		}
+		timestamp = int64(v.UTC().Unix()*1e3) + int64(v.UTC().Nanosecond()/1e6)
+		x := timestamp/86400000 + int64(1 << 31)
+		return encInt(int32(x)), nil
+	case string:
+		if v == "" {
+			return []byte{}, nil
+		}
+		t, err := time.Parse("2006-01-02", v)
+		if err != nil {
+			return nil, marshalErrorf("can not marshal %T into %s, date layout must be '2006-01-02'", value, info)
+		}
+		timestamp = int64(t.UTC().Unix()*1e3) + int64(t.UTC().Nanosecond()/1e6)
+		x := timestamp/86400000 + int64(1 << 31)
+		return encInt(int32(x)), nil
+	}
+
+	if value == nil {
+		return nil, nil
+	}
+	return nil, marshalErrorf("can not marshal %T into %s", value, info)
 }
 
 func unmarshalDate(info TypeInfo, data []byte, value interface{}) error {
