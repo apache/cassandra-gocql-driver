@@ -1766,7 +1766,7 @@ func TestGetTableMetadata(t *testing.T) {
 	if testTable == nil {
 		t.Fatal("Expected table metadata for name 'test_table_metadata'")
 	}
-	if *flagProto < protoVersion4 {
+	if *flagProto == protoVersion1 {
 		if testTable.KeyValidator != "org.apache.cassandra.db.marshal.Int32Type" {
 			t.Errorf("Expected test_table_metadata key validator to be 'org.apache.cassandra.db.marshal.Int32Type' but was '%s'", testTable.KeyValidator)
 		}
