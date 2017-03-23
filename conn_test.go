@@ -29,6 +29,7 @@ func TestApprove(t *testing.T) {
 	tests := map[bool]bool{
 		approve("org.apache.cassandra.auth.PasswordAuthenticator"):          true,
 		approve("com.instaclustr.cassandra.auth.SharedSecretAuthenticator"): true,
+		approve("com.datastax.bdp.cassandra.auth.DseAuthenticator"):         true,
 		approve("com.apache.cassandra.auth.FakeAuthenticator"):              false,
 	}
 	for k, v := range tests {
