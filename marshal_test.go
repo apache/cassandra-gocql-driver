@@ -1103,7 +1103,52 @@ func TestUnmarshalDate(t *testing.T) {
 	expectedDate := "2017-02-04"
 	formattedDate := date.Format("2006-01-02")
 	if expectedDate != formattedDate {
-		t.Errorf("marshalTest: expected %x (%v), got %x (%v)", expectedDate, formattedDate)
+		t.Errorf("marshalTest: expected %v, got %v", expectedDate, formattedDate)
 		return
+	}
+}
+
+func TestMarshalDate(t *testing.T) {
+	now := time.Now()
+	timestamp := now.UnixNano()/int64(time.Millisecond)
+	expectedData := encInt(int32(timestamp/86400000 + int64(1 << 31)))
+	var marshalDateTests = []struct {
+		Info  TypeInfo
+		Data  []byte
+		Value interface{}
+	}{
+		{
+			NativeType{proto: 4, typ: TypeDate},
+			expectedData,
+			timestamp,
+		},
+		{
+			NativeType{proto: 4, typ: TypeDate},
+			expectedData,
+			now,
+		},
+		{
+			NativeType{proto: 4, typ: TypeDate},
+			expectedData,
+			&now,
+		},
+		{
+			NativeType{proto: 4, typ: TypeDate},
+			expectedData,
+			now.Format("2006-01-02"),
+		},
+	}
+
+	for i, test := range marshalDateTests {
+		t.Log(i, test)
+		data, err := Marshal(test.Info, test.Value)
+		if err != nil {
+			t.Errorf("marshalTest[%d]: %v", i, err)
+			continue
+		}
+		if !bytes.Equal(data, test.Data) {
+			t.Errorf("marshalTest[%d]: expected %x (%v), got %x (%v) for time %s", i,
+				test.Data, decInt(test.Data), data, decInt(data), test.Value)
+		}
 	}
 }
