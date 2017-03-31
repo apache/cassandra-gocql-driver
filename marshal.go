@@ -1164,7 +1164,13 @@ func marshalDate(info TypeInfo, value interface{}) ([]byte, error) {
 
 func unmarshalDate(info TypeInfo, data []byte, value interface{}) error {
 	switch v := value.(type) {
+	case Unmarshaler:
+		return v.UnmarshalCQL(info, data)
 	case *time.Time:
+		if len(data) == 0 {
+			*v = time.Time{}
+			return nil
+		}
 		var origin uint32 = 1 << 31
 		var current uint32 = binary.BigEndian.Uint32(data)
 		timestamp := (int64(current) - int64(origin)) * 86400000

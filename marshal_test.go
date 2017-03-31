@@ -1092,3 +1092,18 @@ func TestUnmarshalInetCopyBytes(t *testing.T) {
 		t.Fatalf("IP memory shared with data: ip=%v ip2=%v", ip, ip2)
 	}
 }
+
+func TestUnmarshalDate(t *testing.T) {
+	data := []uint8{0x80, 0x0, 0x43, 0x31}
+	var date time.Time
+	if err := unmarshalDate(NativeType{proto: 2, typ: TypeDate}, data, &date); err != nil {
+		t.Fatal(err)
+	}
+
+	expectedDate := "2017-02-04"
+	formattedDate := date.Format("2006-01-02")
+	if expectedDate != formattedDate {
+		t.Errorf("marshalTest: expected %x (%v), got %x (%v)", expectedDate, formattedDate)
+		return
+	}
+}
