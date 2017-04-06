@@ -145,19 +145,19 @@ func (h *HostInfo) setPeer(peer net.IP) *HostInfo {
 	return h
 }
 
-// Returns the address that should be used to connect to the host
-// This defaults to 'broadcast_address', then falls back to 'peer'
-// This is to maintain existing functionality. If you wish to
-// override this, use an AddressTranslator or use a HostFilter
-// to SetConnectAddress()
+// Returns the address that should be used to connect to the host.
+// If you wish to override this, use an AddressTranslator or
+// use a HostFilter to SetConnectAddress()
 func (h *HostInfo) ConnectAddress() net.IP {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 
 	if h.connectAddress == nil {
-		if h.broadcastAddress != nil {
-			return h.broadcastAddress
+		// Use 'rpc_address' if provided and it's not 0.0.0.0
+		if h.rpcAddress != nil && !h.rpcAddress.IsUnspecified() {
+			return h.rpcAddress
 		}
+		// Peer should always be set if this from 'system.peer'
 		if h.peer != nil {
 			return h.peer
 		}
@@ -354,7 +354,7 @@ func checkSystemSchema(control *controlConn) (bool, error) {
 	iter := control.query("SELECT * FROM system_schema.keyspaces")
 	if err := iter.err; err != nil {
 		if errf, ok := err.(*errorFrame); ok {
-			if errf.code == errReadFailure {
+			if errf.code == errSyntax {
 				return false, nil
 			}
 		}
@@ -624,6 +624,8 @@ func (r *ringDescriber) GetHostInfo(ip net.IP, port int) (*HostInfo, error) {
 	} else {
 		host, err = r.GetPeerHostInfo(ip, port)
 	}
+	// Always respect the user provided or discovered address
+	host.SetConnectAddress(ip)
 
 	// No host was found matching this ip/port
 	if err != nil {
