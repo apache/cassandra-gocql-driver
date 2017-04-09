@@ -18,44 +18,60 @@ import (
 type AliasInt int
 
 var marshalTests = []struct {
-	Info  TypeInfo
-	Data  []byte
-	Value interface{}
+	Info           TypeInfo
+	Data           []byte
+	Value          interface{}
+	MarshalError   error
+	UnmarshalError error
 }{
 	{
 		NativeType{proto: 2, typ: TypeVarchar},
 		[]byte("hello world"),
 		[]byte("hello world"),
+		nil,
+		nil,
 	},
 	{
 		NativeType{proto: 2, typ: TypeVarchar},
 		[]byte("hello world"),
 		"hello world",
+		nil,
+		nil,
 	},
 	{
 		NativeType{proto: 2, typ: TypeVarchar},
 		[]byte(nil),
 		[]byte(nil),
+		nil,
+		nil,
 	},
 	{
 		NativeType{proto: 2, typ: TypeVarchar},
 		[]byte("hello world"),
 		MyString("hello world"),
+		nil,
+		nil,
 	},
 	{
 		NativeType{proto: 2, typ: TypeVarchar},
 		[]byte("HELLO WORLD"),
 		CustomString("hello world"),
+		nil,
+		nil,
 	},
 	{
 		NativeType{proto: 2, typ: TypeBlob},
 		[]byte("hello\x00"),
 		[]byte("hello\x00"),
+		nil,
+		nil,
 	},
 	{
 		NativeType{proto: 2, typ: TypeBlob},
 		[]byte(nil),
 		[]byte(nil),
+		nil,
+		nil,
 	},
 	{
 		NativeType{proto: 2, typ: TypeTimeUUID},
@@ -64,176 +80,246 @@ var marshalTests = []struct {
 			x, _ := UUIDFromBytes([]byte{0x3d, 0xcd, 0x98, 0x0, 0xf3, 0xd9, 0x11, 0xbf, 0x86, 0xd4, 0xb8, 0xe8, 0x56, 0x2c, 0xc, 0xd0})
 			return x
 		}(),
+		nil,
+		nil,
 	},
 	{
 		NativeType{proto: 2, typ: TypeInt},
 		[]byte("\x00\x00\x00\x00"),
 		0,
+		nil,
+		nil,
 	},
 	{
 		NativeType{proto: 2, typ: TypeInt},
 		[]byte("\x01\x02\x03\x04"),
 		int(16909060),
+		nil,
+		nil,
 	},
 	{
 		NativeType{proto: 2, typ: TypeInt},
 		[]byte("\x01\x02\x03\x04"),
 		AliasInt(16909060),
+		nil,
+		nil,
 	},
 	{
 		NativeType{proto: 2, typ: TypeInt},
 		[]byte("\x80\x00\x00\x00"),
 		int32(math.MinInt32),
+		nil,
+		nil,
 	},
 	{
 		NativeType{proto: 2, typ: TypeInt},
 		[]byte("\x7f\xff\xff\xff"),
 		int32(math.MaxInt32),
+		nil,
+		nil,
 	},
 	{
 		NativeType{proto: 2, typ: TypeInt},
 		[]byte("\x00\x00\x00\x00"),
 		"0",
+		nil,
+		nil,
 	},
 	{
 		NativeType{proto: 2, typ: TypeInt},
 		[]byte("\x01\x02\x03\x04"),
 		"16909060",
+		nil,
+		nil,
 	},
 	{
 		NativeType{proto: 2, typ: TypeInt},
 		[]byte("\x80\x00\x00\x00"),
 		"-2147483648", // math.MinInt32
+		nil,
+		nil,
 	},
 	{
 		NativeType{proto: 2, typ: TypeInt},
 		[]byte("\x7f\xff\xff\xff"),
 		"2147483647", // math.MaxInt32
+		nil,
+		nil,
 	},
 	{
 		NativeType{proto: 2, typ: TypeBigInt},
 		[]byte("\x00\x00\x00\x00\x00\x00\x00\x00"),
 		0,
+		nil,
+		nil,
 	},
 	{
 		NativeType{proto: 2, typ: TypeBigInt},
 		[]byte("\x01\x02\x03\x04\x05\x06\x07\x08"),
 		72623859790382856,
+		nil,
+		nil,
 	},
 	{
 		NativeType{proto: 2, typ: TypeBigInt},
 		[]byte("\x80\x00\x00\x00\x00\x00\x00\x00"),
 		int64(math.MinInt64),
+		nil,
+		nil,
 	},
 	{
 		NativeType{proto: 2, typ: TypeBigInt},
 		[]byte("\x7f\xff\xff\xff\xff\xff\xff\xff"),
 		int64(math.MaxInt64),
+		nil,
+		nil,
 	},
 	{
 		NativeType{proto: 2, typ: TypeBigInt},
 		[]byte("\x00\x00\x00\x00\x00\x00\x00\x00"),
 		"0",
+		nil,
+		nil,
 	},
 	{
 		NativeType{proto: 2, typ: TypeBigInt},
 		[]byte("\x01\x02\x03\x04\x05\x06\x07\x08"),
 		"72623859790382856",
+		nil,
+		nil,
 	},
 	{
 		NativeType{proto: 2, typ: TypeBigInt},
 		[]byte("\x80\x00\x00\x00\x00\x00\x00\x00"),
 		"-9223372036854775808", // math.MinInt64
+		nil,
+		nil,
 	},
 	{
 		NativeType{proto: 2, typ: TypeBigInt},
 		[]byte("\x7f\xff\xff\xff\xff\xff\xff\xff"),
 		"9223372036854775807", // math.MaxInt64
+		nil,
+		nil,
 	},
 	{
 		NativeType{proto: 2, typ: TypeBoolean},
 		[]byte("\x00"),
 		false,
+		nil,
+		nil,
 	},
 	{
 		NativeType{proto: 2, typ: TypeBoolean},
 		[]byte("\x01"),
 		true,
+		nil,
+		nil,
 	},
 	{
 		NativeType{proto: 2, typ: TypeFloat},
 		[]byte("\x40\x49\x0f\xdb"),
 		float32(3.14159265),
+		nil,
+		nil,
 	},
 	{
 		NativeType{proto: 2, typ: TypeDouble},
 		[]byte("\x40\x09\x21\xfb\x53\xc8\xd4\xf1"),
 		float64(3.14159265),
+		nil,
+		nil,
 	},
 	{
 		NativeType{proto: 2, typ: TypeDecimal},
 		[]byte("\x00\x00\x00\x00\x00"),
 		inf.NewDec(0, 0),
+		nil,
+		nil,
 	},
 	{
 		NativeType{proto: 2, typ: TypeDecimal},
 		[]byte("\x00\x00\x00\x00\x64"),
 		inf.NewDec(100, 0),
+		nil,
+		nil,
 	},
 	{
 		NativeType{proto: 2, typ: TypeDecimal},
 		[]byte("\x00\x00\x00\x02\x19"),
 		decimalize("0.25"),
+		nil,
+		nil,
 	},
 	{
 		NativeType{proto: 2, typ: TypeDecimal},
 		[]byte("\x00\x00\x00\x13\xD5\a;\x20\x14\xA2\x91"),
 		decimalize("-0.0012095473475870063"), // From the iconara/cql-rb test suite
+		nil,
+		nil,
 	},
 	{
 		NativeType{proto: 2, typ: TypeDecimal},
 		[]byte("\x00\x00\x00\x13*\xF8\xC4\xDF\xEB]o"),
 		decimalize("0.0012095473475870063"), // From the iconara/cql-rb test suite
+		nil,
+		nil,
 	},
 	{
 		NativeType{proto: 2, typ: TypeDecimal},
 		[]byte("\x00\x00\x00\x12\xF2\xD8\x02\xB6R\x7F\x99\xEE\x98#\x99\xA9V"),
 		decimalize("-1042342234234.123423435647768234"), // From the iconara/cql-rb test suite
+		nil,
+		nil,
 	},
 	{
 		NativeType{proto: 2, typ: TypeDecimal},
 		[]byte("\x00\x00\x00\r\nJ\x04\"^\x91\x04\x8a\xb1\x18\xfe"),
 		decimalize("1243878957943.1234124191998"), // From the datastax/python-driver test suite
+		nil,
+		nil,
 	},
 	{
 		NativeType{proto: 2, typ: TypeDecimal},
 		[]byte("\x00\x00\x00\x06\xe5\xde]\x98Y"),
 		decimalize("-112233.441191"), // From the datastax/python-driver test suite
+		nil,
+		nil,
 	},
 	{
 		NativeType{proto: 2, typ: TypeDecimal},
 		[]byte("\x00\x00\x00\x14\x00\xfa\xce"),
 		decimalize("0.00000000000000064206"), // From the datastax/python-driver test suite
+		nil,
+		nil,
 	},
 	{
 		NativeType{proto: 2, typ: TypeDecimal},
 		[]byte("\x00\x00\x00\x14\xff\x052"),
 		decimalize("-0.00000000000000064206"), // From the datastax/python-driver test suite
+		nil,
+		nil,
 	},
 	{
 		NativeType{proto: 2, typ: TypeDecimal},
 		[]byte("\xff\xff\xff\x9c\x00\xfa\xce"),
 		inf.NewDec(64206, -100), // From the datastax/python-driver test suite
+		nil,
+		nil,
 	},
 	{
 		NativeType{proto: 2, typ: TypeTimestamp},
 		[]byte("\x00\x00\x01\x40\x77\x16\xe1\xb8"),
 		time.Date(2013, time.August, 13, 9, 52, 3, 0, time.UTC),
+		nil,
+		nil,
 	},
 	{
 		NativeType{proto: 2, typ: TypeTimestamp},
 		[]byte("\x00\x00\x01\x40\x77\x16\xe1\xb8"),
 		int64(1376387523000),
+		nil,
+		nil,
 	},
 	{
 		CollectionType{
@@ -242,6 +328,8 @@ var marshalTests = []struct {
 		},
 		[]byte("\x00\x02\x00\x04\x00\x00\x00\x01\x00\x04\x00\x00\x00\x02"),
 		[]int{1, 2},
+		nil,
+		nil,
 	},
 	{
 		CollectionType{
@@ -250,6 +338,8 @@ var marshalTests = []struct {
 		},
 		[]byte("\x00\x02\x00\x04\x00\x00\x00\x01\x00\x04\x00\x00\x00\x02"),
 		[2]int{1, 2},
+		nil,
+		nil,
 	},
 	{
 		CollectionType{
@@ -258,6 +348,8 @@ var marshalTests = []struct {
 		},
 		[]byte("\x00\x02\x00\x04\x00\x00\x00\x01\x00\x04\x00\x00\x00\x02"),
 		[]int{1, 2},
+		nil,
+		nil,
 	},
 	{
 		CollectionType{
@@ -266,6 +358,8 @@ var marshalTests = []struct {
 		},
 		[]byte{0, 0}, // encoding of a list should always include the size of the collection
 		[]int{},
+		nil,
+		nil,
 	},
 	{
 		CollectionType{
@@ -275,6 +369,8 @@ var marshalTests = []struct {
 		},
 		[]byte("\x00\x01\x00\x03foo\x00\x04\x00\x00\x00\x01"),
 		map[string]int{"foo": 1},
+		nil,
+		nil,
 	},
 	{
 		CollectionType{
@@ -284,6 +380,8 @@ var marshalTests = []struct {
 		},
 		[]byte{0, 0},
 		map[string]int{},
+		nil,
+		nil,
 	},
 	{
 		CollectionType{
@@ -294,6 +392,8 @@ var marshalTests = []struct {
 			[]byte("\x00\x01\xFF\xFF"),
 			bytes.Repeat([]byte("X"), 65535)}, []byte("")),
 		[]string{strings.Repeat("X", 65535)},
+		nil,
+		nil,
 	},
 	{
 		CollectionType{
@@ -309,86 +409,120 @@ var marshalTests = []struct {
 		map[string]string{
 			strings.Repeat("X", 65535): strings.Repeat("Y", 65535),
 		},
+		nil,
+		nil,
 	},
 	{
 		NativeType{proto: 2, typ: TypeVarint},
 		[]byte("\x00"),
 		0,
+		nil,
+		nil,
 	},
 	{
 		NativeType{proto: 2, typ: TypeVarint},
 		[]byte("\x37\xE2\x3C\xEC"),
 		int32(937573612),
+		nil,
+		nil,
 	},
 	{
 		NativeType{proto: 2, typ: TypeVarint},
 		[]byte("\x37\xE2\x3C\xEC"),
 		big.NewInt(937573612),
+		nil,
+		nil,
 	},
 	{
 		NativeType{proto: 2, typ: TypeVarint},
 		[]byte("\x03\x9EV \x15\f\x03\x9DK\x18\xCDI\\$?\a["),
 		bigintize("1231312312331283012830129382342342412123"), // From the iconara/cql-rb test suite
+		nil,
+		nil,
 	},
 	{
 		NativeType{proto: 2, typ: TypeVarint},
 		[]byte("\xC9v\x8D:\x86"),
 		big.NewInt(-234234234234), // From the iconara/cql-rb test suite
+		nil,
+		nil,
 	},
 	{
 		NativeType{proto: 2, typ: TypeVarint},
 		[]byte("f\x1e\xfd\xf2\xe3\xb1\x9f|\x04_\x15"),
 		bigintize("123456789123456789123456789"), // From the datastax/python-driver test suite
+		nil,
+		nil,
 	},
 	{
 		NativeType{proto: 2, typ: TypeVarint},
 		[]byte(nil),
 		nil,
+		nil,
+		UnmarshalError("can not unmarshal into non-pointer <nil>"),
 	},
 	{
 		NativeType{proto: 2, typ: TypeInet},
 		[]byte("\x7F\x00\x00\x01"),
 		net.ParseIP("127.0.0.1").To4(),
+		nil,
+		nil,
 	},
 	{
 		NativeType{proto: 2, typ: TypeInet},
 		[]byte("\xFF\xFF\xFF\xFF"),
 		net.ParseIP("255.255.255.255").To4(),
+		nil,
+		nil,
 	},
 	{
 		NativeType{proto: 2, typ: TypeInet},
 		[]byte("\x7F\x00\x00\x01"),
 		"127.0.0.1",
+		nil,
+		nil,
 	},
 	{
 		NativeType{proto: 2, typ: TypeInet},
 		[]byte("\xFF\xFF\xFF\xFF"),
 		"255.255.255.255",
+		nil,
+		nil,
 	},
 	{
 		NativeType{proto: 2, typ: TypeInet},
 		[]byte("\x21\xDA\x00\xd3\x00\x00\x2f\x3b\x02\xaa\x00\xff\xfe\x28\x9c\x5a"),
 		"21da:d3:0:2f3b:2aa:ff:fe28:9c5a",
+		nil,
+		nil,
 	},
 	{
 		NativeType{proto: 2, typ: TypeInet},
 		[]byte("\xfe\x80\x00\x00\x00\x00\x00\x00\x02\x02\xb3\xff\xfe\x1e\x83\x29"),
 		"fe80::202:b3ff:fe1e:8329",
+		nil,
+		nil,
 	},
 	{
 		NativeType{proto: 2, typ: TypeInet},
 		[]byte("\x21\xDA\x00\xd3\x00\x00\x2f\x3b\x02\xaa\x00\xff\xfe\x28\x9c\x5a"),
 		net.ParseIP("21da:d3:0:2f3b:2aa:ff:fe28:9c5a"),
+		nil,
+		nil,
 	},
 	{
 		NativeType{proto: 2, typ: TypeInet},
 		[]byte("\xfe\x80\x00\x00\x00\x00\x00\x00\x02\x02\xb3\xff\xfe\x1e\x83\x29"),
 		net.ParseIP("fe80::202:b3ff:fe1e:8329"),
+		nil,
+		nil,
 	},
 	{
 		NativeType{proto: 2, typ: TypeInt},
 		[]byte(nil),
 		nil,
+		nil,
+		UnmarshalError("can not unmarshal into non-pointer <nil>"),
 	},
 	{
 		NativeType{proto: 2, typ: TypeVarchar},
@@ -397,11 +531,15 @@ var marshalTests = []struct {
 			value := "nullable string"
 			return &value
 		}(),
+		nil,
+		nil,
 	},
 	{
 		NativeType{proto: 2, typ: TypeVarchar},
 		[]byte{},
 		(*string)(nil),
+		nil,
+		nil,
 	},
 	{
 		NativeType{proto: 2, typ: TypeInt},
@@ -410,21 +548,29 @@ var marshalTests = []struct {
 			var value int = math.MaxInt32
 			return &value
 		}(),
+		nil,
+		nil,
 	},
 	{
 		NativeType{proto: 2, typ: TypeInt},
 		[]byte(nil),
 		(*int)(nil),
+		nil,
+		nil,
 	},
 	{
 		NativeType{proto: 2, typ: TypeTimeUUID},
 		[]byte{0x3d, 0xcd, 0x98, 0x0, 0xf3, 0xd9, 0x11, 0xbf, 0x86, 0xd4, 0xb8, 0xe8, 0x56, 0x2c, 0xc, 0xd0},
 		&UUID{0x3d, 0xcd, 0x98, 0x0, 0xf3, 0xd9, 0x11, 0xbf, 0x86, 0xd4, 0xb8, 0xe8, 0x56, 0x2c, 0xc, 0xd0},
+		nil,
+		nil,
 	},
 	{
 		NativeType{proto: 2, typ: TypeTimeUUID},
 		[]byte{},
 		(*UUID)(nil),
+		nil,
+		nil,
 	},
 	{
 		NativeType{proto: 2, typ: TypeTimestamp},
@@ -433,11 +579,15 @@ var marshalTests = []struct {
 			t := time.Date(2013, time.August, 13, 9, 52, 3, 0, time.UTC)
 			return &t
 		}(),
+		nil,
+		nil,
 	},
 	{
 		NativeType{proto: 2, typ: TypeTimestamp},
 		[]byte(nil),
 		(*time.Time)(nil),
+		nil,
+		nil,
 	},
 	{
 		NativeType{proto: 2, typ: TypeBoolean},
@@ -446,6 +596,8 @@ var marshalTests = []struct {
 			b := false
 			return &b
 		}(),
+		nil,
+		nil,
 	},
 	{
 		NativeType{proto: 2, typ: TypeBoolean},
@@ -454,11 +606,15 @@ var marshalTests = []struct {
 			b := true
 			return &b
 		}(),
+		nil,
+		nil,
 	},
 	{
 		NativeType{proto: 2, typ: TypeBoolean},
 		[]byte(nil),
 		(*bool)(nil),
+		nil,
+		nil,
 	},
 	{
 		NativeType{proto: 2, typ: TypeFloat},
@@ -467,11 +623,15 @@ var marshalTests = []struct {
 			f := float32(3.14159265)
 			return &f
 		}(),
+		nil,
+		nil,
 	},
 	{
 		NativeType{proto: 2, typ: TypeFloat},
 		[]byte(nil),
 		(*float32)(nil),
+		nil,
+		nil,
 	},
 	{
 		NativeType{proto: 2, typ: TypeDouble},
@@ -480,11 +640,15 @@ var marshalTests = []struct {
 			d := float64(3.14159265)
 			return &d
 		}(),
+		nil,
+		nil,
 	},
 	{
 		NativeType{proto: 2, typ: TypeDouble},
 		[]byte(nil),
 		(*float64)(nil),
+		nil,
+		nil,
 	},
 	{
 		NativeType{proto: 2, typ: TypeInet},
@@ -493,11 +657,15 @@ var marshalTests = []struct {
 			ip := net.ParseIP("127.0.0.1").To4()
 			return &ip
 		}(),
+		nil,
+		nil,
 	},
 	{
 		NativeType{proto: 2, typ: TypeInet},
 		[]byte(nil),
 		(*net.IP)(nil),
+		nil,
+		nil,
 	},
 	{
 		CollectionType{
@@ -509,6 +677,8 @@ var marshalTests = []struct {
 			l := []int{1, 2}
 			return &l
 		}(),
+		nil,
+		nil,
 	},
 	{
 		CollectionType{
@@ -517,6 +687,8 @@ var marshalTests = []struct {
 		},
 		[]byte(nil),
 		(*[]int)(nil),
+		nil,
+		nil,
 	},
 	{
 		CollectionType{
@@ -529,6 +701,8 @@ var marshalTests = []struct {
 			m := map[string]int{"foo": 1}
 			return &m
 		}(),
+		nil,
+		nil,
 	},
 	{
 		CollectionType{
@@ -538,6 +712,8 @@ var marshalTests = []struct {
 		},
 		[]byte(nil),
 		(*map[string]int)(nil),
+		nil,
+		nil,
 	},
 	{
 		NativeType{proto: 2, typ: TypeVarchar},
@@ -546,91 +722,127 @@ var marshalTests = []struct {
 			customString := CustomString("hello world")
 			return &customString
 		}(),
+		nil,
+		nil,
 	},
 	{
 		NativeType{proto: 2, typ: TypeVarchar},
 		[]byte(nil),
 		(*CustomString)(nil),
+		nil,
+		nil,
 	},
 	{
 		NativeType{proto: 2, typ: TypeSmallInt},
 		[]byte("\x7f\xff"),
 		32767, // math.MaxInt16
+		nil,
+		nil,
 	},
 	{
 		NativeType{proto: 2, typ: TypeSmallInt},
 		[]byte("\x7f\xff"),
 		"32767", // math.MaxInt16
+		nil,
+		nil,
 	},
 	{
 		NativeType{proto: 2, typ: TypeSmallInt},
 		[]byte("\x00\x01"),
 		int16(1),
+		nil,
+		nil,
 	},
 	{
 		NativeType{proto: 2, typ: TypeSmallInt},
 		[]byte("\xff\xff"),
 		int16(-1),
+		nil,
+		nil,
 	},
 	{
 		NativeType{proto: 2, typ: TypeSmallInt},
 		[]byte("\xff\xff"),
 		uint16(65535),
+		nil,
+		nil,
 	},
 	{
 		NativeType{proto: 2, typ: TypeTinyInt},
 		[]byte("\x7f"),
 		127, // math.MaxInt8
+		nil,
+		nil,
 	},
 	{
 		NativeType{proto: 2, typ: TypeTinyInt},
 		[]byte("\x7f"),
 		"127", // math.MaxInt8
+		nil,
+		nil,
 	},
 	{
 		NativeType{proto: 2, typ: TypeTinyInt},
 		[]byte("\x01"),
 		int16(1),
+		nil,
+		nil,
 	},
 	{
 		NativeType{proto: 2, typ: TypeTinyInt},
 		[]byte("\xff"),
 		int16(-1),
+		nil,
+		nil,
 	},
 	{
 		NativeType{proto: 2, typ: TypeTinyInt},
 		[]byte("\xff"),
 		uint8(255),
+		nil,
+		nil,
 	},
 	{
 		NativeType{proto: 2, typ: TypeTinyInt},
 		[]byte("\xff"),
 		uint64(255),
+		nil,
+		nil,
 	},
 	{
 		NativeType{proto: 2, typ: TypeTinyInt},
 		[]byte("\xff"),
 		uint32(255),
+		nil,
+		nil,
 	},
 	{
 		NativeType{proto: 2, typ: TypeTinyInt},
 		[]byte("\xff"),
 		uint16(255),
+		nil,
+		nil,
 	},
 	{
 		NativeType{proto: 2, typ: TypeTinyInt},
 		[]byte("\xff"),
 		uint(255),
+		nil,
+		nil,
 	},
 	{
 		NativeType{proto: 2, typ: TypeBigInt},
 		[]byte("\xff\xff\xff\xff\xff\xff\xff\xff"),
 		uint64(math.MaxUint64),
+		nil,
+		nil,
 	},
 	{
 		NativeType{proto: 2, typ: TypeInt},
 		[]byte("\xff\xff\xff\xff"),
 		uint32(math.MaxUint32),
+		nil,
+		nil,
 	},
 }
 
@@ -659,7 +871,7 @@ func TestMarshal_Encode(t *testing.T) {
 
 func TestMarshal_Decode(t *testing.T) {
 	for i, test := range marshalTests {
-		if test.Value != nil {
+		if test.UnmarshalError == nil {
 			v := reflect.New(reflect.TypeOf(test.Value))
 			err := Unmarshal(test.Info, test.Data, v.Interface())
 			if err != nil {
@@ -670,8 +882,8 @@ func TestMarshal_Decode(t *testing.T) {
 				t.Errorf("unmarshalTest[%d] (%v=>%T): expected %#v, got %#v.", i, test.Info, test.Value, test.Value, v.Elem().Interface())
 			}
 		} else {
-			if err := Unmarshal(test.Info, test.Data, test.Value); nil == err {
-				t.Errorf("unmarshalTest[%d] (%v=>%t): %#v not return error.", i, test.Info, test.Value, test.Value)
+			if err := Unmarshal(test.Info, test.Data, test.Value); err != test.UnmarshalError {
+				t.Errorf("unmarshalTest[%d] (%v=>%t): %#v returned error %#v, want %#v.", i, test.Info, test.Value, test.Value, err, test.UnmarshalError)
 			}
 		}
 	}
