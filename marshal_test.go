@@ -84,6 +84,13 @@ var marshalTests = []struct {
 		nil,
 	},
 	{
+		NativeType{proto: 2, typ: TypeTimeUUID},
+		[]byte{0xb8, 0xe8, 0x56, 0x2c, 0xc, 0xd0},
+		[]byte{0xb8, 0xe8, 0x56, 0x2c, 0xc, 0xd0},
+		MarshalError("can not marshal []byte 6 bytes long into timeuuid, must be exactly 16 bytes long"),
+		UnmarshalError("Unable to parse UUID: UUIDs must be exactly 16 bytes long"),
+	},
+	{
 		NativeType{proto: 2, typ: TypeInt},
 		[]byte("\x00\x00\x00\x00"),
 		0,
@@ -858,13 +865,19 @@ func bigintize(s string) *big.Int {
 
 func TestMarshal_Encode(t *testing.T) {
 	for i, test := range marshalTests {
-		data, err := Marshal(test.Info, test.Value)
-		if err != nil {
-			t.Errorf("marshalTest[%d]: %v", i, err)
-			continue
-		}
-		if !bytes.Equal(data, test.Data) {
-			t.Errorf("marshalTest[%d]: expected %q, got %q (%#v)", i, test.Data, data, test.Value)
+		if test.MarshalError == nil {
+			data, err := Marshal(test.Info, test.Value)
+			if err != nil {
+				t.Errorf("marshalTest[%d]: %v", i, err)
+				continue
+			}
+			if !bytes.Equal(data, test.Data) {
+				t.Errorf("marshalTest[%d]: expected %q, got %q (%#v)", i, test.Data, data, test.Value)
+			}
+		} else {
+			if _, err := Marshal(test.Info, test.Value); err != test.MarshalError {
+				t.Errorf("unmarshalTest[%d] (%v=>%t): %#v returned error %#v, want %#v.", i, test.Info, test.Value, test.Value, err, test.MarshalError)
+			}
 		}
 	}
 }
