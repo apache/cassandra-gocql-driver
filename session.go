@@ -92,7 +92,7 @@ func addrsToHosts(addrs []string, defaultPort int) ([]*HostInfo, error) {
 		hosts = append(hosts, host)
 	}
 	if len(hosts) == 0 {
-		return nil, errors.New("gocql: failed to resolve any of the provided hostnames")
+		return nil, errors.New("failed to resolve any of the provided hostnames")
 	}
 	return hosts, nil
 }
