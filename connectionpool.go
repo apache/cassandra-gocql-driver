@@ -54,7 +54,7 @@ func setupTLSConfig(sslOpts *SslOptions) (*tls.Config, error) {
 
 	sslOpts.InsecureSkipVerify = !sslOpts.EnableHostVerification
 
-	return &sslOpts.Config, nil
+	return sslOpts.Config, nil
 }
 
 type policyConnPool struct {
