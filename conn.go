@@ -713,6 +713,9 @@ func (c *Conn) prepareStatement(ctx context.Context, stmt string, tracer Tracer)
 	if err != nil {
 		flight.err = err
 		flight.wg.Done()
+		if err.Error() == "context deadline exceeded" {
+			c.session.stmtsLRU.remove(stmtCacheKey)
+		}
 		return nil, err
 	}
 
