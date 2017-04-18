@@ -10,6 +10,11 @@ import (
 	"github.com/gocql/gocql/internal/ccm"
 )
 
+const (
+	onDownSleep = 10 * time.Millisecond
+	onUpSleep   = 20 * time.Millisecond
+)
+
 func TestEventDiscovery(t *testing.T) {
 	t.Skip("FLAKE skipping")
 	if err := ccm.AllUp(); err != nil {
@@ -23,11 +28,11 @@ func TestEventDiscovery(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Logf("status=%+v\n", status)
+	log.Printf("status=%+v\n", status)
 
 	session.pool.mu.RLock()
 	poolHosts := session.pool.hostConnPools // TODO: replace with session.ring
-	t.Logf("poolhosts=%+v\n", poolHosts)
+	log.Printf("poolhosts=%+v\n", poolHosts)
 	// check we discovered all the nodes in the ring
 	for _, host := range status {
 		if _, ok := poolHosts[host.Addr]; !ok {
@@ -62,22 +67,15 @@ func TestEventNodeDownControl(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	t.Logf("status=%+v\n", status)
-	t.Logf("marking node %q down: %v\n", targetNode, status[targetNode])
+	log.Printf("status=%+v\n", status)
+	log.Printf("marking node %q down: %v\n", targetNode, status[targetNode])
 
-	time.Sleep(5 * time.Second)
+	time.Sleep(onDownSleep)
 
-	session.pool.mu.RLock()
-
-	poolHosts := session.pool.hostConnPools
 	node := status[targetNode]
-	t.Logf("poolhosts=%+v\n", poolHosts)
-
-	if _, ok := poolHosts[node.Addr]; ok {
-		session.pool.mu.RUnlock()
-		t.Fatal("node not removed after remove event")
+	if pool, ok := session.pool.getPool(node.Addr); ok {
+		t.Error("node not removed from pool after remove event: %v", pool)
 	}
-	session.pool.mu.RUnlock()
 
 	host := session.ring.getHost(node.Addr)
 	if host == nil {
@@ -93,6 +91,11 @@ func TestEventNodeDown(t *testing.T) {
 	if err := ccm.AllUp(); err != nil {
 		t.Fatal(err)
 	}
+	status, err := ccm.Status()
+	if err != nil {
+		t.Fatal(err)
+	}
+	log.Printf("status=%+v\n", status)
 
 	session := createSession(t)
 	defer session.Close()
@@ -101,24 +104,13 @@ func TestEventNodeDown(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	status, err := ccm.Status()
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Logf("status=%+v\n", status)
-	t.Logf("marking node %q down: %v\n", targetNode, status[targetNode])
+	log.Printf("marked node %q down: %v\n", targetNode, status[targetNode])
 
-	time.Sleep(5 * time.Second)
+	time.Sleep(onDownSleep)
 
-	session.pool.mu.RLock()
-	defer session.pool.mu.RUnlock()
-
-	poolHosts := session.pool.hostConnPools
 	node := status[targetNode]
-	t.Logf("poolhosts=%+v\n", poolHosts)
-
-	if _, ok := poolHosts[node.Addr]; ok {
-		t.Fatal("node not removed after remove event")
+	if pool, ok := session.pool.getPool(node.Addr); ok {
+		t.Error("node not removed from pool after remove event: %v", pool)
 	}
 
 	host := session.ring.getHost(node.Addr)
@@ -159,7 +151,7 @@ func TestEventNodeUp(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	time.Sleep(5 * time.Second)
+	time.Sleep(onDownSleep)
 
 	_, ok = session.pool.getPool(node.Addr)
 	if ok {
@@ -171,7 +163,11 @@ func TestEventNodeUp(t *testing.T) {
 	}
 
 	// cassandra < 2.2 needs 10 seconds to start up the binary service
-	time.Sleep(15 * time.Second)
+	if flagCassVersion.Before(2, 2, 0) {
+		time.Sleep(onUpSleep)
+	} else {
+		time.Sleep(2 * time.Second)
+	}
 
 	_, ok = session.pool.getPool(node.Addr)
 	if !ok {
@@ -222,13 +218,18 @@ func TestEventFilter(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	time.Sleep(5 * time.Second)
+	time.Sleep(onDownSleep)
 
 	if err := ccm.NodeUp("node2"); err != nil {
 		t.Fatal(err)
 	}
 
-	time.Sleep(15 * time.Second)
+	if flagCassVersion.Before(2, 2, 0) {
+		time.Sleep(onUpSleep)
+	} else {
+		time.Sleep(2 * time.Second)
+	}
+
 	for _, host := range [...]string{"node2", "node3"} {
 		_, ok := session.pool.getPool(status[host].Addr)
 		if ok {
@@ -274,13 +275,17 @@ func TestEventDownQueryable(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	time.Sleep(5 * time.Second)
+	time.Sleep(onDownSleep)
 
 	if err := ccm.NodeUp(targetNode); err != nil {
 		t.Fatal(err)
 	}
 
-	time.Sleep(15 * time.Second)
+	if flagCassVersion.Before(2, 2, 0) {
+		time.Sleep(onUpSleep)
+	} else {
+		time.Sleep(2 * time.Second)
+	}
 
 	if pool, ok := session.pool.getPool(addr); !ok {
 		t.Fatalf("should have %v in pool but dont", addr)
