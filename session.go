@@ -19,7 +19,7 @@ import (
 
 	"golang.org/x/net/context"
 
-	"github.com/gocql/gocql/internal/lru"
+	"github.com/nullaus/gocql/internal/lru"
 )
 
 // Session is the interface used by users to interact with the database.
