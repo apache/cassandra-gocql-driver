@@ -1631,6 +1631,29 @@ func TestNilInQuery(t *testing.T) {
 	}
 }
 
+// Tests gocql.UnSetCol sucsessfully inserts into cassandra.
+func TestUnsetCol(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+
+	if err := createTable(session, "CREATE TABLE gocql_test.testUnSetInsert (id int, my_int int, my_text text, PRIMARY KEY (id))"); err != nil {
+		t.Fatalf("failed to create table with error '%v'", err)
+	}
+	if err := session.Query("INSERT INTO testUnSetInsert (id,my_int,my_text) VALUES (?,?,?)", 1,i UnSetCol, UnSetCol, UnSetCol).Exec(); err != nil {
+		t.Fatalf("failed to insert with err: %v", err)
+	}
+
+	var id, mInt int
+	var mText string
+
+	if err := session.Query("SELECT id, my_int ,my_text FROM testNilInsert").Scan(&id, &mInt, &mText); err != nil {
+		t.Fatalf("failed to select with err: %v", err)
+	} else if id != 1 {
+		t.Fatalf("expected id to be 1, got %v", id)
+	}
+
+}
+
 // Don't initialize time.Time bind variable if cassandra timestamp column is empty
 func TestEmptyTimestamp(t *testing.T) {
 	session := createSession(t)
