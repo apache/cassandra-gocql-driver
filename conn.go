@@ -810,13 +810,6 @@ func (c *Conn) executeQuery(qry *Query) *Iter {
 
 		params.values = make([]queryValues, len(values))
 		for i := 0; i < len(values); i++ {
-			if _, ok := values[i].(UnsetColumn); ok {
-				v := &params.values[i]
-
-				v.value = nil
-				v.isUnset = true
-				continue
-			}
 			val, err := Marshal(info.request.columns[i].TypeInfo, values[i])
 			if err != nil {
 				return &Iter{err: err}
@@ -824,6 +817,9 @@ func (c *Conn) executeQuery(qry *Query) *Iter {
 
 			v := &params.values[i]
 			v.value = val
+			if _, ok := values[i].(UnsetColumn); ok {
+				v.isUnset = true
+			}
 			// TODO: handle query binding names
 		}
 
@@ -1020,6 +1016,9 @@ func (c *Conn) executeBatch(batch *Batch) *Iter {
 				}
 
 				b.values[j].value = val
+				if _, ok := values[j].(UnsetColumn); ok {
+					b.values[j].isUnset = true
+				}
 				// TODO: add names
 			}
 		} else {
