@@ -2590,6 +2590,9 @@ func TestControl_DiscoverProtocol(t *testing.T) {
 
 // TestUnsetCol verify unset column will not replace an existing column
 func TestUnsetCol(t *testing.T) {
+	if *flagProto < 4 {
+		t.Skip("Unset Values are not supported in protocol < 4")
+	}
 	session := createSession(t)
 	defer session.Close()
 
@@ -2615,6 +2618,9 @@ func TestUnsetCol(t *testing.T) {
 
 // TestUnsetColBatch verify unset column will not replace a column in batch
 func TestUnsetColBatch(t *testing.T) {
+	if *flagProto < 4 {
+		t.Skip("Unset Values are not supported in protocol < 4")
+	}
 	session := createSession(t)
 	defer session.Close()
 
