@@ -16,11 +16,9 @@ import (
 	"time"
 )
 
-type UnsetColumn struct{}
+type unsetColumn struct{}
 
-func UnsetValue() UnsetColumn {
-	return UnsetColumn{}
-}
+var UnsetValue = unsetColumn{}
 
 const (
 	protoDirectionMask = 0x80

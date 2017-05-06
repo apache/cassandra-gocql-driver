@@ -817,7 +817,7 @@ func (c *Conn) executeQuery(qry *Query) *Iter {
 
 			v := &params.values[i]
 			v.value = val
-			if _, ok := values[i].(UnsetColumn); ok {
+			if _, ok := values[i].(unsetColumn); ok {
 				v.isUnset = true
 			}
 			// TODO: handle query binding names
@@ -1016,7 +1016,7 @@ func (c *Conn) executeBatch(batch *Batch) *Iter {
 				}
 
 				b.values[j].value = val
-				if _, ok := values[j].(UnsetColumn); ok {
+				if _, ok := values[j].(unsetColumn); ok {
 					b.values[j].isUnset = true
 				}
 				// TODO: add names
