@@ -1052,7 +1052,7 @@ func (c *Conn) executeBatch(batch *Batch) *Iter {
 		if found {
 			return c.executeBatch(batch)
 		} else {
-			return &Iter{err: err, framer: framer}
+			return &Iter{err: x, framer: framer}
 		}
 	case *resultRowsFrame:
 		iter := &Iter{
