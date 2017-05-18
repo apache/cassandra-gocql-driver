@@ -6,6 +6,7 @@
 package gocql
 
 import (
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
@@ -17,8 +18,6 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
-
-	"golang.org/x/net/context"
 )
 
 const (
@@ -139,6 +138,62 @@ func TestClosed(t *testing.T) {
 
 func newTestSession(addr string, proto protoVersion) (*Session, error) {
 	return testCluster(addr, proto).CreateSession()
+}
+
+func TestDNSLookupConnected(t *testing.T) {
+	log := &testLogger{}
+	Logger = log
+	defer func() {
+		Logger = &defaultLogger{}
+	}()
+
+	srv := NewTestServer(t, defaultProto, context.Background())
+	defer srv.Stop()
+
+	cluster := NewCluster("cassandra1.invalid", srv.Address, "cassandra2.invalid")
+	cluster.ProtoVersion = int(defaultProto)
+	cluster.disableControlConn = true
+
+	// CreateSession() should attempt to resolve the DNS name "cassandraX.invalid"
+	// and fail, but continue to connect via srv.Address
+	_, err := cluster.CreateSession()
+	if err != nil {
+		t.Fatal("CreateSession() should have connected")
+	}
+
+	if !strings.Contains(log.String(), "gocql: dns error") {
+		t.Fatalf("Expected to receive dns error log message  - got '%s' instead", log.String())
+	}
+}
+
+func TestDNSLookupError(t *testing.T) {
+	log := &testLogger{}
+	Logger = log
+	defer func() {
+		Logger = &defaultLogger{}
+	}()
+
+	srv := NewTestServer(t, defaultProto, context.Background())
+	defer srv.Stop()
+
+	cluster := NewCluster("cassandra1.invalid", "cassandra2.invalid")
+	cluster.ProtoVersion = int(defaultProto)
+	cluster.disableControlConn = true
+
+	// CreateSession() should attempt to resolve each DNS name "cassandraX.invalid"
+	// and fail since it could not resolve any dns entries
+	_, err := cluster.CreateSession()
+	if err == nil {
+		t.Fatal("CreateSession() should have returned an error")
+	}
+
+	if !strings.Contains(log.String(), "gocql: dns error") {
+		t.Fatalf("Expected to receive dns error log message  - got '%s' instead", log.String())
+	}
+
+	if err.Error() != "gocql: unable to create session: failed to resolve any of the provided hostnames" {
+		t.Fatalf("Expected CreateSession() to fail with message  - got '%s' instead", err.Error())
+	}
 }
 
 func TestStartupTimeout(t *testing.T) {

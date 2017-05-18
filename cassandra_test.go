@@ -4,6 +4,7 @@ package gocql
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"math"
 	"math/big"
@@ -15,8 +16,6 @@ import (
 	"testing"
 	"time"
 	"unicode"
-
-	"golang.org/x/net/context"
 
 	"gopkg.in/inf.v0"
 )
@@ -2585,5 +2584,76 @@ func TestControl_DiscoverProtocol(t *testing.T) {
 
 	if session.cfg.ProtoVersion == 0 {
 		t.Fatal("did not discovery protocol")
+	}
+}
+
+// TestUnsetCol verify unset column will not replace an existing column
+func TestUnsetCol(t *testing.T) {
+	if *flagProto < 4 {
+		t.Skip("Unset Values are not supported in protocol < 4")
+	}
+	session := createSession(t)
+	defer session.Close()
+
+	if err := createTable(session, "CREATE TABLE gocql_test.testUnsetInsert (id int, my_int int, my_text text, PRIMARY KEY (id))"); err != nil {
+		t.Fatalf("failed to create table with error '%v'", err)
+	}
+	if err := session.Query("INSERT INTO testUnSetInsert (id,my_int,my_text) VALUES (?,?,?)", 1, 2, "3").Exec(); err != nil {
+		t.Fatalf("failed to insert with err: %v", err)
+	}
+	if err := session.Query("INSERT INTO testUnSetInsert (id,my_int,my_text) VALUES (?,?,?)", 1, UnsetValue, UnsetValue).Exec(); err != nil {
+		t.Fatalf("failed to insert with err: %v", err)
+	}
+
+	var id, mInt int
+	var mText string
+
+	if err := session.Query("SELECT id, my_int ,my_text FROM testUnsetInsert").Scan(&id, &mInt, &mText); err != nil {
+		t.Fatalf("failed to select with err: %v", err)
+	} else if id != 1 || mInt != 2 || mText != "3" {
+		t.Fatalf("Expected results: 1, 2, \"3\", got %v, %v, %v", id, mInt, mText)
+	}
+}
+
+// TestUnsetColBatch verify unset column will not replace a column in batch
+func TestUnsetColBatch(t *testing.T) {
+	if *flagProto < 4 {
+		t.Skip("Unset Values are not supported in protocol < 4")
+	}
+	session := createSession(t)
+	defer session.Close()
+
+	if err := createTable(session, "CREATE TABLE gocql_test.batchUnsetInsert (id int, my_int int, my_text text, PRIMARY KEY (id))"); err != nil {
+		t.Fatalf("failed to create table with error '%v'", err)
+	}
+
+	b := session.NewBatch(LoggedBatch)
+	b.Query("INSERT INTO gocql_test.batchUnsetInsert(id, my_int, my_text) VALUES (?,?,?)", 1, 1, UnsetValue)
+	b.Query("INSERT INTO gocql_test.batchUnsetInsert(id, my_int, my_text) VALUES (?,?,?)", 1, UnsetValue, "")
+	b.Query("INSERT INTO gocql_test.batchUnsetInsert(id, my_int, my_text) VALUES (?,?,?)", 2, 2, UnsetValue)
+
+	if err := session.ExecuteBatch(b); err != nil {
+		t.Fatalf("query failed. %v", err)
+	} else {
+		if b.Attempts() < 1 {
+			t.Fatal("expected at least 1 attempt, but got 0")
+		}
+		if b.Latency() <= 0 {
+			t.Fatalf("expected latency to be greater than 0, but got %v instead.", b.Latency())
+		}
+	}
+	var id, mInt, count int
+	var mText string
+
+	if err := session.Query("SELECT count(*) FROM gocql_test.batchUnsetInsert;").Scan(&count); err != nil {
+		t.Fatalf("Failed to select with err: %v", err)
+	} else if count != 2 {
+		t.Fatalf("Expected Batch Insert count 2, got %v", count)
+	}
+
+	if err := session.Query("SELECT id, my_int ,my_text FROM gocql_test.batchUnsetInsert where id=1;").Scan(&id, &mInt, &mText); err != nil {
+		t.Fatalf("failed to select with err: %v", err)
+	} else if id != mInt {
+		t.Fatalf("expected id, my_int to be 1, got %v and %v", id, mInt)
 	}
 }
