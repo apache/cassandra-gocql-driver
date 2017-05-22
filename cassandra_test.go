@@ -1727,7 +1727,7 @@ func TestGetTableMetadata(t *testing.T) {
 			t.Errorf("Expected table name to be set, but it was empty: index=%d metadata=%+v", i, table)
 		}
 		if table.Keyspace != "gocql_test" {
-			t.Errorf("Expected keyspace for '%d' table metadata to be 'gocql_test' but was '%s'", table.Name, table.Keyspace)
+			t.Errorf("Expected keyspace for '%s' table metadata to be 'gocql_test' but was '%s'", table.Name, table.Keyspace)
 		}
 		if *flagProto < 4 {
 			// TODO(zariel): there has to be a better way to detect what metadata version
