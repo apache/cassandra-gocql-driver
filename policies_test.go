@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net"
 	"testing"
+	"time"
 
 	"github.com/hailocab/go-hostpool"
 )
@@ -269,6 +270,34 @@ func TestSimpleRetryPolicy(t *testing.T) {
 		}
 		if !c.allow && rt.Attempt(q) {
 			t.Fatalf("should not allow retry after %d attempts", c.attempts)
+		}
+	}
+}
+
+func TestExponentialBackoffPolicy(t *testing.T) {
+	// test with defaults
+	sut := &ExponentialBackoffRetryPolicy{NumRetries: 2}
+
+	cases := []struct {
+		attempts int
+		delay    time.Duration
+	}{
+
+		{1, 100 * time.Millisecond},
+		{2, (2) * 100 * time.Millisecond},
+		{3, (2 * 2) * 100 * time.Millisecond},
+		{4, (2 * 2 * 2) * 100 * time.Millisecond},
+	}
+	for _, c := range cases {
+		// test 100 times for each case
+		for i := 0; i < 100; i++ {
+			d := sut.napTime(c.attempts)
+			if d < c.delay-(100*time.Millisecond)/2 {
+				t.Fatalf("Delay %d less than jitter min of %d", d, c.delay-100*time.Millisecond/2)
+			}
+			if d > c.delay+(100*time.Millisecond)/2 {
+				t.Fatalf("Delay %d greater than jitter max of %d", d, c.delay+100*time.Millisecond/2)
+			}
 		}
 	}
 }
