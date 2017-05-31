@@ -846,15 +846,22 @@ func (q *Query) shouldPrepare() bool {
 	if n := strings.IndexFunc(stmt, unicode.IsSpace); n >= 0 {
 		stmtType = strings.ToLower(stmt[:n])
 	}
+
 	if stmtType == "begin" {
 		if n := strings.LastIndexFunc(stmt, unicode.IsSpace); n >= 0 {
 			stmtType = strings.ToLower(stmt[n+1:])
 		}
 	}
+
 	switch stmtType {
 	case "select", "insert", "update", "delete", "batch":
-		return true
+		// only prepare statements which have values which need marshalling,
+		// this fixes when the user uses pre computed queries which will cause
+		// a memory leak when the query causes lots of cache missed in the prepared
+		// statement cache
+		return len(q.values) > 0
 	}
+
 	return false
 }
 
