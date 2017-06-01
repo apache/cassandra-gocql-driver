@@ -1580,6 +1580,18 @@ func TestQueryStats(t *testing.T) {
 	}
 }
 
+// TestIterHosts confirms that host is added to Iter when the query succeeds.
+func TestIterHost(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+	iter := session.Query("SELECT * FROM system.peers").Iter()
+
+	// check if Host method works
+	if iter.Host() == nil {
+		t.Error("No host in iter")
+	}
+}
+
 //TestBatchStats confirms that the stats are returning valid data. Accuracy may be questionable.
 func TestBatchStats(t *testing.T) {
 	if *flagProto == 1 {
