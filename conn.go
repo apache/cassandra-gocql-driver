@@ -134,10 +134,11 @@ type Conn struct {
 	mu      sync.RWMutex
 	calls   map[int]*callReq
 
-	errorHandler    ConnErrorHandler
-	compressor      Compressor
-	auth            Authenticator
-	addr            string
+	errorHandler ConnErrorHandler
+	compressor   Compressor
+	auth         Authenticator
+	addr         string
+
 	version         uint8
 	currentKeyspace string
 
@@ -1020,6 +1021,7 @@ func (c *Conn) executeBatch(batch *Batch) *Iter {
 	for i := 0; i < n; i++ {
 		entry := &batch.Entries[i]
 		b := &req.statements[i]
+
 		if len(entry.Args) > 0 || entry.binding != nil {
 			info, err := c.prepareStatement(batch.context, entry.Stmt, nil)
 			if err != nil {

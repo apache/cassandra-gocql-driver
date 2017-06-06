@@ -123,6 +123,10 @@ type ClusterConfig struct {
 	// Use it to collect metrics / stats from batche queries by providing an implementation of BatchObserver.
 	BatchObserver BatchObserver
 
+	// ConnectObserver will set the provided connect observer on all queries
+	// created from this session.
+	ConnectObserver ConnectObserver
+
 	// internal config for testing
 	disableControlConn bool
 }

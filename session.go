@@ -39,6 +39,7 @@ type Session struct {
 	trace               Tracer
 	queryObserver       QueryObserver
 	batchObserver       BatchObserver
+	connectObserver     ConnectObserver
 	hostSource          *ringDescriber
 	stmtsLRU            *preparedLRU
 
@@ -106,12 +107,13 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 	}
 
 	s := &Session{
-		cons:     cfg.Consistency,
-		prefetch: 0.25,
-		cfg:      cfg,
-		pageSize: cfg.PageSize,
-		stmtsLRU: &preparedLRU{lru: lru.New(cfg.MaxPreparedStmts)},
-		quit:     make(chan struct{}),
+		cons:            cfg.Consistency,
+		prefetch:        0.25,
+		cfg:             cfg,
+		pageSize:        cfg.PageSize,
+		stmtsLRU:        &preparedLRU{lru: lru.New(cfg.MaxPreparedStmts)},
+		quit:            make(chan struct{}),
+		connectObserver: cfg.ConnectObserver,
 	}
 
 	s.schemaDescriber = newSchemaDescriber(s)
@@ -138,6 +140,7 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 
 	s.queryObserver = cfg.QueryObserver
 	s.batchObserver = cfg.BatchObserver
+	s.connectObserver = cfg.ConnectObserver
 
 	//Check the TLS Config before trying to connect to anything external
 	connCfg, err := connConfig(&s.cfg)
@@ -648,6 +651,17 @@ func (s *Session) MapExecuteBatchCAS(batch *Batch, dest map[string]interface{}) 
 }
 
 func (s *Session) connect(host *HostInfo, errorHandler ConnErrorHandler) (*Conn, error) {
+	if s.connectObserver != nil {
+		obs := ObservedConnect{
+			Host:  host,
+			Start: time.Now(),
+		}
+		conn, err := s.dial(host.ConnectAddress(), host.Port(), s.connCfg, errorHandler)
+		obs.End = time.Now()
+		obs.Err = err
+		s.connectObserver.ObserveConnect(obs)
+		return conn, err
+	}
 	return s.dial(host.ConnectAddress(), host.Port(), s.connCfg, errorHandler)
 }
 
@@ -1383,7 +1397,7 @@ func (s *Session) NewBatch(typ BatchType) *Batch {
 		Type:             typ,
 		rt:               s.cfg.RetryPolicy,
 		serialCons:       s.cfg.SerialConsistency,
-		observer: s.batchObserver,
+		observer:         s.batchObserver,
 		Cons:             s.cons,
 		defaultTimestamp: s.cfg.DefaultTimestamp,
 		keyspace:         s.cfg.Keyspace,
@@ -1695,6 +1709,23 @@ type BatchObserver interface {
 	// The error reported only shows query errors, i.e. if a SELECT is valid but finds no matches it will be nil.
 	// Unlike QueryObserver.ObserveQuery it does no reporting on rows read.
 	ObserveBatch(context.Context, ObservedBatch)
+}
+
+type ObservedConnect struct {
+	// Host is the information about the host about to connect
+	Host *HostInfo
+
+	Start time.Time // time immediately before the dial is called
+	End   time.Time // time immediately after the dial returned
+
+	// Err is the connection error (if any)
+	Err error
+}
+
+// ConnectObserver is the interface implemented by connect observers / stat collectors.
+type ConnectObserver interface {
+	// ObserveConnect gets called when a new connection to cassandra is made.
+	ObserveConnect(ObservedConnect)
 }
 
 type Error struct {
