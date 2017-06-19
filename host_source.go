@@ -1,17 +1,14 @@
 package gocql
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/pkg/errors"
 )
-
-const assertErrorMsg = "Assertion failed for %s"
 
 type nodeState int32
 
@@ -367,140 +364,127 @@ func checkSystemSchema(control *controlConn) (bool, error) {
 
 // Given a map that represents a row from either system.local or system.peers
 // return as much information as we can in *HostInfo
-func (r *ringDescriber) hostInfoFromMap(row map[string]interface{}) (error, *HostInfo) {
-	host := HostInfo{}
+func (r *ringDescriber) hostInfoFromMap(row map[string]interface{}) (*HostInfo, error) {
+	const assertErrorMsg = "Assertion failed for %s"
 	var ok bool
+
+	// Default to our connected port if the cluster doesn't have port information
+	host := HostInfo{
+		port: r.session.cfg.Port,
+	}
 
 	for key, value := range row {
 		switch key {
 		case "data_center":
 			host.dataCenter, ok = value.(string)
 			if !ok {
-				return fmt.Errorf(assertErrorMsg, "data_center"), nil
+				return nil, fmt.Errorf(assertErrorMsg, "data_center")
 			}
 		case "rack":
 			host.rack, ok = value.(string)
 			if !ok {
-				return fmt.Errorf(assertErrorMsg, "rack"), nil
+				return nil, fmt.Errorf(assertErrorMsg, "rack")
 			}
 		case "host_id":
 			hostId, ok := value.(UUID)
 			if !ok {
-				return fmt.Errorf(assertErrorMsg, "host_id"), nil
+				return nil, fmt.Errorf(assertErrorMsg, "host_id")
 			}
 			host.hostId = hostId.String()
 		case "release_version":
 			version, ok := value.(string)
 			if !ok {
-				return fmt.Errorf(assertErrorMsg, "release_version"), nil
+				return nil, fmt.Errorf(assertErrorMsg, "release_version")
 			}
 			host.version.Set(version)
 		case "peer":
 			ip, ok := value.(string)
 			if !ok {
-				return fmt.Errorf(assertErrorMsg, "peer"), nil
+				return nil, fmt.Errorf(assertErrorMsg, "peer")
 			}
 			host.peer = net.ParseIP(ip)
 		case "cluster_name":
 			host.clusterName, ok = value.(string)
 			if !ok {
-				return fmt.Errorf(assertErrorMsg, "cluster_name"), nil
+				return nil, fmt.Errorf(assertErrorMsg, "cluster_name")
 			}
 		case "partitioner":
 			host.partitioner, ok = value.(string)
 			if !ok {
-				return fmt.Errorf(assertErrorMsg, "partitioner"), nil
+				return nil, fmt.Errorf(assertErrorMsg, "partitioner")
 			}
 		case "broadcast_address":
 			ip, ok := value.(string)
 			if !ok {
-				return fmt.Errorf(assertErrorMsg, "broadcast_address"), nil
+				return nil, fmt.Errorf(assertErrorMsg, "broadcast_address")
 			}
 			host.broadcastAddress = net.ParseIP(ip)
 		case "preferred_ip":
 			ip, ok := value.(string)
 			if !ok {
-				return fmt.Errorf(assertErrorMsg, "preferred_ip"), nil
+				return nil, fmt.Errorf(assertErrorMsg, "preferred_ip")
 			}
 			host.preferredIP = net.ParseIP(ip)
 		case "rpc_address":
 			ip, ok := value.(string)
 			if !ok {
-				return fmt.Errorf(assertErrorMsg, "rpc_address"), nil
+				return nil, fmt.Errorf(assertErrorMsg, "rpc_address")
 			}
 			host.rpcAddress = net.ParseIP(ip)
 		case "listen_address":
 			ip, ok := value.(string)
 			if !ok {
-				return fmt.Errorf(assertErrorMsg, "listen_address"), nil
+				return nil, fmt.Errorf(assertErrorMsg, "listen_address")
 			}
 			host.listenAddress = net.ParseIP(ip)
 		case "workload":
 			host.workload, ok = value.(string)
 			if !ok {
-				return fmt.Errorf(assertErrorMsg, "workload"), nil
+				return nil, fmt.Errorf(assertErrorMsg, "workload")
 			}
 		case "graph":
 			host.graph, ok = value.(bool)
 			if !ok {
-				return fmt.Errorf(assertErrorMsg, "graph"), nil
+				return nil, fmt.Errorf(assertErrorMsg, "graph")
 			}
 		case "tokens":
 			host.tokens, ok = value.([]string)
 			if !ok {
-				return fmt.Errorf(assertErrorMsg, "tokens"), nil
+				return nil, fmt.Errorf(assertErrorMsg, "tokens")
 			}
 		case "dse_version":
 			host.dseVersion, ok = value.(string)
 			if !ok {
-				return fmt.Errorf(assertErrorMsg, "dse_version"), nil
+				return nil, fmt.Errorf(assertErrorMsg, "dse_version")
 			}
 		}
 		// TODO(thrawn01): Add 'port'? once CASSANDRA-7544 is complete
 		// Not sure what the port field will be called until the JIRA issue is complete
 	}
 
-	// Default to our connected port if the cluster doesn't have port information
-	if host.port == 0 {
-		host.port = r.session.cfg.Port
-	}
-
-	return nil, &host
+	return &host, nil
 }
 
 // Ask the control node for it's local host information
 func (r *ringDescriber) GetLocalHostInfo() (*HostInfo, error) {
-	row := make(map[string]interface{})
-
-	// ask the connected node for local host info
 	it := r.session.control.query("SELECT * FROM system.local WHERE key='local'")
 	if it == nil {
 		return nil, errors.New("Attempted to query 'system.local' on a closed control connection")
 	}
-
-	// expect only 1 row
-	it.MapScan(row)
-	if err := it.Close(); err != nil {
-		return nil, err
-	}
-
-	// extract all available info about the host
-	err, host := r.hostInfoFromMap(row)
-	if err != nil {
-		return nil, err
-	}
-
-	return host, err
+	return r.extractHostInfo(it)
 }
 
 // Given an ip address and port, return a peer that matched the ip address
 func (r *ringDescriber) GetPeerHostInfo(ip net.IP, port int) (*HostInfo, error) {
-	row := make(map[string]interface{})
-
 	it := r.session.control.query("SELECT * FROM system.peers WHERE peer=?", ip)
 	if it == nil {
 		return nil, errors.New("Attempted to query 'system.peers' on a closed control connection")
 	}
+	return r.extractHostInfo(it)
+}
+
+func (r *ringDescriber) extractHostInfo(it *Iter) (*HostInfo, error) {
+	row := make(map[string]interface{})
 
 	// expect only 1 row
 	it.MapScan(row)
@@ -509,12 +493,7 @@ func (r *ringDescriber) GetPeerHostInfo(ip net.IP, port int) (*HostInfo, error) 
 	}
 
 	// extract all available info about the host
-	err, host := r.hostInfoFromMap(row)
-	if err != nil {
-		return nil, err
-	}
-
-	return host, err
+	return r.hostInfoFromMap(row)
 }
 
 // Ask the control node for host info on all it's known peers
@@ -533,7 +512,7 @@ func (r *ringDescriber) GetClusterPeerInfo() ([]*HostInfo, error) {
 			break
 		}
 		// extract all available info about the peer
-		err, host := r.hostInfoFromMap(row)
+		host, err := r.hostInfoFromMap(row)
 		if err != nil {
 			return nil, err
 		}
@@ -547,7 +526,7 @@ func (r *ringDescriber) GetClusterPeerInfo() ([]*HostInfo, error) {
 		hosts = append(hosts, host)
 	}
 	if it.err != nil {
-		return nil, errors.Wrap(it.err, "GetClusterPeerInfo()")
+		return nil, fmt.Errorf("while scanning 'system.peers' table: %s", it.err)
 	}
 	return hosts, nil
 }
@@ -581,15 +560,14 @@ func (r *ringDescriber) GetHosts() ([]*HostInfo, string, error) {
 	hosts = append(hosts, localHost)
 
 	// Filter the hosts if filter is provided
-	var filteredHosts []*HostInfo
+	filteredHosts := hosts
 	if r.session.cfg.HostFilter != nil {
+		filteredHosts = filteredHosts[:0]
 		for _, host := range hosts {
 			if r.session.cfg.HostFilter.Accept(host) {
 				filteredHosts = append(filteredHosts, host)
 			}
 		}
-	} else {
-		filteredHosts = hosts
 	}
 
 	r.prevHosts = filteredHosts
@@ -601,9 +579,6 @@ func (r *ringDescriber) GetHosts() ([]*HostInfo, string, error) {
 
 // Given an ip/port return HostInfo for the specified ip/port
 func (r *ringDescriber) GetHostInfo(ip net.IP, port int) (*HostInfo, error) {
-	var host *HostInfo
-	var err error
-
 	// TODO(thrawn01): Is IgnorePeerAddr still useful now that we have DisableInitialHostLookup?
 	// TODO(thrawn01): should we also check for DisableInitialHostLookup and return if true?
 
@@ -618,14 +593,24 @@ func (r *ringDescriber) GetHostInfo(ip net.IP, port int) (*HostInfo, error) {
 		return nil, errors.New("invalid control connection")
 	}
 
+	var (
+		host *HostInfo
+		err  error
+	)
+
 	// If we are asking about the same node our control connection has a connection too
 	if controlHost.ConnectAddress().Equal(ip) {
 		host, err = r.GetLocalHostInfo()
+
+		// Always respect the provided control node address and disregard the ip address
+		// the cassandra node provides. We do this as we are already connected and have a
+		// known valid ip address. This insulates gocql from client connection issues stemming
+		// from node misconfiguration. For instance when a node is run from a container, by
+		// default the node will report its ip address as 127.0.0.1 which is typically invalid.
+		host.SetConnectAddress(ip)
 	} else {
 		host, err = r.GetPeerHostInfo(ip, port)
 	}
-	// Always respect the user provided or discovered address
-	host.SetConnectAddress(ip)
 
 	// No host was found matching this ip/port
 	if err != nil {

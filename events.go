@@ -232,8 +232,9 @@ func (s *Session) handleNodeUp(ip net.IP, port int, waitForBinary bool) {
 
 	host := s.ring.getHost(ip)
 	if host != nil {
-		if s.cfg.IgnorePeerAddr && host.ConnectAddress().Equal(ip) {
-			// TODO: how can this ever be true?
+		// If we receive a node up event and user has asked us to ignore the peer address use
+		// the address provide by the event instead the address provide by peer the table.
+		if s.cfg.IgnorePeerAddr && !host.ConnectAddress().Equal(ip) {
 			host.SetConnectAddress(ip)
 		}
 
