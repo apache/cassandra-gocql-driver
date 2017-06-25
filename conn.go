@@ -157,9 +157,9 @@ func Connect(host *HostInfo, cfg *ConnConfig, errorHandler ConnErrorHandler, ses
 	if host == nil {
 		panic("host is nil")
 	} else if len(host.ConnectAddress()) == 0 {
-		panic(fmt.Sprintf("host missing connect ip address: %#+v", host))
+		panic(fmt.Sprintf("host missing connect ip address: %v", host))
 	} else if host.Port() == 0 {
-		panic(fmt.Sprintf("host missing port: %#+v", host))
+		panic(fmt.Sprintf("host missing port: %v", host))
 	}
 
 	var (
