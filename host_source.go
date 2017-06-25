@@ -153,9 +153,10 @@ func (h *HostInfo) ConnectAddress() net.IP {
 		// Use 'rpc_address' if provided and it's not 0.0.0.0
 		if h.rpcAddress != nil && !h.rpcAddress.IsUnspecified() {
 			return h.rpcAddress
-		}
-		// Peer should always be set if this from 'system.peer'
-		if h.peer != nil {
+		} else if h.broadcastAddress != nil && !h.broadcastAddress.IsUnspecified() {
+			return h.broadcastAddress
+		} else if h.peer != nil {
+			// Peer should always be set if this from 'system.peer'
 			return h.peer
 		}
 	}

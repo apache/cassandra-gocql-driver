@@ -104,3 +104,34 @@ func TestGetHostsWithFilter(t *testing.T) {
 		}
 	}
 }
+
+func TestHostInfo_ConnectAddress(t *testing.T) {
+	var localhost = net.IPv4(127, 0, 0, 1)
+	tests := []struct {
+		name          string
+		connectAddr   net.IP
+		rpcAddr       net.IP
+		broadcastAddr net.IP
+		peer          net.IP
+	}{
+		{name: "rpc_address", rpcAddr: localhost},
+		{name: "connect_address", connectAddr: localhost},
+		{name: "broadcast_address", broadcastAddr: localhost},
+		{name: "peer", peer: localhost},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			host := &HostInfo{
+				connectAddress:   test.connectAddr,
+				rpcAddress:       test.rpcAddr,
+				broadcastAddress: test.broadcastAddr,
+				peer:             test.peer,
+			}
+
+			if addr := host.ConnectAddress(); !addr.Equal(localhost) {
+				t.Fatalf("expected ConnectAddress to be %s got %s", localhost, addr)
+			}
+		})
+	}
+}
