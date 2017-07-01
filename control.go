@@ -247,16 +247,27 @@ func (c *controlConn) setupConn(conn *Conn) error {
 
 	c.conn.Store(conn)
 
+	if v, ok := conn.conn.RemoteAddr().(*net.TCPAddr); ok {
+		c.session.handleNodeUp(copyBytes(v.IP), v.Port, false)
+		return nil
+	}
+
 	host, portstr, err := net.SplitHostPort(conn.conn.RemoteAddr().String())
 	if err != nil {
 		return err
 	}
+
 	port, err := strconv.Atoi(portstr)
 	if err != nil {
 		return err
 	}
 
-	c.session.handleNodeUp(net.ParseIP(host), port, false)
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return fmt.Errorf("invalid remote addr: addr=%v host=%q", conn.conn.RemoteAddr(), host)
+	}
+
+	c.session.handleNodeUp(ip, port, false)
 
 	return nil
 }
