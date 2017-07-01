@@ -1335,8 +1335,8 @@ func TestUnmarshalDate(t *testing.T) {
 
 func TestMarshalDate(t *testing.T) {
 	now := time.Now()
-	timestamp := now.UnixNano()/int64(time.Millisecond)
-	expectedData := encInt(int32(timestamp/86400000 + int64(1 << 31)))
+	timestamp := now.UnixNano() / int64(time.Millisecond)
+	expectedData := encInt(int32(timestamp/86400000 + int64(1<<31)))
 	var marshalDateTests = []struct {
 		Info  TypeInfo
 		Data  []byte
