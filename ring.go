@@ -1,6 +1,7 @@
 package gocql
 
 import (
+	"fmt"
 	"net"
 	"sync"
 	"sync/atomic"
@@ -53,6 +54,9 @@ func (r *ring) allHosts() []*HostInfo {
 }
 
 func (r *ring) addHost(host *HostInfo) bool {
+	if host.invalidConnectAddr() {
+		panic(fmt.Sprintf("invalid host: %v", host))
+	}
 	ip := host.ConnectAddress().String()
 
 	r.mu.Lock()
@@ -79,6 +83,9 @@ func (r *ring) addOrUpdate(host *HostInfo) *HostInfo {
 }
 
 func (r *ring) addHostIfMissing(host *HostInfo) (*HostInfo, bool) {
+	if host.invalidConnectAddr() {
+		panic(fmt.Sprintf("invalid host: %v", host))
+	}
 	ip := host.ConnectAddress().String()
 
 	r.mu.Lock()
