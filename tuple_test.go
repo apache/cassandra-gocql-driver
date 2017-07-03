@@ -5,12 +5,11 @@ package gocql
 import "testing"
 
 func TestTupleSimple(t *testing.T) {
-	if *flagProto < protoVersion3 {
-		t.Skip("tuple types are only available of proto>=3")
-	}
-
 	session := createSession(t)
 	defer session.Close()
+	if session.cfg.ProtoVersion < protoVersion3 {
+		t.Skip("tuple types are only available of proto>=3")
+	}
 
 	err := createTable(session, `CREATE TABLE gocql_test.tuple_test(
 		id int,
@@ -51,11 +50,11 @@ func TestTupleSimple(t *testing.T) {
 }
 
 func TestTupleMapScan(t *testing.T) {
-	if *flagProto < protoVersion3 {
+	session := createSession(t)
+	defer session.Close()
+	if session.cfg.ProtoVersion < protoVersion3 {
 		t.Skip("tuple types are only available of proto>=3")
 	}
-
-	session := createSession(t)
 	defer session.Close()
 
 	err := createTable(session, `CREATE TABLE gocql_test.tuple_map_scan(
