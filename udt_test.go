@@ -301,12 +301,12 @@ func TestMapScanUDT(t *testing.T) {
 }
 
 func TestUDT_MissingField(t *testing.T) {
-	if *flagProto < protoVersion3 {
-		t.Skip("UDT are only available on protocol >= 3")
-	}
-
 	session := createSession(t)
 	defer session.Close()
+
+	if session.cfg.ProtoVersion < protoVersion3 {
+		t.Skip("UDT are only available on protocol >= 3")
+	}
 
 	err := createTable(session, `CREATE TYPE gocql_test.missing_field(
 		name text,
