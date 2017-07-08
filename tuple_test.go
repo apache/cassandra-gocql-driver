@@ -2,7 +2,10 @@
 
 package gocql
 
-import "testing"
+import (
+	"reflect"
+	"testing"
+)
 
 func TestTupleSimple(t *testing.T) {
 	session := createSession(t)
@@ -55,7 +58,6 @@ func TestTupleMapScan(t *testing.T) {
 	if session.cfg.ProtoVersion < protoVersion3 {
 		t.Skip("tuple types are only available of proto>=3")
 	}
-	defer session.Close()
 
 	err := createTable(session, `CREATE TABLE gocql_test.tuple_map_scan(
 		id int,
@@ -74,5 +76,52 @@ func TestTupleMapScan(t *testing.T) {
 	err = session.Query(`SELECT * FROM tuple_map_scan`).MapScan(m)
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestTuple_NestedCollection(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+	if session.cfg.ProtoVersion < protoVersion3 {
+		t.Skip("tuple types are only available of proto>=3")
+	}
+
+	err := createTable(session, `CREATE TABLE gocql_test.nested_tuples(
+		id int,
+		val list<frozen<tuple<int, text>>>,
+
+		primary key(id))`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	type typ struct {
+		A int
+		B string
+	}
+
+	tests := []struct {
+		name string
+		val  interface{}
+	}{
+		{name: "slice", val: [][]interface{}{{1, "2"}, {3, "4"}}},
+		{name: "array", val: [][2]interface{}{{1, "2"}, {3, "4"}}},
+		{name: "struct", val: []typ{{1, "2"}, {3, "4"}}},
+	}
+
+	for i, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if err := session.Query(`INSERT INTO nested_tuples (id, val) VALUES (?, ?);`, i, test.val).Exec(); err != nil {
+				t.Fatal(err)
+			}
+
+			rv := reflect.ValueOf(test.val)
+			res := reflect.New(rv.Type()).Elem().Addr().Interface()
+
+			err = session.Query(`SELECT val FROM nested_tuples WHERE id=?`, i).Scan(res)
+			if err != nil {
+				t.Fatal(err)
+			}
+		})
 	}
 }
