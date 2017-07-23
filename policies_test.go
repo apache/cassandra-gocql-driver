@@ -301,3 +301,20 @@ func TestExponentialBackoffPolicy(t *testing.T) {
 		}
 	}
 }
+
+func TestDCAwareRR(t *testing.T) {
+	p := DCAwareRoundRobbinPolicy("local")
+	p.AddHost(&HostInfo{connectAddress: net.ParseIP("10.0.0.1"), dataCenter: "local"})
+	p.AddHost(&HostInfo{connectAddress: net.ParseIP("10.0.0.2"), dataCenter: "remote"})
+
+	iter := p.Pick(nil)
+
+	h := iter()
+	if h.Info().DataCenter() != "local" {
+		t.Fatalf("expected to get local DC first, got %v", h.Info())
+	}
+	h = iter()
+	if h.Info().DataCenter() != "remote" {
+		t.Fatalf("expected to get remote DC, got %v", h.Info())
+	}
+}
