@@ -665,6 +665,22 @@ func TestMapScanWithRefMap(t *testing.T) {
 	if testFullName.FirstName != "John" || testFullName.LastName != "Doe" {
 		t.Fatal("returned testfullname did not match")
 	}
+
+	// using MapScan to read a nil int value
+	intp := new(int64)
+	ret = map[string]interface{}{
+		"testint": &intp,
+	}
+	if err := session.Query("INSERT INTO scan_map_ref_table(testtext, testint) VALUES(?, ?)", "null-int", nil).Exec(); err != nil {
+		t.Fatal(err)
+	}
+	err := session.Query(`SELECT testint FROM scan_map_ref_table WHERE testtext = ?`, "null-int").MapScan(ret)
+	if err != nil {
+		t.Fatal(err)
+	} else if v := ret["testint"].(*int64); v != nil {
+		t.Fatalf("testint should be nil got %+#v", v)
+	}
+
 }
 
 func TestMapScan(t *testing.T) {
