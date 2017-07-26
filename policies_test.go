@@ -303,7 +303,7 @@ func TestExponentialBackoffPolicy(t *testing.T) {
 }
 
 func TestDCAwareRR(t *testing.T) {
-	p := DCAwareRoundRobbinPolicy("local")
+	p := DCAwareRoundRobinPolicy("local")
 	p.AddHost(&HostInfo{connectAddress: net.ParseIP("10.0.0.1"), dataCenter: "local"})
 	p.AddHost(&HostInfo{connectAddress: net.ParseIP("10.0.0.2"), dataCenter: "remote"})
 

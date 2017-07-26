@@ -544,10 +544,10 @@ type dcAwareRR struct {
 	remoteHosts map[string]*HostInfo
 }
 
-// DCAwareRoundRobbinPolicy is a host selection policies which will priorities and
+// DCAwareRoundRobinPolicy is a host selection policies which will priorities and
 // return hosts which are in the local datacentre before returning hosts in all
 // other datercentres
-func DCAwareRoundRobbinPolicy(localDC string) HostSelectionPolicy {
+func DCAwareRoundRobinPolicy(localDC string) HostSelectionPolicy {
 	return &dcAwareRR{
 		local:       localDC,
 		localHosts:  make(map[string]*HostInfo),
