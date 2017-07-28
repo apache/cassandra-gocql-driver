@@ -123,8 +123,14 @@ type HostInfo struct {
 func (h *HostInfo) Equal(host *HostInfo) bool {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
-	host.mu.RLock()
-	defer host.mu.RUnlock()
+	//If both hosts pointers are same then lock is required only once because of below reasons:
+	//Reason 1: There is no point taking lock twice on same mutex variable.
+	//Reason 2: It may leads to deadlock e.g. if WLock is requested by other routine in between 1st & 2nd RLock
+	//So WLock will be blocked on 1st RLock and 2nd RLock will be blocked on reuested WLock.
+	if h != host {
+		host.mu.RLock()
+		defer host.mu.RUnlock()
+	}
 
 	return h.ConnectAddress().Equal(host.ConnectAddress())
 }
