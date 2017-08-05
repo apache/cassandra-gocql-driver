@@ -659,8 +659,9 @@ func (r *ringDescriber) refreshRing() error {
 		return err
 	}
 
+	prevHosts := r.session.ring.currentHosts()
+
 	// TODO: move this to session
-	// TODO: handle removing hosts here
 	for _, h := range hosts {
 		if host, ok := r.session.ring.addHostIfMissing(h); !ok {
 			r.session.pool.addHost(h)
@@ -668,6 +669,14 @@ func (r *ringDescriber) refreshRing() error {
 		} else {
 			host.update(h)
 		}
+		delete(prevHosts, h.ConnectAddress().String())
+	}
+
+	// TODO(zariel): it may be worth having a mutex covering the overall ring state
+	// in a session so that everything sees a consistent state. Becuase as is today
+	// events can come in and due to ordering an UP host could be removed from the cluster
+	for _, host := range prevHosts {
+		r.session.removeHost(host)
 	}
 
 	r.session.metadata.setPartitioner(partitioner)
