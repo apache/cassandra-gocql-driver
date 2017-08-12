@@ -229,12 +229,11 @@ func unmarshalVarchar(info TypeInfo, data []byte, value interface{}) error {
 		*v = string(data)
 		return nil
 	case *[]byte:
-		var dataCopy []byte
 		if data != nil {
-			dataCopy = make([]byte, len(data))
-			copy(dataCopy, data)
+			*v = copyBytes(data)
+		} else {
+			*v = nil
 		}
-		*v = dataCopy
 		return nil
 	}
 	rv := reflect.ValueOf(value)
