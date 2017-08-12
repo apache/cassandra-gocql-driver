@@ -868,6 +868,13 @@ var marshalTests = []struct {
 		nil,
 		nil,
 	},
+	{
+		NativeType{proto: 2, typ: TypeTime},
+		encBigInt(1000),
+		time.Duration(1000),
+		nil,
+		nil,
+	},
 }
 
 func decimalize(s string) *inf.Dec {
