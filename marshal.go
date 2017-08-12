@@ -21,7 +21,8 @@ import (
 )
 
 var (
-	bigOne = big.NewInt(1)
+	bigOne     = big.NewInt(1)
+	emptyValue reflect.Value
 )
 
 var (
@@ -1927,22 +1928,22 @@ func unmarshalUDT(info TypeInfo, data []byte, value interface{}) error {
 		return unmarshalErrorf("cannot unmarshal %s into %T", info, value)
 	}
 
-	fields := make(map[string]reflect.Value)
-	t := k.Type()
-	for i := 0; i < t.NumField(); i++ {
-		sf := t.Field(i)
-
-		if tag := sf.Tag.Get("cql"); tag != "" {
-			fields[tag] = k.Field(i)
-		}
-	}
-
 	if len(data) == 0 {
 		if k.CanSet() {
 			k.Set(reflect.Zero(k.Type()))
 		}
 
 		return nil
+	}
+
+	t := k.Type()
+	fields := make(map[string]reflect.Value, t.NumField())
+	for i := 0; i < t.NumField(); i++ {
+		sf := t.Field(i)
+
+		if tag := sf.Tag.Get("cql"); tag != "" {
+			fields[tag] = k.Field(i)
+		}
 	}
 
 	udt := info.(UDTTypeInfo)
@@ -1955,11 +1956,15 @@ func unmarshalUDT(info TypeInfo, data []byte, value interface{}) error {
 		size := readInt(data[:4])
 		data = data[4:]
 
-		var err error
 		if size >= 0 {
 			f, ok := fields[e.Name]
 			if !ok {
 				f = k.FieldByName(e.Name)
+				if f == emptyValue {
+					// skip fields which exist in the UDT but not in
+					// the struct passed in
+					continue
+				}
 			}
 
 			if !f.IsValid() || !f.CanAddr() {
@@ -1971,10 +1976,6 @@ func unmarshalUDT(info TypeInfo, data []byte, value interface{}) error {
 				return err
 			}
 			data = data[size:]
-		}
-
-		if err != nil {
-			return err
 		}
 	}
 
