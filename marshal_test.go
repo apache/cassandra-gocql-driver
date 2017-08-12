@@ -851,6 +851,13 @@ var marshalTests = []struct {
 		nil,
 		nil,
 	},
+	{
+		NativeType{proto: 2, typ: TypeBlob},
+		[]byte(nil),
+		([]byte)(nil),
+		nil,
+		nil,
+	},
 }
 
 func decimalize(s string) *inf.Dec {
