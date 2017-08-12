@@ -81,7 +81,7 @@ func Marshal(info TypeInfo, value interface{}) ([]byte, error) {
 		return marshalDouble(info, value)
 	case TypeDecimal:
 		return marshalDecimal(info, value)
-	case TypeTimestamp:
+	case TypeTimestamp, TypeTime:
 		return marshalTimestamp(info, value)
 	case TypeList, TypeSet:
 		return marshalList(info, value)
@@ -117,6 +117,7 @@ func Unmarshal(info TypeInfo, data []byte, value interface{}) error {
 	if v, ok := value.(Unmarshaler); ok {
 		return v.UnmarshalCQL(info, data)
 	}
+
 	if isNullableValue(value) {
 		return unmarshalNullable(info, data, value)
 	}
@@ -142,7 +143,7 @@ func Unmarshal(info TypeInfo, data []byte, value interface{}) error {
 		return unmarshalDouble(info, data, value)
 	case TypeDecimal:
 		return unmarshalDecimal(info, data, value)
-	case TypeTimestamp:
+	case TypeTimestamp, TypeTime:
 		return unmarshalTimestamp(info, data, value)
 	case TypeList, TypeSet:
 		return unmarshalList(info, data, value)
@@ -1097,6 +1098,8 @@ func marshalTimestamp(info TypeInfo, value interface{}) ([]byte, error) {
 		}
 		x := int64(v.UTC().Unix()*1e3) + int64(v.UTC().Nanosecond()/1e6)
 		return encBigInt(x), nil
+	case time.Duration:
+		return encBigInt(v.Nanoseconds()), nil
 	}
 
 	if value == nil {
@@ -1128,7 +1131,10 @@ func unmarshalTimestamp(info TypeInfo, data []byte, value interface{}) error {
 		nsec := (x - sec*1000) * 1000000
 		*v = time.Unix(sec, nsec).In(time.UTC)
 		return nil
+	case *time.Duration:
+		*v = time.Duration(decBigInt(data))
 	}
+
 	rv := reflect.ValueOf(value)
 	if rv.Kind() != reflect.Ptr {
 		return unmarshalErrorf("can not unmarshal into non-pointer %T", value)
