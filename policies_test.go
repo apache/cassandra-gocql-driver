@@ -219,7 +219,7 @@ func TestTokenAwareNilHostInfo(t *testing.T) {
 func TestCOWList_Add(t *testing.T) {
 	var cow cowHostList
 
-	toAdd := [...]net.IP{net.IPv4(0, 0, 0, 0), net.IPv4(1, 0, 0, 0), net.IPv4(2, 0, 0, 0)}
+	toAdd := [...]net.IP{net.IPv4(10, 0, 0, 1), net.IPv4(10, 0, 0, 2), net.IPv4(10, 0, 0, 3)}
 
 	for _, addr := range toAdd {
 		if !cow.add(&HostInfo{connectAddress: addr}) {
