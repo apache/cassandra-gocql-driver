@@ -123,16 +123,11 @@ type HostInfo struct {
 func (h *HostInfo) Equal(host *HostInfo) bool {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
-	//If both hosts pointers are same then lock is required only once because of below reasons:
-	//Reason 1: There is no point taking lock twice on same mutex variable.
-	//Reason 2: It may lead to deadlock e.g. if WLock is requested by other routine in between 1st & 2nd RLock
-	//So WLock will be blocked on 1st RLock and 2nd RLock will be blocked on requested WLock.
-	if h != host {
-		host.mu.RLock()
-		defer host.mu.RUnlock()
-	}
 
-	return h.ConnectAddress().Equal(host.ConnectAddress())
+	host.mu.RLock()
+	defer host.mu.RUnlock()
+
+	return h.getConnectAddress().Equal(host.getConnectAddress())
 }
 
 func (h *HostInfo) Peer() net.IP {
@@ -175,13 +170,18 @@ func (h *HostInfo) connectAddressLocked() (net.IP, string) {
 	return net.IPv4zero, "invalid"
 }
 
-// Returns the address that should be used to connect to the host.
-// If you wish to override this, use an AddressTranslator or
-// use a HostFilter to SetConnectAddress()
+// ConnectAddress returns the address that should be used to connect to the
+// host. If you wish to override this, use an AddressTranslator or use a
+// HostFilter to SetConnectAddress()
 func (h *HostInfo) ConnectAddress() net.IP {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 
+	return h.getConnectAddress()
+}
+
+// caller must hold mu
+func (h *HostInfo) getConnectAddress() net.IP {
 	if addr, _ := h.connectAddressLocked(); validIpAddr(addr) {
 		return addr
 	}
