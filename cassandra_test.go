@@ -2695,3 +2695,25 @@ func TestUnsetColBatch(t *testing.T) {
 		t.Fatalf("expected id, my_int to be 1, got %v and %v", id, mInt)
 	}
 }
+
+func TestQuery_NamedValues(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+
+	if session.cfg.ProtoVersion < 3 {
+		t.Skip("named Values are not supported in protocol < 3")
+	}
+
+	if err := createTable(session, "CREATE TABLE gocql_test.named_query(id int, value text, PRIMARY KEY (id))"); err != nil {
+		t.Fatal(err)
+	}
+
+	err := session.Query("INSERT INTO gocql_test.named_query(id, value) VALUES(:id, :value)", NamedValue("id", 1), NamedValue("value", "i am a value")).Exec()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var value string
+	if err := session.Query("SELECT VALUE from gocql_test.named_query WHERE id = :id", NamedValue("id", 1)).Scan(&value); err != nil {
+		t.Fatal(err)
+	}
+}
