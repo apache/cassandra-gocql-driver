@@ -187,6 +187,9 @@ func (e *ExponentialBackoffRetryPolicy) napTime(attempts int) time.Duration {
 	napDuration := minFloat * math.Pow(2, float64(attempts-1))
 	// add some jitter
 	napDuration += rand.Float64()*minFloat - (minFloat / 2)
+	if napDuration > float64(e.Max) {
+		return time.Duration(e.Max)
+	}
 	return time.Duration(napDuration)
 }
 
