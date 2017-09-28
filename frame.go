@@ -227,19 +227,20 @@ func (c *Consistency) UnmarshalText(text []byte) error {
 	return nil
 }
 
-func ParseConsistency(s string) Consistency {
-	var c Consistency
-	if err := c.UnmarshalText([]byte(strings.ToUpper(s))); err != nil {
+func ParseConsistency(s string) (consistency Consistency, err error) {
+	err = consistency.UnmarshalText([]byte(strings.ToUpper(s)))
+	return
+}
+
+// ParseConsistencyWrapper is deprecated use ParseConsistency instead.
+var ParseConsistencyWrapper = ParseConsistency
+
+func MustParseConsistency(s string) Consistency {
+	c, err := ParseConsistency(s)
+	if err != nil {
 		panic(err)
 	}
 	return c
-}
-
-// ParseConsistencyWrapper wraps gocql.ParseConsistency to provide an err
-// return instead of a panic
-func ParseConsistencyWrapper(s string) (consistency Consistency, err error) {
-	err = consistency.UnmarshalText([]byte(strings.ToUpper(s)))
-	return
 }
 
 type SerialConsistency uint16
