@@ -1680,6 +1680,13 @@ func unmarshalTuple(info TypeInfo, data []byte, value interface{}) error {
 	case []interface{}:
 		for i, elem := range tuple.Elems {
 			// each element inside data is a [bytes]
+			if len(data) == 0 {
+				err := Unmarshal(elem, data, v[i])
+				if err != nil {
+					return err
+				}
+				continue
+			}
 			size := readInt(data)
 			data = data[4:]
 
