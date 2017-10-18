@@ -102,10 +102,10 @@ func TestSession_connect_WithNoTranslator(t *testing.T) {
 
 	go srvr.Serve()
 
-	Connect(&HostInfo{
+	session.connect(&HostInfo{
 		connectAddress: srvr.Addr,
 		port:           srvr.Port,
-	}, session.connCfg, testConnErrorHandler(t), session)
+	}, testConnErrorHandler(t))
 
 	assertConnectionEventually(t, 500*time.Millisecond, srvr)
 }
@@ -122,10 +122,10 @@ func TestSession_connect_WithTranslator(t *testing.T) {
 	go srvr.Serve()
 
 	// the provided address will be translated
-	Connect(&HostInfo{
+	session.connect(&HostInfo{
 		connectAddress: net.ParseIP("10.10.10.10"),
 		port:           5432,
-	}, session.connCfg, testConnErrorHandler(t), session)
+	}, testConnErrorHandler(t))
 
 	assertConnectionEventually(t, 500*time.Millisecond, srvr)
 }

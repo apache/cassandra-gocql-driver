@@ -2362,31 +2362,26 @@ func TestDiscoverViaProxy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unable to create proxy listener: %v", err)
 	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
 	var (
-		wg         sync.WaitGroup
 		mu         sync.Mutex
 		proxyConns []net.Conn
 		closed     bool
 	)
 
-	go func(wg *sync.WaitGroup) {
+	go func() {
 		cassandraAddr := JoinHostPort(clusterHosts[0], 9042)
 
 		cassandra := func() (net.Conn, error) {
 			return net.Dial("tcp", cassandraAddr)
 		}
 
-		proxyFn := func(wg *sync.WaitGroup, from, to net.Conn) {
-			defer wg.Done()
-
+		proxyFn := func(errs chan error, from, to net.Conn) {
 			_, err := io.Copy(to, from)
 			if err != nil {
-				mu.Lock()
-				if !closed {
-					t.Error(err)
-				}
-				mu.Unlock()
+				errs <- err
 			}
 		}
 
@@ -2394,29 +2389,22 @@ func TestDiscoverViaProxy(t *testing.T) {
 		// for both the read and write side of the TCP connection to close before
 		// returning.
 		handle := func(conn net.Conn) error {
-			defer conn.Close()
-
 			cass, err := cassandra()
 			if err != nil {
 				return err
 			}
-
-			mu.Lock()
-			proxyConns = append(proxyConns, cass)
-			mu.Unlock()
-
 			defer cass.Close()
 
-			var wg sync.WaitGroup
-			wg.Add(1)
-			go proxyFn(&wg, conn, cass)
+			errs := make(chan error, 2)
+			go proxyFn(errs, conn, cass)
+			go proxyFn(errs, cass, conn)
 
-			wg.Add(1)
-			go proxyFn(&wg, cass, conn)
-
-			wg.Wait()
-
-			return nil
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case err := <-errs:
+				return err
+			}
 		}
 
 		for {
@@ -2436,19 +2424,19 @@ func TestDiscoverViaProxy(t *testing.T) {
 			proxyConns = append(proxyConns, conn)
 			mu.Unlock()
 
-			wg.Add(1)
 			go func(conn net.Conn) {
-				defer wg.Done()
+				defer conn.Close()
 
 				if err := handle(conn); err != nil {
-					t.Error(err)
-					return
+					mu.Lock()
+					if !closed {
+						t.Error(err)
+					}
+					mu.Unlock()
 				}
 			}(conn)
 		}
-	}(&wg)
-
-	defer wg.Wait()
+	}()
 
 	proxyAddr := proxy.Addr().String()
 
@@ -2459,11 +2447,6 @@ func TestDiscoverViaProxy(t *testing.T) {
 
 	session := createSessionFromCluster(cluster, t)
 	defer session.Close()
-
-	if session.hostSource.localHost.BroadcastAddress() == nil {
-		t.Skip("Target cluster does not have broadcast_address in system.local.")
-		goto close
-	}
 
 	// we shouldnt need this but to be safe
 	time.Sleep(1 * time.Second)
@@ -2476,7 +2459,6 @@ func TestDiscoverViaProxy(t *testing.T) {
 	}
 	session.pool.mu.RUnlock()
 
-close:
 	mu.Lock()
 	closed = true
 	if err := proxy.Close(); err != nil {

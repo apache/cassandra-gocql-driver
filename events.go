@@ -175,14 +175,12 @@ func (s *Session) handleNodeEvent(frames []frame) {
 
 func (s *Session) handleNewNode(ip net.IP, port int, waitForBinary bool) {
 	// Get host info and apply any filters to the host
-	hostInfo, err := s.hostSource.GetHostInfo(ip, port)
+	hostInfo, err := s.hostSource.getHostInfo(ip, port)
 	if err != nil {
 		Logger.Printf("gocql: events: unable to fetch host info for (%s:%d): %v\n", ip, port, err)
 		return
-	}
-
-	// If hostInfo is nil, this host was filtered out by cfg.HostFilter
-	if hostInfo == nil {
+	} else if hostInfo == nil {
+		// If hostInfo is nil, this host was filtered out by cfg.HostFilter
 		return
 	}
 
@@ -199,7 +197,9 @@ func (s *Session) handleNewNode(ip net.IP, port int, waitForBinary bool) {
 	s.pool.addHost(hostInfo)
 	s.policy.AddHost(hostInfo)
 	hostInfo.setState(NodeUp)
+
 	if s.control != nil && !s.cfg.IgnorePeerAddr {
+		// TODO(zariel): debounce ring refresh
 		s.hostSource.refreshRing()
 	}
 }

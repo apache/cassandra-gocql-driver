@@ -639,7 +639,7 @@ func (s *Session) MapExecuteBatchCAS(batch *Batch, dest map[string]interface{}) 
 }
 
 func (s *Session) connect(host *HostInfo, errorHandler ConnErrorHandler) (*Conn, error) {
-	return Connect(host, s.connCfg, errorHandler, s)
+	return s.dial(host.ConnectAddress(), host.Port(), s.connCfg, errorHandler)
 }
 
 // Query represents a CQL statement that can be executed.
@@ -1057,14 +1057,14 @@ type Scanner interface {
 	// scanned into with Scan.
 	// Next must be called before every call to Scan.
 	Next() bool
-	
+
 	// Scan copies the current row's columns into dest. If the length of dest does not equal
 	// the number of columns returned in the row an error is returned. If an error is encountered
 	// when unmarshalling a column into the value in dest an error is returned and the row is invalidated
 	// until the next call to Next.
 	// Next must be called before calling Scan, if it is not an error is returned.
 	Scan(...interface{}) error
-	
+
 	// Err returns the if there was one during iteration that resulted in iteration being unable to complete.
 	// Err will also release resources held by the iterator, the Scanner should not used after being called.
 	Err() error
@@ -1301,11 +1301,17 @@ type nextIter struct {
 	pos  int
 	once sync.Once
 	next *Iter
+	conn *Conn
 }
 
 func (n *nextIter) fetch() *Iter {
 	n.once.Do(func() {
-		n.next = n.qry.session.executeQuery(&n.qry)
+		iter := n.qry.session.executor.attemptQuery(&n.qry, n.conn)
+		if iter != nil && iter.err == nil {
+			n.next = iter
+		} else {
+			n.next = n.qry.session.executeQuery(&n.qry)
+		}
 	})
 	return n.next
 }
