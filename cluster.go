@@ -128,13 +128,13 @@ type ClusterConfig struct {
 // address, which is used to index connected hosts. If the domain name specified
 // resolves to more than 1 IP address then the driver may connect multiple times to
 // the same host, and will not mark the node being down or up from events.
-func NewCluster(hosts ...string) *ClusterConfig {
+func NewCluster(hosts ...string, port int) *ClusterConfig {
 	cfg := &ClusterConfig{
 		Hosts:                  hosts,
 		CQLVersion:             "3.0.0",
 		Timeout:                600 * time.Millisecond,
 		ConnectTimeout:         600 * time.Millisecond,
-		Port:                   9042,
+		Port:                   port,
 		NumConns:               2,
 		Consistency:            Quorum,
 		MaxPreparedStmts:       defaultMaxPreparedStmts,
