@@ -161,6 +161,16 @@ func (s *Session) init() error {
 		return err
 	}
 
+	allHosts := hosts
+	hosts = hosts[:0]
+	hostMap := make(map[string]*HostInfo, len(allHosts))
+	for _, host := range allHosts {
+		if !s.cfg.filterHost(host) {
+			hosts = append(hosts, host)
+			hostMap[host.ConnectAddress().String()] = host
+		}
+	}
+
 	if !s.cfg.disableControlConn {
 		s.control = createControlConn(s)
 		if s.cfg.ProtoVersion == 0 {
@@ -182,17 +192,20 @@ func (s *Session) init() error {
 
 		if !s.cfg.DisableInitialHostLookup {
 			var partitioner string
-			hosts, partitioner, err = s.hostSource.GetHosts()
+			newHosts, partitioner, err := s.hostSource.GetHosts()
 			if err != nil {
 				return err
 			}
 			s.policy.SetPartitioner(partitioner)
+			for _, host := range newHosts {
+				hostMap[host.ConnectAddress().String()] = host
+			}
 		}
 	}
 
-	for _, host := range hosts {
+	for _, host := range hostMap {
 		host = s.ring.addOrUpdate(host)
-		s.handleNodeUp(host.ConnectAddress(), host.Port(), false)
+		s.addNewNode(host)
 	}
 
 	// TODO(zariel): we probably dont need this any more as we verify that we
@@ -210,7 +223,8 @@ func (s *Session) init() error {
 		newer, _ := checkSystemSchema(s.control)
 		s.useSystemSchema = newer
 	} else {
-		s.useSystemSchema = hosts[0].Version().Major >= 3
+		host := s.ring.rrHost()
+		s.useSystemSchema = host.Version().Major >= 3
 	}
 
 	if s.pool.Size() == 0 {

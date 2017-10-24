@@ -168,8 +168,7 @@ func (s *Session) dial(ip net.IP, port int, cfg *ConnConfig, errorHandler ConnEr
 	}
 
 	// TODO(zariel): handle ipv6 zone
-	translatedPeer, translatedPort := s.cfg.translateAddressPort(ip, port)
-	addr := (&net.TCPAddr{IP: translatedPeer, Port: translatedPort}).String()
+	addr := (&net.TCPAddr{IP: ip, Port: port}).String()
 
 	if cfg.tlsConfig != nil {
 		// the TLS config is safe to be reused by connections but it must not
@@ -1164,7 +1163,7 @@ func (c *Conn) localHostInfo() (*HostInfo, error) {
 	}
 
 	// TODO(zariel): avoid doing this here
-	host, err := hostInfoFromMap(row, c.session.cfg.Port)
+	host, err := c.session.hostInfoFromMap(row)
 	if err != nil {
 		return nil, err
 	}
