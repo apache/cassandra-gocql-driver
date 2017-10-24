@@ -183,6 +183,7 @@ func (h *HostInfo) ConnectAddress() net.IP {
 }
 
 func (h *HostInfo) SetConnectAddress(address net.IP) *HostInfo {
+	// TODO(zariel): should this not be exported?
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.connectAddress = address
@@ -338,10 +339,24 @@ func (h *HostInfo) update(from *HostInfo) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	h.tokens = from.tokens
-	h.version = from.version
-	h.hostId = from.hostId
+	h.peer = from.peer
+	h.broadcastAddress = from.broadcastAddress
+	h.listenAddress = from.listenAddress
+	h.rpcAddress = from.rpcAddress
+	h.preferredIP = from.preferredIP
+	h.connectAddress = from.connectAddress
+	h.port = from.port
 	h.dataCenter = from.dataCenter
+	h.rack = from.rack
+	h.hostId = from.hostId
+	h.workload = from.workload
+	h.graph = from.graph
+	h.dseVersion = from.dseVersion
+	h.partitioner = from.partitioner
+	h.clusterName = from.clusterName
+	h.version = from.version
+	h.state = from.state
+	h.tokens = from.tokens
 }
 
 func (h *HostInfo) IsUp() bool {
@@ -387,13 +402,13 @@ func checkSystemSchema(control *controlConn) (bool, error) {
 
 // Given a map that represents a row from either system.local or system.peers
 // return as much information as we can in *HostInfo
-func hostInfoFromMap(row map[string]interface{}, defaultPort int) (*HostInfo, error) {
+func (s *Session) hostInfoFromMap(row map[string]interface{}) (*HostInfo, error) {
 	const assertErrorMsg = "Assertion failed for %s"
 	var ok bool
 
 	// Default to our connected port if the cluster doesn't have port information
 	host := HostInfo{
-		port: defaultPort,
+		port: s.cfg.Port,
 	}
 
 	for key, value := range row {
@@ -485,6 +500,10 @@ func hostInfoFromMap(row map[string]interface{}, defaultPort int) (*HostInfo, er
 		// Not sure what the port field will be called until the JIRA issue is complete
 	}
 
+	ip, port := s.cfg.translateAddressPort(host.ConnectAddress(), host.port)
+	host.connectAddress = ip
+	host.port = port
+
 	return &host, nil
 }
 
@@ -508,7 +527,7 @@ func (r *ringDescriber) getClusterPeerInfo() ([]*HostInfo, error) {
 
 	for _, row := range rows {
 		// extract all available info about the peer
-		host, err := hostInfoFromMap(row, r.session.cfg.Port)
+		host, err := r.session.hostInfoFromMap(row)
 		if err != nil {
 			return nil, err
 		} else if !isValidPeer(host) {
@@ -560,24 +579,35 @@ func (r *ringDescriber) getHostInfo(ip net.IP, port int) (*HostInfo, error) {
 			return nil
 		}
 
-		return ch.conn.query("SELECT * FROM system.peers WHERE peer=?", ip)
+		return ch.conn.query("SELECT * FROM system.peers")
 	})
 
 	if iter != nil {
-		row, err := iter.rowMap()
+		rows, err := iter.SliceMap()
 		if err != nil {
 			return nil, err
 		}
 
-		host, err = hostInfoFromMap(row, port)
-		if err != nil {
-			return nil, err
+		for _, row := range rows {
+			h, err := r.session.hostInfoFromMap(row)
+			if err != nil {
+				return nil, err
+			}
+
+			if host.ConnectAddress().Equal(ip) {
+				host = h
+				break
+			}
 		}
-	} else if host == nil {
-		return nil, errors.New("unable to fetch host info: invalid control connection")
+
+		if host == nil {
+			return nil, errors.New("host not found in peers table")
+		}
 	}
 
-	if host.invalidConnectAddr() {
+	if host == nil {
+		return nil, errors.New("unable to fetch host info: invalid control connection")
+	} else if host.invalidConnectAddr() {
 		return nil, fmt.Errorf("host ConnectAddress invalid ip=%v: %v", ip, host)
 	}
 
