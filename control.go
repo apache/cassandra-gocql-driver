@@ -31,13 +31,15 @@ func init() {
 // Ensure that the atomic variable is aligned to a 64bit boundary
 // so that atomic operations can be applied on 32bit architectures.
 type controlConn struct {
+	started      int32
+	reconnecting int32
+
 	session *Session
 	conn    atomic.Value
 
 	retry RetryPolicy
 
-	started int32
-	quit    chan struct{}
+	quit chan struct{}
 }
 
 func createControlConn(session *Session) *controlConn {
@@ -310,6 +312,10 @@ func (c *controlConn) registerEvents(conn *Conn) error {
 }
 
 func (c *controlConn) reconnect(refreshring bool) {
+	if !atomic.CompareAndSwapInt32(&c.reconnecting, 0, 1) {
+		return
+	}
+	defer atomic.StoreInt32(&c.reconnecting, 0)
 	// TODO: simplify this function, use session.ring to get hosts instead of the
 	// connection pool
 
