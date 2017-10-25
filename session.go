@@ -617,6 +617,7 @@ func (s *Session) ExecuteBatch(batch *Batch) error {
 // Further scans on the interator must also remember to include
 // the applied boolean as the first argument to *Iter.Scan
 func (s *Session) ExecuteBatchCAS(batch *Batch, dest ...interface{}) (applied bool, iter *Iter, err error) {
+	batch.defaultTimestamp = false
 	iter = s.executeBatch(batch)
 	if err := iter.checkErrAndNotFound(); err != nil {
 		iter.Close()
@@ -637,6 +638,7 @@ func (s *Session) ExecuteBatchCAS(batch *Batch, dest ...interface{}) (applied bo
 // however it accepts a map rather than a list of arguments for the initial
 // scan.
 func (s *Session) MapExecuteBatchCAS(batch *Batch, dest map[string]interface{}) (applied bool, iter *Iter, err error) {
+	batch.defaultTimestamp = false
 	iter = s.executeBatch(batch)
 	if err := iter.checkErrAndNotFound(); err != nil {
 		iter.Close()
@@ -971,6 +973,7 @@ func (q *Query) Scan(dest ...interface{}) error {
 // in dest.
 func (q *Query) ScanCAS(dest ...interface{}) (applied bool, err error) {
 	q.disableSkipMetadata = true
+	q.defaultTimestamp = false
 	iter := q.Iter()
 	if err := iter.checkErrAndNotFound(); err != nil {
 		return false, err
@@ -994,6 +997,7 @@ func (q *Query) ScanCAS(dest ...interface{}) (applied bool, err error) {
 // column mismatching. MapScanCAS is added to capture them safely.
 func (q *Query) MapScanCAS(dest map[string]interface{}) (applied bool, err error) {
 	q.disableSkipMetadata = true
+	q.defaultTimestamp = false
 	iter := q.Iter()
 	if err := iter.checkErrAndNotFound(); err != nil {
 		return false, err
