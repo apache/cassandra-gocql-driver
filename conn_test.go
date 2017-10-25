@@ -6,6 +6,8 @@
 package gocql
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
@@ -18,6 +20,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/gocql/gocql/internal/streams"
 )
 
 const (
@@ -557,51 +561,25 @@ func TestStream0(t *testing.T) {
 	// TODO: replace this with type check
 	const expErr = "gocql: received unexpected frame on stream 0"
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	srv := NewTestServer(t, defaultProto, ctx)
-	defer srv.Stop()
-
-	errorHandler := connErrorHandlerFn(func(conn *Conn, err error, closed bool) {
-		if !srv.isClosed() && !strings.HasPrefix(err.Error(), expErr) {
-			select {
-			case <-ctx.Done():
-				return
-			default:
-				t.Errorf("expected to get error prefix %q got %q", expErr, err.Error())
-			}
-		}
-	})
-
-	s, err := srv.session()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer s.Close()
-
-	conn, err := s.connect(srv.host(), errorHandler)
-	if err != nil {
+	var buf bytes.Buffer
+	f := newFramer(nil, &buf, nil, protoVersion4)
+	f.writeHeader(0, opResult, 0)
+	f.writeInt(resultKindVoid)
+	f.wbuf[0] |= 0x80
+	if err := f.finishWrite(); err != nil {
 		t.Fatal(err)
 	}
 
-	writer := frameWriterFunc(func(f *framer, streamID int) error {
-		f.writeQueryFrame(0, "void", &queryParams{})
-		return f.finishWrite()
-	})
+	conn := &Conn{
+		r:       bufio.NewReader(&buf),
+		streams: streams.New(protoVersion4),
+	}
 
-	// need to write out an invalid frame, which we need a connection to do
-	framer, err := conn.exec(ctx, writer, nil)
+	err := conn.recv()
 	if err == nil {
 		t.Fatal("expected to get an error on stream 0")
 	} else if !strings.HasPrefix(err.Error(), expErr) {
 		t.Fatalf("expected to get error prefix %q got %q", expErr, err.Error())
-	} else if framer != nil {
-		frame, err := framer.parseFrame()
-		if err != nil {
-			t.Fatal(err)
-		}
-		t.Fatalf("got frame %v", frame)
 	}
 }
 
