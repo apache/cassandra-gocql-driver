@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math/rand"
 	"net"
+	"os"
 	"regexp"
 	"strconv"
 	"sync"
@@ -93,7 +94,7 @@ func (c *controlConn) heartBeat() {
 	}
 }
 
-var hostLookupPreferV4 = false
+var hostLookupPreferV4 = os.Getenv("GOCQL_HOST_LOOKUP_PREFER_V4") == "true"
 
 func hostInfo(addr string, defaultPort int) (*HostInfo, error) {
 	var port int
