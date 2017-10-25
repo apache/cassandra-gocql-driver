@@ -227,20 +227,30 @@ func (c *Consistency) UnmarshalText(text []byte) error {
 	return nil
 }
 
-func ParseConsistency(s string) (consistency Consistency, err error) {
+func ParseConsistency(s string) Consistency {
+	var c Consistency
+	if err := c.UnmarshalText([]byte(strings.ToUpper(s))); err != nil {
+		panic(err)
+	}
+	return c
+}
+
+// ParseConsistencyWrapper wraps gocql.ParseConsistency to provide an err
+// return instead of a panic
+func ParseConsistencyWrapper(s string) (consistency Consistency, err error) {
 	err = consistency.UnmarshalText([]byte(strings.ToUpper(s)))
 	return
 }
 
-// ParseConsistencyWrapper is deprecated use ParseConsistency instead.
-var ParseConsistencyWrapper = ParseConsistency
-
-func MustParseConsistency(s string) Consistency {
-	c, err := ParseConsistency(s)
+// MustParseConsistency is the same as ParseConsistency except it returns
+// an error (never). It is kept here since breaking changes are not good.
+// DEPRECATED: use ParseConsistency if you want a panic on parse error.
+func MustParseConsistency(s string) (Consistency, error) {
+	c, err := ParseConsistencyWrapper(s)
 	if err != nil {
 		panic(err)
 	}
-	return c
+	return c, nil
 }
 
 type SerialConsistency uint16
