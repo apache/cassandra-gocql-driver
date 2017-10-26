@@ -171,6 +171,8 @@ func (s *Session) init() error {
 		}
 	}
 
+	s.ring.endpoints = hosts
+
 	if !s.cfg.disableControlConn {
 		s.control = createControlConn(s)
 		if s.cfg.ProtoVersion == 0 {

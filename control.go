@@ -61,12 +61,16 @@ func (c *controlConn) heartBeat() {
 	}
 
 	sleepTime := 1 * time.Second
+	timer := time.NewTimer(sleepTime)
+	defer timer.Stop()
 
 	for {
+		timer.Reset(sleepTime)
+
 		select {
 		case <-c.quit:
 			return
-		case <-time.After(sleepTime):
+		case <-timer.C:
 		}
 
 		resp, err := c.writeFrame(&writeOptionsFrame{})
@@ -89,7 +93,6 @@ func (c *controlConn) heartBeat() {
 		// try to connect a bit faster
 		sleepTime = 1 * time.Second
 		c.reconnect(true)
-		// time.Sleep(5 * time.Second)
 		continue
 	}
 }
@@ -272,7 +275,7 @@ func (c *controlConn) setupConn(conn *Conn) error {
 	}
 
 	c.conn.Store(ch)
-	// c.session.handleNodeUp(host.ConnectAddress(), host.Port(), false)
+	c.session.handleNodeUp(host.ConnectAddress(), host.Port(), false)
 
 	return nil
 }
