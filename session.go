@@ -11,12 +11,16 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 	"unicode"
+
+	"github.com/rs/xstats"
+	"github.com/rs/xstats/statsd"
 
 	"github.com/gocql/gocql/internal/lru"
 )
@@ -67,6 +71,9 @@ type Session struct {
 
 	closeMu  sync.RWMutex
 	isClosed bool
+
+	// send stats
+	stater xstats.XStater
 }
 
 var queryPool = &sync.Pool{
@@ -150,6 +157,12 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 			// TODO(zariel): dont wrap this error in fmt.Errorf, return a typed error
 			return nil, fmt.Errorf("gocql: unable to create session: %v", err)
 		}
+	}
+
+	if cfg.Stater == nil {
+		s.stater = xstats.New(statsd.New(ioutil.Discard, time.Minute))
+	} else {
+		s.stater = cfg.Stater
 	}
 
 	return s, nil
