@@ -632,7 +632,7 @@ func (r *ringDescriber) getHostInfo(ip net.IP, port int) (*HostInfo, error) {
 				return nil, err
 			}
 
-			if host.ConnectAddress().Equal(ip) {
+			if h.ConnectAddress().Equal(ip) {
 				host = h
 				break
 			}
