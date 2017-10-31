@@ -161,14 +161,9 @@ func (s *Session) init() error {
 		return err
 	}
 
-	allHosts := hosts
-	hosts = hosts[:0]
-	hostMap := make(map[string]*HostInfo, len(allHosts))
-	for _, host := range allHosts {
-		if !s.cfg.filterHost(host) {
-			hosts = append(hosts, host)
-			hostMap[host.ConnectAddress().String()] = host
-		}
+	hostMap := make(map[string]*HostInfo, len(hosts))
+	for _, host := range hosts {
+		hostMap[host.ConnectAddress().String()] = host
 	}
 
 	s.ring.endpoints = hosts
@@ -200,7 +195,9 @@ func (s *Session) init() error {
 			}
 			s.policy.SetPartitioner(partitioner)
 			for _, host := range newHosts {
-				hostMap[host.ConnectAddress().String()] = host
+				if !s.cfg.filterHost(host) {
+					hostMap[host.ConnectAddress().String()] = host
+				}
 			}
 		}
 	}
