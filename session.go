@@ -160,12 +160,6 @@ func (s *Session) init() error {
 	if err != nil {
 		return err
 	}
-
-	hostMap := make(map[string]*HostInfo, len(hosts))
-	for _, host := range hosts {
-		hostMap[host.ConnectAddress().String()] = host
-	}
-
 	s.ring.endpoints = hosts
 
 	if !s.cfg.disableControlConn {
@@ -194,12 +188,19 @@ func (s *Session) init() error {
 				return err
 			}
 			s.policy.SetPartitioner(partitioner)
+			filteredHosts := make([]*HostInfo, 0, len(newHosts))
 			for _, host := range newHosts {
 				if !s.cfg.filterHost(host) {
-					hostMap[host.ConnectAddress().String()] = host
+					filteredHosts = append(filteredHosts, host)
 				}
 			}
+			hosts = filteredHosts
 		}
+	}
+
+	hostMap := make(map[string]*HostInfo, len(hosts))
+	for _, host := range hosts {
+		hostMap[host.ConnectAddress().String()] = host
 	}
 
 	for _, host := range hostMap {
