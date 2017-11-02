@@ -53,7 +53,19 @@ func (r *ring) allHosts() []*HostInfo {
 	return hosts
 }
 
+func (r *ring) currentHosts() map[string]*HostInfo {
+	r.mu.RLock()
+	hosts := make(map[string]*HostInfo, len(r.hosts))
+	for k, v := range r.hosts {
+		hosts[k] = v
+	}
+	r.mu.RUnlock()
+	return hosts
+}
+
 func (r *ring) addHost(host *HostInfo) bool {
+	// TODO(zariel): key all host info by HostID instead of
+	// ip addresses
 	if host.invalidConnectAddr() {
 		panic(fmt.Sprintf("invalid host: %v", host))
 	}

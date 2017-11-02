@@ -543,7 +543,7 @@ var marshalTests = []struct {
 	},
 	{
 		NativeType{proto: 2, typ: TypeVarchar},
-		[]byte{},
+		[]byte(nil),
 		(*string)(nil),
 		nil,
 		nil,
@@ -574,7 +574,7 @@ var marshalTests = []struct {
 	},
 	{
 		NativeType{proto: 2, typ: TypeTimeUUID},
-		[]byte{},
+		[]byte(nil),
 		(*UUID)(nil),
 		nil,
 		nil,
@@ -848,6 +848,30 @@ var marshalTests = []struct {
 		NativeType{proto: 2, typ: TypeInt},
 		[]byte("\xff\xff\xff\xff"),
 		uint32(math.MaxUint32),
+		nil,
+		nil,
+	},
+	{
+		NativeType{proto: 2, typ: TypeBlob},
+		[]byte(nil),
+		([]byte)(nil),
+		nil,
+		nil,
+	},
+	{
+		NativeType{proto: 2, typ: TypeVarchar},
+		[]byte{},
+		func() interface{} {
+			var s string
+			return &s
+		}(),
+		nil,
+		nil,
+	},
+	{
+		NativeType{proto: 2, typ: TypeTime},
+		encBigInt(1000),
+		time.Duration(1000),
 		nil,
 		nil,
 	},
