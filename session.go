@@ -11,7 +11,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net"
 	"strings"
 	"sync"
@@ -20,7 +19,6 @@ import (
 	"unicode"
 
 	"github.com/rs/xstats"
-	"github.com/rs/xstats/statsd"
 
 	"github.com/gocql/gocql/internal/lru"
 )
@@ -147,6 +145,12 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 	}
 	s.connCfg = connCfg
 
+	if cfg.Stater == nil {
+		s.stater = &NoopXStater{}
+	} else {
+		s.stater = cfg.Stater
+	}
+
 	if err := s.init(); err != nil {
 		s.Close()
 		if err == ErrNoConnectionsStarted {
@@ -157,12 +161,6 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 			// TODO(zariel): dont wrap this error in fmt.Errorf, return a typed error
 			return nil, fmt.Errorf("gocql: unable to create session: %v", err)
 		}
-	}
-
-	if cfg.Stater == nil {
-		s.stater = xstats.New(statsd.New(ioutil.Discard, time.Minute))
-	} else {
-		s.stater = cfg.Stater
 	}
 
 	return s, nil

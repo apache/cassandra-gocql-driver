@@ -179,11 +179,11 @@ func (s *Session) dial(ip net.IP, port int, cfg *ConnConfig, errorHandler ConnEr
 	}
 
 	if err != nil {
-		go s.stater.Count("gocql.conn.open.failure", 1, fmt.Sprintf("addr:%s", addr))
+		s.stater.Count("gocql.conn.open.failure", 1, fmt.Sprintf("addr:%s", addr))
 		return nil, err
 	}
 
-	go s.stater.Count("gocql.conn.open.success", 1, fmt.Sprintf("addr:%s", addr))
+	s.stater.Count("gocql.conn.open.success", 1, fmt.Sprintf("addr:%s", addr))
 
 	c := &Conn{
 		conn:         conn,
