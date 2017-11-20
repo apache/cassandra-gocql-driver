@@ -732,11 +732,11 @@ func (srv *TestServer) session() (*Session, error) {
 }
 
 func (srv *TestServer) host() *HostInfo {
-	host, err := hostInfo(srv.Address, 9042)
+	hosts, err := hostInfo(srv.Address, 9042)
 	if err != nil {
 		srv.t.Fatal(err)
 	}
-	return host
+	return hosts[0]
 }
 
 func (srv *TestServer) closeWatch() {
