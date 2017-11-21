@@ -18,12 +18,13 @@ func TestHostInfo_Lookup(t *testing.T) {
 	}
 
 	for i, test := range tests {
-		host, err := hostInfo(test.addr, 1)
+		hosts, err := hostInfo(test.addr, 1)
 		if err != nil {
 			t.Errorf("%d: %v", i, err)
 			continue
 		}
 
+		host := hosts[0]
 		if !host.ConnectAddress().Equal(test.ip) {
 			t.Errorf("expected ip %v got %v for addr %q", test.ip, host.ConnectAddress(), test.addr)
 		}
