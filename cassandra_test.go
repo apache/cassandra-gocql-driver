@@ -197,6 +197,8 @@ func TestReporting(t *testing.T) {
 	var reportedKeyspace string
 	var reportedStmt string
 
+	const keyspace = "gocql_test"
+
 	resetReported := func() {
 		reportedErr = errors.New("placeholder only") // used to distinguish err=nil cases
 		reportedKeyspace = ""
@@ -216,16 +218,22 @@ func TestReporting(t *testing.T) {
 		t.Fatal("select: expected error")
 	} else if reportedErr != nil {
 		t.Fatalf("select : report expected nil, got %q", reportedErr)
+	} else if reportedKeyspace != keyspace {
+		t.Fatal("select: unexpected reported keyspace", reportedKeyspace)
+	} else if reportedStmt != `SELECT id FROM report WHERE id = ?` {
+		t.Fatal("select: unexpected reported stmt", reportedStmt)
 	}
-	// TODO - test keyspace == "gocql_test" and stmt
 
 	resetReported()
 	if err := session.Query(`INSERT INTO report (id) VALUES (?)`, 42).Report(reporter).Exec(); err != nil {
 		t.Fatal("insert:", err)
 	} else if reportedErr != nil {
 		t.Fatal("insert:", reportedErr)
+	} else if reportedKeyspace != keyspace {
+		t.Fatal("insert: unexpected reported keyspace", reportedKeyspace)
+	} else if reportedStmt != `INSERT INTO report (id) VALUES (?)` {
+		t.Fatal("insert: unexpected reported stmt", reportedStmt)
 	}
-	// TODO - test keyspace == "gocql_test" and stmt
 
 	resetReported()
 	value = 0
@@ -235,8 +243,11 @@ func TestReporting(t *testing.T) {
 		t.Fatalf("value: expected %d, got %d", 42, value)
 	} else if reportedErr != nil {
 		t.Fatal("select:", reportedErr)
+	} else if reportedKeyspace != keyspace {
+		t.Fatal("select: unexpected reported keyspace", reportedKeyspace)
+	} else if reportedStmt != `SELECT id FROM report WHERE id = ?` {
+		t.Fatal("select: unexpected reported stmt", reportedStmt)
 	}
-	// TODO - test keyspace == "gocql_test" and stmt
 
 	// also works from session tracer
 	session.SetReport(reporter)
@@ -245,8 +256,11 @@ func TestReporting(t *testing.T) {
 		t.Fatal("select:", err)
 	} else if reportedErr != nil {
 		t.Fatal("select:", err)
+	} else if reportedKeyspace != keyspace {
+		t.Fatal("select: unexpected reported keyspace", reportedKeyspace)
+	} else if reportedStmt != `SELECT id FROM report WHERE id = ?` {
+		t.Fatal("select: unexpected reported stmt", reportedStmt)
 	}
-	// TODO - test keyspace == "gocql_test" and stmt
 
 	// TODO - test bad query
 }
