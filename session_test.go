@@ -1,4 +1,4 @@
-// +build all integration
+// - // +build all integration
 
 package gocql
 
@@ -89,6 +89,12 @@ func TestSessionAPI(t *testing.T) {
 	}
 }
 
+type funcReporter func(*Reported)
+
+func (f funcReporter) Report(r *Reported) {
+	f(r)
+}
+
 func TestQueryBasicAPI(t *testing.T) {
 	qry := &Query{}
 
@@ -114,6 +120,18 @@ func TestQueryBasicAPI(t *testing.T) {
 	qry.Trace(trace)
 	if qry.trace != trace {
 		t.Fatalf("expected Query.Trace to be '%v', got '%v'", trace, qry.trace)
+	}
+
+	reporter := funcReporter(func(*Reported) {})
+
+	qry.QueryReport(reporter)
+	if qry.queryReporter == nil { // can't compare func to func, checking not nil instead
+		t.Fatal("expected Query.QueryReport to be set, got nil")
+	}
+
+	qry.ScanReport(reporter)
+	if qry.scanReporter == nil { // can't compare func to func, checking not nil instead
+		t.Fatal("expected Query.ScanReport to be set, got nil")
 	}
 
 	qry.PageSize(10)

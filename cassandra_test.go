@@ -5,6 +5,7 @@ package gocql
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"math"
 	"math/big"
@@ -181,6 +182,97 @@ func TestTracing(t *testing.T) {
 	}
 	if buf.Len() == 0 {
 		t.Fatal("select: failed to obtain any tracing")
+	}
+}
+
+func TestReport(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+
+	if err := createTable(session, `CREATE TABLE gocql_test.report (id int primary key)`); err != nil {
+		t.Fatal("create:", err)
+	}
+
+	var reportedErr error
+	var reportedKeyspace string
+	var reportedStmt string
+
+	const keyspace = "gocql_test"
+
+	resetReported := func() {
+		reportedErr = errors.New("placeholder only") // used to distinguish err=nil cases
+		reportedKeyspace = ""
+		reportedStmt = ""
+	}
+
+	reporter := funcReporter(func(r *Reported) {
+		reportedKeyspace = r.keyspace
+		reportedStmt = r.stmt
+		reportedErr = r.err
+	})
+
+	// select before inserted, will error but the reporting is err=nil as the query is valid
+	resetReported()
+	var value int
+	if err := session.Query(`SELECT id FROM report WHERE id = ?`, 43).QueryReport(reporter).Scan(&value); err == nil {
+		t.Fatal("select: expected error")
+	} else if reportedErr != nil {
+		t.Fatalf("select : report expected nil, got %q", reportedErr)
+	} else if reportedKeyspace != keyspace {
+		t.Fatal("select: unexpected reported keyspace", reportedKeyspace)
+	} else if reportedStmt != `SELECT id FROM report WHERE id = ?` {
+		t.Fatal("select: unexpected reported stmt", reportedStmt)
+	}
+
+	resetReported()
+	if err := session.Query(`INSERT INTO report (id) VALUES (?)`, 42).QueryReport(reporter).Exec(); err != nil {
+		t.Fatal("insert:", err)
+	} else if reportedErr != nil {
+		t.Fatal("insert:", reportedErr)
+	} else if reportedKeyspace != keyspace {
+		t.Fatal("insert: unexpected reported keyspace", reportedKeyspace)
+	} else if reportedStmt != `INSERT INTO report (id) VALUES (?)` {
+		t.Fatal("insert: unexpected reported stmt", reportedStmt)
+	}
+
+	resetReported()
+	value = 0
+	if err := session.Query(`SELECT id FROM report WHERE id = ?`, 42).QueryReport(reporter).Scan(&value); err != nil {
+		t.Fatal("select:", err)
+	} else if value != 42 {
+		t.Fatalf("value: expected %d, got %d", 42, value)
+	} else if reportedErr != nil {
+		t.Fatal("select:", reportedErr)
+	} else if reportedKeyspace != keyspace {
+		t.Fatal("select: unexpected reported keyspace", reportedKeyspace)
+	} else if reportedStmt != `SELECT id FROM report WHERE id = ?` {
+		t.Fatal("select: unexpected reported stmt", reportedStmt)
+	}
+
+	// also works from session tracer
+	resetReported()
+	session.SetQueryReport(reporter)
+	if err := session.Query(`SELECT id FROM report WHERE id = ?`, 42).Scan(&value); err != nil {
+		t.Fatal("select:", err)
+	} else if reportedErr != nil {
+		t.Fatal("select:", err)
+	} else if reportedKeyspace != keyspace {
+		t.Fatal("select: unexpected reported keyspace", reportedKeyspace)
+	} else if reportedStmt != `SELECT id FROM report WHERE id = ?` {
+		t.Fatal("select: unexpected reported stmt", reportedStmt)
+	}
+
+	// reports errors when the query is poorly formed
+	resetReported()
+	value = 0
+	if err := session.Query(`SELECT id FROM unknown_table WHERE id = ?`, 42).QueryReport(reporter).Scan(&value); err == nil {
+		t.Fatal("select: expecting error")
+	} else if reportedErr == nil {
+		t.Fatal("select: expecting reported error")
+	} else if reportedKeyspace != keyspace {
+		t.Fatal("select: unexpected reported keyspace", reportedKeyspace)
+	} else if reportedStmt != `SELECT id FROM unknown_table WHERE id = ?` {
+		t.Fatal("select: unexpected reported stmt", reportedStmt)
 	}
 }
 
@@ -905,6 +997,79 @@ func TestScanWithNilArguments(t *testing.T) {
 	}
 	if count != 2870 {
 		t.Fatalf("expected %d, got %d", 2870, count)
+	}
+}
+
+func TestScanWithReporting(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+
+	if err := createTable(session, `CREATE TABLE gocql_test.scan_with_reporting (
+			foo   varchar,
+			bar   int,
+			PRIMARY KEY (foo, bar)
+	)`); err != nil {
+		t.Fatal("create:", err)
+	}
+
+	var reportedErr error
+	var reportedKeyspace string
+	var reportedStmt string
+
+	const keyspace = "gocql_test"
+
+	resetReported := func() {
+		reportedErr = errors.New("placeholder only") // used to distinguish err=nil cases
+		reportedKeyspace = ""
+		reportedStmt = ""
+	}
+
+	session.SetScanReport(funcReporter(func(r *Reported) {
+		reportedKeyspace = r.keyspace
+		reportedStmt = r.stmt
+		reportedErr = r.err
+	}))
+
+	for i := 1; i <= 20; i++ {
+		resetReported()
+		if err := session.Query("INSERT INTO scan_with_reporting (foo, bar) VALUES (?, ?)",
+			"squares", i*i).Exec(); err != nil {
+			t.Fatal("insert:", err)
+		} else if !reflect.DeepEqual(reportedErr, errors.New("placeholder only")) {
+			t.Fatal("insert: scan reported error should not be set, got", err)
+		} else if reportedKeyspace != "" {
+			t.Fatal("insert: scan reported keyspace should not be set, got", reportedKeyspace)
+		} else if reportedStmt != "" {
+			t.Fatal("insert: scan reported stmt should not be set, got", reportedStmt)
+		}
+	}
+
+	iter := session.Query("SELECT * FROM scan_with_reporting WHERE foo = ?", "squares").Iter()
+	var n int
+	resetReported()
+	for iter.Scan(nil, &n) {
+		if reportedErr != nil {
+			t.Fatal("scan: scan reported error should be nil, got", reportedErr)
+		} else if reportedKeyspace != keyspace {
+			t.Fatal("select: unexpected scan reported keyspace", reportedKeyspace)
+		} else if reportedStmt != "SELECT * FROM scan_with_reporting WHERE foo = ?" {
+			t.Fatal("select: unexpected scan reported stmt", reportedStmt)
+		}
+
+		resetReported()
+	}
+
+	// the last scan returning false gives an 'ErrNotFound'
+	if reportedErr != ErrNotFound {
+		t.Fatal("scan: last scan reported error should be ErrNotFound, got", reportedErr)
+	} else if reportedKeyspace != keyspace {
+		t.Fatal("select: unexpected last scan reported keyspace", reportedKeyspace)
+	} else if reportedStmt != "SELECT * FROM scan_with_reporting WHERE foo = ?" {
+		t.Fatal("select: unexpected last scan reported stmt", reportedStmt)
+	}
+
+	if err := iter.Close(); err != nil {
+		t.Fatal("close:", err)
 	}
 }
 
