@@ -89,6 +89,12 @@ func TestSessionAPI(t *testing.T) {
 	}
 }
 
+type funcObserver func(QueryObservation)
+
+func (f funcObserver) Observe(r QueryObservation) {
+	f(r)
+}
+
 func TestQueryBasicAPI(t *testing.T) {
 	qry := &Query{}
 
@@ -114,6 +120,12 @@ func TestQueryBasicAPI(t *testing.T) {
 	qry.Trace(trace)
 	if qry.trace != trace {
 		t.Fatalf("expected Query.Trace to be '%v', got '%v'", trace, qry.trace)
+	}
+
+	observer := funcObserver(func(QueryObservation) {})
+	qry.Observer(observer)
+	if qry.observer == nil { // can't compare func to func, checking not nil instead
+		t.Fatal("expected Query.QueryObserver to be set, got nil")
 	}
 
 	qry.PageSize(10)

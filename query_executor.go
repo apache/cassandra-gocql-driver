@@ -6,7 +6,7 @@ import (
 
 type ExecutableQuery interface {
 	execute(conn *Conn) *Iter
-	attempt(time.Duration)
+	attempt(end time.Time, start time.Time, iter *Iter)
 	retryPolicy() RetryPolicy
 	GetRoutingKey() ([]byte, error)
 	RetryableQuery
@@ -20,8 +20,9 @@ type queryExecutor struct {
 func (q *queryExecutor) attemptQuery(qry ExecutableQuery, conn *Conn) *Iter {
 	start := time.Now()
 	iter := qry.execute(conn)
+	end := time.Now()
 
-	qry.attempt(time.Since(start))
+	qry.attempt(end, start, iter)
 
 	return iter
 }

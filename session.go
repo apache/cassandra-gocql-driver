@@ -37,6 +37,7 @@ type Session struct {
 	routingKeyInfoCache routingKeyInfoLRU
 	schemaDescriber     *schemaDescriber
 	trace               Tracer
+	observer            QueryObserver
 	hostSource          *ringDescriber
 	stmtsLRU            *preparedLRU
 
@@ -299,6 +300,14 @@ func (s *Session) SetTrace(trace Tracer) {
 	s.mu.Unlock()
 }
 
+// SetQueryObserver sets the default query-level observer for this session. This setting can also
+// be changed on a per-query basis.
+func (s *Session) SetQueryObserver(observer QueryObserver) {
+	s.mu.Lock()
+	s.observer = observer
+	s.mu.Unlock()
+}
+
 // Query generates a new query object for interacting with the database.
 // Further details of the query may be tweaked using the resulting query
 // value before the query is executed. Query is automatically prepared
@@ -312,6 +321,7 @@ func (s *Session) Query(stmt string, values ...interface{}) *Query {
 	qry.session = s
 	qry.pageSize = s.pageSize
 	qry.trace = s.trace
+	qry.observer = s.observer
 	qry.prefetch = s.prefetch
 	qry.rt = s.cfg.RetryPolicy
 	qry.serialCons = s.cfg.SerialConsistency
@@ -336,7 +346,7 @@ type QueryInfo struct {
 func (s *Session) Bind(stmt string, b func(q *QueryInfo) ([]interface{}, error)) *Query {
 	s.mu.RLock()
 	qry := &Query{stmt: stmt, binding: b, cons: s.cons,
-		session: s, pageSize: s.pageSize, trace: s.trace,
+		session: s, pageSize: s.pageSize, trace: s.trace, observer: s.observer,
 		prefetch: s.prefetch, rt: s.cfg.RetryPolicy}
 	s.mu.RUnlock()
 	return qry
@@ -381,7 +391,7 @@ func (s *Session) Closed() bool {
 	return closed
 }
 
-func (s *Session) executeQuery(qry *Query) *Iter {
+func (s *Session) executeQuery(qry *Query) (it *Iter) {
 	// fail fast
 	if s.Closed() {
 		return &Iter{err: ErrSessionClosed}
@@ -667,6 +677,7 @@ type Query struct {
 	pageState             []byte
 	prefetch              float64
 	trace                 Tracer
+	observer              QueryObserver
 	session               *Session
 	rt                    RetryPolicy
 	binding               func(q *QueryInfo) ([]interface{}, error)
@@ -720,6 +731,13 @@ func (q *Query) Trace(trace Tracer) *Query {
 	return q
 }
 
+// QueryObserver enables query-level observer on this query.
+// The provided observer will be called every time this query is executed.
+func (q *Query) Observer(observer QueryObserver) *Query {
+	q.observer = observer
+	return q
+}
+
 // PageSize will tell the iterator to fetch the result in pages of size n.
 // This is useful for iterating over large result sets, but setting the
 // page size too low might decrease the performance. This feature is only
@@ -770,10 +788,22 @@ func (q *Query) execute(conn *Conn) *Iter {
 	return conn.executeQuery(q)
 }
 
-func (q *Query) attempt(d time.Duration) {
+func (q *Query) attempt(end, start time.Time, iter *Iter) {
 	q.attempts++
-	q.totalLatency += d.Nanoseconds()
+	q.totalLatency += end.Sub(start).Nanoseconds()
 	// TODO: track latencies per host and things as well instead of just total
+
+	if q.observer != nil {
+		q.observer.Observe(QueryObservation{
+			ctx:      q.context,
+			keyspace: q.session.pool.keyspace,
+			stmt:     q.stmt,
+			start:    start,
+			end:      end,
+			rows:     iter.numRows - iter.pos,
+			err:      iter.err,
+		})
+	}
 }
 
 func (q *Query) retryPolicy() RetryPolicy {
@@ -1445,10 +1475,12 @@ func (b *Batch) WithTimestamp(timestamp int64) *Batch {
 	return b
 }
 
-func (b *Batch) attempt(d time.Duration) {
+func (b *Batch) attempt(end, start time.Time, _ *Iter) {
 	b.attempts++
-	b.totalLatency += d.Nanoseconds()
+	b.totalLatency += end.Sub(start).Nanoseconds()
 	// TODO: track latencies per host and things as well instead of just total
+
+	// TODO - add a BatchObserver to Batch and call it here. BatchObservation may not be identical to QueryObservation
 }
 
 func (b *Batch) GetRoutingKey() ([]byte, error) {
@@ -1583,6 +1615,31 @@ func (t *traceWriter) Trace(traceId []byte) {
 		fmt.Fprintln(t.w, "Error:", err)
 	}
 }
+
+type QueryObservation struct {
+	ctx      context.Context // the query's context. Use it to pass arbitrary data to the collector
+	keyspace string
+	stmt     string
+
+	start time.Time // time immediately before the query was called
+	end   time.Time // time immediately after the query returned
+
+	rows int // the number of rows in the current iter. In multi-scans, rows from previous scans are not counted
+
+	err error
+}
+
+// TODO - BatchObservation, similar to QueryObservation but adapted to Batch
+
+// QueryObserver is the interface implemented by query observers / stat collectors.
+type QueryObserver interface {
+	// Observe gets called on every query to cassandra, including all queries in an iterator when paging is enabled.
+	// It doesn't get called if there is no query because the session is closed or there are no connections available.
+	// The error reported only shows query errors, i.e. if a SELECT is valid but finds no matches it will be nil.
+	Observe(QueryObservation)
+}
+
+// TODO - BatchObserver, similar to QueryObservation but adapted to Batch, taking in BatchObservation
 
 type Error struct {
 	Code    int

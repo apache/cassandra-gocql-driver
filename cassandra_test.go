@@ -5,6 +5,7 @@ package gocql
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"math"
 	"math/big"
@@ -181,6 +182,97 @@ func TestTracing(t *testing.T) {
 	}
 	if buf.Len() == 0 {
 		t.Fatal("select: failed to obtain any tracing")
+	}
+}
+
+func TestObserve(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+
+	if err := createTable(session, `CREATE TABLE gocql_test.observe (id int primary key)`); err != nil {
+		t.Fatal("create:", err)
+	}
+
+	var observedErr error
+	var observedKeyspace string
+	var observedStmt string
+
+	const keyspace = "gocql_test"
+
+	resetObserved := func() {
+		observedErr = errors.New("placeholder only") // used to distinguish err=nil cases
+		observedKeyspace = ""
+		observedStmt = ""
+	}
+
+	observer := funcObserver(func(o QueryObservation) {
+		observedKeyspace = o.keyspace
+		observedStmt = o.stmt
+		observedErr = o.err
+	})
+
+	// select before inserted, will error but the reporting is err=nil as the query is valid
+	resetObserved()
+	var value int
+	if err := session.Query(`SELECT id FROM observe WHERE id = ?`, 43).Observer(observer).Scan(&value); err == nil {
+		t.Fatal("select: expected error")
+	} else if observedErr != nil {
+		t.Fatalf("select: observed error expected nil, got %q", observedErr)
+	} else if observedKeyspace != keyspace {
+		t.Fatal("select: unexpected observed keyspace", observedKeyspace)
+	} else if observedStmt != `SELECT id FROM observe WHERE id = ?` {
+		t.Fatal("select: unexpected observed stmt", observedStmt)
+	}
+
+	resetObserved()
+	if err := session.Query(`INSERT INTO observe (id) VALUES (?)`, 42).Observer(observer).Exec(); err != nil {
+		t.Fatal("insert:", err)
+	} else if observedErr != nil {
+		t.Fatal("insert:", observedErr)
+	} else if observedKeyspace != keyspace {
+		t.Fatal("insert: unexpected observed keyspace", observedKeyspace)
+	} else if observedStmt != `INSERT INTO observe (id) VALUES (?)` {
+		t.Fatal("insert: unexpected observed stmt", observedStmt)
+	}
+
+	resetObserved()
+	value = 0
+	if err := session.Query(`SELECT id FROM observe WHERE id = ?`, 42).Observer(observer).Scan(&value); err != nil {
+		t.Fatal("select:", err)
+	} else if value != 42 {
+		t.Fatalf("value: expected %d, got %d", 42, value)
+	} else if observedErr != nil {
+		t.Fatal("select:", observedErr)
+	} else if observedKeyspace != keyspace {
+		t.Fatal("select: unexpected observed keyspace", observedKeyspace)
+	} else if observedStmt != `SELECT id FROM observe WHERE id = ?` {
+		t.Fatal("select: unexpected observed stmt", observedStmt)
+	}
+
+	// also works from session observer
+	resetObserved()
+	session.SetQueryObserver(observer)
+	if err := session.Query(`SELECT id FROM observe WHERE id = ?`, 42).Scan(&value); err != nil {
+		t.Fatal("select:", err)
+	} else if observedErr != nil {
+		t.Fatal("select:", err)
+	} else if observedKeyspace != keyspace {
+		t.Fatal("select: unexpected observed keyspace", observedKeyspace)
+	} else if observedStmt != `SELECT id FROM observe WHERE id = ?` {
+		t.Fatal("select: unexpected observed stmt", observedStmt)
+	}
+
+	// reports errors when the query is poorly formed
+	resetObserved()
+	value = 0
+	if err := session.Query(`SELECT id FROM unknown_table WHERE id = ?`, 42).Observer(observer).Scan(&value); err == nil {
+		t.Fatal("select: expecting error")
+	} else if observedErr == nil {
+		t.Fatal("select: expecting observed error")
+	} else if observedKeyspace != keyspace {
+		t.Fatal("select: unexpected observed keyspace", observedKeyspace)
+	} else if observedStmt != `SELECT id FROM unknown_table WHERE id = ?` {
+		t.Fatal("select: unexpected observed stmt", observedStmt)
 	}
 }
 
