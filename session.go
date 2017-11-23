@@ -38,6 +38,7 @@ type Session struct {
 	schemaDescriber     *schemaDescriber
 	trace               Tracer
 	queryReporter       Reporter
+	scanReporter        Reporter
 	hostSource          *ringDescriber
 	stmtsLRU            *preparedLRU
 
@@ -308,6 +309,14 @@ func (s *Session) SetQueryReport(reporter Reporter) {
 	s.mu.Unlock()
 }
 
+// SetScanReport sets the default scan-level reporter for this session. This setting can also
+// be changed on a per-query basis.
+func (s *Session) SetScanReport(reporter Reporter) {
+	s.mu.Lock()
+	s.scanReporter = reporter
+	s.mu.Unlock()
+}
+
 // Query generates a new query object for interacting with the database.
 // Further details of the query may be tweaked using the resulting query
 // value before the query is executed. Query is automatically prepared
@@ -322,6 +331,7 @@ func (s *Session) Query(stmt string, values ...interface{}) *Query {
 	qry.pageSize = s.pageSize
 	qry.trace = s.trace
 	qry.queryReporter = s.queryReporter
+	qry.scanReporter = s.scanReporter
 	qry.prefetch = s.prefetch
 	qry.rt = s.cfg.RetryPolicy
 	qry.serialCons = s.cfg.SerialConsistency
@@ -346,7 +356,7 @@ type QueryInfo struct {
 func (s *Session) Bind(stmt string, b func(q *QueryInfo) ([]interface{}, error)) *Query {
 	s.mu.RLock()
 	qry := &Query{stmt: stmt, binding: b, cons: s.cons,
-		session: s, pageSize: s.pageSize, trace: s.trace, queryReporter: s.queryReporter,
+		session: s, pageSize: s.pageSize, trace: s.trace, queryReporter: s.queryReporter, scanReporter: s.scanReporter,
 		prefetch: s.prefetch, rt: s.cfg.RetryPolicy}
 	s.mu.RUnlock()
 	return qry
@@ -403,6 +413,12 @@ func (s *Session) executeQuery(qry *Query) (it *Iter) {
 	}
 	if iter == nil {
 		panic("nil iter")
+	}
+
+	iter.scanReporter = iterReporter{
+		keyspace: qry.session.pool.keyspace,
+		stmt:     qry.stmt,
+		reporter: qry.scanReporter,
 	}
 
 	return iter
@@ -678,6 +694,7 @@ type Query struct {
 	prefetch              float64
 	trace                 Tracer
 	queryReporter         Reporter
+	scanReporter          Reporter
 	session               *Session
 	rt                    RetryPolicy
 	binding               func(q *QueryInfo) ([]interface{}, error)
@@ -735,6 +752,13 @@ func (q *Query) Trace(trace Tracer) *Query {
 // The provided reporter will be called every time this query is executed.
 func (q *Query) QueryReport(reporter Reporter) *Query {
 	q.queryReporter = reporter
+	return q
+}
+
+// ScanReport enables scan-level reporting on this query.
+// The provided reporter will be called every time a scan is performed by an iterator from this query.
+func (q *Query) ScanReport(reporter Reporter) *Query {
+	q.scanReporter = reporter
 	return q
 }
 
@@ -1050,6 +1074,8 @@ func (q *Query) reset() {
 	q.pageState = nil
 	q.prefetch = 0
 	q.trace = nil
+	q.queryReporter = nil
+	q.scanReporter = nil
 	q.session = nil
 	q.rt = nil
 	q.binding = nil
@@ -1066,15 +1092,33 @@ func (q *Query) reset() {
 // were returned by a query. The iterator might send additional queries to the
 // database during the iteration if paging was enabled.
 type Iter struct {
-	err     error
-	pos     int
-	meta    resultMetadata
-	numRows int
-	next    *nextIter
-	host    *HostInfo
+	err          error
+	pos          int
+	meta         resultMetadata
+	numRows      int
+	next         *nextIter
+	host         *HostInfo
+	scanReporter iterReporter
 
 	framer *framer
 	closed int32
+}
+
+type iterReporter struct {
+	keyspace string
+	stmt     string
+	reporter Reporter
+}
+
+func (ir iterReporter) Report(r *Reported) {
+	if ir.reporter == nil {
+		return
+	}
+
+	r.keyspace = ir.keyspace
+	r.stmt = ir.stmt
+
+	ir.reporter.Report(r)
 }
 
 // Host returns the host which the query was sent to.
@@ -1224,16 +1268,31 @@ func (iter *Iter) readColumn() ([]byte, error) {
 // end of the result set was reached or if an error occurred. Close should
 // be called afterwards to retrieve any potential errors.
 func (iter *Iter) Scan(dest ...interface{}) bool {
+	err := iter.scan(dest...)
+
+	iter.scanReporter.Report(&Reported{
+		// keyspace set by iterReporter
+		// stmt set by iterReporter
+		// duration unused in scan
+		err: err,
+	})
+
+	return err == nil
+}
+
+// scan split in two methods because it has some recurrence but the reporting of metrics only wants to be called once
+// an 'ErrNotFound' means all values have already been scanned
+func (iter *Iter) scan(dest ...interface{}) error {
 	if iter.err != nil {
-		return false
+		return iter.err
 	}
 
 	if iter.pos >= iter.numRows {
 		if iter.next != nil {
 			*iter = *iter.next.fetch()
-			return iter.Scan(dest...)
+			return iter.scan(dest...)
 		}
-		return false
+		return ErrNotFound // none left
 	}
 
 	if iter.next != nil && iter.pos == iter.next.pos {
@@ -1244,7 +1303,7 @@ func (iter *Iter) Scan(dest ...interface{}) bool {
 	// as scanning in more values from a single column
 	if len(dest) != iter.meta.actualColCount {
 		iter.err = fmt.Errorf("gocql: not enough columns to scan into: have %d want %d", len(dest), iter.meta.actualColCount)
-		return false
+		return iter.err
 	}
 
 	// i is the current position in dest, could posible replace it and just use
@@ -1254,19 +1313,19 @@ func (iter *Iter) Scan(dest ...interface{}) bool {
 		colBytes, err := iter.readColumn()
 		if err != nil {
 			iter.err = err
-			return false
+			return iter.err
 		}
 
 		n, err := scanColumn(colBytes, col, dest[i:])
 		if err != nil {
 			iter.err = err
-			return false
+			return iter.err
 		}
 		i += n
 	}
 
 	iter.pos++
-	return true
+	return nil
 }
 
 // GetCustomPayload returns any parsed custom payload results if given in the

@@ -1000,6 +1000,79 @@ func TestScanWithNilArguments(t *testing.T) {
 	}
 }
 
+func TestScanWithReporting(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+
+	if err := createTable(session, `CREATE TABLE gocql_test.scan_with_reporting (
+			foo   varchar,
+			bar   int,
+			PRIMARY KEY (foo, bar)
+	)`); err != nil {
+		t.Fatal("create:", err)
+	}
+
+	var reportedErr error
+	var reportedKeyspace string
+	var reportedStmt string
+
+	const keyspace = "gocql_test"
+
+	resetReported := func() {
+		reportedErr = errors.New("placeholder only") // used to distinguish err=nil cases
+		reportedKeyspace = ""
+		reportedStmt = ""
+	}
+
+	session.SetScanReport(funcReporter(func(r *Reported) {
+		reportedKeyspace = r.keyspace
+		reportedStmt = r.stmt
+		reportedErr = r.err
+	}))
+
+	for i := 1; i <= 20; i++ {
+		resetReported()
+		if err := session.Query("INSERT INTO scan_with_reporting (foo, bar) VALUES (?, ?)",
+			"squares", i*i).Exec(); err != nil {
+			t.Fatal("insert:", err)
+		} else if !reflect.DeepEqual(reportedErr, errors.New("placeholder only")) {
+			t.Fatal("insert: scan reported error should not be set, got", err)
+		} else if reportedKeyspace != "" {
+			t.Fatal("insert: scan reported keyspace should not be set, got", reportedKeyspace)
+		} else if reportedStmt != "" {
+			t.Fatal("insert: scan reported stmt should not be set, got", reportedStmt)
+		}
+	}
+
+	iter := session.Query("SELECT * FROM scan_with_reporting WHERE foo = ?", "squares").Iter()
+	var n int
+	resetReported()
+	for iter.Scan(nil, &n) {
+		if reportedErr != nil {
+			t.Fatal("scan: scan reported error should be nil, got", reportedErr)
+		} else if reportedKeyspace != keyspace {
+			t.Fatal("select: unexpected scan reported keyspace", reportedKeyspace)
+		} else if reportedStmt != "SELECT * FROM scan_with_reporting WHERE foo = ?" {
+			t.Fatal("select: unexpected scan reported stmt", reportedStmt)
+		}
+
+		resetReported()
+	}
+
+	// the last scan returning false gives an 'ErrNotFound'
+	if reportedErr != ErrNotFound {
+		t.Fatal("scan: last scan reported error should be ErrNotFound, got", reportedErr)
+	} else if reportedKeyspace != keyspace {
+		t.Fatal("select: unexpected last scan reported keyspace", reportedKeyspace)
+	} else if reportedStmt != "SELECT * FROM scan_with_reporting WHERE foo = ?" {
+		t.Fatal("select: unexpected last scan reported stmt", reportedStmt)
+	}
+
+	if err := iter.Close(); err != nil {
+		t.Fatal("close:", err)
+	}
+}
+
 func TestScanCASWithNilArguments(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()

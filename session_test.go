@@ -1,4 +1,4 @@
-// +build all integration
+// - // +build all integration
 
 package gocql
 
@@ -123,9 +123,15 @@ func TestQueryBasicAPI(t *testing.T) {
 	}
 
 	reporter := funcReporter(func(*Reported) {})
+
 	qry.QueryReport(reporter)
 	if qry.queryReporter == nil { // can't compare func to func, checking not nil instead
-		t.Fatal("expected Query.Reporter to be set, got nil")
+		t.Fatal("expected Query.QueryReport to be set, got nil")
+	}
+
+	qry.ScanReport(reporter)
+	if qry.scanReporter == nil { // can't compare func to func, checking not nil instead
+		t.Fatal("expected Query.ScanReport to be set, got nil")
 	}
 
 	qry.PageSize(10)
