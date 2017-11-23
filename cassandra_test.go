@@ -185,7 +185,7 @@ func TestTracing(t *testing.T) {
 	}
 }
 
-func TestReporting(t *testing.T) {
+func TestReport(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 
@@ -250,8 +250,8 @@ func TestReporting(t *testing.T) {
 	}
 
 	// also works from session tracer
-	session.SetReport(reporter)
 	resetReported()
+	session.SetReport(reporter)
 	if err := session.Query(`SELECT id FROM report WHERE id = ?`, 42).Scan(&value); err != nil {
 		t.Fatal("select:", err)
 	} else if reportedErr != nil {
@@ -262,7 +262,18 @@ func TestReporting(t *testing.T) {
 		t.Fatal("select: unexpected reported stmt", reportedStmt)
 	}
 
-	// TODO - test bad query
+	// reports errors when the query is poorly formed
+	resetReported()
+	value = 0
+	if err := session.Query(`SELECT id FROM unknown_table WHERE id = ?`, 42).Report(reporter).Scan(&value); err == nil {
+		t.Fatal("select: expecting error")
+	} else if reportedErr == nil {
+		t.Fatal("select: expecting reported error")
+	} else if reportedKeyspace != keyspace {
+		t.Fatal("select: unexpected reported keyspace", reportedKeyspace)
+	} else if reportedStmt != `SELECT id FROM unknown_table WHERE id = ?` {
+		t.Fatal("select: unexpected reported stmt", reportedStmt)
+	}
 }
 
 func TestPaging(t *testing.T) {
