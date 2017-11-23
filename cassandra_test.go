@@ -205,10 +205,10 @@ func TestReport(t *testing.T) {
 		reportedStmt = ""
 	}
 
-	reporter := funcReporter(func(keyspace, stmt string, duration time.Duration, err error) {
-		reportedKeyspace = keyspace
-		reportedStmt = stmt
-		reportedErr = err
+	reporter := funcReporter(func(r *Reported) {
+		reportedKeyspace = r.keyspace
+		reportedStmt = r.stmt
+		reportedErr = r.err
 	})
 
 	// select before inserted, will error but the reporting is err=nil as the query is valid

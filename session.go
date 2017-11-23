@@ -794,7 +794,7 @@ func (q *Query) attempt(d time.Duration, err error) {
 	// TODO: track latencies per host and things as well instead of just total
 
 	if q.reporter != nil {
-		q.reporter.Report(q.session.pool.keyspace, q.stmt, d, err)
+		q.reporter.Report(&Reported{q.session.pool.keyspace, q.stmt, d, err})
 	}
 }
 
@@ -1606,12 +1606,19 @@ func (t *traceWriter) Trace(traceId []byte) {
 	}
 }
 
+type Reported struct {
+	keyspace string
+	stmt     string
+	duration time.Duration
+	err      error
+}
+
 // Reporter is the interface implemented by query reporters / stat collectors.
 type Reporter interface {
 	// Report gets called on every query to cassandra, including all queries in an iterator when paging is enabled.
 	// It doesn't get called if there is no query because the session is closed or there are no connections available.
 	// The error reported only shows query errors, i.e. is a SELECT is valid but finds no matches it will be nil.
-	Report(keyspace, stmt string, duration time.Duration, err error)
+	Report(*Reported)
 }
 
 type Error struct {

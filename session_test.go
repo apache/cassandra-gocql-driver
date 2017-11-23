@@ -5,7 +5,6 @@ package gocql
 import (
 	"fmt"
 	"testing"
-	"time"
 )
 
 func TestSessionAPI(t *testing.T) {
@@ -90,10 +89,10 @@ func TestSessionAPI(t *testing.T) {
 	}
 }
 
-type funcReporter func(string, string, time.Duration, error)
+type funcReporter func(*Reported)
 
-func (f funcReporter) Report(keyspace, stmt string, duration time.Duration, err error) {
-	f(keyspace, stmt, duration, err)
+func (f funcReporter) Report(r *Reported) {
+	f(r)
 }
 
 func TestQueryBasicAPI(t *testing.T) {
@@ -123,7 +122,7 @@ func TestQueryBasicAPI(t *testing.T) {
 		t.Fatalf("expected Query.Trace to be '%v', got '%v'", trace, qry.trace)
 	}
 
-	reporter := funcReporter(func(keyspace, stmt string, duration time.Duration, err error) {})
+	reporter := funcReporter(func(*Reported) {})
 	qry.Report(reporter)
 	if qry.reporter == nil { // can't compare func to func, checking not nil instead
 		t.Fatal("expected Query.Reporter to be set, got nil")
