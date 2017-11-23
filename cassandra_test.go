@@ -214,7 +214,7 @@ func TestReport(t *testing.T) {
 	// select before inserted, will error but the reporting is err=nil as the query is valid
 	resetReported()
 	var value int
-	if err := session.Query(`SELECT id FROM report WHERE id = ?`, 43).Report(reporter).Scan(&value); err == nil {
+	if err := session.Query(`SELECT id FROM report WHERE id = ?`, 43).QueryReport(reporter).Scan(&value); err == nil {
 		t.Fatal("select: expected error")
 	} else if reportedErr != nil {
 		t.Fatalf("select : report expected nil, got %q", reportedErr)
@@ -225,7 +225,7 @@ func TestReport(t *testing.T) {
 	}
 
 	resetReported()
-	if err := session.Query(`INSERT INTO report (id) VALUES (?)`, 42).Report(reporter).Exec(); err != nil {
+	if err := session.Query(`INSERT INTO report (id) VALUES (?)`, 42).QueryReport(reporter).Exec(); err != nil {
 		t.Fatal("insert:", err)
 	} else if reportedErr != nil {
 		t.Fatal("insert:", reportedErr)
@@ -237,7 +237,7 @@ func TestReport(t *testing.T) {
 
 	resetReported()
 	value = 0
-	if err := session.Query(`SELECT id FROM report WHERE id = ?`, 42).Report(reporter).Scan(&value); err != nil {
+	if err := session.Query(`SELECT id FROM report WHERE id = ?`, 42).QueryReport(reporter).Scan(&value); err != nil {
 		t.Fatal("select:", err)
 	} else if value != 42 {
 		t.Fatalf("value: expected %d, got %d", 42, value)
@@ -251,7 +251,7 @@ func TestReport(t *testing.T) {
 
 	// also works from session tracer
 	resetReported()
-	session.SetReport(reporter)
+	session.SetQueryReport(reporter)
 	if err := session.Query(`SELECT id FROM report WHERE id = ?`, 42).Scan(&value); err != nil {
 		t.Fatal("select:", err)
 	} else if reportedErr != nil {
@@ -265,7 +265,7 @@ func TestReport(t *testing.T) {
 	// reports errors when the query is poorly formed
 	resetReported()
 	value = 0
-	if err := session.Query(`SELECT id FROM unknown_table WHERE id = ?`, 42).Report(reporter).Scan(&value); err == nil {
+	if err := session.Query(`SELECT id FROM unknown_table WHERE id = ?`, 42).QueryReport(reporter).Scan(&value); err == nil {
 		t.Fatal("select: expecting error")
 	} else if reportedErr == nil {
 		t.Fatal("select: expecting reported error")

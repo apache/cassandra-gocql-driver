@@ -123,8 +123,8 @@ func TestQueryBasicAPI(t *testing.T) {
 	}
 
 	reporter := funcReporter(func(*Reported) {})
-	qry.Report(reporter)
-	if qry.reporter == nil { // can't compare func to func, checking not nil instead
+	qry.QueryReport(reporter)
+	if qry.queryReporter == nil { // can't compare func to func, checking not nil instead
 		t.Fatal("expected Query.Reporter to be set, got nil")
 	}
 

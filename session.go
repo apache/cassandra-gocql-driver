@@ -37,7 +37,7 @@ type Session struct {
 	routingKeyInfoCache routingKeyInfoLRU
 	schemaDescriber     *schemaDescriber
 	trace               Tracer
-	reporter            Reporter
+	queryReporter       Reporter
 	hostSource          *ringDescriber
 	stmtsLRU            *preparedLRU
 
@@ -300,11 +300,11 @@ func (s *Session) SetTrace(trace Tracer) {
 	s.mu.Unlock()
 }
 
-// SetReport sets the default reporter for this session. This setting can also
+// SetQueryReport sets the default query-level reporter for this session. This setting can also
 // be changed on a per-query basis.
-func (s *Session) SetReport(reporter Reporter) {
+func (s *Session) SetQueryReport(reporter Reporter) {
 	s.mu.Lock()
-	s.reporter = reporter
+	s.queryReporter = reporter
 	s.mu.Unlock()
 }
 
@@ -321,7 +321,7 @@ func (s *Session) Query(stmt string, values ...interface{}) *Query {
 	qry.session = s
 	qry.pageSize = s.pageSize
 	qry.trace = s.trace
-	qry.reporter = s.reporter
+	qry.queryReporter = s.queryReporter
 	qry.prefetch = s.prefetch
 	qry.rt = s.cfg.RetryPolicy
 	qry.serialCons = s.cfg.SerialConsistency
@@ -346,7 +346,7 @@ type QueryInfo struct {
 func (s *Session) Bind(stmt string, b func(q *QueryInfo) ([]interface{}, error)) *Query {
 	s.mu.RLock()
 	qry := &Query{stmt: stmt, binding: b, cons: s.cons,
-		session: s, pageSize: s.pageSize, trace: s.trace, reporter: s.reporter,
+		session: s, pageSize: s.pageSize, trace: s.trace, queryReporter: s.queryReporter,
 		prefetch: s.prefetch, rt: s.cfg.RetryPolicy}
 	s.mu.RUnlock()
 	return qry
@@ -677,7 +677,7 @@ type Query struct {
 	pageState             []byte
 	prefetch              float64
 	trace                 Tracer
-	reporter              Reporter
+	queryReporter         Reporter
 	session               *Session
 	rt                    RetryPolicy
 	binding               func(q *QueryInfo) ([]interface{}, error)
@@ -731,10 +731,10 @@ func (q *Query) Trace(trace Tracer) *Query {
 	return q
 }
 
-// Report enables reporting on this query.
+// QueryReport enables query-level reporting on this query.
 // The provided reporter will be called every time this query is executed.
-func (q *Query) Report(reporter Reporter) *Query {
-	q.reporter = reporter
+func (q *Query) QueryReport(reporter Reporter) *Query {
+	q.queryReporter = reporter
 	return q
 }
 
@@ -793,8 +793,8 @@ func (q *Query) attempt(d time.Duration, err error) {
 	q.totalLatency += d.Nanoseconds()
 	// TODO: track latencies per host and things as well instead of just total
 
-	if q.reporter != nil {
-		q.reporter.Report(&Reported{q.session.pool.keyspace, q.stmt, d, err})
+	if q.queryReporter != nil {
+		q.queryReporter.Report(&Reported{q.session.pool.keyspace, q.stmt, d, err})
 	}
 }
 
