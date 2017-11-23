@@ -5,6 +5,7 @@ package gocql
 import (
 	"fmt"
 	"testing"
+	"time"
 )
 
 func TestSessionAPI(t *testing.T) {
@@ -89,6 +90,12 @@ func TestSessionAPI(t *testing.T) {
 	}
 }
 
+type funcReporter func(string, string, time.Duration, error)
+
+func (f funcReporter) Report(keyspace, stmt string, duration time.Duration, err error) {
+	f(keyspace, stmt, duration, err)
+}
+
 func TestQueryBasicAPI(t *testing.T) {
 	qry := &Query{}
 
@@ -114,6 +121,12 @@ func TestQueryBasicAPI(t *testing.T) {
 	qry.Trace(trace)
 	if qry.trace != trace {
 		t.Fatalf("expected Query.Trace to be '%v', got '%v'", trace, qry.trace)
+	}
+
+	reporter := funcReporter(func(keyspace, stmt string, duration time.Duration, err error) {})
+	qry.Report(reporter)
+	if qry.reporter == nil { // can't compare func to func, checking not nil instead
+		t.Fatal("expected Query.Reporter to be set, got nil")
 	}
 
 	qry.PageSize(10)

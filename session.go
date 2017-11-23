@@ -37,6 +37,7 @@ type Session struct {
 	routingKeyInfoCache routingKeyInfoLRU
 	schemaDescriber     *schemaDescriber
 	trace               Tracer
+	reporter            Reporter
 	hostSource          *ringDescriber
 	stmtsLRU            *preparedLRU
 
@@ -299,6 +300,14 @@ func (s *Session) SetTrace(trace Tracer) {
 	s.mu.Unlock()
 }
 
+// SetReport sets the default reporter for this session. This setting can also
+// be changed on a per-query basis.
+func (s *Session) SetReport(reporter Reporter) {
+	s.mu.Lock()
+	s.reporter = reporter
+	s.mu.Unlock()
+}
+
 // Query generates a new query object for interacting with the database.
 // Further details of the query may be tweaked using the resulting query
 // value before the query is executed. Query is automatically prepared
@@ -312,6 +321,7 @@ func (s *Session) Query(stmt string, values ...interface{}) *Query {
 	qry.session = s
 	qry.pageSize = s.pageSize
 	qry.trace = s.trace
+	qry.reporter = s.reporter
 	qry.prefetch = s.prefetch
 	qry.rt = s.cfg.RetryPolicy
 	qry.serialCons = s.cfg.SerialConsistency
@@ -336,7 +346,7 @@ type QueryInfo struct {
 func (s *Session) Bind(stmt string, b func(q *QueryInfo) ([]interface{}, error)) *Query {
 	s.mu.RLock()
 	qry := &Query{stmt: stmt, binding: b, cons: s.cons,
-		session: s, pageSize: s.pageSize, trace: s.trace,
+		session: s, pageSize: s.pageSize, trace: s.trace, reporter: s.reporter,
 		prefetch: s.prefetch, rt: s.cfg.RetryPolicy}
 	s.mu.RUnlock()
 	return qry
@@ -381,7 +391,7 @@ func (s *Session) Closed() bool {
 	return closed
 }
 
-func (s *Session) executeQuery(qry *Query) *Iter {
+func (s *Session) executeQuery(qry *Query) (it *Iter) {
 	// fail fast
 	if s.Closed() {
 		return &Iter{err: ErrSessionClosed}
@@ -667,6 +677,7 @@ type Query struct {
 	pageState             []byte
 	prefetch              float64
 	trace                 Tracer
+	reporter              Reporter
 	session               *Session
 	rt                    RetryPolicy
 	binding               func(q *QueryInfo) ([]interface{}, error)
@@ -720,6 +731,13 @@ func (q *Query) Trace(trace Tracer) *Query {
 	return q
 }
 
+// Report enables reporting on this query.
+// The provided reporter will be called every time this query is executed.
+func (q *Query) Report(reporter Reporter) *Query {
+	q.reporter = reporter
+	return q
+}
+
 // PageSize will tell the iterator to fetch the result in pages of size n.
 // This is useful for iterating over large result sets, but setting the
 // page size too low might decrease the performance. This feature is only
@@ -770,10 +788,14 @@ func (q *Query) execute(conn *Conn) *Iter {
 	return conn.executeQuery(q)
 }
 
-func (q *Query) attempt(d time.Duration) {
+func (q *Query) attempt(d time.Duration, err error) {
 	q.attempts++
 	q.totalLatency += d.Nanoseconds()
 	// TODO: track latencies per host and things as well instead of just total
+
+	if q.reporter != nil {
+		q.reporter.Report(q.session.pool.keyspace, q.stmt, d, err)
+	}
 }
 
 func (q *Query) retryPolicy() RetryPolicy {
@@ -1445,7 +1467,7 @@ func (b *Batch) WithTimestamp(timestamp int64) *Batch {
 	return b
 }
 
-func (b *Batch) attempt(d time.Duration) {
+func (b *Batch) attempt(d time.Duration, _ error) {
 	b.attempts++
 	b.totalLatency += d.Nanoseconds()
 	// TODO: track latencies per host and things as well instead of just total
@@ -1582,6 +1604,14 @@ func (t *traceWriter) Trace(traceId []byte) {
 	if err := iter.Close(); err != nil {
 		fmt.Fprintln(t.w, "Error:", err)
 	}
+}
+
+// Reporter is the interface implemented by query reporters / stat collectors.
+type Reporter interface {
+	// Report gets called on every query to cassandra, including all queries in an iterator when paging is enabled.
+	// It doesn't get called if there is no query because the session is closed or there are no connections available.
+	// The error reported only shows query errors, i.e. is a SELECT is valid but finds no matches it will be nil.
+	Report(keyspace, stmt string, duration time.Duration, err error)
 }
 
 type Error struct {

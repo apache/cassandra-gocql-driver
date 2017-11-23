@@ -1,9 +1,9 @@
 package gocql
 
 import (
+	"net"
 	"testing"
 	"time"
-	"net"
 )
 
 func TestNewCluster_Defaults(t *testing.T) {
