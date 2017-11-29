@@ -278,6 +278,53 @@ func TestObserve(t *testing.T) {
 	}
 }
 
+func TestObserve_Pagination(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+
+	if err := createTable(session, `CREATE TABLE gocql_test.observe2 (id int primary key)`); err != nil {
+		t.Fatal("create:", err)
+	}
+
+	var observedRows int
+
+	resetObserved := func() {
+		observedRows = -1
+	}
+
+	observer := funcObserver(func(ctx context.Context, o ObserveQuery) {
+		observedRows = o.rows
+	})
+
+	// insert 100 entries, relevant for pagination
+	for i := 0; i < 50; i++ {
+		if err := session.Query(`INSERT INTO observe2 (id) VALUES (?)`, i).Exec(); err != nil {
+			t.Fatal("insert:", err)
+		}
+	}
+
+	// read the 100 entries in paginated entries of size 10. Expecting 5 observations, each with 10 rows
+	scanner := session.Query(`SELECT id FROM observe2`).Observer(observer).PageSize(10).Iter().Scanner()
+	for i := 0; i < 50; i++ {
+		resetObserved()
+
+		if !scanner.Next() {
+			t.Fatalf("next: should still be true: %d", i)
+		}
+		if i%10 == 0 {
+			if observedRows != 10 {
+				t.Fatalf("next: expecting a paginated query with 10 entries, got: %d", observedRows)
+			}
+		} else if observedRows != -1 {
+			t.Fatalf("next: not expecting paginated query (-1 entries), got: %d", observedRows)
+		}
+	}
+
+	if scanner.Next() {
+		t.Fatal("next: no more entries where expected")
+	}
+}
+
 func TestPaging(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
