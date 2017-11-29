@@ -793,7 +793,7 @@ func (q *Query) attempt(end, start time.Time, iter *Iter) {
 			stmt:     q.stmt,
 			start:    start,
 			end:      end,
-			rows:     iter.numRows - iter.pos,
+			rows:     iter.numRows,
 			err:      iter.err,
 		})
 	}
