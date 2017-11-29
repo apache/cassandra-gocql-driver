@@ -70,7 +70,7 @@ func createTable(s *Session, table string) error {
 	return nil
 }
 
-func createCluster() *ClusterConfig {
+func createCluster(opts ...func(*ClusterConfig)) *ClusterConfig {
 	cluster := NewCluster(clusterHosts...)
 	cluster.ProtoVersion = *flagProto
 	cluster.CQLVersion = *flagCQL
@@ -90,6 +90,11 @@ func createCluster() *ClusterConfig {
 	}
 
 	cluster = addSslOptions(cluster)
+
+	for _, opt := range opts {
+		opt(cluster)
+	}
+
 	return cluster
 }
 
@@ -139,8 +144,8 @@ func createSessionFromCluster(cluster *ClusterConfig, tb testing.TB) *Session {
 	return session
 }
 
-func createSession(tb testing.TB) *Session {
-	cluster := createCluster()
+func createSession(tb testing.TB, opts ...func(config *ClusterConfig)) *Session {
+	cluster := createCluster(opts...)
 	return createSessionFromCluster(cluster, tb)
 }
 

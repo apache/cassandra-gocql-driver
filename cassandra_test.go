@@ -193,9 +193,11 @@ func TestObserve(t *testing.T) {
 		t.Fatal("create:", err)
 	}
 
-	var observedErr error
-	var observedKeyspace string
-	var observedStmt string
+	var (
+		observedErr      error
+		observedKeyspace string
+		observedStmt     string
+	)
 
 	const keyspace = "gocql_test"
 
@@ -205,7 +207,7 @@ func TestObserve(t *testing.T) {
 		observedStmt = ""
 	}
 
-	observer := funcObserver(func(o QueryObservation) {
+	observer := funcObserver(func(ctx context.Context, o ObserveQuery) {
 		observedKeyspace = o.keyspace
 		observedStmt = o.stmt
 		observedErr = o.err
@@ -251,8 +253,8 @@ func TestObserve(t *testing.T) {
 
 	// also works from session observer
 	resetObserved()
-	session.SetQueryObserver(observer)
-	if err := session.Query(`SELECT id FROM observe WHERE id = ?`, 42).Scan(&value); err != nil {
+	oSession := createSession(t, func(config *ClusterConfig) { config.QueryObserver = observer })
+	if err := oSession.Query(`SELECT id FROM observe WHERE id = ?`, 42).Scan(&value); err != nil {
 		t.Fatal("select:", err)
 	} else if observedErr != nil {
 		t.Fatal("select:", err)

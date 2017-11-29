@@ -3,6 +3,7 @@
 package gocql
 
 import (
+	"context"
 	"fmt"
 	"testing"
 )
@@ -89,10 +90,10 @@ func TestSessionAPI(t *testing.T) {
 	}
 }
 
-type funcObserver func(QueryObservation)
+type funcObserver func(context.Context, ObserveQuery)
 
-func (f funcObserver) Observe(r QueryObservation) {
-	f(r)
+func (f funcObserver) Observe(ctx context.Context, r ObserveQuery) {
+	f(ctx, r)
 }
 
 func TestQueryBasicAPI(t *testing.T) {
@@ -122,7 +123,7 @@ func TestQueryBasicAPI(t *testing.T) {
 		t.Fatalf("expected Query.Trace to be '%v', got '%v'", trace, qry.trace)
 	}
 
-	observer := funcObserver(func(QueryObservation) {})
+	observer := funcObserver(func(context.Context, ObserveQuery) {})
 	qry.Observer(observer)
 	if qry.observer == nil { // can't compare func to func, checking not nil instead
 		t.Fatal("expected Query.QueryObserver to be set, got nil")

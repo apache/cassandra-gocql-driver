@@ -133,6 +133,8 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 		policy: cfg.PoolConfig.HostSelectionPolicy,
 	}
 
+	s.observer = cfg.QueryObserver
+
 	//Check the TLS Config before trying to connect to anything external
 	connCfg, err := connConfig(&s.cfg)
 	if err != nil {
@@ -297,14 +299,6 @@ func (s *Session) SetPrefetch(p float64) {
 func (s *Session) SetTrace(trace Tracer) {
 	s.mu.Lock()
 	s.trace = trace
-	s.mu.Unlock()
-}
-
-// SetQueryObserver sets the default query-level observer for this session. This setting can also
-// be changed on a per-query basis.
-func (s *Session) SetQueryObserver(observer QueryObserver) {
-	s.mu.Lock()
-	s.observer = observer
 	s.mu.Unlock()
 }
 
@@ -794,8 +788,7 @@ func (q *Query) attempt(end, start time.Time, iter *Iter) {
 	// TODO: track latencies per host and things as well instead of just total
 
 	if q.observer != nil {
-		q.observer.Observe(QueryObservation{
-			ctx:      q.context,
+		q.observer.Observe(q.context, ObserveQuery{
 			keyspace: q.session.pool.keyspace,
 			stmt:     q.stmt,
 			start:    start,
@@ -1480,7 +1473,7 @@ func (b *Batch) attempt(end, start time.Time, _ *Iter) {
 	b.totalLatency += end.Sub(start).Nanoseconds()
 	// TODO: track latencies per host and things as well instead of just total
 
-	// TODO - add a BatchObserver to Batch and call it here. BatchObservation may not be identical to QueryObservation
+	// TODO - add a BatchObserver to Batch and call it here. BatchObservation may not be identical to ObserveQuery
 }
 
 func (b *Batch) GetRoutingKey() ([]byte, error) {
@@ -1616,30 +1609,29 @@ func (t *traceWriter) Trace(traceId []byte) {
 	}
 }
 
-type QueryObservation struct {
-	ctx      context.Context // the query's context. Use it to pass arbitrary data to the collector
+type ObserveQuery struct {
 	keyspace string
 	stmt     string
 
 	start time.Time // time immediately before the query was called
 	end   time.Time // time immediately after the query returned
 
-	rows int // the number of rows in the current iter. In multi-scans, rows from previous scans are not counted
+	rows int // the number of rows in the current iter. In paginated queries, rows from previous scans are not counted
 
 	err error
 }
 
-// TODO - BatchObservation, similar to QueryObservation but adapted to Batch
+// TODO - BatchObservation, similar to ObserveQuery but adapted to Batch
 
 // QueryObserver is the interface implemented by query observers / stat collectors.
 type QueryObserver interface {
 	// Observe gets called on every query to cassandra, including all queries in an iterator when paging is enabled.
 	// It doesn't get called if there is no query because the session is closed or there are no connections available.
 	// The error reported only shows query errors, i.e. if a SELECT is valid but finds no matches it will be nil.
-	Observe(QueryObservation)
+	Observe(context.Context, ObserveQuery)
 }
 
-// TODO - BatchObserver, similar to QueryObservation but adapted to Batch, taking in BatchObservation
+// TODO - BatchObserver, similar to ObserveQuery but adapted to Batch, taking in BatchObservation
 
 type Error struct {
 	Code    int
