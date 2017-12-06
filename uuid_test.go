@@ -142,6 +142,30 @@ func TestUUIDFromTime(t *testing.T) {
 	}
 }
 
+func TestTimeUUIDWith(t *testing.T) {
+	utcTime := time.Date(1982, 5, 5, 12, 34, 56, 400, time.UTC)
+	ts := int64(utcTime.Unix()-timeBase)*10000000 + int64(utcTime.Nanosecond()/100)
+	clockSeq := uint32(0x3FFF)           // Max number of clock sequence.
+	node := [7]byte{0, 1, 2, 3, 4, 5, 6} // The last element should be ignored.
+	uuid := TimeUUIDWith(ts, clockSeq, node[:])
+
+	if got := uuid.Variant(); got != VariantIETF {
+		t.Errorf("wrong variant. expected %d got %d", VariantIETF, got)
+	}
+	if got, want := uuid.Version(), 1; got != want {
+		t.Errorf("wrong version. Expected %v got %v", want, got)
+	}
+	if got := uuid.Timestamp(); got != int64(ts) {
+		t.Errorf("wrong timestamp. Expected %v got %v", ts, got)
+	}
+	if got := uuid.Clock(); uint32(got) != clockSeq {
+		t.Errorf("wrong clock. expected %v got %v", clockSeq, got)
+	}
+	if got, want := uuid.Node(), node[:6]; !bytes.Equal(got, want) {
+		t.Errorf("wrong node. expected %x, bot %x", want, got)
+	}
+}
+
 func TestParseUUID(t *testing.T) {
 	uuid, _ := ParseUUID("486f3a88-775b-11e3-ae07-d231feb1dc81")
 	if uuid.Time() != time.Date(2014, 1, 7, 5, 19, 29, 222516000, time.UTC) {
