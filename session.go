@@ -725,7 +725,7 @@ func (q *Query) Trace(trace Tracer) *Query {
 	return q
 }
 
-// QueryObserver enables query-level observer on this query.
+// Observer enables query-level observer on this query.
 // The provided observer will be called every time this query is executed.
 func (q *Query) Observer(observer QueryObserver) *Query {
 	q.observer = observer
@@ -782,14 +782,14 @@ func (q *Query) execute(conn *Conn) *Iter {
 	return conn.executeQuery(q)
 }
 
-func (q *Query) attempt(end, start time.Time, iter *Iter) {
+func (q *Query) attempt(keyspace string, end, start time.Time, iter *Iter) {
 	q.attempts++
 	q.totalLatency += end.Sub(start).Nanoseconds()
 	// TODO: track latencies per host and things as well instead of just total
 
 	if q.observer != nil {
 		q.observer.Observe(q.context, ObserveQuery{
-			keyspace: q.session.pool.keyspace,
+			keyspace: keyspace,
 			stmt:     q.stmt,
 			start:    start,
 			end:      end,
@@ -1358,6 +1358,7 @@ type Batch struct {
 	Entries               []BatchEntry
 	Cons                  Consistency
 	rt                    RetryPolicy
+	observer              QueryObserver
 	attempts              int
 	totalLatency          int64
 	serialCons            SerialConsistency
@@ -1378,6 +1379,13 @@ func (s *Session) NewBatch(typ BatchType) *Batch {
 		Cons: s.cons, defaultTimestamp: s.cfg.DefaultTimestamp}
 	s.mu.RUnlock()
 	return batch
+}
+
+// Observer enables query-level observer on this batch.
+// The provided observer will be called every time this query is executed.
+func (b *Batch) Observer(observer QueryObserver) *Batch {
+	b.observer = observer
+	return b
 }
 
 // Attempts returns the number of attempts made to execute the batch.
@@ -1468,12 +1476,23 @@ func (b *Batch) WithTimestamp(timestamp int64) *Batch {
 	return b
 }
 
-func (b *Batch) attempt(end, start time.Time, _ *Iter) {
+func (b *Batch) attempt(keyspace string, end, start time.Time, iter *Iter) {
 	b.attempts++
 	b.totalLatency += end.Sub(start).Nanoseconds()
 	// TODO: track latencies per host and things as well instead of just total
 
-	// TODO - add a BatchObserver to Batch and call it here. BatchObservation may not be identical to ObserveQuery
+	if b.observer != nil {
+		for _, entry := range b.Entries {
+			b.observer.Observe(b.context, ObserveQuery{
+				keyspace: keyspace,
+				stmt:     entry.Stmt,
+				start:    start,
+				end:      end,
+				// rows not used in batch observations // TODO - might be able to support it when using BatchCAS
+				err: iter.err,
+			})
+		}
+	}
 }
 
 func (b *Batch) GetRoutingKey() ([]byte, error) {

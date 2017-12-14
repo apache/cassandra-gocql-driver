@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"math"
 	"math/big"
@@ -1785,6 +1786,58 @@ func TestBatchStats(t *testing.T) {
 		}
 		if b.Latency() <= 0 {
 			t.Fatalf("expected latency to be greater than 0, but got %v instead.", b.Latency())
+		}
+	}
+}
+
+func TestBatchObserve(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+
+	if session.cfg.ProtoVersion == 1 {
+		t.Skip("atomic batches not supported. Please use Cassandra >= 2.0")
+	}
+
+	if err := createTable(session, `CREATE TABLE gocql_test.batch_observe_table (id int, other int, PRIMARY KEY (id))`); err != nil {
+		t.Fatal("create table:", err)
+	}
+
+	type observation struct {
+		observedErr      error
+		observedKeyspace string
+		observedStmt     string
+	}
+
+	var observations []observation
+
+	batch := NewBatch(LoggedBatch)
+	batch.Observer(funcObserver(func(ctx context.Context, o ObserveQuery) {
+		observations = append(observations, observation{
+			observedKeyspace: o.keyspace,
+			observedStmt:     o.stmt,
+			observedErr:      o.err,
+		})
+	}))
+	for i := 0; i < 100; i++ {
+		// hard coding 'i' into one of the values for better  testing of observation
+		batch.Query(fmt.Sprintf(`INSERT INTO batch_observe_table (id,other) VALUES (?,%d)`, i), i)
+	}
+
+	if err := session.ExecuteBatch(batch); err != nil {
+		t.Fatal("execute batch:", err)
+	}
+	if len(observations) != 100 {
+		t.Fatal("expecting 100 observations, got", len(observations))
+	}
+	for i, o := range observations {
+		if o.observedErr != nil {
+			t.Fatal("not expecting to observe an error", o.observedErr)
+		}
+		if o.observedKeyspace != "gocql_test" {
+			t.Fatalf("expecting keyspace 'gocql_test', got %q", o.observedKeyspace)
+		}
+		if o.observedStmt != fmt.Sprintf(`INSERT INTO batch_observe_table (id,other) VALUES (?,%d)`, i) {
+			t.Fatal("unexpected query", o.observedStmt)
 		}
 	}
 }
