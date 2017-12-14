@@ -789,12 +789,12 @@ func (q *Query) attempt(keyspace string, end, start time.Time, iter *Iter) {
 
 	if q.observer != nil {
 		q.observer.Observe(q.context, ObserveQuery{
-			keyspace: keyspace,
-			stmt:     q.stmt,
-			start:    start,
-			end:      end,
-			rows:     iter.numRows,
-			err:      iter.err,
+			Keyspace: keyspace,
+			Stmt:     q.stmt,
+			Start:    start,
+			End:      end,
+			Rows:     iter.numRows,
+			Err:      iter.err,
 		})
 	}
 }
@@ -1376,7 +1376,7 @@ func NewBatch(typ BatchType) *Batch {
 func (s *Session) NewBatch(typ BatchType) *Batch {
 	s.mu.RLock()
 	batch := &Batch{Type: typ, rt: s.cfg.RetryPolicy, serialCons: s.cfg.SerialConsistency,
-		Cons: s.cons, defaultTimestamp: s.cfg.DefaultTimestamp}
+		observer: s.observer, Cons: s.cons, defaultTimestamp: s.cfg.DefaultTimestamp}
 	s.mu.RUnlock()
 	return batch
 }
@@ -1484,12 +1484,12 @@ func (b *Batch) attempt(keyspace string, end, start time.Time, iter *Iter) {
 	if b.observer != nil {
 		for _, entry := range b.Entries {
 			b.observer.Observe(b.context, ObserveQuery{
-				keyspace: keyspace,
-				stmt:     entry.Stmt,
-				start:    start,
-				end:      end,
-				// rows not used in batch observations // TODO - might be able to support it when using BatchCAS
-				err: iter.err,
+				Keyspace: keyspace,
+				Stmt:     entry.Stmt,
+				Start:    start,
+				End:      end,
+				// Rows not used in batch observations // TODO - might be able to support it when using BatchCAS
+				Err: iter.err,
 			})
 		}
 	}
@@ -1629,28 +1629,30 @@ func (t *traceWriter) Trace(traceId []byte) {
 }
 
 type ObserveQuery struct {
-	keyspace string
-	stmt     string
+	Keyspace string
+	Stmt     string
 
-	start time.Time // time immediately before the query was called
-	end   time.Time // time immediately after the query returned
+	Start time.Time // time immediately before the query was called
+	End   time.Time // time immediately after the query returned
 
-	rows int // the number of rows in the current iter. In paginated queries, rows from previous scans are not counted
+	// Rows is the number of rows in the current iter.
+	// In paginated queries, rows from previous scans are not counted.
+	// Rows is not used in batch queries and remains at the default value
+	Rows int
 
-	err error
+	// Err is the error in the query.
+	// It only tracks network errors or errors of bad cassandra syntax, in particular selects with no match return nil error
+	Err error
 }
-
-// TODO - BatchObservation, similar to ObserveQuery but adapted to Batch
 
 // QueryObserver is the interface implemented by query observers / stat collectors.
 type QueryObserver interface {
 	// Observe gets called on every query to cassandra, including all queries in an iterator when paging is enabled.
+	// It also gets called once for each query in a batch.
 	// It doesn't get called if there is no query because the session is closed or there are no connections available.
 	// The error reported only shows query errors, i.e. if a SELECT is valid but finds no matches it will be nil.
 	Observe(context.Context, ObserveQuery)
 }
-
-// TODO - BatchObserver, similar to ObserveQuery but adapted to Batch, taking in BatchObservation
 
 type Error struct {
 	Code    int

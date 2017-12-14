@@ -209,9 +209,9 @@ func TestObserve(t *testing.T) {
 	}
 
 	observer := funcObserver(func(ctx context.Context, o ObserveQuery) {
-		observedKeyspace = o.keyspace
-		observedStmt = o.stmt
-		observedErr = o.err
+		observedKeyspace = o.Keyspace
+		observedStmt = o.Stmt
+		observedErr = o.Err
 	})
 
 	// select before inserted, will error but the reporting is err=nil as the query is valid
@@ -294,7 +294,7 @@ func TestObserve_Pagination(t *testing.T) {
 	}
 
 	observer := funcObserver(func(ctx context.Context, o ObserveQuery) {
-		observedRows = o.rows
+		observedRows = o.Rows
 	})
 
 	// insert 100 entries, relevant for pagination
@@ -1813,9 +1813,9 @@ func TestBatchObserve(t *testing.T) {
 	batch := NewBatch(LoggedBatch)
 	batch.Observer(funcObserver(func(ctx context.Context, o ObserveQuery) {
 		observations = append(observations, observation{
-			observedKeyspace: o.keyspace,
-			observedStmt:     o.stmt,
-			observedErr:      o.err,
+			observedKeyspace: o.Keyspace,
+			observedStmt:     o.Stmt,
+			observedErr:      o.Err,
 		})
 	}))
 	for i := 0; i < 100; i++ {
