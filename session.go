@@ -197,7 +197,7 @@ func (s *Session) init() error {
 					filteredHosts = append(filteredHosts, host)
 				}
 			}
-			hosts = filteredHosts
+			hosts = append(hosts, filteredHosts...)
 		}
 	}
 
