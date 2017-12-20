@@ -39,7 +39,7 @@ func (p murmur3Partitioner) Name() string {
 
 func (p murmur3Partitioner) Hash(partitionKey []byte) token {
 	h1 := murmur.Murmur3H1(partitionKey)
-	return murmur3Token(int64(h1))
+	return murmur3Token(h1)
 }
 
 // murmur3 little-endian, 128-bit hash, but returns only h1
