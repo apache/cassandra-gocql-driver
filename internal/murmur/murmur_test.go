@@ -1,9 +1,70 @@
 package murmur
 
 import (
+	"encoding/hex"
+	"fmt"
 	"strconv"
 	"testing"
 )
+
+func TestRotl(t *testing.T) {
+	tests := []struct {
+		in, rotate, exp int64
+	}{
+		{123456789, 33, 1060485742448345088},
+		{-123456789, 33, -1060485733858410497},
+		{-12345678987654, 33, 1756681988166642059},
+
+		{7210216203459776512, 31, -4287945813905642825},
+		{2453826951392495049, 27, -2013042863942636044},
+		{270400184080946339, 33, -3553153987756601583},
+		{2060965185473694757, 31, 6290866853133484661},
+		{3075794793055692309, 33, -3158909918919076318},
+		{-6486402271863858009, 31, 405973038345868736},
+	}
+
+	for _, test := range tests {
+		t.Run(fmt.Sprintf("%d >> %d", test.in, test.rotate), func(t *testing.T) {
+			if v := rotl(test.in, uint8(test.rotate)); v != test.exp {
+				t.Fatalf("expected %d got %d", test.exp, v)
+			}
+		})
+	}
+}
+
+func TestFmix(t *testing.T) {
+	tests := []struct {
+		in, exp int64
+	}{
+		{123456789, -8107560010088384378},
+		{-123456789, -5252787026298255965},
+		{-12345678987654, -1122383578793231303},
+		{-1241537367799374202, 3388197556095096266},
+		{-7566534940689533355, 4729783097411765989},
+	}
+
+	for _, test := range tests {
+		t.Run(strconv.Itoa(int(test.in)), func(t *testing.T) {
+			if v := fmix(test.in); v != test.exp {
+				t.Fatalf("expected %d got %d", test.exp, v)
+			}
+		})
+	}
+
+}
+
+func TestMurmur3H1_CassandraSign(t *testing.T) {
+	key, err := hex.DecodeString("00104327529fb645dd00b883ec39ae448bb800000400066a6b00")
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := Murmur3H1(key)
+	const exp int64 = -9223371632693506265
+
+	if h != exp {
+		t.Fatalf("expected %d got %d", exp, h)
+	}
+}
 
 // Test the implementation of murmur3
 func TestMurmur3H1(t *testing.T) {
@@ -50,8 +111,8 @@ func TestMurmur3H1(t *testing.T) {
 // helper function for testing the murmur3 implementation
 func assertMurmur3H1(t *testing.T, data []byte, expected uint64) {
 	actual := Murmur3H1(data)
-	if actual != expected {
-		t.Errorf("Expected h1 = %x for data = %x, but was %x", expected, data, actual)
+	if actual != int64(expected) {
+		t.Errorf("Expected h1 = %x for data = %x, but was %x", int64(expected), data, actual)
 	}
 }
 
@@ -66,8 +127,8 @@ func BenchmarkMurmur3H1(b *testing.B) {
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
 			h1 := Murmur3H1(data)
-			if h1 != uint64(7627370222079200297) {
-				b.Fatalf("expected %d got %d", uint64(7627370222079200297), h1)
+			if h1 != 7627370222079200297 {
+				b.Fatalf("expected %d got %d", 7627370222079200297, h1)
 			}
 		}
 	})
