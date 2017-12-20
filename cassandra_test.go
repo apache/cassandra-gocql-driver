@@ -208,9 +208,9 @@ func TestObserve(t *testing.T) {
 		observedStmt = ""
 	}
 
-	observer := funcObserver(func(ctx context.Context, o ObserveQuery) {
+	observer := funcQueryObserver(func(ctx context.Context, o ObservedQuery) {
 		observedKeyspace = o.Keyspace
-		observedStmt = o.Stmt
+		observedStmt = o.Statement
 		observedErr = o.Err
 	})
 
@@ -293,7 +293,7 @@ func TestObserve_Pagination(t *testing.T) {
 		observedRows = -1
 	}
 
-	observer := funcObserver(func(ctx context.Context, o ObserveQuery) {
+	observer := funcQueryObserver(func(ctx context.Context, o ObservedQuery) {
 		observedRows = o.Rows
 	})
 
@@ -1790,6 +1790,12 @@ func TestBatchStats(t *testing.T) {
 	}
 }
 
+type funcBatchObserver func(context.Context, ObservedBatch)
+
+func (f funcBatchObserver) ObserveBatch(ctx context.Context, o ObservedBatch) {
+	f(ctx, o)
+}
+
 func TestBatchObserve(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
@@ -1805,18 +1811,22 @@ func TestBatchObserve(t *testing.T) {
 	type observation struct {
 		observedErr      error
 		observedKeyspace string
-		observedStmt     string
+		observedStmts    []string
 	}
 
-	var observations []observation
+	var observedBatch *observation
 
 	batch := NewBatch(LoggedBatch)
-	batch.Observer(funcObserver(func(ctx context.Context, o ObserveQuery) {
-		observations = append(observations, observation{
+	batch.Observer(funcBatchObserver(func(ctx context.Context, o ObservedBatch) {
+		if observedBatch != nil {
+			t.Fatal("batch observe called more than once")
+		}
+
+		observedBatch = &observation{
 			observedKeyspace: o.Keyspace,
-			observedStmt:     o.Stmt,
+			observedStmts:    o.Statements,
 			observedErr:      o.Err,
-		})
+		}
 	}))
 	for i := 0; i < 100; i++ {
 		// hard coding 'i' into one of the values for better  testing of observation
@@ -1826,18 +1836,21 @@ func TestBatchObserve(t *testing.T) {
 	if err := session.ExecuteBatch(batch); err != nil {
 		t.Fatal("execute batch:", err)
 	}
-	if len(observations) != 100 {
-		t.Fatal("expecting 100 observations, got", len(observations))
+	if observedBatch == nil {
+		t.Fatal("batch observation has not been called")
 	}
-	for i, o := range observations {
-		if o.observedErr != nil {
-			t.Fatal("not expecting to observe an error", o.observedErr)
-		}
-		if o.observedKeyspace != "gocql_test" {
-			t.Fatalf("expecting keyspace 'gocql_test', got %q", o.observedKeyspace)
-		}
-		if o.observedStmt != fmt.Sprintf(`INSERT INTO batch_observe_table (id,other) VALUES (?,%d)`, i) {
-			t.Fatal("unexpected query", o.observedStmt)
+	if len(observedBatch.observedStmts) != 100 {
+		t.Fatal("expecting 100 observed statements, got", len(observedBatch.observedStmts))
+	}
+	if observedBatch.observedErr != nil {
+		t.Fatal("not expecting to observe an error", observedBatch.observedErr)
+	}
+	if observedBatch.observedKeyspace != "gocql_test" {
+		t.Fatalf("expecting keyspace 'gocql_test', got %q", observedBatch.observedKeyspace)
+	}
+	for i, stmt := range observedBatch.observedStmts {
+		if stmt != fmt.Sprintf(`INSERT INTO batch_observe_table (id,other) VALUES (?,%d)`, i) {
+			t.Fatal("unexpected query", stmt)
 		}
 	}
 }

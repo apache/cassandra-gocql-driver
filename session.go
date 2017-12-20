@@ -37,7 +37,8 @@ type Session struct {
 	routingKeyInfoCache routingKeyInfoLRU
 	schemaDescriber     *schemaDescriber
 	trace               Tracer
-	observer            QueryObserver
+	queryObserver       QueryObserver
+	batchObserver       BatchObserver
 	hostSource          *ringDescriber
 	stmtsLRU            *preparedLRU
 
@@ -133,7 +134,8 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 		policy: cfg.PoolConfig.HostSelectionPolicy,
 	}
 
-	s.observer = cfg.QueryObserver
+	s.queryObserver = cfg.QueryObserver
+	s.batchObserver = cfg.BatchObserver
 
 	//Check the TLS Config before trying to connect to anything external
 	connCfg, err := connConfig(&s.cfg)
@@ -315,7 +317,7 @@ func (s *Session) Query(stmt string, values ...interface{}) *Query {
 	qry.session = s
 	qry.pageSize = s.pageSize
 	qry.trace = s.trace
-	qry.observer = s.observer
+	qry.observer = s.queryObserver
 	qry.prefetch = s.prefetch
 	qry.rt = s.cfg.RetryPolicy
 	qry.serialCons = s.cfg.SerialConsistency
@@ -340,7 +342,7 @@ type QueryInfo struct {
 func (s *Session) Bind(stmt string, b func(q *QueryInfo) ([]interface{}, error)) *Query {
 	s.mu.RLock()
 	qry := &Query{stmt: stmt, binding: b, cons: s.cons,
-		session: s, pageSize: s.pageSize, trace: s.trace, observer: s.observer,
+		session: s, pageSize: s.pageSize, trace: s.trace, observer: s.queryObserver,
 		prefetch: s.prefetch, rt: s.cfg.RetryPolicy}
 	s.mu.RUnlock()
 	return qry
@@ -788,13 +790,13 @@ func (q *Query) attempt(keyspace string, end, start time.Time, iter *Iter) {
 	// TODO: track latencies per host and things as well instead of just total
 
 	if q.observer != nil {
-		q.observer.Observe(q.context, ObserveQuery{
-			Keyspace: keyspace,
-			Stmt:     q.stmt,
-			Start:    start,
-			End:      end,
-			Rows:     iter.numRows,
-			Err:      iter.err,
+		q.observer.ObserveQuery(q.context, ObservedQuery{
+			Keyspace:  keyspace,
+			Statement: q.stmt,
+			Start:     start,
+			End:       end,
+			Rows:      iter.numRows,
+			Err:       iter.err,
 		})
 	}
 }
@@ -1358,7 +1360,7 @@ type Batch struct {
 	Entries               []BatchEntry
 	Cons                  Consistency
 	rt                    RetryPolicy
-	observer              QueryObserver
+	observer              BatchObserver
 	attempts              int
 	totalLatency          int64
 	serialCons            SerialConsistency
@@ -1376,14 +1378,14 @@ func NewBatch(typ BatchType) *Batch {
 func (s *Session) NewBatch(typ BatchType) *Batch {
 	s.mu.RLock()
 	batch := &Batch{Type: typ, rt: s.cfg.RetryPolicy, serialCons: s.cfg.SerialConsistency,
-		observer: s.observer, Cons: s.cons, defaultTimestamp: s.cfg.DefaultTimestamp}
+		observer: s.batchObserver, Cons: s.cons, defaultTimestamp: s.cfg.DefaultTimestamp}
 	s.mu.RUnlock()
 	return batch
 }
 
-// Observer enables query-level observer on this batch.
-// The provided observer will be called every time this query is executed.
-func (b *Batch) Observer(observer QueryObserver) *Batch {
+// Observer enables batch-level observer on this batch.
+// The provided observer will be called every time this batched query is executed.
+func (b *Batch) Observer(observer BatchObserver) *Batch {
 	b.observer = observer
 	return b
 }
@@ -1481,18 +1483,23 @@ func (b *Batch) attempt(keyspace string, end, start time.Time, iter *Iter) {
 	b.totalLatency += end.Sub(start).Nanoseconds()
 	// TODO: track latencies per host and things as well instead of just total
 
-	if b.observer != nil {
-		for _, entry := range b.Entries {
-			b.observer.Observe(b.context, ObserveQuery{
-				Keyspace: keyspace,
-				Stmt:     entry.Stmt,
-				Start:    start,
-				End:      end,
-				// Rows not used in batch observations // TODO - might be able to support it when using BatchCAS
-				Err: iter.err,
-			})
-		}
+	if b.observer == nil {
+		return
 	}
+
+	statements := make([]string, len(b.Entries))
+	for i, entry := range b.Entries {
+		statements[i] = entry.Stmt
+	}
+
+	b.observer.ObserveBatch(b.context, ObservedBatch{
+		Keyspace:   keyspace,
+		Statements: statements,
+		Start:      start,
+		End:        end,
+		// Rows not used in batch observations // TODO - might be able to support it when using BatchCAS
+		Err: iter.err,
+	})
 }
 
 func (b *Batch) GetRoutingKey() ([]byte, error) {
@@ -1628,9 +1635,9 @@ func (t *traceWriter) Trace(traceId []byte) {
 	}
 }
 
-type ObserveQuery struct {
-	Keyspace string
-	Stmt     string
+type ObservedQuery struct {
+	Keyspace  string
+	Statement string
 
 	Start time.Time // time immediately before the query was called
 	End   time.Time // time immediately after the query returned
@@ -1647,11 +1654,32 @@ type ObserveQuery struct {
 
 // QueryObserver is the interface implemented by query observers / stat collectors.
 type QueryObserver interface {
-	// Observe gets called on every query to cassandra, including all queries in an iterator when paging is enabled.
+	// ObserveQuery gets called on every query to cassandra, including all queries in an iterator when paging is enabled.
+	// It doesn't get called if there is no query because the session is closed or there are no connections available.
+	// The error reported only shows query errors, i.e. if a SELECT is valid but finds no matches it will be nil.
+	ObserveQuery(context.Context, ObservedQuery)
+}
+
+type ObservedBatch struct {
+	Keyspace   string
+	Statements []string
+
+	Start time.Time // time immediately before the batch query was called
+	End   time.Time // time immediately after the batch query returned
+
+	// Err is the error in the batch query.
+	// It only tracks network errors or errors of bad cassandra syntax, in particular selects with no match return nil error
+	Err error
+}
+
+// BatchObserver is the interface implemented by batch observers / stat collectors.
+type BatchObserver interface {
+	// ObserveBatch gets called on every batch query to cassandra.
 	// It also gets called once for each query in a batch.
 	// It doesn't get called if there is no query because the session is closed or there are no connections available.
 	// The error reported only shows query errors, i.e. if a SELECT is valid but finds no matches it will be nil.
-	Observe(context.Context, ObserveQuery)
+	// Unlike QueryObserver.ObserveQuery it does no reporting on rows read.
+	ObserveBatch(context.Context, ObservedBatch)
 }
 
 type Error struct {
