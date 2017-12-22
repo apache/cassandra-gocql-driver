@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync/atomic"
 
 	"github.com/gocql/gocql/internal/murmur"
 )
@@ -58,7 +59,7 @@ func (m murmur3Token) Less(token token) bool {
 
 // order preserving partitioner and token
 type orderedPartitioner struct{}
-type orderedToken []byte
+type orderedToken string
 
 func (p orderedPartitioner) Name() string {
 	return "OrderedPartitioner"
@@ -70,15 +71,15 @@ func (p orderedPartitioner) Hash(partitionKey []byte) token {
 }
 
 func (p orderedPartitioner) ParseString(str string) token {
-	return orderedToken([]byte(str))
+	return orderedToken(str)
 }
 
 func (o orderedToken) String() string {
-	return string([]byte(o))
+	return string(o)
 }
 
 func (o orderedToken) Less(token token) bool {
-	return -1 == bytes.Compare(o, token.(orderedToken))
+	return o < token.(orderedToken)
 }
 
 // random partitioner and token
@@ -118,17 +119,22 @@ func (r *randomToken) Less(token token) bool {
 	return -1 == (*big.Int)(r).Cmp((*big.Int)(token.(*randomToken)))
 }
 
+type hostIter struct {
+	cursor uint32
+	hosts  []*HostInfo
+}
+
 // a data structure for organizing the relationship between tokens and hosts
 type tokenRing struct {
-	partitioner partitioner
-	tokens      []token
-	hosts       []*HostInfo
+	partitioner  partitioner
+	tokens       []token
+	tokenHostMap map[string]*hostIter
 }
 
 func newTokenRing(partitioner string, hosts []*HostInfo) (*tokenRing, error) {
 	tokenRing := &tokenRing{
-		tokens: []token{},
-		hosts:  []*HostInfo{},
+		tokens:       []token{},
+		tokenHostMap: make(map[string]*hostIter),
 	}
 
 	if strings.HasSuffix(partitioner, "Murmur3Partitioner") {
@@ -141,11 +147,19 @@ func newTokenRing(partitioner string, hosts []*HostInfo) (*tokenRing, error) {
 		return nil, fmt.Errorf("Unsupported partitioner '%s'", partitioner)
 	}
 
+	// Prepare a lookup map for partition tokens to their replica hosts
 	for _, host := range hosts {
 		for _, strToken := range host.Tokens() {
 			token := tokenRing.partitioner.ParseString(strToken)
 			tokenRing.tokens = append(tokenRing.tokens, token)
-			tokenRing.hosts = append(tokenRing.hosts, host)
+			key := token.String()
+			it, found := tokenRing.tokenHostMap[key]
+			if !found {
+				it = &hostIter{}
+			}
+
+			it.hosts = append(it.hosts, host)
+			tokenRing.tokenHostMap[key] = it
 		}
 	}
 
@@ -163,8 +177,7 @@ func (t *tokenRing) Less(i, j int) bool {
 }
 
 func (t *tokenRing) Swap(i, j int) {
-	t.tokens[i], t.hosts[i], t.tokens[j], t.hosts[j] =
-		t.tokens[j], t.hosts[j], t.tokens[i], t.hosts[i]
+	t.tokens[i], t.tokens[j] = t.tokens[j], t.tokens[i]
 }
 
 func (t *tokenRing) String() string {
@@ -176,15 +189,19 @@ func (t *tokenRing) String() string {
 	}
 	buf.WriteString("){")
 	sep := ""
-	for i := range t.tokens {
-		buf.WriteString(sep)
-		sep = ","
-		buf.WriteString("\n\t[")
-		buf.WriteString(strconv.Itoa(i))
-		buf.WriteString("]")
-		buf.WriteString(t.tokens[i].String())
-		buf.WriteString(":")
-		buf.WriteString(t.hosts[i].ConnectAddress().String())
+	count := 0
+	for tk, hi := range t.tokenHostMap {
+		for _, h := range hi.hosts {
+			buf.WriteString(sep)
+			sep = ","
+			buf.WriteString("\n\t[")
+			buf.WriteString(strconv.Itoa(count))
+			buf.WriteString("]")
+			buf.WriteString(tk)
+			buf.WriteString(":")
+			buf.WriteString(h.ConnectAddress().String())
+			count++
+		}
 	}
 	buf.WriteString("\n}")
 	return string(buf.Bytes())
@@ -210,18 +227,31 @@ func (t *tokenRing) GetHostForToken(token token) *HostInfo {
 		return nil
 	}
 
-	// find the primary replica
-	ringIndex := sort.Search(
-		l,
-		func(i int) bool {
-			return !t.tokens[i].Less(token)
-		},
-	)
+	// Look for a token in our partition map
+	it, ok := t.tokenHostMap[token.String()]
 
-	if ringIndex == l {
-		// wrap around to the first in the ring
-		ringIndex = 0
+	// If not found, fallback on ordered collection to find the nearest match
+	if !ok {
+		// find the primary replica
+		ringIndex := sort.Search(
+			l,
+			func(i int) bool {
+				return !t.tokens[i].Less(token)
+			},
+		)
+
+		if ringIndex == l {
+			// wrap around to the first in the ring
+			ringIndex = 0
+		}
+
+		it, _ = t.tokenHostMap[t.tokens[ringIndex].String()]
 	}
-	host := t.hosts[ringIndex]
-	return host
+
+	// Whether the index is found in map or in ordered collection, round-robin among
+	// replica nodes to better distribute load. The host selection cursor for a token
+	// ensures we treat the host slice as a ring buffer
+	cursor := (atomic.AddUint32(&it.cursor, 1) % uint32(len(it.hosts)))
+
+	return it.hosts[cursor]
 }
