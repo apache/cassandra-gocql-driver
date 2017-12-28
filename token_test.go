@@ -157,11 +157,11 @@ func TestIntTokenRing(t *testing.T) {
 			intToken(75),
 			intToken(25),
 		},
-		hosts: []*HostInfo{
-			host0,
-			host50,
-			host75,
-			host25,
+		tokenHostMap: map[string]*hostIter{
+			intToken(0).String():  &hostIter{0, []*HostInfo{host0}},
+			intToken(50).String(): &hostIter{0, []*HostInfo{host50}},
+			intToken(75).String(): &hostIter{0, []*HostInfo{host75}},
+			intToken(25).String(): &hostIter{0, []*HostInfo{host25}},
 		},
 	}
 
