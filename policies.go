@@ -327,7 +327,7 @@ func (t *tokenAwareHostPolicy) Init(s *Session) {
 }
 
 func (t *tokenAwareHostPolicy) KeyspaceChanged(update KeyspaceUpdateEvent) {
-	meta := t.keyspaces.Load().(*keyspaceMeta)
+	meta, _ := t.keyspaces.Load().(*keyspaceMeta)
 	// TODO: avoid recaulating things which havnt changed
 	newMeta := &keyspaceMeta{
 		replicas: make(map[string]map[token][]*HostInfo, len(meta.replicas)),
@@ -342,9 +342,11 @@ func (t *tokenAwareHostPolicy) KeyspaceChanged(update KeyspaceUpdateEvent) {
 		}
 	}
 
-	for ks, replicas := range meta.replicas {
-		if ks != update.Keyspace {
-			newMeta.replicas[ks] = replicas
+	if meta != nil {
+		for ks, replicas := range meta.replicas {
+			if ks != update.Keyspace {
+				newMeta.replicas[ks] = replicas
+			}
 		}
 	}
 
