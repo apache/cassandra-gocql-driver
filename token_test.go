@@ -132,18 +132,13 @@ func TestRandomToken(t *testing.T) {
 
 type intToken int
 
-func (i intToken) String() string {
-	return strconv.Itoa(int(i))
-}
-
-func (i intToken) Less(token token) bool {
-	return i < token.(intToken)
-}
+func (i intToken) String() string        { return strconv.Itoa(int(i)) }
+func (i intToken) Less(token token) bool { return i < token.(intToken) }
 
 // Test of the token ring implementation based on example at the start of this
 // page of documentation:
 // http://www.datastax.com/docs/0.8/cluster_architecture/partitioning
-func TestIntTokenRing(t *testing.T) {
+func TestTokenRing_Int(t *testing.T) {
 	host0 := &HostInfo{}
 	host25 := &HostInfo{}
 	host50 := &HostInfo{}
@@ -151,17 +146,11 @@ func TestIntTokenRing(t *testing.T) {
 	ring := &tokenRing{
 		partitioner: nil,
 		// these tokens and hosts are out of order to test sorting
-		tokens: []token{
-			intToken(0),
-			intToken(50),
-			intToken(75),
-			intToken(25),
-		},
-		hosts: []*HostInfo{
-			host0,
-			host50,
-			host75,
-			host25,
+		tokens: []hostToken{
+			{intToken(0), host0},
+			{intToken(50), host50},
+			{intToken(75), host75},
+			{intToken(25), host25},
 		},
 	}
 
@@ -209,7 +198,7 @@ func TestIntTokenRing(t *testing.T) {
 }
 
 // Test for the behavior of a nil pointer to tokenRing
-func TestNilTokenRing(t *testing.T) {
+func TestTokenRing_Nil(t *testing.T) {
 	var ring *tokenRing = nil
 
 	if ring.GetHostForToken(nil) != nil {
@@ -221,7 +210,7 @@ func TestNilTokenRing(t *testing.T) {
 }
 
 // Test of the recognition of the partitioner class
-func TestUnknownTokenRing(t *testing.T) {
+func TestTokenRing_UnknownPartition(t *testing.T) {
 	_, err := newTokenRing("UnknownPartitioner", nil)
 	if err == nil {
 		t.Error("Expected error for unknown partitioner value, but was nil")
@@ -242,7 +231,7 @@ func hostsForTests(n int) []*HostInfo {
 }
 
 // Test of the tokenRing with the Murmur3Partitioner
-func TestMurmur3TokenRing(t *testing.T) {
+func TestTokenRing_Murmur3(t *testing.T) {
 	// Note, strings are parsed directly to int64, they are not murmur3 hashed
 	hosts := hostsForTests(4)
 	ring, err := newTokenRing("Murmur3Partitioner", hosts)
@@ -272,7 +261,7 @@ func TestMurmur3TokenRing(t *testing.T) {
 }
 
 // Test of the tokenRing with the OrderedPartitioner
-func TestOrderedTokenRing(t *testing.T) {
+func TestTokenRing_Ordered(t *testing.T) {
 	// Tokens here more or less are similar layout to the int tokens above due
 	// to each numeric character translating to a consistently offset byte.
 	hosts := hostsForTests(4)
@@ -304,7 +293,7 @@ func TestOrderedTokenRing(t *testing.T) {
 }
 
 // Test of the tokenRing with the RandomPartitioner
-func TestRandomTokenRing(t *testing.T) {
+func TestTokenRing_Random(t *testing.T) {
 	// String tokens are parsed into big.Int in base 10
 	hosts := hostsForTests(4)
 	ring, err := newTokenRing("RandomPartitioner", hosts)
