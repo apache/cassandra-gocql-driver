@@ -25,7 +25,7 @@ func getReplicationFactorFromOpts(keyspace string, val interface{}) int {
 		if err != nil {
 			panic(fmt.Sprintf("invalid replication_factor. Is the %q keyspace configured correctly? %v", keyspace, err))
 		} else if n <= 0 {
-			panic(fmt.Sprintf("invalid replication_factor %d. Is the %q keyspace configured correctly?", v, keyspace))
+			panic(fmt.Sprintf("invalid replication_factor %d. Is the %q keyspace configured correctly?", n, keyspace))
 		}
 		return n
 	default:
