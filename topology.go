@@ -2,6 +2,7 @@ package gocql
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -10,23 +11,36 @@ type placementStrategy interface {
 	replicationFactor(dc string) int
 }
 
+func getReplicationFactorFromOpts(keyspace string, val interface{}) int {
+	// TODO: dont really want to panic here, but is better
+	// than spamming
+	switch v := val.(type) {
+	case int:
+		if v <= 0 {
+			panic(fmt.Sprintf("invalid replication_factor %d. Is the %q keyspace configured correctly?", v, keyspace))
+		}
+		return v
+	case string:
+		n, err := strconv.Atoi(v)
+		if err != nil {
+			panic(fmt.Sprintf("invalid replication_factor. Is the %q keyspace configured correctly? %v", keyspace, err))
+		} else if n <= 0 {
+			panic(fmt.Sprintf("invalid replication_factor %d. Is the %q keyspace configured correctly?", v, keyspace))
+		}
+		return n
+	default:
+		panic(fmt.Sprintf("unkown replication_factor type %T", v))
+	}
+}
+
 func getStrategy(ks *KeyspaceMetadata) placementStrategy {
 	switch {
 	case strings.Contains(ks.StrategyClass, "SimpleStrategy"):
-		rf := ks.StrategyOptions["replication_factor"].(int)
-		if rf <= 0 {
-			rf = 1
-		}
-		return &simpleStrategy{rf: rf}
+		return &simpleStrategy{rf: getReplicationFactorFromOpts(ks.Name, ks.StrategyOptions["replication_factor"])}
 	case strings.Contains(ks.StrategyClass, "NetworkTopologyStrategy"):
 		dcs := make(map[string]int)
-		for dc, i := range ks.StrategyOptions {
-			rf := i.(int)
-			if rf <= 0 {
-				rf = 1
-			}
-
-			dcs[dc] = rf
+		for dc, rf := range ks.StrategyOptions {
+			dcs[dc] = getReplicationFactorFromOpts(ks.Name+":dc="+dc, rf)
 		}
 		return &networkTopology{dcs: dcs}
 	default:
