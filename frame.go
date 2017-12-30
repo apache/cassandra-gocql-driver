@@ -1112,7 +1112,24 @@ func (f schemaChangeTable) String() string {
 	return fmt.Sprintf("[event schema_change change=%q keyspace=%q object=%q]", f.change, f.keyspace, f.object)
 }
 
+type schemaChangeType struct {
+	frameHeader
+
+	change   string
+	keyspace string
+	object   string
+}
+
 type schemaChangeFunction struct {
+	frameHeader
+
+	change   string
+	keyspace string
+	name     string
+	args     []string
+}
+
+type schemaChangeAggregate struct {
 	frameHeader
 
 	change   string
@@ -1156,7 +1173,7 @@ func (f *framer) parseResultSchemaChange() frame {
 			frame.keyspace = f.readString()
 
 			return frame
-		case "TABLE", "TYPE":
+		case "TABLE":
 			frame := &schemaChangeTable{
 				frameHeader: *f.header,
 				change:      change,
@@ -1166,8 +1183,29 @@ func (f *framer) parseResultSchemaChange() frame {
 			frame.object = f.readString()
 
 			return frame
-		case "FUNCTION", "AGGREGATE":
+		case "TYPE":
+			frame := &schemaChangeType{
+				frameHeader: *f.header,
+				change:      change,
+			}
+
+			frame.keyspace = f.readString()
+			frame.object = f.readString()
+
+			return frame
+		case "FUNCTION":
 			frame := &schemaChangeFunction{
+				frameHeader: *f.header,
+				change:      change,
+			}
+
+			frame.keyspace = f.readString()
+			frame.name = f.readString()
+			frame.args = f.readStringList()
+
+			return frame
+		case "AGGREGATE":
+			frame := &schemaChangeAggregate{
 				frameHeader: *f.header,
 				change:      change,
 			}

@@ -112,14 +112,14 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 		quit:     make(chan struct{}),
 	}
 
+	s.schemaDescriber = newSchemaDescriber(s)
+
 	s.nodeEvents = newEventDebouncer("NodeEvents", s.handleNodeEvent)
 	s.schemaEvents = newEventDebouncer("SchemaEvents", s.handleSchemaEvent)
 
 	s.routingKeyInfoCache.lru = lru.New(cfg.MaxRoutingKeyInfo)
 
-	s.hostSource = &ringDescriber{
-		session: s,
-	}
+	s.hostSource = &ringDescriber{session: s}
 
 	if cfg.PoolConfig.HostSelectionPolicy == nil {
 		cfg.PoolConfig.HostSelectionPolicy = RoundRobinHostPolicy()
@@ -127,6 +127,8 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 	s.pool = cfg.PoolConfig.buildPool(s)
 
 	s.policy = cfg.PoolConfig.HostSelectionPolicy
+	s.policy.Init(s)
+
 	s.executor = &queryExecutor{
 		pool:   s.pool,
 		policy: cfg.PoolConfig.HostSelectionPolicy,
@@ -409,25 +411,15 @@ func (s *Session) KeyspaceMetadata(keyspace string) (*KeyspaceMetadata, error) {
 	// fail fast
 	if s.Closed() {
 		return nil, ErrSessionClosed
-	}
-
-	if keyspace == "" {
+	} else if keyspace == "" {
 		return nil, ErrNoKeyspace
 	}
-
-	s.mu.Lock()
-	// lazy-init schemaDescriber
-	if s.schemaDescriber == nil {
-		s.schemaDescriber = newSchemaDescriber(s)
-	}
-	s.mu.Unlock()
 
 	return s.schemaDescriber.getSchema(keyspace)
 }
 
 func (s *Session) getConn() *Conn {
 	hosts := s.ring.allHosts()
-	var conn *Conn
 	for _, host := range hosts {
 		if !host.IsUp() {
 			continue
@@ -436,10 +428,7 @@ func (s *Session) getConn() *Conn {
 		pool, ok := s.pool.getPool(host)
 		if !ok {
 			continue
-		}
-
-		conn = pool.Pick()
-		if conn != nil {
+		} else if conn := pool.Pick(); conn != nil {
 			return conn
 		}
 	}
@@ -778,6 +767,16 @@ func (q *Query) attempt(d time.Duration) {
 
 func (q *Query) retryPolicy() RetryPolicy {
 	return q.rt
+}
+
+// Keyspace returns the keyspace the query will be executed against.
+func (q *Query) Keyspace() string {
+	if q.session == nil {
+		return ""
+	}
+	// TODO(chbannis): this should be parsed from the query or we should let
+	// this be set by users.
+	return q.session.cfg.Keyspace
 }
 
 // GetRoutingKey gets the routing key to use for routing this query. If
@@ -1341,9 +1340,12 @@ type Batch struct {
 	defaultTimestamp      bool
 	defaultTimestampValue int64
 	context               context.Context
+	keyspace              string
 }
 
 // NewBatch creates a new batch operation without defaults from the cluster
+//
+// Depreicated: use session.NewBatch instead
 func NewBatch(typ BatchType) *Batch {
 	return &Batch{Type: typ}
 }
@@ -1351,10 +1353,20 @@ func NewBatch(typ BatchType) *Batch {
 // NewBatch creates a new batch operation using defaults defined in the cluster
 func (s *Session) NewBatch(typ BatchType) *Batch {
 	s.mu.RLock()
-	batch := &Batch{Type: typ, rt: s.cfg.RetryPolicy, serialCons: s.cfg.SerialConsistency,
-		Cons: s.cons, defaultTimestamp: s.cfg.DefaultTimestamp}
+	batch := &Batch{
+		Type:             typ,
+		rt:               s.cfg.RetryPolicy,
+		serialCons:       s.cfg.SerialConsistency,
+		Cons:             s.cons,
+		defaultTimestamp: s.cfg.DefaultTimestamp,
+		keyspace:         s.cfg.Keyspace,
+	}
 	s.mu.RUnlock()
 	return batch
+}
+
+func (b *Batch) Keyspace() string {
+	return b.keyspace
 }
 
 // Attempts returns the number of attempts made to execute the batch.
