@@ -125,6 +125,7 @@ func (s *Session) handleSchemaEvent(frames []frame) {
 }
 
 func (s *Session) handleKeyspaceChange(keyspace, change string) {
+	s.control.awaitSchemaAgreement()
 	s.policy.KeyspaceChanged(KeyspaceUpdateEvent{Keyspace: keyspace, Change: change})
 }
 
