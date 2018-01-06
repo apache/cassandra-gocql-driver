@@ -40,6 +40,7 @@ const (
 	protoVersion2      = 0x02
 	protoVersion3      = 0x03
 	protoVersion4      = 0x04
+	protoVersion5      = 0x05
 
 	maxFrameSize = 256 * 1024 * 1024
 )
@@ -1555,10 +1556,13 @@ func (f *framer) writeBatchFrame(streamID int, w *writeBatchFrame) error {
 
 		f.writeShort(uint16(len(b.values)))
 		for j := range b.values {
-			col := &b.values[j]
+			col := b.values[j]
 			if f.proto > protoVersion2 && col.name != "" {
 				// TODO: move this check into the caller and set a flag on writeBatchFrame
 				// to indicate using named values
+				if f.proto <= protoVersion5 {
+					return fmt.Errorf("gocql: named query values are not supported in batches, please see https://issues.apache.org/jira/browse/CASSANDRA-10246")
+				}
 				flags |= flagWithNameValues
 				f.writeString(col.name)
 			}
