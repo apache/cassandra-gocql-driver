@@ -5,6 +5,8 @@ package gocql
 import (
 	"bytes"
 	"context"
+	"errors"
+	"fmt"
 	"io"
 	"math"
 	"math/big"
@@ -182,6 +184,151 @@ func TestTracing(t *testing.T) {
 	}
 	if buf.Len() == 0 {
 		t.Fatal("select: failed to obtain any tracing")
+	}
+}
+
+func TestObserve(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+
+	if err := createTable(session, `CREATE TABLE gocql_test.observe (id int primary key)`); err != nil {
+		t.Fatal("create:", err)
+	}
+
+	var (
+		observedErr      error
+		observedKeyspace string
+		observedStmt     string
+	)
+
+	const keyspace = "gocql_test"
+
+	resetObserved := func() {
+		observedErr = errors.New("placeholder only") // used to distinguish err=nil cases
+		observedKeyspace = ""
+		observedStmt = ""
+	}
+
+	observer := funcQueryObserver(func(ctx context.Context, o ObservedQuery) {
+		observedKeyspace = o.Keyspace
+		observedStmt = o.Statement
+		observedErr = o.Err
+	})
+
+	// select before inserted, will error but the reporting is err=nil as the query is valid
+	resetObserved()
+	var value int
+	if err := session.Query(`SELECT id FROM observe WHERE id = ?`, 43).Observer(observer).Scan(&value); err == nil {
+		t.Fatal("select: expected error")
+	} else if observedErr != nil {
+		t.Fatalf("select: observed error expected nil, got %q", observedErr)
+	} else if observedKeyspace != keyspace {
+		t.Fatal("select: unexpected observed keyspace", observedKeyspace)
+	} else if observedStmt != `SELECT id FROM observe WHERE id = ?` {
+		t.Fatal("select: unexpected observed stmt", observedStmt)
+	}
+
+	resetObserved()
+	if err := session.Query(`INSERT INTO observe (id) VALUES (?)`, 42).Observer(observer).Exec(); err != nil {
+		t.Fatal("insert:", err)
+	} else if observedErr != nil {
+		t.Fatal("insert:", observedErr)
+	} else if observedKeyspace != keyspace {
+		t.Fatal("insert: unexpected observed keyspace", observedKeyspace)
+	} else if observedStmt != `INSERT INTO observe (id) VALUES (?)` {
+		t.Fatal("insert: unexpected observed stmt", observedStmt)
+	}
+
+	resetObserved()
+	value = 0
+	if err := session.Query(`SELECT id FROM observe WHERE id = ?`, 42).Observer(observer).Scan(&value); err != nil {
+		t.Fatal("select:", err)
+	} else if value != 42 {
+		t.Fatalf("value: expected %d, got %d", 42, value)
+	} else if observedErr != nil {
+		t.Fatal("select:", observedErr)
+	} else if observedKeyspace != keyspace {
+		t.Fatal("select: unexpected observed keyspace", observedKeyspace)
+	} else if observedStmt != `SELECT id FROM observe WHERE id = ?` {
+		t.Fatal("select: unexpected observed stmt", observedStmt)
+	}
+
+	// also works from session observer
+	resetObserved()
+	oSession := createSession(t, func(config *ClusterConfig) { config.QueryObserver = observer })
+	if err := oSession.Query(`SELECT id FROM observe WHERE id = ?`, 42).Scan(&value); err != nil {
+		t.Fatal("select:", err)
+	} else if observedErr != nil {
+		t.Fatal("select:", err)
+	} else if observedKeyspace != keyspace {
+		t.Fatal("select: unexpected observed keyspace", observedKeyspace)
+	} else if observedStmt != `SELECT id FROM observe WHERE id = ?` {
+		t.Fatal("select: unexpected observed stmt", observedStmt)
+	}
+
+	// reports errors when the query is poorly formed
+	resetObserved()
+	value = 0
+	if err := session.Query(`SELECT id FROM unknown_table WHERE id = ?`, 42).Observer(observer).Scan(&value); err == nil {
+		t.Fatal("select: expecting error")
+	} else if observedErr == nil {
+		t.Fatal("select: expecting observed error")
+	} else if observedKeyspace != keyspace {
+		t.Fatal("select: unexpected observed keyspace", observedKeyspace)
+	} else if observedStmt != `SELECT id FROM unknown_table WHERE id = ?` {
+		t.Fatal("select: unexpected observed stmt", observedStmt)
+	}
+}
+
+func TestObserve_Pagination(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+
+	if err := createTable(session, `CREATE TABLE gocql_test.observe2 (id int, PRIMARY KEY (id))`); err != nil {
+		t.Fatal("create:", err)
+	}
+
+	var observedRows int
+
+	resetObserved := func() {
+		observedRows = -1
+	}
+
+	observer := funcQueryObserver(func(ctx context.Context, o ObservedQuery) {
+		observedRows = o.Rows
+	})
+
+	// insert 100 entries, relevant for pagination
+	for i := 0; i < 50; i++ {
+		if err := session.Query(`INSERT INTO observe2 (id) VALUES (?)`, i).Exec(); err != nil {
+			t.Fatal("insert:", err)
+		}
+	}
+
+	resetObserved()
+
+	// read the 100 entries in paginated entries of size 10. Expecting 5 observations, each with 10 rows
+	scanner := session.Query(`SELECT id FROM observe2 LIMIT 100`).
+		Observer(observer).
+		PageSize(10).
+		Iter().Scanner()
+	for i := 0; i < 50; i++ {
+		if !scanner.Next() {
+			t.Fatalf("next: should still be true: %d", i)
+		}
+		if i%10 == 0 {
+			if observedRows != 10 {
+				t.Fatalf("next: expecting a paginated query with 10 entries, got: %d (%d)", observedRows, i)
+			}
+		} else if observedRows != -1 {
+			t.Fatalf("next: not expecting paginated query (-1 entries), got: %d", observedRows)
+		}
+
+		resetObserved()
+	}
+
+	if scanner.Next() {
+		t.Fatal("next: no more entries where expected")
 	}
 }
 
@@ -1640,6 +1787,71 @@ func TestBatchStats(t *testing.T) {
 		}
 		if b.Latency() <= 0 {
 			t.Fatalf("expected latency to be greater than 0, but got %v instead.", b.Latency())
+		}
+	}
+}
+
+type funcBatchObserver func(context.Context, ObservedBatch)
+
+func (f funcBatchObserver) ObserveBatch(ctx context.Context, o ObservedBatch) {
+	f(ctx, o)
+}
+
+func TestBatchObserve(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+
+	if session.cfg.ProtoVersion == 1 {
+		t.Skip("atomic batches not supported. Please use Cassandra >= 2.0")
+	}
+
+	if err := createTable(session, `CREATE TABLE gocql_test.batch_observe_table (id int, other int, PRIMARY KEY (id))`); err != nil {
+		t.Fatal("create table:", err)
+	}
+
+	type observation struct {
+		observedErr      error
+		observedKeyspace string
+		observedStmts    []string
+	}
+
+	var observedBatch *observation
+
+	batch := NewBatch(LoggedBatch)
+	batch.Observer(funcBatchObserver(func(ctx context.Context, o ObservedBatch) {
+		if observedBatch != nil {
+			t.Fatal("batch observe called more than once")
+		}
+
+		observedBatch = &observation{
+			observedKeyspace: o.Keyspace,
+			observedStmts:    o.Statements,
+			observedErr:      o.Err,
+		}
+	}))
+	for i := 0; i < 100; i++ {
+		// hard coding 'i' into one of the values for better  testing of observation
+		batch.Query(fmt.Sprintf(`INSERT INTO batch_observe_table (id,other) VALUES (?,%d)`, i), i)
+	}
+
+	if err := session.ExecuteBatch(batch); err != nil {
+		t.Fatal("execute batch:", err)
+	}
+	if observedBatch == nil {
+		t.Fatal("batch observation has not been called")
+	}
+	if len(observedBatch.observedStmts) != 100 {
+		t.Fatal("expecting 100 observed statements, got", len(observedBatch.observedStmts))
+	}
+	if observedBatch.observedErr != nil {
+		t.Fatal("not expecting to observe an error", observedBatch.observedErr)
+	}
+	if observedBatch.observedKeyspace != "gocql_test" {
+		t.Fatalf("expecting keyspace 'gocql_test', got %q", observedBatch.observedKeyspace)
+	}
+	for i, stmt := range observedBatch.observedStmts {
+		if stmt != fmt.Sprintf(`INSERT INTO batch_observe_table (id,other) VALUES (?,%d)`, i) {
+			t.Fatal("unexpected query", stmt)
 		}
 	}
 }
