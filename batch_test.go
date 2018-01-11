@@ -9,11 +9,14 @@ import (
 
 func TestBatch_Errors(t *testing.T) {
 	if *flagProto == 1 {
-		t.Skip("atomic batches not supported. Please use Cassandra >= 2.0")
 	}
 
 	session := createSession(t)
 	defer session.Close()
+
+	if session.cfg.ProtoVersion < protoVersion2 {
+		t.Skip("atomic batches not supported. Please use Cassandra >= 2.0")
+	}
 
 	if err := createTable(session, `CREATE TABLE gocql_test.batch_errors (id int primary key, val inet)`); err != nil {
 		t.Fatal(err)
@@ -27,12 +30,12 @@ func TestBatch_Errors(t *testing.T) {
 }
 
 func TestBatch_WithTimestamp(t *testing.T) {
-	if *flagProto < protoVersion3 {
-		t.Skip("Batch timestamps are only available on protocol >= 3")
-	}
-
 	session := createSession(t)
 	defer session.Close()
+
+	if session.cfg.ProtoVersion < protoVersion3 {
+		t.Skip("Batch timestamps are only available on protocol >= 3")
+	}
 
 	if err := createTable(session, `CREATE TABLE gocql_test.batch_ts (id int primary key, val text)`); err != nil {
 		t.Fatal(err)

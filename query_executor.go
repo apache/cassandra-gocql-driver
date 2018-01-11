@@ -9,6 +9,7 @@ type ExecutableQuery interface {
 	attempt(keyspace string, end, start time.Time, iter *Iter)
 	retryPolicy() RetryPolicy
 	GetRoutingKey() ([]byte, error)
+	Keyspace() string
 	RetryableQuery
 }
 

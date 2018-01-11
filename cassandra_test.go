@@ -85,6 +85,7 @@ func TestEmptyHosts(t *testing.T) {
 }
 
 func TestInvalidPeerEntry(t *testing.T) {
+	t.Skip("dont mutate system tables, rewrite this to test what we mean to test")
 	session := createSession(t)
 
 	// rack, release_version, schema_version, tokens are all null

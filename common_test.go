@@ -99,6 +99,7 @@ func createCluster(opts ...func(*ClusterConfig)) *ClusterConfig {
 }
 
 func createKeyspace(tb testing.TB, cluster *ClusterConfig, keyspace string) {
+	// TODO: tb.Helper()
 	c := *cluster
 	c.Keyspace = "system"
 	c.Timeout = 30 * time.Second

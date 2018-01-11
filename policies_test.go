@@ -14,7 +14,7 @@ import (
 )
 
 // Tests of the round-robin host selection policy implementation
-func TestRoundRobinHostPolicy(t *testing.T) {
+func TestHostPolicy_RoundRobin(t *testing.T) {
 	policy := RoundRobinHostPolicy()
 
 	hosts := [...]*HostInfo{
@@ -53,7 +53,7 @@ func TestRoundRobinHostPolicy(t *testing.T) {
 
 // Tests of the token-aware host selection policy implementation with a
 // round-robin host selection policy fallback.
-func TestTokenAwareHostPolicy(t *testing.T) {
+func TestHostPolicy_TokenAware(t *testing.T) {
 	policy := TokenAwareHostPolicy(RoundRobinHostPolicy())
 
 	query := &Query{}
@@ -110,7 +110,7 @@ func TestTokenAwareHostPolicy(t *testing.T) {
 }
 
 // Tests of the host pool host selection policy implementation
-func TestHostPoolHostPolicy(t *testing.T) {
+func TestHostPolicy_HostPool(t *testing.T) {
 	policy := HostPoolHostPolicy(hostpool.New(nil))
 
 	hosts := []*HostInfo{
@@ -150,7 +150,7 @@ func TestHostPoolHostPolicy(t *testing.T) {
 	actualD.Mark(nil)
 }
 
-func TestRoundRobinNilHostInfo(t *testing.T) {
+func TestHostPolicy_RoundRobin_NilHostInfo(t *testing.T) {
 	policy := RoundRobinHostPolicy()
 
 	host := &HostInfo{hostId: "host-1"}
@@ -175,7 +175,7 @@ func TestRoundRobinNilHostInfo(t *testing.T) {
 	}
 }
 
-func TestTokenAwareNilHostInfo(t *testing.T) {
+func TestHostPolicy_TokenAware_NilHostInfo(t *testing.T) {
 	policy := TokenAwareHostPolicy(RoundRobinHostPolicy())
 
 	hosts := [...]*HostInfo{
@@ -302,7 +302,7 @@ func TestExponentialBackoffPolicy(t *testing.T) {
 	}
 }
 
-func TestDCAwareRR(t *testing.T) {
+func TestHostPolicy_DCAwareRR(t *testing.T) {
 	p := DCAwareRoundRobinPolicy("local")
 
 	hosts := [...]*HostInfo{
