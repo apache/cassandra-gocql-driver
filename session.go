@@ -1666,6 +1666,8 @@ type ObservedQuery struct {
 }
 
 // QueryObserver is the interface implemented by query observers / stat collectors.
+//
+// Experimental, this interface and use may change
 type QueryObserver interface {
 	// ObserveQuery gets called on every query to cassandra, including all queries in an iterator when paging is enabled.
 	// It doesn't get called if there is no query because the session is closed or there are no connections available.
