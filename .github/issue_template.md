@@ -16,7 +16,7 @@ Please answer these questions before submitting your issue. Thanks!
 
 ---
 
-If you are having connectivy related issues please share the following additional information
+If you are having connectivity related issues please share the following additional information
 
 ### Describe your Cassandra cluster
 please provide the following information
