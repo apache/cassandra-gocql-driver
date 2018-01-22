@@ -426,8 +426,9 @@ func getKeyspaceMetadata(session *Session, keyspaceName string) (*KeyspaceMetada
 		}
 
 		keyspace.StrategyClass = replication["class"]
+		delete(replication, "class")
 
-		keyspace.StrategyOptions = make(map[string]interface{})
+		keyspace.StrategyOptions = make(map[string]interface{}, len(replication))
 		for k, v := range replication {
 			keyspace.StrategyOptions[k] = v
 		}

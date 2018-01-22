@@ -40,6 +40,10 @@ func getStrategy(ks *KeyspaceMetadata) placementStrategy {
 	case strings.Contains(ks.StrategyClass, "NetworkTopologyStrategy"):
 		dcs := make(map[string]int)
 		for dc, rf := range ks.StrategyOptions {
+			if dc == "class" {
+				continue
+			}
+
 			dcs[dc] = getReplicationFactorFromOpts(ks.Name+":dc="+dc, rf)
 		}
 		return &networkTopology{dcs: dcs}
