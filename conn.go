@@ -531,10 +531,6 @@ func (c *Conn) releaseStream(stream int) {
 	delete(c.calls, stream)
 	c.mu.Unlock()
 
-	if call.timer != nil {
-		call.timer.Stop()
-	}
-
 	streamPool.Put(call)
 	c.streams.Clear(stream)
 }
@@ -555,6 +551,50 @@ var (
 	}
 )
 
+type safeTimer struct {
+	needStop bool
+	timer    *time.Timer
+}
+
+// Fired needs to be called read from C() succeeds.
+func (t *safeTimer) Fired() {
+	if t.timer == nil {
+		panic("invalid call to Fired timer was never started")
+	}
+	t.needStop = false
+}
+
+// C returns the timer channel or a nil channel that blocks forever if it was
+// not started.
+func (t *safeTimer) C() <-chan time.Time {
+	if t.timer == nil {
+		return nil
+	}
+	return t.timer.C
+}
+
+// Stop stops the timer. It is allowed to call Stop regardless of the timer
+// being started. It is also safe to be called multiple times.
+func (t *safeTimer) Stop() {
+	if t.timer == nil {
+		return
+	}
+	if t.needStop && !t.timer.Stop() {
+		<-t.timer.C
+	}
+	t.needStop = false
+}
+
+// Start lazy initializes and starts the timer.
+func (t *safeTimer) Start(d time.Duration) {
+	if t.timer == nil {
+		t.timer = time.NewTimer(d)
+	} else {
+		t.timer.Reset(d)
+	}
+	t.needStop = true
+}
+
 type callReq struct {
 	// could use a waitgroup but this allows us to do timeouts on the read/send
 	resp     chan error
@@ -562,7 +602,7 @@ type callReq struct {
 	timeout  chan struct{} // indicates to recv() that a call has timedout
 	streamID int           // current stream in use
 
-	timer *time.Timer
+	timer safeTimer
 }
 
 func (c *Conn) exec(ctx context.Context, req frameWriter, tracer Tracer) (*framer, error) {
@@ -609,22 +649,8 @@ func (c *Conn) exec(ctx context.Context, req frameWriter, tracer Tracer) (*frame
 		return nil, err
 	}
 
-	var timeoutCh <-chan time.Time
 	if c.timeout > 0 {
-		if call.timer == nil {
-			call.timer = time.NewTimer(0)
-			<-call.timer.C
-		} else {
-			if !call.timer.Stop() {
-				select {
-				case <-call.timer.C:
-				default:
-				}
-			}
-		}
-
-		call.timer.Reset(c.timeout)
-		timeoutCh = call.timer.C
+		call.timer.Start(c.timeout)
 	}
 
 	var ctxDone <-chan struct{}
@@ -634,6 +660,8 @@ func (c *Conn) exec(ctx context.Context, req frameWriter, tracer Tracer) (*frame
 
 	select {
 	case err := <-call.resp:
+		// clear the timer before returning call to the pool.
+		call.timer.Stop()
 		close(call.timeout)
 		if err != nil {
 			if !c.Closed() {
@@ -645,14 +673,17 @@ func (c *Conn) exec(ctx context.Context, req frameWriter, tracer Tracer) (*frame
 			}
 			return nil, err
 		}
-	case <-timeoutCh:
+	case <-call.timer.C():
+		call.timer.Fired()
 		close(call.timeout)
 		c.handleTimeout()
 		return nil, ErrTimeoutNoResponse
 	case <-ctxDone:
+		call.timer.Stop()
 		close(call.timeout)
 		return nil, ctx.Err()
 	case <-c.quit:
+		call.timer.Stop()
 		return nil, ErrConnectionClosed
 	}
 

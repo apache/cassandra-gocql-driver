@@ -1,6 +1,7 @@
 package gocql
 
 import (
+	"context"
 	"time"
 )
 
@@ -34,6 +35,8 @@ func (q *queryExecutor) executeQuery(qry ExecutableQuery) (*Iter, error) {
 
 	var iter *Iter
 	hostResponse := hostIter()
+
+loop:
 	for hostResponse != nil {
 		host := hostResponse.Info()
 		if host == nil || !host.IsUp() {
@@ -55,8 +58,13 @@ func (q *queryExecutor) executeQuery(qry ExecutableQuery) (*Iter, error) {
 
 		iter = q.attemptQuery(qry, conn)
 
-		// Update host
-		hostResponse.Mark(iter.err)
+		switch iter.err {
+		case context.Canceled, context.DeadlineExceeded:
+			hostResponse.Mark(nil)
+			break loop
+		default:
+			hostResponse.Mark(iter.err)
+		}
 
 		if iter.err == nil {
 			// Exit for loop if the query was successful
