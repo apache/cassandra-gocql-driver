@@ -791,7 +791,7 @@ func (q *Query) execute(conn *Conn) *Iter {
 	return conn.executeQuery(q)
 }
 
-func (q *Query) attempt(keyspace string, end, start time.Time, iter *Iter) {
+func (q *Query) attempt(keyspace string, end, start time.Time, iter *Iter, address string) {
 	q.attempts++
 	q.totalLatency += end.Sub(start).Nanoseconds()
 	// TODO: track latencies per host and things as well instead of just total
@@ -803,6 +803,7 @@ func (q *Query) attempt(keyspace string, end, start time.Time, iter *Iter) {
 			Start:     start,
 			End:       end,
 			Rows:      iter.numRows,
+			Host:      address,
 			Err:       iter.err,
 		})
 	}
@@ -1507,7 +1508,7 @@ func (b *Batch) WithTimestamp(timestamp int64) *Batch {
 	return b
 }
 
-func (b *Batch) attempt(keyspace string, end, start time.Time, iter *Iter) {
+func (b *Batch) attempt(keyspace string, end, start time.Time, iter *Iter, address string) {
 	b.attempts++
 	b.totalLatency += end.Sub(start).Nanoseconds()
 	// TODO: track latencies per host and things as well instead of just total
@@ -1527,7 +1528,8 @@ func (b *Batch) attempt(keyspace string, end, start time.Time, iter *Iter) {
 		Start:      start,
 		End:        end,
 		// Rows not used in batch observations // TODO - might be able to support it when using BatchCAS
-		Err: iter.err,
+		Host: address,
+		Err:  iter.err,
 	})
 }
 
@@ -1676,6 +1678,9 @@ type ObservedQuery struct {
 	// Rows is not used in batch queries and remains at the default value
 	Rows int
 
+	// Host is the informations about the host that performed the query
+	Host string
+
 	// Err is the error in the query.
 	// It only tracks network errors or errors of bad cassandra syntax, in particular selects with no match return nil error
 	Err error
@@ -1697,6 +1702,9 @@ type ObservedBatch struct {
 
 	Start time.Time // time immediately before the batch query was called
 	End   time.Time // time immediately after the batch query returned
+
+	// Host is the informations about the host that performed the batch
+	Host string
 
 	// Err is the error in the batch query.
 	// It only tracks network errors or errors of bad cassandra syntax, in particular selects with no match return nil error
