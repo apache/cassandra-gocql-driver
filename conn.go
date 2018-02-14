@@ -130,9 +130,10 @@ type Conn struct {
 
 	headerBuf [maxFrameHeaderSize]byte
 
-	streams *streams.IDGenerator
-	mu      sync.RWMutex
-	calls   map[int]*callReq
+	streams         *streams.IDGenerator
+	mu              sync.RWMutex
+	calls           map[int]*callReq
+	writeBufferChan chan []byte
 
 	errorHandler    ConnErrorHandler
 	compressor      Compressor
@@ -183,19 +184,20 @@ func (s *Session) dial(ip net.IP, port int, cfg *ConnConfig, errorHandler ConnEr
 	}
 
 	c := &Conn{
-		conn:         conn,
-		r:            bufio.NewReader(conn),
-		cfg:          cfg,
-		calls:        make(map[int]*callReq),
-		timeout:      cfg.Timeout,
-		version:      uint8(cfg.ProtoVersion),
-		addr:         conn.RemoteAddr().String(),
-		errorHandler: errorHandler,
-		compressor:   cfg.Compressor,
-		auth:         cfg.Authenticator,
-		quit:         make(chan struct{}),
-		session:      s,
-		streams:      streams.New(cfg.ProtoVersion),
+		conn:            conn,
+		r:               bufio.NewReader(conn),
+		cfg:             cfg,
+		calls:           make(map[int]*callReq),
+		timeout:         cfg.Timeout,
+		version:         uint8(cfg.ProtoVersion),
+		addr:            conn.RemoteAddr().String(),
+		errorHandler:    errorHandler,
+		compressor:      cfg.Compressor,
+		auth:            cfg.Authenticator,
+		quit:            make(chan struct{}),
+		writeBufferChan: make(chan []byte, s.cfg.WriteBufferSize),
+		session:         s,
+		streams:         streams.New(cfg.ProtoVersion),
 	}
 
 	if cfg.Keepalive > 0 {
@@ -229,6 +231,26 @@ func (s *Session) dial(ip net.IP, port int, cfg *ConnConfig, errorHandler ConnEr
 		}
 	}()
 
+	// write to net.Conn asynchronously, otherwise it may block request
+	// see: https://github.com/gocql/gocql/issues/896
+	go func() {
+		for {
+			select {
+			case data := <-c.writeBufferChan:
+				if c.timeout > 0 {
+					c.conn.SetWriteDeadline(time.Now().Add(c.timeout))
+				}
+				_, err := c.conn.Write(data)
+				if err != nil {
+					c.closeWithError(err)
+					return
+				}
+			case <-c.quit:
+				return
+			}
+		}
+	}()
+
 	go func() {
 		defer close(frameTicker)
 		err := c.startup(ctx, frameTicker)
@@ -255,11 +277,13 @@ func (s *Session) dial(ip net.IP, port int, cfg *ConnConfig, errorHandler ConnEr
 }
 
 func (c *Conn) Write(p []byte) (int, error) {
-	if c.timeout > 0 {
-		c.conn.SetWriteDeadline(time.Now().Add(c.timeout))
+	length := len(p)
+	select {
+	case c.writeBufferChan <- p:
+		return length, nil
+	default:
+		return length, ErrWriteBufferFull
 	}
-
-	return c.conn.Write(p)
 }
 
 func (c *Conn) Read(p []byte) (n int, err error) {
@@ -1179,4 +1203,5 @@ var (
 	ErrTooManyTimeouts   = errors.New("gocql: too many query timeouts on the connection")
 	ErrConnectionClosed  = errors.New("gocql: connection closed waiting for response")
 	ErrNoStreams         = errors.New("gocql: no streams available on connection")
+	ErrWriteBufferFull   = errors.New("gocql: write buffer is full")
 )
