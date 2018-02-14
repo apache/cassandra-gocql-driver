@@ -23,6 +23,8 @@ type unsetColumn struct{}
 // By setting a field to the unset value Cassandra will ignore the write completely.
 // The main advantage is the ability to keep the same prepared statement even when you don't
 // want to update some fields, where before you needed to make another prepared statement.
+//
+// UnsetValue is only available when using the version 4 of the protocol.
 var UnsetValue = unsetColumn{}
 
 type namedValue struct {
