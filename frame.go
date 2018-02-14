@@ -18,6 +18,11 @@ import (
 
 type unsetColumn struct{}
 
+// UnsetValue represents a value used in a query binding that will be ignored by Cassandra.
+//
+// By setting a field to the unset value Cassandra will ignore the write completely.
+// The main advantage is the ability to keep the same prepared statement even when you don't
+// want to update some fields, where before you needed to make another prepared statement.
 var UnsetValue = unsetColumn{}
 
 type namedValue struct {
