@@ -329,6 +329,7 @@ func TestStreams_Protocol1(t *testing.T) {
 	cluster := testCluster(srv.Address, protoVersion1)
 	cluster.NumConns = 1
 	cluster.ProtoVersion = 1
+	cluster.WriteBufferSize = 100
 
 	db, err := cluster.CreateSession()
 	if err != nil {
