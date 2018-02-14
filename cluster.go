@@ -59,6 +59,7 @@ type ClusterConfig struct {
 	MaxRoutingKeyInfo int               // Sets the maximum cache size for query info about statements for each session (default: 1000)
 	PageSize          int               // Default page size to use for created sessions (default: 5000)
 	SerialConsistency SerialConsistency // Sets the consistency for the serial part of queries, values can be either SERIAL or LOCAL_SERIAL (default: unset)
+	WriteBufferSize   int               // Set the write buffer size for each connection (default: 100)
 	SslOpts           *SslOptions
 	DefaultTimestamp  bool // Sends a client side timestamp for all requests which overrides the timestamp at which it arrives at the server. (default: true, only enabled for protocol 3 and above)
 	// PoolConfig configures the underlying connection pool, allowing the
@@ -151,6 +152,7 @@ func NewCluster(hosts ...string) *ClusterConfig {
 		DefaultTimestamp:       true,
 		MaxWaitSchemaAgreement: 60 * time.Second,
 		ReconnectInterval:      60 * time.Second,
+		WriteBufferSize:        100,
 	}
 	return cfg
 }
