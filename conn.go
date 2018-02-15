@@ -220,18 +220,20 @@ func (s *Session) dial(ip net.IP, port int, cfg *ConnConfig, errorHandler ConnEr
 	startupErr := make(chan error)
 	// need to call before we write to net.Conn
 	go func() {
-		select {
-		case args := <- c.frameWriteArgChan:
-			if err := args.req.writeFrame(args.framer, args.stream); err != nil{
-				// I think this is the correct thing to do, im not entirely sure. It is not
-				// ideal as readers might still get some data, but they probably wont.
-				// Here we need to be careful as the stream is not available and if all
-				// writes just timeout or fail then the pool might use this connection to
-				// send a frame on, with all the streams used up and not returned.
-				c.closeWithError(err)
+		for {
+			select {
+			case args := <- c.frameWriteArgChan:
+				if err := args.req.writeFrame(args.framer, args.stream); err != nil{
+					// I think this is the correct thing to do, im not entirely sure. It is not
+					// ideal as readers might still get some data, but they probably wont.
+					// Here we need to be careful as the stream is not available and if all
+					// writes just timeout or fail then the pool might use this connection to
+					// send a frame on, with all the streams used up and not returned.
+					c.closeWithError(err)
+				}
+			case <-c.quit:
+				return
 			}
-		case <-c.quit:
-			return
 		}
 	}()
 
