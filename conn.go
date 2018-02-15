@@ -147,6 +147,8 @@ type Conn struct {
 	quit   chan struct{}
 
 	timeouts int64
+
+	frameWriteArgs chan *frameWriteArgs
 }
 
 // Connect establishes a connection to a Cassandra node.
@@ -183,19 +185,20 @@ func (s *Session) dial(ip net.IP, port int, cfg *ConnConfig, errorHandler ConnEr
 	}
 
 	c := &Conn{
-		conn:         conn,
-		r:            bufio.NewReader(conn),
-		cfg:          cfg,
-		calls:        make(map[int]*callReq),
-		timeout:      cfg.Timeout,
-		version:      uint8(cfg.ProtoVersion),
-		addr:         conn.RemoteAddr().String(),
-		errorHandler: errorHandler,
-		compressor:   cfg.Compressor,
-		auth:         cfg.Authenticator,
-		quit:         make(chan struct{}),
-		session:      s,
-		streams:      streams.New(cfg.ProtoVersion),
+		conn:           conn,
+		r:              bufio.NewReader(conn),
+		cfg:            cfg,
+		calls:          make(map[int]*callReq),
+		timeout:        cfg.Timeout,
+		version:        uint8(cfg.ProtoVersion),
+		addr:           conn.RemoteAddr().String(),
+		errorHandler:   errorHandler,
+		compressor:     cfg.Compressor,
+		auth:           cfg.Authenticator,
+		quit:           make(chan struct{}),
+		session:        s,
+		streams:        streams.New(cfg.ProtoVersion),
+		frameWriteArgs: make(chan *frameWriteArgs),
 	}
 
 	if cfg.Keepalive > 0 {
@@ -215,6 +218,18 @@ func (s *Session) dial(ip net.IP, port int, cfg *ConnConfig, errorHandler ConnEr
 
 	frameTicker := make(chan struct{}, 1)
 	startupErr := make(chan error)
+	go func() {
+		for args := range c.frameWriteArgs {
+			if err := args.req.writeFrame(args.framer, args.stream); err != nil{
+				// I think this is the correct thing to do, im not entirely sure. It is not
+				// ideal as readers might still get some data, but they probably wont.
+				// Here we need to be careful as the stream is not available and if all
+				// writes just timeout or fail then the pool might use this connection to
+				// send a frame on, with all the streams used up and not returned.
+				c.closeWithError(err)
+			}
+		}
+	}()
 	go func() {
 		for range frameTicker {
 			err := c.recv()
@@ -594,21 +609,6 @@ func (c *Conn) exec(ctx context.Context, req frameWriter, tracer Tracer) (*frame
 		framer.trace()
 	}
 
-	err := req.writeFrame(framer, stream)
-	if err != nil {
-		// closeWithError will block waiting for this stream to either receive a response
-		// or for us to timeout, close the timeout chan here. Im not entirely sure
-		// but we should not get a response after an error on the write side.
-		close(call.timeout)
-		// I think this is the correct thing to do, im not entirely sure. It is not
-		// ideal as readers might still get some data, but they probably wont.
-		// Here we need to be careful as the stream is not available and if all
-		// writes just timeout or fail then the pool might use this connection to
-		// send a frame on, with all the streams used up and not returned.
-		c.closeWithError(err)
-		return nil, err
-	}
-
 	var timeoutCh <-chan time.Time
 	if c.timeout > 0 {
 		if call.timer == nil {
@@ -630,6 +630,20 @@ func (c *Conn) exec(ctx context.Context, req frameWriter, tracer Tracer) (*frame
 	var ctxDone <-chan struct{}
 	if ctx != nil {
 		ctxDone = ctx.Done()
+	}
+
+	select {
+	case c.frameWriteArgs <- &frameWriteArgs{req, framer, stream}:
+		break
+	case <-timeoutCh:
+		close(call.timeout)
+		c.handleTimeout()
+		return nil, ErrTimeoutNoResponse
+	case <-ctxDone:
+		close(call.timeout)
+		return nil, ctx.Err()
+	case <-c.quit:
+		return nil, ErrConnectionClosed
 	}
 
 	select {
@@ -669,6 +683,16 @@ func (c *Conn) exec(ctx context.Context, req frameWriter, tracer Tracer) (*frame
 	}
 
 	return framer, nil
+}
+
+func (c *Conn) sendFrame() {
+
+}
+
+type frameWriteArgs struct {
+	req frameWriter
+	framer *framer
+	stream int
 }
 
 type preparedStatment struct {
