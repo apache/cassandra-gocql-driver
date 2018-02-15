@@ -218,8 +218,10 @@ func (s *Session) dial(ip net.IP, port int, cfg *ConnConfig, errorHandler ConnEr
 
 	frameTicker := make(chan struct{}, 1)
 	startupErr := make(chan error)
+	// need to call before we write to net.Conn
 	go func() {
-		for args := range c.frameWriteArgChan {
+		select {
+		case args := <- c.frameWriteArgChan:
 			if err := args.req.writeFrame(args.framer, args.stream); err != nil{
 				// I think this is the correct thing to do, im not entirely sure. It is not
 				// ideal as readers might still get some data, but they probably wont.
@@ -228,8 +230,11 @@ func (s *Session) dial(ip net.IP, port int, cfg *ConnConfig, errorHandler ConnEr
 				// send a frame on, with all the streams used up and not returned.
 				c.closeWithError(err)
 			}
+		case <-c.quit:
+			return
 		}
 	}()
+
 	go func() {
 		for range frameTicker {
 			err := c.recv()
