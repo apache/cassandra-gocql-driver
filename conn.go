@@ -148,7 +148,7 @@ type Conn struct {
 
 	timeouts int64
 
-	frameWriteArgs chan *frameWriteArgs
+	frameWriteArgChan chan *frameWriteArg
 }
 
 // Connect establishes a connection to a Cassandra node.
@@ -185,20 +185,20 @@ func (s *Session) dial(ip net.IP, port int, cfg *ConnConfig, errorHandler ConnEr
 	}
 
 	c := &Conn{
-		conn:           conn,
-		r:              bufio.NewReader(conn),
-		cfg:            cfg,
-		calls:          make(map[int]*callReq),
-		timeout:        cfg.Timeout,
-		version:        uint8(cfg.ProtoVersion),
-		addr:           conn.RemoteAddr().String(),
-		errorHandler:   errorHandler,
-		compressor:     cfg.Compressor,
-		auth:           cfg.Authenticator,
-		quit:           make(chan struct{}),
-		session:        s,
-		streams:        streams.New(cfg.ProtoVersion),
-		frameWriteArgs: make(chan *frameWriteArgs),
+		conn:              conn,
+		r:                 bufio.NewReader(conn),
+		cfg:               cfg,
+		calls:             make(map[int]*callReq),
+		timeout:           cfg.Timeout,
+		version:           uint8(cfg.ProtoVersion),
+		addr:              conn.RemoteAddr().String(),
+		errorHandler:      errorHandler,
+		compressor:        cfg.Compressor,
+		auth:              cfg.Authenticator,
+		quit:              make(chan struct{}),
+		session:           s,
+		streams:           streams.New(cfg.ProtoVersion),
+		frameWriteArgChan: make(chan *frameWriteArg),
 	}
 
 	if cfg.Keepalive > 0 {
@@ -219,7 +219,7 @@ func (s *Session) dial(ip net.IP, port int, cfg *ConnConfig, errorHandler ConnEr
 	frameTicker := make(chan struct{}, 1)
 	startupErr := make(chan error)
 	go func() {
-		for args := range c.frameWriteArgs {
+		for args := range c.frameWriteArgChan {
 			if err := args.req.writeFrame(args.framer, args.stream); err != nil{
 				// I think this is the correct thing to do, im not entirely sure. It is not
 				// ideal as readers might still get some data, but they probably wont.
@@ -609,7 +609,31 @@ func (c *Conn) exec(ctx context.Context, req frameWriter, tracer Tracer) (*frame
 		framer.trace()
 	}
 
-	var timeoutCh <-chan time.Time
+	if err := c.sendFrame(ctx, call, req); err != nil {
+		return nil, err
+	}
+
+	if err := c.getResp(ctx, call); err != nil {
+		return nil, err
+	}
+
+	// dont release the stream if detect a timeout as another request can reuse
+	// that stream and get a response for the old request, which we have no
+	// easy way of detecting.
+	//
+	// Ensure that the stream is not released if there are potentially outstanding
+	// requests on the stream to prevent nil pointer dereferences in recv().
+	defer c.releaseStream(stream)
+
+	if v := framer.header.version.version(); v != c.version {
+		return nil, NewErrProtocol("unexpected protocol version in response: got %d expected %d", v, c.version)
+	}
+
+	return framer, nil
+}
+
+func (c *Conn) getResp(ctx context.Context, call *callReq) error {
+	timeoutCh := c.resetTimeout(call)
 	if c.timeout > 0 {
 		if call.timer == nil {
 			call.timer = time.NewTimer(0)
@@ -633,20 +657,6 @@ func (c *Conn) exec(ctx context.Context, req frameWriter, tracer Tracer) (*frame
 	}
 
 	select {
-	case c.frameWriteArgs <- &frameWriteArgs{req, framer, stream}:
-		break
-	case <-timeoutCh:
-		close(call.timeout)
-		c.handleTimeout()
-		return nil, ErrTimeoutNoResponse
-	case <-ctxDone:
-		close(call.timeout)
-		return nil, ctx.Err()
-	case <-c.quit:
-		return nil, ErrConnectionClosed
-	}
-
-	select {
 	case err := <-call.resp:
 		close(call.timeout)
 		if err != nil {
@@ -655,41 +665,67 @@ func (c *Conn) exec(ctx context.Context, req frameWriter, tracer Tracer) (*frame
 				// this is because the request is still outstanding and we have
 				// been handed another error from another stream which caused the
 				// connection to close.
-				c.releaseStream(stream)
+				c.releaseStream(call.streamID)
 			}
-			return nil, err
+			return err
 		}
+		return nil
 	case <-timeoutCh:
 		close(call.timeout)
 		c.handleTimeout()
-		return nil, ErrTimeoutNoResponse
+		return ErrTimeoutNoResponse
 	case <-ctxDone:
 		close(call.timeout)
-		return nil, ctx.Err()
+		return ctx.Err()
 	case <-c.quit:
-		return nil, ErrConnectionClosed
+		return ErrConnectionClosed
 	}
-
-	// dont release the stream if detect a timeout as another request can reuse
-	// that stream and get a response for the old request, which we have no
-	// easy way of detecting.
-	//
-	// Ensure that the stream is not released if there are potentially outstanding
-	// requests on the stream to prevent nil pointer dereferences in recv().
-	defer c.releaseStream(stream)
-
-	if v := framer.header.version.version(); v != c.version {
-		return nil, NewErrProtocol("unexpected protocol version in response: got %d expected %d", v, c.version)
-	}
-
-	return framer, nil
 }
 
-func (c *Conn) sendFrame() {
+func (c *Conn) sendFrame(ctx context.Context, call *callReq, req frameWriter) error {
+	timeoutCh := c.resetTimeout(call)
+	var ctxDone <-chan struct{}
+	if ctx != nil {
+		ctxDone = ctx.Done()
+	}
 
+	select {
+	case c.frameWriteArgChan <- &frameWriteArg{req, call.framer, call.streamID}:
+		return nil
+	case <-timeoutCh:
+		close(call.timeout)
+		c.handleTimeout()
+		return ErrTimeoutNoResponse
+	case <-ctxDone:
+		close(call.timeout)
+		return ctx.Err()
+	case <-c.quit:
+		return ErrConnectionClosed
+	}
 }
 
-type frameWriteArgs struct {
+func (c *Conn) resetTimeout(call *callReq) <-chan time.Time {
+	var timeoutCh <-chan time.Time
+	if c.timeout > 0 {
+		if call.timer == nil {
+			call.timer = time.NewTimer(0)
+			<-call.timer.C
+		} else {
+			if !call.timer.Stop() {
+				select {
+				case <-call.timer.C:
+				default:
+				}
+			}
+		}
+
+		call.timer.Reset(c.timeout)
+		timeoutCh = call.timer.C
+	}
+	return timeoutCh
+}
+
+type frameWriteArg struct {
 	req frameWriter
 	framer *framer
 	stream int
