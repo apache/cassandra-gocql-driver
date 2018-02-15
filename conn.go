@@ -641,23 +641,6 @@ func (c *Conn) exec(ctx context.Context, req frameWriter, tracer Tracer) (*frame
 
 func (c *Conn) getResp(ctx context.Context, call *callReq) error {
 	timeoutCh := c.resetTimeout(call)
-	if c.timeout > 0 {
-		if call.timer == nil {
-			call.timer = time.NewTimer(0)
-			<-call.timer.C
-		} else {
-			if !call.timer.Stop() {
-				select {
-				case <-call.timer.C:
-				default:
-				}
-			}
-		}
-
-		call.timer.Reset(c.timeout)
-		timeoutCh = call.timer.C
-	}
-
 	var ctxDone <-chan struct{}
 	if ctx != nil {
 		ctxDone = ctx.Done()
