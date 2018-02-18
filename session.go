@@ -953,7 +953,7 @@ func isUseStatement(stmt string) bool {
 		return false
 	}
 
-	return strings.ToLower(stmt[0:3]) == "use"
+	return strings.EqualFold(stmt[0:3], "use")
 }
 
 // Iter executes the query and returns an iterator capable of iterating
