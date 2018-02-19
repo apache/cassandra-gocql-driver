@@ -621,11 +621,12 @@ func (c *Conn) exec(ctx context.Context, req frameWriter, tracer Tracer) (*frame
 		framer.trace()
 	}
 
-	if err := c.sendFrame(ctx, call, req); err != nil {
+	timeoutCh := c.resetTimeout(call)
+	if err := c.sendFrame(ctx, call, req, timeoutCh); err != nil {
 		return nil, err
 	}
 
-	if err := c.getResp(ctx, call); err != nil {
+	if err := c.getResp(ctx, call, timeoutCh); err != nil {
 		return nil, err
 	}
 
@@ -644,8 +645,7 @@ func (c *Conn) exec(ctx context.Context, req frameWriter, tracer Tracer) (*frame
 	return framer, nil
 }
 
-func (c *Conn) getResp(ctx context.Context, call *callReq) error {
-	timeoutCh := c.resetTimeout(call)
+func (c *Conn) getResp(ctx context.Context, call *callReq, timeoutCh <-chan time.Time) error {
 	var ctxDone <-chan struct{}
 	if ctx != nil {
 		ctxDone = ctx.Done()
@@ -677,8 +677,7 @@ func (c *Conn) getResp(ctx context.Context, call *callReq) error {
 	}
 }
 
-func (c *Conn) sendFrame(ctx context.Context, call *callReq, req frameWriter) error {
-	timeoutCh := c.resetTimeout(call)
+func (c *Conn) sendFrame(ctx context.Context, call *callReq, req frameWriter, timeoutCh <-chan time.Time) error {
 	var ctxDone <-chan struct{}
 	if ctx != nil {
 		ctxDone = ctx.Done()
