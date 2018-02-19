@@ -230,6 +230,7 @@ func (s *Session) dial(ip net.IP, port int, cfg *ConnConfig, errorHandler ConnEr
 					// writes just timeout or fail then the pool might use this connection to
 					// send a frame on, with all the streams used up and not returned.
 					c.closeWithError(err)
+					return
 				}
 			case <-c.quit:
 				return
