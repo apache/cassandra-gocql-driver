@@ -263,3 +263,30 @@ func TestConsistencyNames(t *testing.T) {
 		}
 	}
 }
+
+func TestIsUseStatement(t *testing.T) {
+	testCases := []struct {
+		input string
+		exp   bool
+	}{
+		{"USE foo", true},
+		{"USe foo", true},
+		{"UsE foo", true},
+		{"Use foo", true},
+		{"uSE foo", true},
+		{"uSe foo", true},
+		{"usE foo", true},
+		{"use foo", true},
+		{"SELECT ", false},
+		{"UPDATE ", false},
+		{"INSERT ", false},
+		{"", false},
+	}
+
+	for _, tc := range testCases {
+		v := isUseStatement(tc.input)
+		if v != tc.exp {
+			t.Fatalf("expected %v but got %v for statement %q", tc.exp, v, tc.input)
+		}
+	}
+}
