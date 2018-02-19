@@ -447,8 +447,8 @@ func (c *Conn) discardFrame(head frameHeader) error {
 func (c *Conn) writeToConn() {
 	for {
 		select {
-		case args := <- c.frameWriteArgChan:
-			if err := args.req.writeFrame(args.framer, args.stream); err != nil{
+		case args := <-c.frameWriteArgChan:
+			if err := args.req.writeFrame(args.framer, args.stream); err != nil {
 				// I think this is the correct thing to do, im not entirely sure. It is not
 				// ideal as readers might still get some data, but they probably wont.
 				// Here we need to be careful as the stream is not available and if all
@@ -592,6 +592,27 @@ type callReq struct {
 	timer *time.Timer
 }
 
+func (c *callReq) resetTimeout(timeout time.Duration) <-chan time.Time {
+	var timeoutCh <-chan time.Time
+	if timeout > 0 {
+		if c.timer == nil {
+			c.timer = time.NewTimer(0)
+			<-c.timer.C
+		} else {
+			if !c.timer.Stop() {
+				select {
+				case <-c.timer.C:
+				default:
+				}
+			}
+		}
+
+		c.timer.Reset(timeout)
+		timeoutCh = c.timer.C
+	}
+	return timeoutCh
+}
+
 func (c *Conn) exec(ctx context.Context, req frameWriter, tracer Tracer) (*framer, error) {
 	// TODO: move tracer onto conn
 	stream, ok := c.streams.GetStream()
@@ -621,7 +642,7 @@ func (c *Conn) exec(ctx context.Context, req frameWriter, tracer Tracer) (*frame
 		framer.trace()
 	}
 
-	timeoutCh := c.resetTimeout(call)
+	timeoutCh := call.resetTimeout(c.timeout)
 	if err := c.sendFrame(ctx, call, req, timeoutCh); err != nil {
 		return nil, err
 	}
@@ -698,29 +719,8 @@ func (c *Conn) sendFrame(ctx context.Context, call *callReq, req frameWriter, ti
 	}
 }
 
-func (c *Conn) resetTimeout(call *callReq) <-chan time.Time {
-	var timeoutCh <-chan time.Time
-	if c.timeout > 0 {
-		if call.timer == nil {
-			call.timer = time.NewTimer(0)
-			<-call.timer.C
-		} else {
-			if !call.timer.Stop() {
-				select {
-				case <-call.timer.C:
-				default:
-				}
-			}
-		}
-
-		call.timer.Reset(c.timeout)
-		timeoutCh = call.timer.C
-	}
-	return timeoutCh
-}
-
 type frameWriteArg struct {
-	req frameWriter
+	req    frameWriter
 	framer *framer
 	stream int
 }
