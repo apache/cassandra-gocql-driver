@@ -193,6 +193,10 @@ func (e *ExponentialBackoffRetryPolicy) napTime(attempts int) time.Duration {
 	return time.Duration(napDuration)
 }
 
+type DowngradingConsistencyRetryPolicy struct {
+	
+}
+
 type HostStateNotifier interface {
 	AddHost(host *HostInfo)
 	RemoveHost(host *HostInfo)
