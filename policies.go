@@ -176,44 +176,51 @@ func (e *ExponentialBackoffRetryPolicy) Attempt(q RetryableQuery) bool {
 	return true
 }
 
-func (e *ExponentialBackoffRetryPolicy) napTime(attempts int) time.Duration {
-	if e.Min <= 0 {
-		e.Min = 100 * time.Millisecond
+// used to calculate exponentially growing time
+func getExponentialTime(min time.Duration, max time.Duration, attempts int) time.Duration {
+	if min <= 0 {
+		min = 100 * time.Millisecond
 	}
-	if e.Max <= 0 {
-		e.Max = 10 * time.Second
+	if max <= 0 {
+		max = 10 * time.Second
 	}
-	minFloat := float64(e.Min)
+	minFloat := float64(min)
 	napDuration := minFloat * math.Pow(2, float64(attempts-1))
 	// add some jitter
 	napDuration += rand.Float64()*minFloat - (minFloat / 2)
-	if napDuration > float64(e.Max) {
-		return time.Duration(e.Max)
+	if napDuration > float64(max) {
+		return time.Duration(max)
 	}
 	return time.Duration(napDuration)
 }
 
-type DowngradingConsistencyRetryPolicy struct {
-	CurrentConsistencyLevel Consistency
+func (e *ExponentialBackoffRetryPolicy) napTime(attempts int) time.Duration {
+	return getExponentialTime(e.Min, e.Max, attempts)
 }
 
-func (e *DowngradingConsistencyRetryPolicy) ConsistencyLevel (numResponses int) Consistency {
-	if numResponses >= 3 {
-		return Three
-	}
-	if numResponses >= 2 {
-		return Two
-	}
-	if numResponses >= 1 {
-		return One
-	}
-	return nil
-}
-
-func (e *DowngradingConsistencyRetryPolicy) Attempt(q RetryableQuery) bool {
-
-	return true
-}
+// Will move this to a new branch
+//
+//type DowngradingConsistencyRetryPolicy struct {
+//	CurrentConsistencyLevel Consistency
+//}
+//
+//func (e *DowngradingConsistencyRetryPolicy) ConsistencyLevel (numResponses int, cons Consistency) Consistency {
+//	if numResponses >= 3 {
+//		return Three
+//	}
+//	if numResponses >= 2 {
+//		return Two
+//	}
+//	if numResponses >= 1 {
+//		return One
+//	}
+//	return cons
+//}
+//
+//func (e *DowngradingConsistencyRetryPolicy) Attempt(q RetryableQuery) bool {
+//
+//	return true
+//}
 type HostStateNotifier interface {
 	AddHost(host *HostInfo)
 	RemoveHost(host *HostInfo)
@@ -726,4 +733,51 @@ func (d *dcAwareRR) Pick(q ExecutableQuery) NextHost {
 		i++
 		return (*selectedHost)(host)
 	}
+}
+
+// ReconnectionPolicy interface is used by gocql to determine if a host can be attempted
+// again after connection times out. The interface allows gocql
+// users to implement their own logic to determine if a query can be attempted
+// again.
+//
+type ReconnectionPolicy interface {
+	GetInterval(currentRetry int) time.Duration
+	GetMaxRetries() int
+}
+
+// ConstantReconnectionPolicy has simple logic for returning a fixed reconnection interval.
+//
+// Examples of usage:
+//
+//     cluster.ReconnectionPolicy = &gocql.ConstantReconnectionPolicy{MaxRetries: 10, Interval: 8}
+//
+type ConstantReconnectionPolicy struct {
+	MaxRetries int
+	Interval time.Duration
+}
+
+func (e *ConstantReconnectionPolicy) GetInterval(currentRetry int) time.Duration {
+	return e.Interval
+}
+
+func (e *ConstantReconnectionPolicy) GetMaxRetries() int {
+	return e.MaxRetries
+}
+
+// ExponentialReconnectionPolicy returns a growing reconnection interval.
+type ExponentialReconnectionPolicy struct {
+	MaxRetries int
+	InitialInterval time.Duration
+}
+
+func (e *ExponentialReconnectionPolicy) GetInterval(currentRetry int) time.Duration {
+	return getExponentialTime(e.InitialInterval, math.MaxInt16 * time.Second, e.GetMaxRetries())
+}
+
+func (e *ExponentialReconnectionPolicy) GetMaxRetries() int {
+	return e.MaxRetries
+}
+
+type ConvictionPolicy interface {
+	NewSchedule() int
 }

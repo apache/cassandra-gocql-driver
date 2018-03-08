@@ -54,6 +54,7 @@ type ClusterConfig struct {
 	Compressor        Compressor        // compression algorithm (default: nil)
 	Authenticator     Authenticator     // authenticator (default: nil)
 	RetryPolicy       RetryPolicy       // Default retry policy to use for queries (default: 0)
+	ReconnectionPolicy ReconnectionPolicy // Default reconnection policy to use for reconnecting before marking host as down (default: see below)
 	SocketKeepalive   time.Duration     // The keepalive period to use, enabled if > 0 (default: 0)
 	MaxPreparedStmts  int               // Sets the maximum cache size for prepared statements globally for gocql (default: 1000)
 	MaxRoutingKeyInfo int               // Sets the maximum cache size for query info about statements for each session (default: 1000)
@@ -151,6 +152,7 @@ func NewCluster(hosts ...string) *ClusterConfig {
 		DefaultTimestamp:       true,
 		MaxWaitSchemaAgreement: 60 * time.Second,
 		ReconnectInterval:      60 * time.Second,
+		ReconnectionPolicy:     &ConstantReconnectionPolicy{10, 2 * time.Second},
 	}
 	return cfg
 }

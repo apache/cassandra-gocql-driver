@@ -497,10 +497,9 @@ func (pool *hostConnPool) connectMany(count int) error {
 func (pool *hostConnPool) connect() (err error) {
 	// TODO: provide a more robust connection retry mechanism, we should also
 	// be able to detect hosts that come up by trying to connect to downed ones.
-	const maxAttempts = 3
 	// try to connect
 	var conn *Conn
-	for i := 0; i < maxAttempts; i++ {
+	for i := 0; i < pool.session.cfg.ReconnectionPolicy.GetMaxRetries(); i++ {
 		conn, err = pool.session.connect(pool.host, pool)
 		if err == nil {
 			break
@@ -512,6 +511,7 @@ func (pool *hostConnPool) connect() (err error) {
 				break
 			}
 		}
+		time.Sleep(pool.session.cfg.ReconnectionPolicy.GetInterval(i))
 	}
 
 	if err != nil {
