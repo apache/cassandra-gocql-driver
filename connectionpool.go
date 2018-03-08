@@ -499,7 +499,8 @@ func (pool *hostConnPool) connect() (err error) {
 	// be able to detect hosts that come up by trying to connect to downed ones.
 	// try to connect
 	var conn *Conn
-	for i := 0; i < pool.session.cfg.ReconnectionPolicy.GetMaxRetries(); i++ {
+	reconnectionPolicy := pool.session.cfg.ReconnectionPolicy
+	for i := 0; i < reconnectionPolicy.GetMaxRetries(); i++ {
 		conn, err = pool.session.connect(pool.host, pool)
 		if err == nil {
 			break
@@ -511,7 +512,11 @@ func (pool *hostConnPool) connect() (err error) {
 				break
 			}
 		}
-		time.Sleep(pool.session.cfg.ReconnectionPolicy.GetInterval(i))
+		if gocqlDebug {
+			Logger.Printf("connection failed %q: %v, reconnecting with specified ReconnectionPolicy %T\n",
+				pool.host.ConnectAddress(), err, reconnectionPolicy)
+		}
+		time.Sleep(reconnectionPolicy.GetInterval(i))
 	}
 
 	if err != nil {
