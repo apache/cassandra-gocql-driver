@@ -420,7 +420,9 @@ func (pool *hostConnPool) fill() {
 
 			// this is call with the connection pool mutex held, this call will
 			// then recursively try to lock it again. FIXME
-			go pool.session.handleNodeDown(pool.host.ConnectAddress(), pool.port)
+			if pool.session.cfg.ConvictionPolicy.AddFailure(err) {
+				go pool.session.handleNodeDown(pool.host.ConnectAddress(), pool.port)
+			}
 			return
 		}
 
@@ -513,7 +515,7 @@ func (pool *hostConnPool) connect() (err error) {
 			}
 		}
 		if gocqlDebug {
-			Logger.Printf("connection failed %q: %v, reconnecting with specified ReconnectionPolicy %T\n",
+			Logger.Printf("connection failed %q: %v, reconnecting with %T\n",
 				pool.host.ConnectAddress(), err, reconnectionPolicy)
 		}
 		time.Sleep(reconnectionPolicy.GetInterval(i))

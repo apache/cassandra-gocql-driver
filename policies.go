@@ -736,7 +736,7 @@ func (d *dcAwareRR) Pick(q ExecutableQuery) NextHost {
 }
 
 // ReconnectionPolicy interface is used by gocql to determine if a host can be attempted
-// again after connection times out. The interface allows gocql
+// again after connection error. The interface allows gocql
 // users to implement their own logic to determine if a query can be attempted
 // again.
 //
@@ -753,7 +753,7 @@ type ReconnectionPolicy interface {
 //
 type ConstantReconnectionPolicy struct {
 	MaxRetries int
-	Interval time.Duration
+	Interval   time.Duration
 }
 
 func (e *ConstantReconnectionPolicy) GetInterval(currentRetry int) time.Duration {
@@ -766,12 +766,12 @@ func (e *ConstantReconnectionPolicy) GetMaxRetries() int {
 
 // ExponentialReconnectionPolicy returns a growing reconnection interval.
 type ExponentialReconnectionPolicy struct {
-	MaxRetries int
+	MaxRetries      int
 	InitialInterval time.Duration
 }
 
 func (e *ExponentialReconnectionPolicy) GetInterval(currentRetry int) time.Duration {
-	return getExponentialTime(e.InitialInterval, math.MaxInt16 * time.Second, e.GetMaxRetries())
+	return getExponentialTime(e.InitialInterval, math.MaxInt16*time.Second, e.GetMaxRetries())
 }
 
 func (e *ExponentialReconnectionPolicy) GetMaxRetries() int {
@@ -779,5 +779,18 @@ func (e *ExponentialReconnectionPolicy) GetMaxRetries() int {
 }
 
 type ConvictionPolicy interface {
-	NewSchedule() int
+	// Implementations should return `true` if the host should be convicted, `false` otherwise.
+	AddFailure(error error) bool
+	//Implementations should clear out any convictions or state regarding the host.
+	Reset()
 }
+
+//return true on any error
+type SimpleConvictionPolicy struct {
+}
+
+func (e *SimpleConvictionPolicy) AddFailure(error error) bool {
+	return true
+}
+
+func (e *SimpleConvictionPolicy) Reset() {}
