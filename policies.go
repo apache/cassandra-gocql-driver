@@ -706,3 +706,20 @@ func (d *dcAwareRR) Pick(q ExecutableQuery) NextHost {
 		return (*selectedHost)(host)
 	}
 }
+
+type ConvictionPolicy interface {
+	// Implementations should return `true` if the host should be convicted, `false` otherwise.
+	AddFailure(error error) bool
+	//Implementations should clear out any convictions or state regarding the host.
+	Reset()
+}
+
+//return true on any error
+type SimpleConvictionPolicy struct {
+}
+
+func (e *SimpleConvictionPolicy) AddFailure(error error) bool {
+	return true
+}
+
+func (e *SimpleConvictionPolicy) Reset() {}
