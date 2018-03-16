@@ -198,29 +198,6 @@ func (e *ExponentialBackoffRetryPolicy) napTime(attempts int) time.Duration {
 	return getExponentialTime(e.Min, e.Max, attempts)
 }
 
-// Will move this to a new branch
-//
-//type DowngradingConsistencyRetryPolicy struct {
-//	CurrentConsistencyLevel Consistency
-//}
-//
-//func (e *DowngradingConsistencyRetryPolicy) ConsistencyLevel (numResponses int, cons Consistency) Consistency {
-//	if numResponses >= 3 {
-//		return Three
-//	}
-//	if numResponses >= 2 {
-//		return Two
-//	}
-//	if numResponses >= 1 {
-//		return One
-//	}
-//	return cons
-//}
-//
-//func (e *DowngradingConsistencyRetryPolicy) Attempt(q RetryableQuery) bool {
-//
-//	return true
-//}
 type HostStateNotifier interface {
 	AddHost(host *HostInfo)
 	RemoveHost(host *HostInfo)
