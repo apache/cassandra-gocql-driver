@@ -726,7 +726,7 @@ type ReconnectionPolicy interface {
 //
 // Examples of usage:
 //
-//     cluster.ReconnectionPolicy = &gocql.ConstantReconnectionPolicy{MaxRetries: 10, Interval: 8}
+//     cluster.ReconnectionPolicy = &gocql.ConstantReconnectionPolicy{MaxRetries: 10, Interval: 8 * time.Second}
 //
 type ConstantReconnectionPolicy struct {
 	MaxRetries int

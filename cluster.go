@@ -153,7 +153,7 @@ func NewCluster(hosts ...string) *ClusterConfig {
 		DefaultTimestamp:       true,
 		MaxWaitSchemaAgreement: 60 * time.Second,
 		ReconnectInterval:      60 * time.Second,
-		ReconnectionPolicy:     &ConstantReconnectionPolicy{MaxRetries: 10, Interval: 2 * time.Second},
+		ReconnectionPolicy:     &ConstantReconnectionPolicy{MaxRetries: 3, Interval: 2 * time.Second},
 		ConvictionPolicy:       &SimpleConvictionPolicy{},
 	}
 	return cfg
