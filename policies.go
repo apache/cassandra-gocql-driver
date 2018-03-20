@@ -712,10 +712,9 @@ func (d *dcAwareRR) Pick(q ExecutableQuery) NextHost {
 	}
 }
 
-// ReconnectionPolicy interface is used by gocql to determine if a host can be attempted
-// again after connection error. The interface allows gocql
-// users to implement their own logic to determine if a query can be attempted
-// again.
+// ReconnectionPolicy interface is used by gocql to determine if reconnection
+// can be attempted after connection error. The interface allows gocql users
+// to implement their own logic to determine how to attempt reconnection.
 //
 type ReconnectionPolicy interface {
 	GetInterval(currentRetry int) time.Duration
