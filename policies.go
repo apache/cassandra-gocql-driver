@@ -732,12 +732,12 @@ type ConstantReconnectionPolicy struct {
 	Interval   time.Duration
 }
 
-func (e *ConstantReconnectionPolicy) GetInterval(currentRetry int) time.Duration {
-	return e.Interval
+func (c *ConstantReconnectionPolicy) GetInterval(currentRetry int) time.Duration {
+	return c.Interval
 }
 
-func (e *ConstantReconnectionPolicy) GetMaxRetries() int {
-	return e.MaxRetries
+func (c *ConstantReconnectionPolicy) GetMaxRetries() int {
+	return c.MaxRetries
 }
 
 // ExponentialReconnectionPolicy returns a growing reconnection interval.
