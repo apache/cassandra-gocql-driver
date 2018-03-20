@@ -128,6 +128,7 @@ func (c *cowHostList) remove(ip net.IP) bool {
 // exposes the correct functions for the retry policy logic to evaluate correctly.
 type RetryableQuery interface {
 	Attempts() int
+	SetConsistency(c Consistency)
 	GetConsistency() Consistency
 }
 
@@ -159,6 +160,9 @@ type SimpleRetryPolicy struct {
 // Attempt tells gocql to attempt the query again based on query.Attempts being less
 // than the NumRetries defined in the policy.
 func (s *SimpleRetryPolicy) Attempt(q RetryableQuery) bool {
+	// DEBUG TO REMOVE
+	Logger.Printf("SimpleRetryPolicy: Restarted query  %d\n",
+		q.Attempts())
 	return q.Attempts() <= s.NumRetries
 }
 
@@ -191,6 +195,22 @@ func (e *ExponentialBackoffRetryPolicy) napTime(attempts int) time.Duration {
 		return time.Duration(e.Max)
 	}
 	return time.Duration(napDuration)
+}
+
+type DowngradingConsistencyRetryPolicy struct {
+	ConsistencyLevelsToTry []Consistency
+}
+
+func (d *DowngradingConsistencyRetryPolicy) Attempt(q RetryableQuery) bool {
+	if q.Attempts() >= len(d.ConsistencyLevelsToTry) {
+		return false
+	}
+	if gocqlDebug {
+		Logger.Printf("DowngradingConsistencyRetryPolicy: Restarted query with consistency %q\n",
+			d.ConsistencyLevelsToTry[q.Attempts()])
+	}
+	q.SetConsistency(d.ConsistencyLevelsToTry[q.Attempts()])
+	return true
 }
 
 type HostStateNotifier interface {

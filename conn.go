@@ -965,6 +965,9 @@ func (c *Conn) executeQuery(qry *Query) *Iter {
 
 		return &Iter{err: x, framer: framer}
 	case error:
+		// DEBUG TO REMOVE
+		Logger.Printf("execute error, %s", qry)
+
 		return &Iter{err: x, framer: framer}
 	default:
 		return &Iter{
