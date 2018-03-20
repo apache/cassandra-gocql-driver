@@ -176,21 +176,26 @@ func (e *ExponentialBackoffRetryPolicy) Attempt(q RetryableQuery) bool {
 	return true
 }
 
-func (e *ExponentialBackoffRetryPolicy) napTime(attempts int) time.Duration {
-	if e.Min <= 0 {
-		e.Min = 100 * time.Millisecond
+// used to calculate exponentially growing time
+func getExponentialTime(min time.Duration, max time.Duration, attempts int) time.Duration {
+	if min <= 0 {
+		min = 100 * time.Millisecond
 	}
-	if e.Max <= 0 {
-		e.Max = 10 * time.Second
+	if max <= 0 {
+		max = 10 * time.Second
 	}
-	minFloat := float64(e.Min)
+	minFloat := float64(min)
 	napDuration := minFloat * math.Pow(2, float64(attempts-1))
 	// add some jitter
 	napDuration += rand.Float64()*minFloat - (minFloat / 2)
-	if napDuration > float64(e.Max) {
-		return time.Duration(e.Max)
+	if napDuration > float64(max) {
+		return time.Duration(max)
 	}
 	return time.Duration(napDuration)
+}
+
+func (e *ExponentialBackoffRetryPolicy) napTime(attempts int) time.Duration {
+	return getExponentialTime(e.Min, e.Max, attempts)
 }
 
 type HostStateNotifier interface {
@@ -705,4 +710,46 @@ func (d *dcAwareRR) Pick(q ExecutableQuery) NextHost {
 		i++
 		return (*selectedHost)(host)
 	}
+}
+
+// ReconnectionPolicy interface is used by gocql to determine if reconnection
+// can be attempted after connection error. The interface allows gocql users
+// to implement their own logic to determine how to attempt reconnection.
+//
+type ReconnectionPolicy interface {
+	GetInterval(currentRetry int) time.Duration
+	GetMaxRetries() int
+}
+
+// ConstantReconnectionPolicy has simple logic for returning a fixed reconnection interval.
+//
+// Examples of usage:
+//
+//     cluster.ReconnectionPolicy = &gocql.ConstantReconnectionPolicy{MaxRetries: 10, Interval: 8 * time.Second}
+//
+type ConstantReconnectionPolicy struct {
+	MaxRetries int
+	Interval   time.Duration
+}
+
+func (c *ConstantReconnectionPolicy) GetInterval(currentRetry int) time.Duration {
+	return c.Interval
+}
+
+func (c *ConstantReconnectionPolicy) GetMaxRetries() int {
+	return c.MaxRetries
+}
+
+// ExponentialReconnectionPolicy returns a growing reconnection interval.
+type ExponentialReconnectionPolicy struct {
+	MaxRetries      int
+	InitialInterval time.Duration
+}
+
+func (e *ExponentialReconnectionPolicy) GetInterval(currentRetry int) time.Duration {
+	return getExponentialTime(e.InitialInterval, math.MaxInt16*time.Second, e.GetMaxRetries())
+}
+
+func (e *ExponentialReconnectionPolicy) GetMaxRetries() int {
+	return e.MaxRetries
 }
