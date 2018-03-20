@@ -22,8 +22,6 @@ func TestNewCluster_Defaults(t *testing.T) {
 	assertEqual(t, "cluster config reconnect interval", 60*time.Second, cfg.ReconnectInterval)
 	assertTrue(t, "cluster config reconnection policy",
 		reflect.DeepEqual(&ConstantReconnectionPolicy{MaxRetries: 3, Interval: 1 * time.Second}, cfg.ReconnectionPolicy))
-	assertTrue(t, "cluster config conviction policy",
-		reflect.DeepEqual(&SimpleConvictionPolicy{}, cfg.ConvictionPolicy))
 }
 
 func TestNewCluster_WithHosts(t *testing.T) {

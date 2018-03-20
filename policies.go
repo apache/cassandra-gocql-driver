@@ -754,20 +754,3 @@ func (e *ExponentialReconnectionPolicy) GetInterval(currentRetry int) time.Durat
 func (e *ExponentialReconnectionPolicy) GetMaxRetries() int {
 	return e.MaxRetries
 }
-
-type ConvictionPolicy interface {
-	// Implementations should return `true` if the host should be convicted, `false` otherwise.
-	AddFailure(error error) bool
-	//Implementations should clear out any convictions or state regarding the host.
-	Reset()
-}
-
-//return true on any error
-type SimpleConvictionPolicy struct {
-}
-
-func (e *SimpleConvictionPolicy) AddFailure(error error) bool {
-	return true
-}
-
-func (e *SimpleConvictionPolicy) Reset() {}
