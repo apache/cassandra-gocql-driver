@@ -132,6 +132,14 @@ type RetryableQuery interface {
 	GetConsistency() Consistency
 }
 
+type RetryType uint16
+
+const (
+	Retry			RetryType = 0x00 // retry on same connection
+	RetryNextHost	RetryType = 0x01 // retry on another connection
+	Ignore			RetryType = 0x02 // ignore error and continue
+)
+
 // RetryPolicy interface is used by gocql to determine if a query can be attempted
 // again after a retryable error has been received. The interface allows gocql
 // users to implement their own logic to determine if a query can be attempted
@@ -141,6 +149,7 @@ type RetryableQuery interface {
 // interface.
 type RetryPolicy interface {
 	Attempt(RetryableQuery) bool
+	GetRetryType(error)  	RetryType
 }
 
 // SimpleRetryPolicy has simple logic for attempting a query a fixed number of times.
@@ -164,6 +173,10 @@ func (s *SimpleRetryPolicy) Attempt(q RetryableQuery) bool {
 	Logger.Printf("SimpleRetryPolicy: Restarted query  %d\n",
 		q.Attempts())
 	return q.Attempts() <= s.NumRetries
+}
+
+func (s *SimpleRetryPolicy) GetRetryType(err error) RetryType {
+	return RetryNextHost
 }
 
 // ExponentialBackoffRetryPolicy sleeps between attempts
@@ -197,6 +210,10 @@ func (e *ExponentialBackoffRetryPolicy) napTime(attempts int) time.Duration {
 	return time.Duration(napDuration)
 }
 
+func (e *ExponentialBackoffRetryPolicy) GetRetryType(err error) RetryType {
+	return RetryNextHost
+}
+
 type DowngradingConsistencyRetryPolicy struct {
 	ConsistencyLevelsToTry []Consistency
 }
@@ -205,12 +222,26 @@ func (d *DowngradingConsistencyRetryPolicy) Attempt(q RetryableQuery) bool {
 	if q.Attempts() >= len(d.ConsistencyLevelsToTry) {
 		return false
 	}
+	q.SetConsistency(d.ConsistencyLevelsToTry[q.Attempts()])
 	if gocqlDebug {
-		Logger.Printf("DowngradingConsistencyRetryPolicy: Restarted query with consistency %q\n",
+		Logger.Printf("%T: set consistency to %q\n",
+			d,
 			d.ConsistencyLevelsToTry[q.Attempts()])
 	}
-	q.SetConsistency(d.ConsistencyLevelsToTry[q.Attempts()])
 	return true
+}
+
+func (d *DowngradingConsistencyRetryPolicy) GetRetryType(err error) RetryType {
+	switch err.(type) {
+	case *RequestErrUnavailable:
+		return RetryNextHost
+	case *RequestErrWriteTimeout:
+		return Retry
+	case *RequestErrReadTimeout:
+		return Retry
+	default:
+		return Ignore
+	}
 }
 
 type HostStateNotifier interface {

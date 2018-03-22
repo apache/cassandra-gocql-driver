@@ -32,7 +32,7 @@ func (q *queryExecutor) executeQuery(qry ExecutableQuery) (*Iter, error) {
 	rt := qry.retryPolicy()
 	hostIter := q.policy.Pick(qry)
 
-	var iter *Iter
+	iter := &Iter{err: new(Error)}
 	for hostResponse := hostIter(); hostResponse != nil; hostResponse = hostIter() {
 		host := hostResponse.Info()
 		if host == nil || !host.IsUp() {
@@ -49,8 +49,18 @@ func (q *queryExecutor) executeQuery(qry ExecutableQuery) (*Iter, error) {
 			continue
 		}
 
-		iter = q.attemptQuery(qry, conn)
+		for iter.err != nil && rt.Attempt(qry) {
+			iter = q.attemptQuery(qry, conn)
+			Logger.Print(iter.err)
+			Logger.Print(qry.Attempts())
+			if rt.GetRetryType(iter.err) != Retry {
+				break
+			}
+			if rt == nil || !rt.Attempt(qry) {
+				goto exit
+			}
 
+		}
 		// Update host
 		hostResponse.Mark(iter.err)
 
@@ -66,6 +76,7 @@ func (q *queryExecutor) executeQuery(qry ExecutableQuery) (*Iter, error) {
 		}
 	}
 
+	exit:
 	if iter == nil {
 		return nil, ErrNoConnections
 	}
