@@ -1139,7 +1139,7 @@ func TestRebindQueryInfo(t *testing.T) {
 	}
 
 	if value != "w00t" {
-		t.Fatalf("expected %v but got %v", "quux", value)
+		t.Fatalf("expected %v but got %v", "w00t", value)
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"net"
 	"testing"
 	"time"
+	"reflect"
 )
 
 func TestNewCluster_Defaults(t *testing.T) {
@@ -19,6 +20,8 @@ func TestNewCluster_Defaults(t *testing.T) {
 	assertEqual(t, "cluster config default timestamp", true, cfg.DefaultTimestamp)
 	assertEqual(t, "cluster config max wait schema agreement", 60*time.Second, cfg.MaxWaitSchemaAgreement)
 	assertEqual(t, "cluster config reconnect interval", 60*time.Second, cfg.ReconnectInterval)
+	assertTrue(t, "cluster config reconnection policy",
+		reflect.DeepEqual(&ConstantReconnectionPolicy{MaxRetries: 3, Interval: 1 * time.Second}, cfg.ReconnectionPolicy))
 }
 
 func TestNewCluster_WithHosts(t *testing.T) {
