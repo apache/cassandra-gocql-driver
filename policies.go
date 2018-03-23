@@ -170,9 +170,6 @@ type SimpleRetryPolicy struct {
 // Attempt tells gocql to attempt the query again based on query.Attempts being less
 // than the NumRetries defined in the policy.
 func (s *SimpleRetryPolicy) Attempt(q RetryableQuery) bool {
-	// DEBUG TO REMOVE
-	Logger.Printf("SimpleRetryPolicy: Restarted query  %d\n",
-		q.Attempts())
 	return q.Attempts() <= s.NumRetries
 }
 

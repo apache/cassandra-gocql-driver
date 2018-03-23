@@ -965,18 +965,15 @@ func (c *Conn) executeQuery(qry *Query) *Iter {
 
 		return &Iter{err: x, framer: framer}
 
-		// for DowngradeConsistencyPolicy
+	// for DowngradeConsistencyPolicy
 	case *RequestErrUnavailable:
-		Logger.Printf("execute error, %s", qry)
 		return &Iter{err: resp.(*RequestErrUnavailable), framer: framer}
+	case *RequestErrWriteTimeout:
+		return &Iter{err: resp.(*RequestErrWriteTimeout), framer: framer}
+	case *RequestErrReadTimeout:
+		return &Iter{err: resp.(*RequestErrReadTimeout), framer: framer}
 
 	case error:
-		// DEBUG TO REMOVE
-		//Logger.Printf("execute error, %s", qry)
-		err := fmt.Sprintf("%T", resp)
-		//Logger.Print(resp.(*RequestErrUnavailable).String())
-		Logger.Print(err)
-
 		return &Iter{err: x, framer: framer}
 	default:
 		return &Iter{

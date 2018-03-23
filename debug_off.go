@@ -2,5 +2,4 @@
 
 package gocql
 
-// DEBUG TO REMOVE
-const gocqlDebug = true
+const gocqlDebug = false

@@ -779,8 +779,9 @@ func (q *Query) execute(conn *Conn) *Iter {
 }
 
 func (q *Query) attempt(keyspace string, end, start time.Time, iter *Iter) {
-	// DEBUG TO REMOVE
-	Logger.Printf("attempting query %d", q.attempts)
+	if(gocqlDebug) {
+		Logger.Printf("Attempting query: %d", q.attempts)
+	}
 	q.attempts++
 	q.totalLatency += end.Sub(start).Nanoseconds()
 	// TODO: track latencies per host and things as well instead of just total
