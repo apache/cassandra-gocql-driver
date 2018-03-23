@@ -32,7 +32,7 @@ func (q *queryExecutor) executeQuery(qry ExecutableQuery) (*Iter, error) {
 	rt := qry.retryPolicy()
 	hostIter := q.policy.Pick(qry)
 
-	iter := &Iter{err: new(Error)}
+	var iter *Iter
 	for hostResponse := hostIter(); hostResponse != nil; hostResponse = hostIter() {
 		host := hostResponse.Info()
 		if host == nil || !host.IsUp() {
