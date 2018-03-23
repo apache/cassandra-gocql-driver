@@ -253,18 +253,18 @@ func (d *DowngradingConsistencyRetryPolicy) Attempt(q RetryableQuery) bool {
 func (d *DowngradingConsistencyRetryPolicy) GetRetryType(err error) RetryType {
 	switch err.(type) {
 	case *RequestErrUnavailable:
-		if err.(RequestErrUnavailable).Alive > 0 {
+		if err.(*RequestErrUnavailable).Alive > 0 {
 			return Retry
 		}
 		return Rethrow
 	case *RequestErrWriteTimeout:
-		if err.(RequestErrWriteTimeout).WriteType == "SIMPLE" || err.(RequestErrWriteTimeout).WriteType == "BATCH" || err.(RequestErrWriteTimeout).WriteType == "COUNTER" {
-			if err.(RequestErrWriteTimeout).Received > 0 {
+		if err.(*RequestErrWriteTimeout).WriteType == "SIMPLE" || err.(*RequestErrWriteTimeout).WriteType == "BATCH" || err.(*RequestErrWriteTimeout).WriteType == "COUNTER" {
+			if err.(*RequestErrWriteTimeout).Received > 0 {
 				return Ignore
 			}
 			return Rethrow
 		}
-		if err.(RequestErrWriteTimeout).WriteType == "UNLOGGED_BATCH" {
+		if err.(*RequestErrWriteTimeout).WriteType == "UNLOGGED_BATCH" {
 			return Retry
 		}
 		return Rethrow
