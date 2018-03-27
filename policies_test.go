@@ -350,7 +350,7 @@ func TestDowngradingConsistencyRetryPolicy(t *testing.T) {
 	for _, c := range cases {
 		q.attempts = c.attempts
 		if c.retryType != rt.GetRetryType(c.err) {
-			t.Fatalf("retry type should be %s", c.retryType)
+			t.Fatalf("retry type should be %v", c.retryType)
 		}
 		if c.allow && !rt.Attempt(q) {
 			t.Fatalf("should allow retry after %d attempts", c.attempts)
