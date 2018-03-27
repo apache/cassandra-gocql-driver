@@ -67,7 +67,7 @@ func (q *queryExecutor) executeQuery(qry ExecutableQuery) (*Iter, error) {
 					return iter, nil
 				}
 				if rt.GetRetryType(iter.err) != Retry {
-					break;
+					break
 				}
 			}
 		case Rethrow:

@@ -135,10 +135,10 @@ type RetryableQuery interface {
 type RetryType uint16
 
 const (
-	Retry			RetryType = 0x00 // retry on same connection
-	RetryNextHost	RetryType = 0x01 // retry on another connection
-	Ignore			RetryType = 0x02 // ignore error and return result
-	Rethrow			RetryType = 0x03 // raise error and stop retrying
+	Retry         RetryType = 0x00 // retry on same connection
+	RetryNextHost RetryType = 0x01 // retry on another connection
+	Ignore        RetryType = 0x02 // ignore error and return result
+	Rethrow       RetryType = 0x03 // raise error and stop retrying
 )
 
 // RetryPolicy interface is used by gocql to determine if a query can be attempted
@@ -150,7 +150,7 @@ const (
 // interface.
 type RetryPolicy interface {
 	Attempt(RetryableQuery) bool
-	GetRetryType(error)  	RetryType
+	GetRetryType(error) RetryType
 }
 
 // SimpleRetryPolicy has simple logic for attempting a query a fixed number of times.
@@ -237,11 +237,11 @@ func (d *DowngradingConsistencyRetryPolicy) Attempt(q RetryableQuery) bool {
 		return false
 	}
 	if currentAttempt > 0 {
-		q.SetConsistency(d.ConsistencyLevelsToTry[currentAttempt - 1])
+		q.SetConsistency(d.ConsistencyLevelsToTry[currentAttempt-1])
 		if gocqlDebug {
 			Logger.Printf("%T: set consistency to %q\n",
 				d,
-				d.ConsistencyLevelsToTry[currentAttempt - 1])
+				d.ConsistencyLevelsToTry[currentAttempt-1])
 		}
 	}
 	return true

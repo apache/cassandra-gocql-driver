@@ -307,37 +307,37 @@ func TestDowngradingConsistencyRetryPolicy(t *testing.T) {
 	q := &Query{cons: LocalQuorum}
 
 	rewt0 := &RequestErrWriteTimeout{
-		Received:    0,
-		WriteType:   "SIMPLE",
+		Received:  0,
+		WriteType: "SIMPLE",
 	}
 
 	rewt1 := &RequestErrWriteTimeout{
-		Received:    1,
-		WriteType:   "BATCH",
+		Received:  1,
+		WriteType: "BATCH",
 	}
 
 	rewt2 := &RequestErrWriteTimeout{
-		WriteType:   "UNLOGGED_BATCH",
+		WriteType: "UNLOGGED_BATCH",
 	}
 
 	rert := &RequestErrReadTimeout{}
 
 	reu0 := &RequestErrUnavailable{
-		Alive:       0,
+		Alive: 0,
 	}
 
 	reu1 := &RequestErrUnavailable{
-		Alive:       1,
+		Alive: 1,
 	}
 
 	// this should allow a total of 3 tries.
 	consistencyLevels := []Consistency{Three, Two, One}
 	rt := &DowngradingConsistencyRetryPolicy{ConsistencyLevelsToTry: consistencyLevels}
 	cases := []struct {
-		attempts 	int
-		allow		bool
-		err 		error
-		retryType 	RetryType
+		attempts  int
+		allow     bool
+		err       error
+		retryType RetryType
 	}{
 		{0, true, rewt0, Rethrow},
 		{3, true, rewt1, Ignore},
@@ -345,7 +345,7 @@ func TestDowngradingConsistencyRetryPolicy(t *testing.T) {
 		{2, true, rert, Retry},
 		{4, false, reu0, Rethrow},
 		{16, false, reu1, Retry},
-		}
+	}
 
 	for _, c := range cases {
 		q.attempts = c.attempts
