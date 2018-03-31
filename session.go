@@ -709,6 +709,11 @@ func (q *Query) GetConsistency() Consistency {
 	return q.cons
 }
 
+// Same as Consistency but without a return value
+func (q *Query) SetConsistency(c Consistency) {
+	q.cons = c
+}
+
 // Trace enables tracing of this query. Look at the documentation of the
 // Tracer interface to learn more about tracing.
 func (q *Query) Trace(trace Tracer) *Query {
@@ -774,6 +779,9 @@ func (q *Query) execute(conn *Conn) *Iter {
 }
 
 func (q *Query) attempt(keyspace string, end, start time.Time, iter *Iter) {
+	if gocqlDebug {
+		Logger.Printf("Attempting query: %d", q.attempts)
+	}
 	q.attempts++
 	q.totalLatency += end.Sub(start).Nanoseconds()
 	// TODO: track latencies per host and things as well instead of just total
@@ -1383,7 +1391,7 @@ func (s *Session) NewBatch(typ BatchType) *Batch {
 		Type:             typ,
 		rt:               s.cfg.RetryPolicy,
 		serialCons:       s.cfg.SerialConsistency,
-		observer: s.batchObserver,
+		observer:         s.batchObserver,
 		Cons:             s.cons,
 		defaultTimestamp: s.cfg.DefaultTimestamp,
 		keyspace:         s.cfg.Keyspace,
@@ -1420,6 +1428,12 @@ func (b *Batch) Latency() int64 {
 // operation.
 func (b *Batch) GetConsistency() Consistency {
 	return b.Cons
+}
+
+// SetConsistency sets the currently configured consistency level for the batch
+// operation.
+func (b *Batch) SetConsistency(c Consistency) {
+	b.Cons = c
 }
 
 // Query adds the query to the batch operation
