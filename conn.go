@@ -964,15 +964,6 @@ func (c *Conn) executeQuery(qry *Query) *Iter {
 		}
 
 		return &Iter{err: x, framer: framer}
-
-	// for DowngradeConsistencyPolicy
-	case *RequestErrUnavailable:
-		return &Iter{err: resp.(*RequestErrUnavailable), framer: framer}
-	case *RequestErrWriteTimeout:
-		return &Iter{err: resp.(*RequestErrWriteTimeout), framer: framer}
-	case *RequestErrReadTimeout:
-		return &Iter{err: resp.(*RequestErrReadTimeout), framer: framer}
-
 	case error:
 		return &Iter{err: x, framer: framer}
 	default:

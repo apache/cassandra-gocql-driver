@@ -215,17 +215,19 @@ func (e *ExponentialBackoffRetryPolicy) GetRetryType(err error) RetryType {
 
 // DowngradingConsistencyRetryPolicy: Next retry will be with the next consistency level
 // provided in the slice
-/*
-* On a read timeout: the operation is retried with the next provided consistency
-level.
-* On a write timeout: if the operation is an :attr:`~.UNLOGGED_BATCH`
-and at least one replica acknowledged the write, the operation is
-retried with the next consistency level.  Furthermore, for other
-write types, if at least one replica acknowledged the write, the
-timeout is ignored.
-* On an unavailable exception: if at least one replica is alive, the
-operation is retried with the next provided consistency level.
-*/
+//
+// On a read timeout: the operation is retried with the next provided consistency
+// level.
+//
+// On a write timeout: if the operation is an :attr:`~.UNLOGGED_BATCH`
+// and at least one replica acknowledged the write, the operation is
+// retried with the next consistency level.  Furthermore, for other
+// write types, if at least one replica acknowledged the write, the
+// timeout is ignored.
+//
+// On an unavailable exception: if at least one replica is alive, the
+// operation is retried with the next provided consistency level.
+
 type DowngradingConsistencyRetryPolicy struct {
 	ConsistencyLevelsToTry []Consistency
 }
@@ -235,8 +237,7 @@ func (d *DowngradingConsistencyRetryPolicy) Attempt(q RetryableQuery) bool {
 
 	if currentAttempt > len(d.ConsistencyLevelsToTry) {
 		return false
-	}
-	if currentAttempt > 0 {
+	} else if currentAttempt > 0 {
 		q.SetConsistency(d.ConsistencyLevelsToTry[currentAttempt-1])
 		if gocqlDebug {
 			Logger.Printf("%T: set consistency to %q\n",
@@ -248,20 +249,20 @@ func (d *DowngradingConsistencyRetryPolicy) Attempt(q RetryableQuery) bool {
 }
 
 func (d *DowngradingConsistencyRetryPolicy) GetRetryType(err error) RetryType {
-	switch err.(type) {
+	switch t := err.(type) {
 	case *RequestErrUnavailable:
-		if err.(*RequestErrUnavailable).Alive > 0 {
+		if t.Alive > 0 {
 			return Retry
 		}
 		return Rethrow
 	case *RequestErrWriteTimeout:
-		if err.(*RequestErrWriteTimeout).WriteType == "SIMPLE" || err.(*RequestErrWriteTimeout).WriteType == "BATCH" || err.(*RequestErrWriteTimeout).WriteType == "COUNTER" {
-			if err.(*RequestErrWriteTimeout).Received > 0 {
+		if t.WriteType == "SIMPLE" || t.WriteType == "BATCH" || t.WriteType == "COUNTER" {
+			if t.Received > 0 {
 				return Ignore
 			}
 			return Rethrow
 		}
-		if err.(*RequestErrWriteTimeout).WriteType == "UNLOGGED_BATCH" {
+		if t.WriteType == "UNLOGGED_BATCH" {
 			return Retry
 		}
 		return Rethrow
