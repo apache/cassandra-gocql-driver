@@ -182,6 +182,7 @@ func TestBatchBasicAPI(t *testing.T) {
 
 	s.pool = cfg.PoolConfig.buildPool(s)
 
+	// Test UnloggedBatch
 	b := s.NewBatch(UnloggedBatch)
 	if b.Type != UnloggedBatch {
 		t.Fatalf("expceted batch.Type to be '%v', got '%v'", UnloggedBatch, b.Type)
@@ -189,16 +190,19 @@ func TestBatchBasicAPI(t *testing.T) {
 		t.Fatalf("expceted batch.RetryPolicy to be '%v', got '%v'", cfg.RetryPolicy, b.rt)
 	}
 
+	// Test LoggedBatch
 	b = NewBatch(LoggedBatch)
 	if b.Type != LoggedBatch {
 		t.Fatalf("expected batch.Type to be '%v', got '%v'", LoggedBatch, b.Type)
 	}
 
+	// Test attempts
 	b.attempts = 1
 	if b.Attempts() != 1 {
 		t.Fatalf("expceted batch.Attempts() to return %v, got %v", 1, b.Attempts())
 	}
 
+	// Test latency
 	if b.Latency() != 0 {
 		t.Fatalf("expected batch.Latency() to be 0, got %v", b.Latency())
 	}
@@ -208,11 +212,13 @@ func TestBatchBasicAPI(t *testing.T) {
 		t.Fatalf("expected batch.Latency() to return %v, got %v", 4, b.Latency())
 	}
 
+	// Test Consistency
 	b.Cons = One
 	if b.GetConsistency() != One {
 		t.Fatalf("expected batch.GetConsistency() to return 'One', got '%s'", b.GetConsistency())
 	}
 
+	// Test batch.Query()
 	b.Query("test", 1)
 	if b.Entries[0].Stmt != "test" {
 		t.Fatalf("expected batch.Entries[0].Statement to be 'test', got '%v'", b.Entries[0].Stmt)
@@ -229,6 +235,8 @@ func TestBatchBasicAPI(t *testing.T) {
 	} else if b.Entries[1].binding == nil {
 		t.Fatal("expected batch.Entries[1].binding to be defined, got nil")
 	}
+
+	// Test RetryPolicy
 	r := &SimpleRetryPolicy{NumRetries: 4}
 
 	b.RetryPolicy(r)

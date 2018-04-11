@@ -182,6 +182,12 @@ func assertTrue(t *testing.T, description string, value bool) {
 	}
 }
 
+func assertFalse(t *testing.T, description string, value bool) {
+	if value {
+		t.Errorf("expected %s to be true", description)
+	}
+}
+
 func assertEqual(t *testing.T, description string, expected, actual interface{}) {
 	if expected != actual {
 		t.Errorf("expected %s to be (%+v) but was (%+v) instead", description, expected, actual)

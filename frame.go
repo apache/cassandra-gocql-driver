@@ -1519,8 +1519,6 @@ func (f *framer) writeExecuteFrame(streamID int, preparedID []byte, params *quer
 	return f.finishWrite()
 }
 
-// TODO: can we replace BatchStatemt with batchStatement? As they prety much
-// duplicate each other
 type batchStatment struct {
 	preparedID []byte
 	statement  string

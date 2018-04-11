@@ -2,9 +2,9 @@ package gocql
 
 import (
 	"net"
+	"reflect"
 	"testing"
 	"time"
-	"reflect"
 )
 
 func TestNewCluster_Defaults(t *testing.T) {
