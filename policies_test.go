@@ -302,6 +302,65 @@ func TestExponentialBackoffPolicy(t *testing.T) {
 	}
 }
 
+func TestDowngradingConsistencyRetryPolicy(t *testing.T) {
+
+	q := &Query{cons: LocalQuorum}
+
+	rewt0 := &RequestErrWriteTimeout{
+		Received:  0,
+		WriteType: "SIMPLE",
+	}
+
+	rewt1 := &RequestErrWriteTimeout{
+		Received:  1,
+		WriteType: "BATCH",
+	}
+
+	rewt2 := &RequestErrWriteTimeout{
+		WriteType: "UNLOGGED_BATCH",
+	}
+
+	rert := &RequestErrReadTimeout{}
+
+	reu0 := &RequestErrUnavailable{
+		Alive: 0,
+	}
+
+	reu1 := &RequestErrUnavailable{
+		Alive: 1,
+	}
+
+	// this should allow a total of 3 tries.
+	consistencyLevels := []Consistency{Three, Two, One}
+	rt := &DowngradingConsistencyRetryPolicy{ConsistencyLevelsToTry: consistencyLevels}
+	cases := []struct {
+		attempts  int
+		allow     bool
+		err       error
+		retryType RetryType
+	}{
+		{0, true, rewt0, Rethrow},
+		{3, true, rewt1, Ignore},
+		{1, true, rewt2, Retry},
+		{2, true, rert, Retry},
+		{4, false, reu0, Rethrow},
+		{16, false, reu1, Retry},
+	}
+
+	for _, c := range cases {
+		q.attempts = c.attempts
+		if c.retryType != rt.GetRetryType(c.err) {
+			t.Fatalf("retry type should be %v", c.retryType)
+		}
+		if c.allow && !rt.Attempt(q) {
+			t.Fatalf("should allow retry after %d attempts", c.attempts)
+		}
+		if !c.allow && rt.Attempt(q) {
+			t.Fatalf("should not allow retry after %d attempts", c.attempts)
+		}
+	}
+}
+
 func TestHostPolicy_DCAwareRR(t *testing.T) {
 	p := DCAwareRoundRobinPolicy("local")
 

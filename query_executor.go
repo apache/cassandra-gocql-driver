@@ -50,9 +50,33 @@ func (q *queryExecutor) executeQuery(qry ExecutableQuery) (*Iter, error) {
 		}
 
 		iter = q.attemptQuery(qry, conn)
-
 		// Update host
 		hostResponse.Mark(iter.err)
+
+		if rt == nil {
+			break
+		}
+
+		switch rt.GetRetryType(iter.err) {
+		case Retry:
+			for rt.Attempt(qry) {
+				iter = q.attemptQuery(qry, conn)
+				hostResponse.Mark(iter.err)
+				if iter.err == nil {
+					iter.host = host
+					return iter, nil
+				}
+				if rt.GetRetryType(iter.err) != Retry {
+					break
+				}
+			}
+		case Rethrow:
+			return nil, iter.err
+		case Ignore:
+			return iter, nil
+		case RetryNextHost:
+		default:
+		}
 
 		// Exit for loop if the query was successful
 		if iter.err == nil {
@@ -60,7 +84,7 @@ func (q *queryExecutor) executeQuery(qry ExecutableQuery) (*Iter, error) {
 			return iter, nil
 		}
 
-		if rt == nil || !rt.Attempt(qry) {
+		if !rt.Attempt(qry) {
 			// What do here? Should we just return an error here?
 			break
 		}
