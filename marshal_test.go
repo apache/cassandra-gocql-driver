@@ -4,6 +4,7 @@ package gocql
 
 import (
 	"bytes"
+	"encoding"
 	"math"
 	"math/big"
 	"net"
@@ -56,6 +57,13 @@ var marshalTests = []struct {
 		NativeType{proto: 2, typ: TypeVarchar},
 		[]byte("HELLO WORLD"),
 		CustomString("hello world"),
+		nil,
+		nil,
+	},
+	{
+		NativeType{proto: 2, typ: TypeVarchar},
+		[]byte("Hello World"),
+		CustomString2("hello world"),
 		nil,
 		nil,
 	},
@@ -734,6 +742,16 @@ var marshalTests = []struct {
 	},
 	{
 		NativeType{proto: 2, typ: TypeVarchar},
+		[]byte("Hello World"),
+		func() *CustomString2 {
+			customString := CustomString2("hello world")
+			return &customString
+		}(),
+		nil,
+		nil,
+	},
+	{
+		NativeType{proto: 2, typ: TypeVarchar},
 		[]byte(nil),
 		(*CustomString)(nil),
 		nil,
@@ -1131,6 +1149,35 @@ func (c *CustomString) UnmarshalCQL(info TypeInfo, data []byte) error {
 	*c = CustomString(strings.ToLower(string(data)))
 	return nil
 }
+func (c CustomString) MarshalText() ([]byte, error) {
+	return []byte(strings.Title(string(c))), nil
+}
+func (c *CustomString) UnmarshalText(data []byte) error {
+	*c = CustomString(strings.ToLower(string(data)))
+	return nil
+}
+
+var (
+	_ encoding.TextMarshaler   = CustomString("")
+	_ encoding.TextUnmarshaler = new(CustomString)
+	_ Marshaler                = CustomString("")
+	_ Unmarshaler              = new(CustomString)
+)
+
+type CustomString2 string
+
+func (c2 CustomString2) MarshalText() ([]byte, error) {
+	return []byte(strings.Title(string(c2))), nil
+}
+func (c2 *CustomString2) UnmarshalText(data []byte) error {
+	*c2 = CustomString2(strings.ToLower(string(data)))
+	return nil
+}
+
+var (
+	_ encoding.TextMarshaler   = CustomString2("")
+	_ encoding.TextUnmarshaler = new(CustomString2)
+)
 
 type MyString string
 
