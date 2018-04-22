@@ -8,6 +8,8 @@ import (
 	"errors"
 	"net"
 	"time"
+
+	"github.com/rs/xstats"
 )
 
 // PoolConfig configures the connection pool used by the driver, it defaults to
@@ -126,6 +128,10 @@ type ClusterConfig struct {
 
 	// internal config for testing
 	disableControlConn bool
+
+	// XStater is an interface to send stats. There are implementations that
+	// support backends such as statsd, dogstatsd, telegraf, and more.
+	Stater xstats.XStater
 }
 
 // NewCluster generates a new config for the default cluster implementation.

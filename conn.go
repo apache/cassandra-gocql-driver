@@ -181,8 +181,11 @@ func (s *Session) dial(ip net.IP, port int, cfg *ConnConfig, errorHandler ConnEr
 	}
 
 	if err != nil {
+		s.stater.Count("gocql.conn.open.failure", 1, fmt.Sprintf("addr:%s", addr))
 		return nil, err
 	}
+
+	s.stater.Count("gocql.conn.open.success", 1, fmt.Sprintf("addr:%s", addr))
 
 	c := &Conn{
 		conn:              conn,
@@ -415,6 +418,7 @@ func (c *Conn) closeWithError(err error) {
 }
 
 func (c *Conn) close() error {
+	go c.session.stater.Count("gocql.conn.close", 1, fmt.Sprintf("addr:%s", c.addr))
 	return c.conn.Close()
 }
 
@@ -1213,7 +1217,6 @@ func (c *Conn) localHostInfo() (*HostInfo, error) {
 	if err != nil {
 		return nil, err
 	}
-
 	port := c.conn.RemoteAddr().(*net.TCPAddr).Port
 
 	// TODO(zariel): avoid doing this here

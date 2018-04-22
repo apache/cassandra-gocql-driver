@@ -18,6 +18,8 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/rs/xstats"
+
 	"github.com/gocql/gocql/internal/lru"
 )
 
@@ -69,6 +71,9 @@ type Session struct {
 
 	closeMu  sync.RWMutex
 	isClosed bool
+
+	// send stats
+	stater xstats.XStater
 }
 
 var queryPool = &sync.Pool{
@@ -146,6 +151,12 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 		return nil, fmt.Errorf("gocql: unable to create session: %v", err)
 	}
 	s.connCfg = connCfg
+
+	if cfg.Stater == nil {
+		s.stater = &NoopXStater{}
+	} else {
+		s.stater = cfg.Stater
+	}
 
 	if err := s.init(); err != nil {
 		s.Close()
