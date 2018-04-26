@@ -161,6 +161,16 @@ func NewCluster(hosts ...string) *ClusterConfig {
 	return cfg
 }
 
+
+// Manage the default idempotence values
+func (cfg *ClusterConfig) IsIdempotent() bool {
+	return cfg.defaultIdempotence
+}
+
+func (cfg *ClusterConfig) SetIdempotence(value bool) {
+	cfg.defaultIdempotence = value
+}
+
 // CreateSession initializes the cluster based on this config and returns a
 // session object that can be used to interact with the database.
 func (cfg *ClusterConfig) CreateSession() (*Session, error) {

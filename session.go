@@ -324,6 +324,7 @@ func (s *Session) Query(stmt string, values ...interface{}) *Query {
 	qry.rt = s.cfg.RetryPolicy
 	qry.serialCons = s.cfg.SerialConsistency
 	qry.defaultTimestamp = s.cfg.DefaultTimestamp
+	qry.idempotent = s.cfg.defaultIdempotence
 	s.mu.RUnlock()
 	return qry
 }
