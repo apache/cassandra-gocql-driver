@@ -54,7 +54,7 @@ type ClusterConfig struct {
 	Compressor         Compressor         // compression algorithm (default: nil)
 	Authenticator      Authenticator      // authenticator (default: nil)
 	RetryPolicy        RetryPolicy        // Default retry policy to use for queries (default: 0)
-	ConvictionPolicy   ConvictionPolicy   // Decide whether to mark node as down based on the error (default: SimpleConvictionPolicy)
+	ConvictionPolicy   ConvictionPolicy   // Decide whether to mark host as down based on the error and host info (default: SimpleConvictionPolicy)
 	ReconnectionPolicy ReconnectionPolicy // Default reconnection policy to use for reconnecting before trying to mark host as down (default: see below)
 	SocketKeepalive    time.Duration      // The keepalive period to use, enabled if > 0 (default: 0)
 	MaxPreparedStmts   int                // Sets the maximum cache size for prepared statements globally for gocql (default: 1000)

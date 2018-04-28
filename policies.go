@@ -791,14 +791,17 @@ func (d *dcAwareRR) Pick(q ExecutableQuery) NextHost {
 	}
 }
 
+// ConvictionPolicy interface is used by gocql to determine if a host should be
+// marked as DOWN based on the error and host info
 type ConvictionPolicy interface {
 	// Implementations should return `true` if the host should be convicted, `false` otherwise.
 	AddFailure(error error, host *HostInfo) bool
 	//Implementations should clear out any convictions or state regarding the host.
-	Reset()
+	Reset(host *HostInfo)
 }
 
-//return true on any error
+// SimpleConvictionPolicy implements a ConvictionPolicy which convicts all hosts
+// regardless of error
 type SimpleConvictionPolicy struct {
 }
 
@@ -806,7 +809,8 @@ func (e *SimpleConvictionPolicy) AddFailure(error error, host *HostInfo) bool {
 	return true
 }
 
-func (e *SimpleConvictionPolicy) Reset() {}
+func (e *SimpleConvictionPolicy) Reset(host *HostInfo) {}
+
 // ReconnectionPolicy interface is used by gocql to determine if reconnection
 // can be attempted after connection error. The interface allows gocql users
 // to implement their own logic to determine how to attempt reconnection.
