@@ -311,12 +311,14 @@ func (s *Session) SetTrace(trace Tracer) {
 // value before the query is executed. Query is automatically prepared
 // if it has not previously been executed.
 func (s *Session) Query(stmt string, values ...interface{}) *Query {
-	s.mu.RLock()
+	// these can be done outside the lock to reduce lock holding time.
 	qry := queryPool.Get().(*Query)
 	qry.stmt = stmt
 	qry.values = values
-	qry.cons = s.cons
 	qry.session = s
+
+	s.mu.RLock()
+	qry.cons = s.cons
 	qry.pageSize = s.pageSize
 	qry.trace = s.trace
 	qry.observer = s.queryObserver
