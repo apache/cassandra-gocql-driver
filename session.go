@@ -316,7 +316,6 @@ func (s *Session) Query(stmt string, values ...interface{}) *Query {
 	qry.stmt = stmt
 	qry.values = values
 	qry.defaultsFromSession()
-
 	return qry
 }
 
@@ -665,6 +664,7 @@ type Query struct {
 	defaultTimestampValue int64
 	disableSkipMetadata   bool
 	context               context.Context
+	idempotent            bool
 
 	disableAutoPage bool
 }
@@ -681,6 +681,7 @@ func (q *Query) defaultsFromSession() {
 	q.rt = s.cfg.RetryPolicy
 	q.serialCons = s.cfg.SerialConsistency
 	q.defaultTimestamp = s.cfg.DefaultTimestamp
+  q.idempotent = s.cfg.DefaultIdempotence
 	s.mu.RUnlock()
 }
 
@@ -916,6 +917,17 @@ func (q *Query) Prefetch(p float64) *Query {
 // RetryPolicy sets the policy to use when retrying the query.
 func (q *Query) RetryPolicy(r RetryPolicy) *Query {
 	q.rt = r
+	return q
+}
+
+func (q *Query) IsIdempotent() bool {
+	return q.idempotent
+}
+
+// Idempontent marks the query as being idempontent or not depending on
+// the value.
+func (q *Query) Idempontent(value bool) *Query {
+	q.idempotent = value
 	return q
 }
 
