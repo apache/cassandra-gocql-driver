@@ -313,9 +313,9 @@ func (s *Session) SetTrace(trace Tracer) {
 func (s *Session) Query(stmt string, values ...interface{}) *Query {
 	// these can be done outside the lock to reduce lock holding time.
 	qry := queryPool.Get().(*Query)
+	qry.session = s
 	qry.stmt = stmt
 	qry.values = values
-	qry.session = s
 
 	s.mu.RLock()
 	qry.cons = s.cons
@@ -344,10 +344,21 @@ type QueryInfo struct {
 // During execution, the meta data of the prepared query will be routed to the
 // binding callback, which is responsible for producing the query argument values.
 func (s *Session) Bind(stmt string, b func(q *QueryInfo) ([]interface{}, error)) *Query {
+	// these can be done outside the lock to reduce lock holding time.
+	qry := new(Query)
+	qry.session = s
+	qry.stmt = stmt
+	qry.binding = b
+
 	s.mu.RLock()
-	qry := &Query{stmt: stmt, binding: b, cons: s.cons,
-		session: s, pageSize: s.pageSize, trace: s.trace, observer: s.queryObserver,
-		prefetch: s.prefetch, rt: s.cfg.RetryPolicy}
+	qry.cons = s.cons
+	qry.pageSize = s.pageSize
+	qry.trace = s.trace
+	qry.observer = s.queryObserver
+	qry.prefetch = s.prefetch
+	qry.rt = s.cfg.RetryPolicy
+	qry.serialCons = s.cfg.SerialConsistency
+	qry.defaultTimestamp = s.cfg.DefaultTimestamp
 	s.mu.RUnlock()
 	return qry
 }
