@@ -311,22 +311,12 @@ func (s *Session) SetTrace(trace Tracer) {
 // value before the query is executed. Query is automatically prepared
 // if it has not previously been executed.
 func (s *Session) Query(stmt string, values ...interface{}) *Query {
-	// these can be done outside the lock to reduce lock holding time.
 	qry := queryPool.Get().(*Query)
 	qry.session = s
 	qry.stmt = stmt
 	qry.values = values
+	qry.defaultsFromSession()
 
-	s.mu.RLock()
-	qry.cons = s.cons
-	qry.pageSize = s.pageSize
-	qry.trace = s.trace
-	qry.observer = s.queryObserver
-	qry.prefetch = s.prefetch
-	qry.rt = s.cfg.RetryPolicy
-	qry.serialCons = s.cfg.SerialConsistency
-	qry.defaultTimestamp = s.cfg.DefaultTimestamp
-	s.mu.RUnlock()
 	return qry
 }
 
@@ -344,22 +334,11 @@ type QueryInfo struct {
 // During execution, the meta data of the prepared query will be routed to the
 // binding callback, which is responsible for producing the query argument values.
 func (s *Session) Bind(stmt string, b func(q *QueryInfo) ([]interface{}, error)) *Query {
-	// these can be done outside the lock to reduce lock holding time.
 	qry := new(Query)
 	qry.session = s
 	qry.stmt = stmt
 	qry.binding = b
-
-	s.mu.RLock()
-	qry.cons = s.cons
-	qry.pageSize = s.pageSize
-	qry.trace = s.trace
-	qry.observer = s.queryObserver
-	qry.prefetch = s.prefetch
-	qry.rt = s.cfg.RetryPolicy
-	qry.serialCons = s.cfg.SerialConsistency
-	qry.defaultTimestamp = s.cfg.DefaultTimestamp
-	s.mu.RUnlock()
+	qry.defaultsFromSession()
 	return qry
 }
 
@@ -688,6 +667,21 @@ type Query struct {
 	context               context.Context
 
 	disableAutoPage bool
+}
+
+func (q *Query) defaultsFromSession() {
+	s := q.session
+
+	s.mu.RLock()
+	q.cons = s.cons
+	q.pageSize = s.pageSize
+	q.trace = s.trace
+	q.observer = s.queryObserver
+	q.prefetch = s.prefetch
+	q.rt = s.cfg.RetryPolicy
+	q.serialCons = s.cfg.SerialConsistency
+	q.defaultTimestamp = s.cfg.DefaultTimestamp
+	s.mu.RUnlock()
 }
 
 // String implements the stringer interface.
