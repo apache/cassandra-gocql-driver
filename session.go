@@ -1053,25 +1053,7 @@ func (q *Query) Release() {
 
 // reset zeroes out all fields of a query so that it can be safely pooled.
 func (q *Query) reset() {
-	q.stmt = ""
-	q.values = nil
-	q.cons = 0
-	q.pageSize = 0
-	q.routingKey = nil
-	q.routingKeyBuffer = nil
-	q.pageState = nil
-	q.prefetch = 0
-	q.trace = nil
-	q.session = nil
-	q.rt = nil
-	q.binding = nil
-	q.attempts = 0
-	q.totalLatency = 0
-	q.serialCons = 0
-	q.defaultTimestamp = false
-	q.disableSkipMetadata = false
-	q.disableAutoPage = false
-	q.context = nil
+	*q = Query{}
 }
 
 // Iter represents an iterator that can be used to iterate over all rows that
