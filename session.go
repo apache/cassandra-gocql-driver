@@ -311,21 +311,11 @@ func (s *Session) SetTrace(trace Tracer) {
 // value before the query is executed. Query is automatically prepared
 // if it has not previously been executed.
 func (s *Session) Query(stmt string, values ...interface{}) *Query {
-	s.mu.RLock()
 	qry := queryPool.Get().(*Query)
+	qry.session = s
 	qry.stmt = stmt
 	qry.values = values
-	qry.cons = s.cons
-	qry.session = s
-	qry.pageSize = s.pageSize
-	qry.trace = s.trace
-	qry.observer = s.queryObserver
-	qry.prefetch = s.prefetch
-	qry.rt = s.cfg.RetryPolicy
-	qry.serialCons = s.cfg.SerialConsistency
-	qry.defaultTimestamp = s.cfg.DefaultTimestamp
-	qry.idempotent = s.cfg.DefaultIdempotence
-	s.mu.RUnlock()
+	qry.defaultsFromSession()
 	return qry
 }
 
@@ -343,11 +333,11 @@ type QueryInfo struct {
 // During execution, the meta data of the prepared query will be routed to the
 // binding callback, which is responsible for producing the query argument values.
 func (s *Session) Bind(stmt string, b func(q *QueryInfo) ([]interface{}, error)) *Query {
-	s.mu.RLock()
-	qry := &Query{stmt: stmt, binding: b, cons: s.cons,
-		session: s, pageSize: s.pageSize, trace: s.trace, observer: s.queryObserver,
-		prefetch: s.prefetch, rt: s.cfg.RetryPolicy}
-	s.mu.RUnlock()
+	qry := queryPool.Get().(*Query)
+	qry.session = s
+	qry.stmt = stmt
+	qry.binding = b
+	qry.defaultsFromSession()
 	return qry
 }
 
@@ -677,6 +667,22 @@ type Query struct {
 	idempotent            bool
 
 	disableAutoPage bool
+}
+
+func (q *Query) defaultsFromSession() {
+	s := q.session
+
+	s.mu.RLock()
+	q.cons = s.cons
+	q.pageSize = s.pageSize
+	q.trace = s.trace
+	q.observer = s.queryObserver
+	q.prefetch = s.prefetch
+	q.rt = s.cfg.RetryPolicy
+	q.serialCons = s.cfg.SerialConsistency
+	q.defaultTimestamp = s.cfg.DefaultTimestamp
+  q.idempotent = s.cfg.DefaultIdempotence
+	s.mu.RUnlock()
 }
 
 // String implements the stringer interface.
@@ -1064,25 +1070,7 @@ func (q *Query) Release() {
 
 // reset zeroes out all fields of a query so that it can be safely pooled.
 func (q *Query) reset() {
-	q.stmt = ""
-	q.values = nil
-	q.cons = 0
-	q.pageSize = 0
-	q.routingKey = nil
-	q.routingKeyBuffer = nil
-	q.pageState = nil
-	q.prefetch = 0
-	q.trace = nil
-	q.session = nil
-	q.rt = nil
-	q.binding = nil
-	q.attempts = 0
-	q.totalLatency = 0
-	q.serialCons = 0
-	q.defaultTimestamp = false
-	q.disableSkipMetadata = false
-	q.disableAutoPage = false
-	q.context = nil
+	*q = Query{}
 }
 
 // Iter represents an iterator that can be used to iterate over all rows that
