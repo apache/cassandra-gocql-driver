@@ -324,6 +324,7 @@ func (s *Session) Query(stmt string, values ...interface{}) *Query {
 	qry.rt = s.cfg.RetryPolicy
 	qry.serialCons = s.cfg.SerialConsistency
 	qry.defaultTimestamp = s.cfg.DefaultTimestamp
+	qry.idempotent = s.cfg.defaultIdempotence
 	s.mu.RUnlock()
 	return qry
 }
@@ -673,6 +674,7 @@ type Query struct {
 	defaultTimestampValue int64
 	disableSkipMetadata   bool
 	context               context.Context
+	idempotent            bool
 
 	disableAutoPage bool
 }
@@ -1070,6 +1072,14 @@ func (q *Query) reset() {
 	q.disableSkipMetadata = false
 	q.disableAutoPage = false
 	q.context = nil
+}
+
+func (q *Query) IsIdempotent() bool {
+	return q.idempotent
+}
+
+func (q *Query) SetIdempotence(value bool) {
+	q.idempotent = value
 }
 
 // Iter represents an iterator that can be used to iterate over all rows that

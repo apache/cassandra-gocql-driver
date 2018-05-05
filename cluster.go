@@ -127,6 +127,9 @@ type ClusterConfig struct {
 
 	// internal config for testing
 	disableControlConn bool
+
+	// Default idempotence for queries
+	defaultIdempotence bool
 }
 
 // NewCluster generates a new config for the default cluster implementation.
@@ -155,8 +158,19 @@ func NewCluster(hosts ...string) *ClusterConfig {
 		ReconnectInterval:      60 * time.Second,
 		ConvictionPolicy:       &SimpleConvictionPolicy{},
 		ReconnectionPolicy:     &ConstantReconnectionPolicy{MaxRetries: 3, Interval: 1 * time.Second},
+		defaultIdempotence:     false,
 	}
 	return cfg
+}
+
+
+// Manage the default idempotence values
+func (cfg *ClusterConfig) IsIdempotent() bool {
+	return cfg.defaultIdempotence
+}
+
+func (cfg *ClusterConfig) SetIdempotence(value bool) {
+	cfg.defaultIdempotence = value
 }
 
 // CreateSession initializes the cluster based on this config and returns a
