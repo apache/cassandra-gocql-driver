@@ -6,6 +6,7 @@ package gocql
 
 import (
 	"bytes"
+	"encoding"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -60,6 +61,13 @@ func Marshal(info TypeInfo, value interface{}) ([]byte, error) {
 
 	if v, ok := value.(Marshaler); ok {
 		return v.MarshalCQL(info)
+	}
+
+	if v, ok := value.(encoding.TextMarshaler); ok {
+		switch info.Type() {
+		case TypeVarchar, TypeText:
+			return v.MarshalText()
+		}
 	}
 
 	switch info.Type() {
@@ -120,6 +128,13 @@ func Unmarshal(info TypeInfo, data []byte, value interface{}) error {
 
 	if isNullableValue(value) {
 		return unmarshalNullable(info, data, value)
+	}
+
+	if v, ok := value.(encoding.TextUnmarshaler); ok {
+		switch info.Type() {
+		case TypeVarchar, TypeText:
+			return v.UnmarshalText(data)
+		}
 	}
 
 	switch info.Type() {
