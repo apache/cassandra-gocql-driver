@@ -334,7 +334,7 @@ type QueryInfo struct {
 // During execution, the meta data of the prepared query will be routed to the
 // binding callback, which is responsible for producing the query argument values.
 func (s *Session) Bind(stmt string, b func(q *QueryInfo) ([]interface{}, error)) *Query {
-	qry := new(Query)
+	qry := queryPool.Get().(*Query)
 	qry.session = s
 	qry.stmt = stmt
 	qry.binding = b
