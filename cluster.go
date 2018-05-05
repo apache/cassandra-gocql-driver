@@ -125,6 +125,9 @@ type ClusterConfig struct {
 	// Use it to collect metrics / stats from batche queries by providing an implementation of BatchObserver.
 	BatchObserver BatchObserver
 
+	// Default idempotence for queries
+	DefaultIdempotence bool
+
 	// internal config for testing
 	disableControlConn bool
 }
