@@ -608,10 +608,9 @@ func TestConnClosedBlocked(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// This will block indefintaly if #664 is not fixed
 	err = conn.executeQuery(&Query{stmt: "void"}).Close()
-	if !strings.HasSuffix(err.Error(), "use of closed network connection") {
-		t.Fatalf("expected to get use of closed networking connection error got: %v\n", err)
+	if !strings.HasSuffix(err.Error(), "connection was closed") {
+		t.Fatalf("expected connection was closed error got: %v\n", err)
 	}
 }
 
