@@ -403,9 +403,14 @@ func (c *Conn) closeWithError(err error) {
 	}
 
 	// if error was nil then unblock the quit channel
-	close(c.quit)
+	if err == nil {
+		close(c.quit)
+	}
+
+	// Now close the connection and save the error
 	cerr := c.close()
 
+	// Handle the original error or the channel-closure error
 	if err != nil {
 		c.errorHandler.HandleError(c, err, true)
 	} else if cerr != nil {
