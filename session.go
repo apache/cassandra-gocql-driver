@@ -681,8 +681,13 @@ func (q *Query) defaultsFromSession() {
 	q.rt = s.cfg.RetryPolicy
 	q.serialCons = s.cfg.SerialConsistency
 	q.defaultTimestamp = s.cfg.DefaultTimestamp
-  q.idempotent = s.cfg.DefaultIdempotence
+	q.idempotent = s.cfg.DefaultIdempotence
 	s.mu.RUnlock()
+}
+
+// Statement returns the statement that was used to generate this query.
+func (q Query) Statement() string {
+	return q.stmt
 }
 
 // String implements the stringer interface.
