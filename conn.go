@@ -123,10 +123,11 @@ var TimeoutLimit int64 = 10
 // queries, but users are usually advised to use a more reliable, higher
 // level API.
 type Conn struct {
-	conn    net.Conn
-	r       *bufio.Reader
-	timeout time.Duration
-	cfg     *ConnConfig
+	conn          net.Conn
+	r             *bufio.Reader
+	timeout       time.Duration
+	cfg           *ConnConfig
+	frameObserver FrameHeaderObserver
 
 	headerBuf [maxFrameHeaderSize]byte
 
@@ -187,20 +188,21 @@ func (s *Session) dial(host *HostInfo, cfg *ConnConfig, errorHandler ConnErrorHa
 	}
 
 	c := &Conn{
-		conn:         conn,
-		r:            bufio.NewReader(conn),
-		cfg:          cfg,
-		calls:        make(map[int]*callReq),
-		timeout:      cfg.Timeout,
-		version:      uint8(cfg.ProtoVersion),
-		addr:         conn.RemoteAddr().String(),
-		errorHandler: errorHandler,
-		compressor:   cfg.Compressor,
-		auth:         cfg.Authenticator,
-		quit:         make(chan struct{}),
-		session:      s,
-		streams:      streams.New(cfg.ProtoVersion),
-		host:         host,
+		conn:          conn,
+		r:             bufio.NewReader(conn),
+		cfg:           cfg,
+		calls:         make(map[int]*callReq),
+		timeout:       cfg.Timeout,
+		version:       uint8(cfg.ProtoVersion),
+		addr:          conn.RemoteAddr().String(),
+		errorHandler:  errorHandler,
+		compressor:    cfg.Compressor,
+		auth:          cfg.Authenticator,
+		quit:          make(chan struct{}),
+		session:       s,
+		streams:       streams.New(cfg.ProtoVersion),
+		host:          host,
+		frameObserver: s.frameObserver,
 	}
 
 	if cfg.Keepalive > 0 {
@@ -459,10 +461,24 @@ func (c *Conn) recv() error {
 		c.conn.SetReadDeadline(time.Time{})
 	}
 
+	headStartTime := time.Now()
 	// were just reading headers over and over and copy bodies
 	head, err := readHeader(c.r, c.headerBuf[:])
+	headEndTime := time.Now()
 	if err != nil {
 		return err
+	}
+
+	if c.frameObserver != nil {
+		c.frameObserver.ObserveFrameHeader(context.Background(), ObservedFrameHeader{
+			Version: byte(head.version),
+			Flags:   head.flags,
+			Stream:  int16(head.stream),
+			Opcode:  byte(head.op),
+			Length:  int32(head.length),
+			Start:   headStartTime,
+			End:     headEndTime,
+		})
 	}
 
 	if head.stream > c.streams.NumStreams {
