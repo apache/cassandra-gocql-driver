@@ -1107,9 +1107,8 @@ func (c *Conn) executeBatch(batch *Batch) *Iter {
 			c.session.stmtsLRU.remove(key)
 		}
 
-		framerPool.Put(framer)
-
 		if found {
+			framerPool.Put(framer)
 			return c.executeBatch(batch)
 		} else {
 			return &Iter{err: x, framer: framer}
