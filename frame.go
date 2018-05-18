@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"context"
 )
 
 type unsetColumn struct{}
@@ -355,6 +356,27 @@ var framerPool = sync.Pool{
 	},
 }
 
+type ObservedFrameHeader struct {
+	Version byte
+	Flags byte
+	Stream int16
+	Opcode byte
+	Length int32
+
+	// StartHeader is the time we started reading the frame header off the network connection.
+	Start time.Time
+	// EndHeader is the time we finished reading the frame header off the network connection.
+	End time.Time
+}
+
+// FrameHeaderObserver is the interface implemented by frame observers / stat collectors.
+//
+// Experimental, this interface and use may change
+type FrameHeaderObserver interface {
+	// ObserveFrameHeader gets called on every received frame header.
+	ObserveFrameHeader(context.Context, ObservedFrameHeader)
+}
+
 // a framer is responsible for reading, writing and parsing frames on a single stream
 type framer struct {
 	r io.Reader
@@ -458,6 +480,7 @@ func readHeader(r io.Reader, p []byte) (head frameHeader, err error) {
 		head.op = frameOp(p[3])
 		head.length = int(readInt(p[4:]))
 	}
+
 
 	return head, nil
 }

@@ -39,6 +39,7 @@ type Session struct {
 	trace               Tracer
 	queryObserver       QueryObserver
 	batchObserver       BatchObserver
+	frameObserver       FrameHeaderObserver
 	hostSource          *ringDescriber
 	stmtsLRU            *preparedLRU
 
@@ -138,6 +139,7 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 
 	s.queryObserver = cfg.QueryObserver
 	s.batchObserver = cfg.BatchObserver
+	s.frameObserver = cfg.FrameHeaderObserver
 
 	//Check the TLS Config before trying to connect to anything external
 	connCfg, err := connConfig(&s.cfg)
