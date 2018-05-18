@@ -123,10 +123,11 @@ var TimeoutLimit int64 = 10
 // queries, but users are usually advised to use a more reliable, higher
 // level API.
 type Conn struct {
-	conn    net.Conn
-	r       *bufio.Reader
-	timeout time.Duration
-	cfg     *ConnConfig
+	conn          net.Conn
+	r             *bufio.Reader
+	timeout       time.Duration
+	cfg           *ConnConfig
+	frameObserver FrameHeaderObserver
 
 	headerBuf [maxFrameHeaderSize]byte
 
@@ -199,6 +200,7 @@ func (s *Session) dial(ip net.IP, port int, cfg *ConnConfig, errorHandler ConnEr
 		session:           s,
 		streams:           streams.New(cfg.ProtoVersion),
 		frameWriteArgChan: make(chan *callReq),
+		frameObserver:     s.frameObserver,
 	}
 
 	if cfg.Keepalive > 0 {
@@ -483,10 +485,24 @@ func (c *Conn) recv() error {
 		c.conn.SetReadDeadline(time.Time{})
 	}
 
+	headStartTime := time.Now()
 	// were just reading headers over and over and copy bodies
 	head, err := readHeader(c.r, c.headerBuf[:])
+	headEndTime := time.Now()
 	if err != nil {
 		return err
+	}
+
+	if c.frameObserver != nil {
+		c.frameObserver.ObserveFrameHeader(context.Background(), ObservedFrameHeader{
+			Version: byte(head.version),
+			Flags:   head.flags,
+			Stream:  int16(head.stream),
+			Opcode:  byte(head.op),
+			Length:  int32(head.length),
+			Start:   headStartTime,
+			End:     headEndTime,
+		})
 	}
 
 	if head.stream > c.streams.NumStreams {
