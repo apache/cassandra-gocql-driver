@@ -341,10 +341,12 @@ func (c *controlConn) reconnect(refreshring bool) {
 	if host != nil {
 		// try to connect to the old host
 		conn, err := c.session.connect(host, c)
-		if err != nil && c.session.cfg.ConvictionPolicy.AddFailure(err, host) {
+		if err != nil {
 			// host is dead
 			// TODO: this is replicated in a few places
-			c.session.handleNodeDown(host.ConnectAddress(), host.Port())
+			if c.session.cfg.ConvictionPolicy.AddFailure(err, host) {
+				c.session.handleNodeDown(host.ConnectAddress(), host.Port())
+			}
 		} else {
 			newConn = conn
 		}
