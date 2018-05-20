@@ -1311,7 +1311,6 @@ func (iter *Iter) Warnings() []string {
 func (iter *Iter) Close() error {
 	if atomic.CompareAndSwapInt32(&iter.closed, 0, 1) {
 		if iter.framer != nil {
-			framerPool.Put(iter.framer)
 			iter.framer = nil
 		}
 	}
