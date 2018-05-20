@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"sync/atomic"
 )
 
 type unsetColumn struct{}
@@ -351,6 +352,7 @@ var framerPool = sync.Pool{
 		return &framer{
 			wbuf:       make([]byte, defaultBufSize),
 			readBuffer: make([]byte, defaultBufSize),
+			inUse: 0,
 		}
 	},
 }
@@ -377,10 +379,18 @@ type framer struct {
 
 	rbuf []byte
 	wbuf []byte
+
+	inUse int64
 }
 
 func newFramer(r io.Reader, w io.Writer, compressor Compressor, version byte) *framer {
 	f := framerPool.Get().(*framer)
+
+	if atomic.AddInt64(&f.inUse, 1) != 1 {
+		panic("framer already in use")
+	}
+	defer atomic.AddInt64(&f.inUse, -1)
+
 	var flags byte
 	if compressor != nil {
 		flags |= flagCompress
@@ -695,6 +705,11 @@ func (f *framer) setLength(length int) {
 }
 
 func (f *framer) finishWrite() error {
+	if atomic.AddInt64(&f.inUse, 1) != 1 {
+		panic("framer already in use")
+	}
+	defer atomic.AddInt64(&f.inUse, -1)
+
 	if len(f.wbuf) > maxFrameSize {
 		// huge app frame, lets remove it so it doesn't bloat the heap
 		f.wbuf = make([]byte, defaultBufSize)
@@ -718,6 +733,7 @@ func (f *framer) finishWrite() error {
 	f.setLength(length)
 
 	_, err := f.w.Write(f.wbuf)
+
 	if err != nil {
 		return err
 	}
