@@ -346,12 +346,27 @@ func (f frameHeader) Header() frameHeader {
 
 const defaultBufSize = 128
 
-var framerPool = sync.Pool{
-	New: func() interface{} {
-		return &framer{
-			wbuf:       make([]byte, defaultBufSize),
-			readBuffer: make([]byte, defaultBufSize),
-		}
+type framerPoolType struct {
+	pool		sync.Pool
+}
+
+func (fp *framerPoolType) Get() *framer{
+	return fp.pool.Get().(*framer)
+}
+
+func (fp *framerPoolType) Put(f *framer){
+	<-f.writingDone
+	fp.pool.Put(f)
+}
+
+var framerPool = framerPoolType{
+	pool:  sync.Pool{
+		New: func() interface{} {
+			return &framer{
+				wbuf:       make([]byte, defaultBufSize),
+				readBuffer: make([]byte, defaultBufSize),
+			}
+		},
 	},
 }
 
@@ -377,10 +392,11 @@ type framer struct {
 
 	rbuf []byte
 	wbuf []byte
+	writingDone chan struct{}
 }
 
 func newFramer(r io.Reader, w io.Writer, compressor Compressor, version byte) *framer {
-	f := framerPool.Get().(*framer)
+	f := framerPool.Get()
 	var flags byte
 	if compressor != nil {
 		flags |= flagCompress
@@ -392,6 +408,9 @@ func newFramer(r io.Reader, w io.Writer, compressor Compressor, version byte) *f
 	if version > protoVersion2 {
 		headSize = 9
 	}
+
+	f.writingDone = make(chan struct{}, 1)
+	f.writingDone <- struct{}{}
 
 	f.compres = compressor
 	f.proto = version
@@ -655,6 +674,7 @@ func (f *framer) parseErrorFrame() frame {
 }
 
 func (f *framer) writeHeader(flags byte, op frameOp, stream int) {
+	<-f.writingDone
 	f.wbuf = f.wbuf[:0]
 	f.wbuf = append(f.wbuf,
 		f.proto,
@@ -695,6 +715,7 @@ func (f *framer) setLength(length int) {
 }
 
 func (f *framer) finishWrite() error {
+	defer func() { f.writingDone <- struct{}{} }()
 	if len(f.wbuf) > maxFrameSize {
 		// huge app frame, lets remove it so it doesn't bloat the heap
 		f.wbuf = make([]byte, defaultBufSize)
