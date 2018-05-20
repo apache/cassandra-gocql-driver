@@ -371,8 +371,6 @@ func (c *Conn) authenticateHandshake(ctx context.Context, authFrame *authenticat
 		default:
 			return fmt.Errorf("unknown frame response during authentication: %v", v)
 		}
-
-		framerPool.Put(framer)
 	}
 }
 
@@ -479,7 +477,6 @@ func (c *Conn) recv() error {
 		if err := framer.readFrame(&head); err != nil {
 			return err
 		}
-		defer framerPool.Put(framer)
 
 		frame, err := framer.parseFrame()
 		if err != nil {
@@ -746,8 +743,6 @@ func (c *Conn) prepareStatement(ctx context.Context, stmt string, tracer Tracer)
 	if flight.err != nil {
 		c.session.stmtsLRU.remove(stmtCacheKey)
 	}
-
-	framerPool.Put(framer)
 
 	return flight.preparedStatment, flight.err
 }
@@ -1046,7 +1041,6 @@ func (c *Conn) executeBatch(batch *Batch) *Iter {
 
 	switch x := resp.(type) {
 	case *resultVoidFrame:
-		framerPool.Put(framer)
 		return &Iter{}
 	case *RequestErrUnprepared:
 		stmt, found := stmts[string(x.StatementId)]
@@ -1056,7 +1050,6 @@ func (c *Conn) executeBatch(batch *Batch) *Iter {
 		}
 
 		if found {
-			framerPool.Put(framer)
 			return c.executeBatch(batch)
 		} else {
 			return &Iter{err: x, framer: framer}

@@ -12,7 +12,6 @@ import (
 	"net"
 	"runtime"
 	"strings"
-	"sync"
 	"time"
 )
 
@@ -346,15 +345,6 @@ func (f frameHeader) Header() frameHeader {
 
 const defaultBufSize = 128
 
-var framerPool = sync.Pool{
-	New: func() interface{} {
-		return &framer{
-			wbuf:       make([]byte, defaultBufSize),
-			readBuffer: make([]byte, defaultBufSize),
-		}
-	},
-}
-
 // a framer is responsible for reading, writing and parsing frames on a single stream
 type framer struct {
 	r io.Reader
@@ -380,7 +370,10 @@ type framer struct {
 }
 
 func newFramer(r io.Reader, w io.Writer, compressor Compressor, version byte) *framer {
-	f := framerPool.Get().(*framer)
+	f := &framer{
+		wbuf:       make([]byte, defaultBufSize),
+		readBuffer: make([]byte, defaultBufSize),
+	}
 	var flags byte
 	if compressor != nil {
 		flags |= flagCompress
