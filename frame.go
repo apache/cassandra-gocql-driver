@@ -756,13 +756,9 @@ func (w writeStartupFrame) String() string {
 	return fmt.Sprintf("[startup opts=%+v]", w.opts)
 }
 
-func (w *writeStartupFrame) writeFrame(framer *framer, streamID int) error {
-	return framer.writeStartupFrame(streamID, w.opts)
-}
-
-func (f *framer) writeStartupFrame(streamID int, options map[string]string) error {
+func (w *writeStartupFrame) writeFrame(f *framer, streamID int) error {
 	f.writeHeader(f.flags&^flagCompress, opStartup, streamID)
-	f.writeStringMap(options)
+	f.writeStringMap(w.opts)
 
 	return f.finishWrite()
 }
@@ -771,13 +767,9 @@ type writePrepareFrame struct {
 	statement string
 }
 
-func (w *writePrepareFrame) writeFrame(framer *framer, streamID int) error {
-	return framer.writePrepareFrame(streamID, w.statement)
-}
-
-func (f *framer) writePrepareFrame(stream int, statement string) error {
-	f.writeHeader(f.flags, opPrepare, stream)
-	f.writeLongString(statement)
+func (w *writePrepareFrame) writeFrame(f *framer, streamID int) error {
+	f.writeHeader(f.flags, opPrepare, streamID)
+	f.writeLongString(w.statement)
 	return f.finishWrite()
 }
 
