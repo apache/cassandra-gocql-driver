@@ -1789,7 +1789,7 @@ func (f *framer) readConsistency() Consistency {
 
 func (f *framer) readStringMap() map[string]string {
 	size := f.readShort()
-	m := make(map[string]string)
+	m := make(map[string]string, size)
 
 	for i := 0; i < int(size); i++ {
 		k := f.readString()
@@ -1802,7 +1802,7 @@ func (f *framer) readStringMap() map[string]string {
 
 func (f *framer) readBytesMap() map[string][]byte {
 	size := f.readShort()
-	m := make(map[string][]byte)
+	m := make(map[string][]byte, size)
 
 	for i := 0; i < int(size); i++ {
 		k := f.readString()
@@ -1815,7 +1815,7 @@ func (f *framer) readBytesMap() map[string][]byte {
 
 func (f *framer) readStringMultiMap() map[string][]string {
 	size := f.readShort()
-	m := make(map[string][]string)
+	m := make(map[string][]string, size)
 
 	for i := 0; i < int(size); i++ {
 		k := f.readString()
