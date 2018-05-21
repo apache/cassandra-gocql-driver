@@ -11,6 +11,10 @@ cache:
 matrix:
   fast_finish: true
 
+branches:
+  only:
+  - master
+
 env:
   global:
     - GOMAXPROCS=2
