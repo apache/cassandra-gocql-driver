@@ -711,13 +711,13 @@ func (c *Conn) sendFrame(ctx context.Context, call *callReq, timeoutCh <-chan ti
 	case c.frameWriteArgChan <- call:
 		return nil
 	case <-timeoutCh:
-		c.releaseStream(call.streamID)
 		close(call.timeout)
+		c.releaseStream(call.streamID)
 		c.handleTimeout()
 		return ErrTimeoutNoResponse
 	case <-ctxDone:
-		c.releaseStream(call.streamID)
 		close(call.timeout)
+		c.releaseStream(call.streamID)
 		return ctx.Err()
 	case <-c.quit:
 		return ErrConnectionClosed
