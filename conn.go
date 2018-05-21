@@ -403,9 +403,14 @@ func (c *Conn) closeWithError(err error) {
 	}
 
 	// if error was nil then unblock the quit channel
-	close(c.quit)
+	if err == nil {
+		close(c.quit)
+	}
+
+	// Now close the connection and save the error
 	cerr := c.close()
 
+	// Handle the original error or the channel-closure error
 	if err != nil {
 		c.errorHandler.HandleError(c, err, true)
 	} else if cerr != nil {
@@ -644,7 +649,6 @@ func (c *Conn) exec(ctx context.Context, req frameWriter, tracer Tracer) (*frame
 	if tracer != nil {
 		framer.trace()
 	}
-
 	timeoutCh := call.resetTimeout(c.timeout)
 	if err := c.sendFrame(ctx, call, timeoutCh); err != nil {
 		return nil, err
@@ -685,8 +689,9 @@ func (c *Conn) getResp(ctx context.Context, call *callReq, timeoutCh <-chan time
 				// been handed another error from another stream which caused the
 				// connection to close.
 				c.releaseStream(call.streamID)
+				return err
 			}
-			return err
+			return ErrConnectionClosed
 		}
 		return nil
 	case <-timeoutCh:
@@ -1230,6 +1235,6 @@ var (
 	ErrQueryArgLength    = errors.New("gocql: query argument length mismatch")
 	ErrTimeoutNoResponse = errors.New("gocql: no response received from cassandra within timeout period")
 	ErrTooManyTimeouts   = errors.New("gocql: too many query timeouts on the connection")
-	ErrConnectionClosed  = errors.New("gocql: connection closed waiting for response")
+	ErrConnectionClosed  = errors.New("gocql: connection was closed")
 	ErrNoStreams         = errors.New("gocql: no streams available on connection")
 )
