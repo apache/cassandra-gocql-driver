@@ -584,6 +584,7 @@ func TestStream0(t *testing.T) {
 }
 
 func TestConnClosedBlocked(t *testing.T) {
+	t.Skip("FLAKE: skipping test flake see https://github.com/gocql/gocql/issues/1088")
 	// issue 664
 	const proto = 3
 
