@@ -54,6 +54,7 @@ func (q *queryExecutor) executeQuery(qry ExecutableQuery) (*Iter, error) {
 		hostResponse.Mark(iter.err)
 
 		if rt == nil {
+			iter.host = host
 			break
 		}
 
