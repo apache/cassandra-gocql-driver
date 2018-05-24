@@ -1120,8 +1120,9 @@ type Scanner interface {
 }
 
 type iterScanner struct {
-	iter *Iter
-	cols [][]byte
+	iter  *Iter
+	cols  [][]byte
+	valid bool
 }
 
 func (is *iterScanner) Next() bool {
@@ -1138,17 +1139,16 @@ func (is *iterScanner) Next() bool {
 		return false
 	}
 
-	cols := make([][]byte, len(iter.meta.columns))
-	for i := 0; i < len(cols); i++ {
+	for i := 0; i < len(is.cols); i++ {
 		col, err := iter.readColumn()
 		if err != nil {
 			iter.err = err
 			return false
 		}
-		cols[i] = col
+		is.cols[i] = col
 	}
-	is.cols = cols
 	iter.pos++
+	is.valid = true
 
 	return true
 }
@@ -1178,7 +1178,7 @@ func scanColumn(p []byte, col ColumnInfo, dest []interface{}) (int, error) {
 }
 
 func (is *iterScanner) Scan(dest ...interface{}) error {
-	if is.cols == nil {
+	if !is.valid {
 		return errors.New("gocql: Scan called without calling Next")
 	}
 
@@ -1202,8 +1202,7 @@ func (is *iterScanner) Scan(dest ...interface{}) error {
 		i += n
 	}
 
-	is.cols = nil
-
+	is.valid = false
 	return err
 }
 
@@ -1211,6 +1210,7 @@ func (is *iterScanner) Err() error {
 	iter := is.iter
 	is.iter = nil
 	is.cols = nil
+	is.valid = false
 	return iter.Close()
 }
 
@@ -1221,7 +1221,7 @@ func (iter *Iter) Scanner() Scanner {
 		return nil
 	}
 
-	return &iterScanner{iter: iter}
+	return &iterScanner{iter: iter, cols: make([][]byte, len(iter.meta.columns))}
 }
 
 func (iter *Iter) readColumn() ([]byte, error) {
