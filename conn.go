@@ -521,7 +521,7 @@ func (c *Conn) releaseStream(stream int) {
 	c.mu.Lock()
 	call := c.calls[stream]
 	if call != nil && stream != call.streamID {
-		panic(fmt.Sprintf("attempt to release streamID with ivalid stream: %d -> %+v\n", stream, call))
+		panic(fmt.Sprintf("attempt to release streamID with invalid stream: %d -> %+v\n", stream, call))
 	} else if call == nil {
 		panic(fmt.Sprintf("releasing a stream not in use: %d", stream))
 	}
