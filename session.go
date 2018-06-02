@@ -807,7 +807,7 @@ func (q *Query) execute(conn *Conn) *Iter {
 	return conn.executeQuery(q)
 }
 
-func (q *Query) attempt(keyspace string, end, start time.Time, iter *Iter, address string) {
+func (q *Query) attempt(keyspace string, end, start time.Time, iter *Iter, host *HostInfo) {
 	q.attempts++
 	q.totalLatency += end.Sub(start).Nanoseconds()
 	// TODO: track latencies per host and things as well instead of just total
@@ -819,7 +819,7 @@ func (q *Query) attempt(keyspace string, end, start time.Time, iter *Iter, addre
 			Start:     start,
 			End:       end,
 			Rows:      iter.numRows,
-			Host:      address,
+			Host:      host,
 			Err:       iter.err,
 		})
 	}
@@ -1524,7 +1524,7 @@ func (b *Batch) WithTimestamp(timestamp int64) *Batch {
 	return b
 }
 
-func (b *Batch) attempt(keyspace string, end, start time.Time, iter *Iter, address string) {
+func (b *Batch) attempt(keyspace string, end, start time.Time, iter *Iter, host *HostInfo) {
 	b.attempts++
 	b.totalLatency += end.Sub(start).Nanoseconds()
 	// TODO: track latencies per host and things as well instead of just total
@@ -1544,7 +1544,7 @@ func (b *Batch) attempt(keyspace string, end, start time.Time, iter *Iter, addre
 		Start:      start,
 		End:        end,
 		// Rows not used in batch observations // TODO - might be able to support it when using BatchCAS
-		Host: address,
+		Host: host,
 		Err:  iter.err,
 	})
 }
@@ -1695,7 +1695,7 @@ type ObservedQuery struct {
 	Rows int
 
 	// Host is the informations about the host that performed the query
-	Host string
+	Host *HostInfo
 
 	// Err is the error in the query.
 	// It only tracks network errors or errors of bad cassandra syntax, in particular selects with no match return nil error
@@ -1720,7 +1720,7 @@ type ObservedBatch struct {
 	End   time.Time // time immediately after the batch query returned
 
 	// Host is the informations about the host that performed the batch
-	Host string
+	Host *HostInfo
 
 	// Err is the error in the batch query.
 	// It only tracks network errors or errors of bad cassandra syntax, in particular selects with no match return nil error
