@@ -125,7 +125,11 @@ type ClusterConfig struct {
 	// Use it to collect metrics / stats from batch queries by providing an implementation of BatchObserver.
 	BatchObserver BatchObserver
 
-	// FrameHeaderObserver will set the provided frame header observer on all frames' headers created from this session.
+	// ConnectObserver will set the provided connect observer on all queries
+	// created from this session.
+	ConnectObserver ConnectObserver
+
+  // FrameHeaderObserver will set the provided frame header observer on all frames' headers created from this session.
 	// Use it to collect metrics / stats from frames by providing an implementation of FrameHeaderObserver.
 	FrameHeaderObserver FrameHeaderObserver
 
