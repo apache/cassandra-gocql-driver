@@ -218,7 +218,7 @@ func (c *controlConn) discoverProtocol(hosts []*HostInfo) (int, error) {
 	var err error
 	for _, host := range hosts {
 		var conn *Conn
-		conn, err = c.session.dial(host.ConnectAddress(), host.Port(), &connCfg, handler)
+		conn, err = c.session.dial(host, &connCfg, handler)
 		if conn != nil {
 			conn.Close()
 		}

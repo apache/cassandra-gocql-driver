@@ -140,6 +140,7 @@ type Conn struct {
 	addr            string
 	version         uint8
 	currentKeyspace string
+	host            *HostInfo
 
 	session *Session
 
@@ -150,7 +151,10 @@ type Conn struct {
 }
 
 // Connect establishes a connection to a Cassandra node.
-func (s *Session) dial(ip net.IP, port int, cfg *ConnConfig, errorHandler ConnErrorHandler) (*Conn, error) {
+func (s *Session) dial(host *HostInfo, cfg *ConnConfig, errorHandler ConnErrorHandler) (*Conn, error) {
+	ip := host.ConnectAddress()
+	port := host.port
+
 	// TODO(zariel): remove these
 	if len(ip) == 0 || ip.IsUnspecified() {
 		panic(fmt.Sprintf("host missing connect ip address: %v", ip))
@@ -196,6 +200,7 @@ func (s *Session) dial(ip net.IP, port int, cfg *ConnConfig, errorHandler ConnEr
 		quit:         make(chan struct{}),
 		session:      s,
 		streams:      streams.New(cfg.ProtoVersion),
+		host:         host,
 	}
 
 	if cfg.Keepalive > 0 {
