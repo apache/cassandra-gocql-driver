@@ -637,11 +637,15 @@ func TestContext_Timeout(t *testing.T) {
 }
 
 type recordingFrameHeaderObserver struct {
-	t *testing.T
+	t      *testing.T
+	mu     sync.Mutex
 	frames []ObservedFrameHeader
 }
+
 func (r *recordingFrameHeaderObserver) ObserveFrameHeader(ctx context.Context, frm ObservedFrameHeader) {
+	r.mu.Lock()
 	r.frames = append(r.frames, frm)
+	r.mu.Unlock()
 }
 
 func TestFrameHeaderObserver(t *testing.T) {
