@@ -639,7 +639,7 @@ func (s *Session) MapExecuteBatchCAS(batch *Batch, dest map[string]interface{}) 
 }
 
 func (s *Session) connect(host *HostInfo, errorHandler ConnErrorHandler) (*Conn, error) {
-	return s.dial(host.ConnectAddress(), host.Port(), s.connCfg, errorHandler)
+	return s.dial(host, s.connCfg, errorHandler)
 }
 
 // Query represents a CQL statement that can be executed.
