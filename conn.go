@@ -123,10 +123,11 @@ var TimeoutLimit int64 = 10
 // queries, but users are usually advised to use a more reliable, higher
 // level API.
 type Conn struct {
-	conn    net.Conn
-	r       *bufio.Reader
-	timeout time.Duration
-	cfg     *ConnConfig
+	conn          net.Conn
+	r             *bufio.Reader
+	timeout       time.Duration
+	cfg           *ConnConfig
+	frameObserver FrameHeaderObserver
 
 	headerBuf [maxFrameHeaderSize]byte
 
@@ -141,6 +142,7 @@ type Conn struct {
 
 	version         uint8
 	currentKeyspace string
+	host            *HostInfo
 
 	session *Session
 
@@ -151,7 +153,10 @@ type Conn struct {
 }
 
 // Connect establishes a connection to a Cassandra node.
-func (s *Session) dial(ip net.IP, port int, cfg *ConnConfig, errorHandler ConnErrorHandler) (*Conn, error) {
+func (s *Session) dial(host *HostInfo, cfg *ConnConfig, errorHandler ConnErrorHandler) (*Conn, error) {
+	ip := host.ConnectAddress()
+	port := host.port
+
 	// TODO(zariel): remove these
 	if len(ip) == 0 || ip.IsUnspecified() {
 		panic(fmt.Sprintf("host missing connect ip address: %v", ip))
@@ -184,19 +189,21 @@ func (s *Session) dial(ip net.IP, port int, cfg *ConnConfig, errorHandler ConnEr
 	}
 
 	c := &Conn{
-		conn:         conn,
-		r:            bufio.NewReader(conn),
-		cfg:          cfg,
-		calls:        make(map[int]*callReq),
-		timeout:      cfg.Timeout,
-		version:      uint8(cfg.ProtoVersion),
-		addr:         conn.RemoteAddr().String(),
-		errorHandler: errorHandler,
-		compressor:   cfg.Compressor,
-		auth:         cfg.Authenticator,
-		quit:         make(chan struct{}),
-		session:      s,
-		streams:      streams.New(cfg.ProtoVersion),
+		conn:          conn,
+		r:             bufio.NewReader(conn),
+		cfg:           cfg,
+		calls:         make(map[int]*callReq),
+		timeout:       cfg.Timeout,
+		version:       uint8(cfg.ProtoVersion),
+		addr:          conn.RemoteAddr().String(),
+		errorHandler:  errorHandler,
+		compressor:    cfg.Compressor,
+		auth:          cfg.Authenticator,
+		quit:          make(chan struct{}),
+		session:       s,
+		streams:       streams.New(cfg.ProtoVersion),
+		host:          host,
+		frameObserver: s.frameObserver,
 	}
 
 	if cfg.Keepalive > 0 {
@@ -455,14 +462,28 @@ func (c *Conn) recv() error {
 		c.conn.SetReadDeadline(time.Time{})
 	}
 
+	headStartTime := time.Now()
 	// were just reading headers over and over and copy bodies
 	head, err := readHeader(c.r, c.headerBuf[:])
+	headEndTime := time.Now()
 	if err != nil {
 		return err
 	}
 
+	if c.frameObserver != nil {
+		c.frameObserver.ObserveFrameHeader(context.Background(), ObservedFrameHeader{
+			Version: byte(head.version),
+			Flags:   head.flags,
+			Stream:  int16(head.stream),
+			Opcode:  byte(head.op),
+			Length:  int32(head.length),
+			Start:   headStartTime,
+			End:     headEndTime,
+		})
+	}
+
 	if head.stream > c.streams.NumStreams {
-		return fmt.Errorf("gocql: frame header stream is beyond call exepected bounds: %d", head.stream)
+		return fmt.Errorf("gocql: frame header stream is beyond call expected bounds: %d", head.stream)
 	} else if head.stream == -1 {
 		// TODO: handle cassandra event frames, we shouldnt get any currently
 		framer := newFramer(c, c, c.compressor, c.version)
@@ -522,7 +543,7 @@ func (c *Conn) releaseStream(stream int) {
 	c.mu.Lock()
 	call := c.calls[stream]
 	if call != nil && stream != call.streamID {
-		panic(fmt.Sprintf("attempt to release streamID with ivalid stream: %d -> %+v\n", stream, call))
+		panic(fmt.Sprintf("attempt to release streamID with invalid stream: %d -> %+v\n", stream, call))
 	} else if call == nil {
 		panic(fmt.Sprintf("releasing a stream not in use: %d", stream))
 	}
