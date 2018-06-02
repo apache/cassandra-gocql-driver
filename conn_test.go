@@ -648,11 +648,18 @@ func (r *recordingFrameHeaderObserver) ObserveFrameHeader(ctx context.Context, f
 	r.mu.Unlock()
 }
 
+func (r *recordingFrameHeaderObserver) getFrames() []ObservedFrameHeader {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.frames
+}
+
 func TestFrameHeaderObserver(t *testing.T) {
 	srv := NewTestServer(t, defaultProto, context.Background())
 	defer srv.Stop()
 
 	cluster := testCluster(srv.Address, defaultProto)
+	cluster.NumConns = 1
 	observer := &recordingFrameHeaderObserver{t: t}
 	cluster.FrameHeaderObserver = observer
 
@@ -665,14 +672,16 @@ func TestFrameHeaderObserver(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if len(observer.frames) != 2 {
-		t.Fatalf("Expected to receive 2 frames, instead received %d", len(observer.frames))
+	frames := observer.getFrames()
+
+	if len(frames) != 2 {
+		t.Fatalf("Expected to receive 2 frames, instead received %d", len(frames))
 	}
-	readyFrame := observer.frames[0]
+	readyFrame := frames[0]
 	if readyFrame.Opcode != byte(opReady) {
 		t.Fatalf("Expected to receive ready frame, instead received frame of opcode %d", readyFrame.Opcode)
 	}
-	voidResultFrame := observer.frames[1]
+	voidResultFrame := frames[1]
 	if voidResultFrame.Opcode != byte(opResult) {
 		t.Fatalf("Expected to receive result frame, instead received frame of opcode %d", voidResultFrame.Opcode)
 	}
