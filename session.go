@@ -1646,11 +1646,11 @@ func (t *traceWriter) Trace(traceId []byte) {
 		elapsed   int
 	)
 
-	fmt.Fprintf(t.w, "Tracing session %016x (coordinator: %s, duration: %v):\n",
-		traceId, coordinator, time.Duration(duration)*time.Microsecond)
-
 	t.mu.Lock()
 	defer t.mu.Unlock()
+
+	fmt.Fprintf(t.w, "Tracing session %016x (coordinator: %s, duration: %v):\n",
+		traceId, coordinator, time.Duration(duration)*time.Microsecond)
 
 	iter = t.session.control.query(`SELECT event_id, activity, source, source_elapsed
 			FROM system_traces.events
