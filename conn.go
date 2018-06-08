@@ -20,7 +20,6 @@ import (
 	"time"
 
 	"github.com/gocql/gocql/internal/lru"
-
 	"github.com/gocql/gocql/internal/streams"
 )
 
@@ -116,8 +115,10 @@ func (fn connErrorHandlerFn) HandleError(conn *Conn, err error, closed bool) {
 // If not zero, how many timeouts we will allow to occur before the connection is closed
 // and restarted. This is to prevent a single query timeout from killing a connection
 // which may be serving more queries just fine.
-// Default is 10, should not be changed concurrently with queries.
-var TimeoutLimit int64 = 10
+// Default is 0, should not be changed concurrently with queries.
+//
+// depreciated
+var TimeoutLimit int64 = 0
 
 // Conn is a single connection to a Cassandra node. It can be used to execute
 // queries, but users are usually advised to use a more reliable, higher
