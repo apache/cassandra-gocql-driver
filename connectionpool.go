@@ -58,10 +58,8 @@ func setupTLSConfig(sslOpts *SslOptions) (*tls.Config, error) {
 
 	sslOpts.InsecureSkipVerify = !sslOpts.EnableHostVerification
 
-	// Return deep copy to avoid potential races
-	sslCopy := *sslOpts.Config
-
-	return &sslCopy, nil
+	// return clone to avoid race
+	return sslOpts.Config.Clone(), nil
 }
 
 type policyConnPool struct {
