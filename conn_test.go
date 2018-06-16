@@ -678,11 +678,11 @@ func TestFrameHeaderObserver(t *testing.T) {
 		t.Fatalf("Expected to receive 2 frames, instead received %d", len(frames))
 	}
 	readyFrame := frames[0]
-	if readyFrame.Opcode != byte(opReady) {
+	if readyFrame.Opcode != frameOp(opReady) {
 		t.Fatalf("Expected to receive ready frame, instead received frame of opcode %d", readyFrame.Opcode)
 	}
 	voidResultFrame := frames[1]
-	if voidResultFrame.Opcode != byte(opResult) {
+	if voidResultFrame.Opcode != frameOp(opResult) {
 		t.Fatalf("Expected to receive result frame, instead received frame of opcode %d", voidResultFrame.Opcode)
 	}
 	if voidResultFrame.Length != int32(4) {
