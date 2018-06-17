@@ -129,7 +129,7 @@ type ClusterConfig struct {
 	// created from this session.
 	ConnectObserver ConnectObserver
 
-  // FrameHeaderObserver will set the provided frame header observer on all frames' headers created from this session.
+	// FrameHeaderObserver will set the provided frame header observer on all frames' headers created from this session.
 	// Use it to collect metrics / stats from frames by providing an implementation of FrameHeaderObserver.
 	FrameHeaderObserver FrameHeaderObserver
 
