@@ -146,6 +146,7 @@ type Conn struct {
 	version         uint8
 	currentKeyspace string
 	host            *HostInfo
+	shard           int
 
 	session *Session
 
@@ -209,6 +210,7 @@ func (s *Session) dial(host *HostInfo, cfg *ConnConfig, errorHandler ConnErrorHa
 		session:       s,
 		streams:       streams.New(cfg.ProtoVersion),
 		host:          host,
+		shard:         noSharding,
 		frameObserver: s.frameObserver,
 		w: &deadlineWriter{
 			w:       conn,
@@ -227,7 +229,7 @@ func (s *Session) dial(host *HostInfo, cfg *ConnConfig, errorHandler ConnErrorHa
 	}
 	defer cancel()
 
-	frameTicker := make(chan struct{}, 1)
+	frameTicker := make(chan struct{}, 2)
 	startupErr := make(chan error)
 	go func() {
 		for range frameTicker {
@@ -245,7 +247,7 @@ func (s *Session) dial(host *HostInfo, cfg *ConnConfig, errorHandler ConnErrorHa
 
 	go func() {
 		defer close(frameTicker)
-		err := c.startup(ctx, frameTicker)
+		err = c.startup(ctx, frameTicker)
 		select {
 		case startupErr <- err:
 		case <-ctx.Done():
@@ -301,6 +303,10 @@ func (c *Conn) Read(p []byte) (n int, err error) {
 }
 
 func (c *Conn) startup(ctx context.Context, frameTicker chan struct{}) error {
+	if err := c.options(ctx, frameTicker); err != nil {
+		return err
+	}
+
 	m := map[string]string{
 		"CQL_VERSION": c.cfg.CQLVersion,
 	}
@@ -334,6 +340,36 @@ func (c *Conn) startup(ctx context.Context, frameTicker chan struct{}) error {
 		return c.authenticateHandshake(ctx, v, frameTicker)
 	default:
 		return NewErrProtocol("Unknown type of response to startup frame: %s", v)
+	}
+}
+
+func (c *Conn) options(ctx context.Context, frameTicker chan struct{}) error {
+	select {
+	case frameTicker <- struct{}{}:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+
+	framer, err := c.exec(context.Background(), &writeOptionsFrame{}, nil)
+	if err != nil {
+		return err
+	}
+
+	frame, err := framer.parseFrame()
+	if err != nil {
+		return err
+	}
+
+	switch v := frame.(type) {
+	case *supportedFrame:
+		shard, si := newShardingInfo(v.supported)
+		if shard != noSharding {
+			c.shard = shard
+			c.host.setShardingInfo(si)
+		}
+		return nil
+	default:
+		return NewErrProtocol("Unknown type of response to options frame: %s", v)
 	}
 }
 
@@ -390,6 +426,10 @@ func (c *Conn) authenticateHandshake(ctx context.Context, authFrame *authenticat
 }
 
 func (c *Conn) closeWithError(err error) {
+	if c == nil {
+		return
+	}
+
 	if !atomic.CompareAndSwapInt32(&c.closed, 0, 1) {
 		return
 	}
