@@ -790,6 +790,16 @@ func marshalQueryValue(typ TypeInfo, value interface{}, dst *queryValues) error 
 }
 
 func (c *Conn) executeQuery(qry *Query) *Iter {
+	ctx := qry.context
+	if qry.attemptTimeout > 0 {
+		if ctx == nil {
+			ctx = context.Background()
+		}
+		var cancel func()
+		ctx, cancel = context.WithTimeout(ctx, qry.attemptTimeout)
+		defer cancel()
+	}
+
 	params := queryParams{
 		consistency: qry.cons,
 	}
@@ -814,7 +824,7 @@ func (c *Conn) executeQuery(qry *Query) *Iter {
 	if qry.shouldPrepare() {
 		// Prepare all DML queries. Other queries can not be prepared.
 		var err error
-		info, err = c.prepareStatement(qry.context, qry.stmt, qry.trace)
+		info, err = c.prepareStatement(ctx, qry.stmt, qry.trace)
 		if err != nil {
 			return &Iter{err: err}
 		}
@@ -863,7 +873,7 @@ func (c *Conn) executeQuery(qry *Query) *Iter {
 		}
 	}
 
-	framer, err := c.exec(qry.context, frame, qry.trace)
+	framer, err := c.exec(ctx, frame, qry.trace)
 	if err != nil {
 		return &Iter{err: err}
 	}
