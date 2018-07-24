@@ -173,6 +173,9 @@ func (s *Session) dial(host *HostInfo, cfg *ConnConfig, errorHandler ConnErrorHa
 	dialer := &net.Dialer{
 		Timeout: cfg.ConnectTimeout,
 	}
+	if cfg.Keepalive > 0 {
+		dialer.KeepAlive = cfg.Keepalive
+	}
 
 	// TODO(zariel): handle ipv6 zone
 	addr := (&net.TCPAddr{IP: ip, Port: port}).String()
@@ -205,10 +208,6 @@ func (s *Session) dial(host *HostInfo, cfg *ConnConfig, errorHandler ConnErrorHa
 		streams:       streams.New(cfg.ProtoVersion),
 		host:          host,
 		frameObserver: s.frameObserver,
-	}
-
-	if cfg.Keepalive > 0 {
-		c.setKeepalive(cfg.Keepalive)
 	}
 
 	var (
@@ -1091,19 +1090,6 @@ func (c *Conn) executeBatch(batch *Batch) *Iter {
 	default:
 		return &Iter{err: NewErrProtocol("Unknown type in response to batch statement: %s", x), framer: framer}
 	}
-}
-
-func (c *Conn) setKeepalive(d time.Duration) error {
-	if tc, ok := c.conn.(*net.TCPConn); ok {
-		err := tc.SetKeepAlivePeriod(d)
-		if err != nil {
-			return err
-		}
-
-		return tc.SetKeepAlive(true)
-	}
-
-	return nil
 }
 
 func (c *Conn) query(statement string, values ...interface{}) (iter *Iter) {
