@@ -1,10 +1,13 @@
 package gocql
 
 import (
-	"context"
 	"errors"
 	"time"
 )
+
+// ErrUnknownRetryType is returned if the retry policy returns a retry type
+// unknown to the query executor.
+var ErrUnknownRetryType = errors.New("unknown retry type returned by retry policy")
 
 type ExecutableQuery interface {
 	execute(conn *Conn) *Iter
@@ -30,33 +33,25 @@ func (q *queryExecutor) attemptQuery(qry ExecutableQuery, conn *Conn) *Iter {
 	return iter
 }
 
-// ErrUnknownRetryType is returned if the retry policy returns a retry type
-// unknown to the query executor.
-var ErrUnknownRetryType = errors.New("unknown retry type returned by retry policy")
-
-type retryPolicyWrapper struct {
-	p   RetryPolicy
-	ctx context.Context
-}
-
-// attempt is used by the query executor to determine with retrying a query.
+// checkRetryPolicy is used by the query executor to determine how a failed query should be handled.
 // It consults the query context and the query's retry policy.
-func (w *retryPolicyWrapper) attempt(rq RetryableQuery, err error) (RetryType, error) {
-	ctx := rq.GetContext()
-	if ctx != nil && ctx.Err() != nil { // context on query expired or was canceled, bail
-		return Rethrow, ctx.Err()
+func (q *queryExecutor) checkRetryPolicy(rq ExecutableQuery, err error) (RetryType, error) {
+	if ctx := rq.GetContext(); ctx != nil {
+		if ctx.Err() != nil {
+			return Rethrow, ctx.Err()
+		}
 	}
-	if w.p == nil { // bubble error to the caller if there is no retry policy
+	p := rq.retryPolicy()
+	if p == nil {
 		return Rethrow, err
 	}
-	if w.p.Attempt(rq) {
-		return w.p.GetRetryType(err), nil
+	if p.Attempt(rq) {
+		return p.GetRetryType(err), nil
 	}
-	return w.p.GetRetryType(err), err
+	return p.GetRetryType(err), err
 }
 
 func (q *queryExecutor) executeQuery(qry ExecutableQuery) (*Iter, error) {
-	retryPolicyWrapper := &retryPolicyWrapper{p: qry.retryPolicy(), ctx: qry.GetContext()}
 	hostIter := q.policy.Pick(qry)
 	var iter *Iter
 
@@ -91,7 +86,7 @@ outer:
 
 			// consult retry policy on how to proceed
 			var retryType RetryType
-			retryType, iter.err = retryPolicyWrapper.attempt(qry, iter.err)
+			retryType, iter.err = q.checkRetryPolicy(qry, iter.err)
 			switch retryType {
 			case Retry:
 				continue inner
