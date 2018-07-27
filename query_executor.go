@@ -30,109 +30,82 @@ func (q *queryExecutor) attemptQuery(qry ExecutableQuery, conn *Conn) *Iter {
 	return iter
 }
 
-var ErrRetriesExhausted = errors.New("number of retries exhausted")
+var ErrUnknownRetryType = errors.New("unknown retry type returned by retry policy")
 
 type retryPolicyWrapper struct {
 	p   RetryPolicy
 	ctx context.Context
 }
 
-func (w *retryPolicyWrapper) Attempt(rq RetryableQuery) error {
-	if w.ctx != nil && w.ctx.Err() != nil {
-		return w.ctx.Err()
+func (w *retryPolicyWrapper) Attempt(rq RetryableQuery, err error) (RetryType, error) {
+	ctx := rq.GetContext()
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if ctx.Err() != nil {
+		return Rethrow, ctx.Err()
 	}
 	if w.p == nil {
-		return ErrRetriesExhausted
-	}
-	if !w.p.Attempt(rq) {
-		return ErrRetriesExhausted
-	}
-	return nil
-}
-
-func (w *retryPolicyWrapper) GetRetryType(err error) (RetryType, error) {
-	// in case there is no error, ignore the policy
-	if err == nil {
-		return Ignore, nil
-	}
-	if w.ctx != nil && w.ctx.Err() != nil {
-		return Rethrow, w.ctx.Err()
-	}
-	if w.p == nil {
-		// this method is only executed in case the query failed
-		// without a retry policy executeQuery should return an error
 		return Rethrow, err
 	}
-	return w.p.GetRetryType(err), nil
+	if w.p.Attempt(rq) {
+		return w.p.GetRetryType(err), nil
+	}
+	return w.p.GetRetryType(err), err
 }
 
 func (q *queryExecutor) executeQuery(qry ExecutableQuery) (*Iter, error) {
-	rp := &retryPolicyWrapper{p: qry.retryPolicy(), ctx: qry.GetContext()}
+	retryPolicy := &retryPolicyWrapper{p: qry.retryPolicy(), ctx: qry.GetContext()}
+	var iter *Iter
 	hostIter := q.policy.Pick(qry)
 
-	var iter *Iter
+outer:
 	for hostResponse := hostIter(); hostResponse != nil; hostResponse = hostIter() {
 		host := hostResponse.Info()
 		if host == nil || !host.IsUp() {
 			continue
 		}
-
-		pool, ok := q.pool.getPool(host)
+		hostPool, ok := q.pool.getPool(host)
 		if !ok {
 			continue
 		}
 
-		conn := pool.Pick()
+		conn := hostPool.Pick()
 		if conn == nil {
 			continue
 		}
+	inner:
+		for {
+			iter = q.attemptQuery(qry, conn)
+			// Update host
+			hostResponse.Mark(iter.err)
 
-		iter = q.attemptQuery(qry, conn)
-		// Update host
-		hostResponse.Mark(iter.err)
+			// note host the query was issued against
+			iter.host = host
 
-		// note host the query was issued against
-		iter.host = host
-
-		// exit for loop if the query was successful
-		if iter.err == nil {
-			return iter, nil
-		}
-
-		var retryType RetryType
-		retryType, iter.err = rp.GetRetryType(iter.err)
-		switch retryType {
-		case Retry:
-			var err error
-			for err = rp.Attempt(qry); err == nil; err = rp.Attempt(qry) {
-				iter = q.attemptQuery(qry, conn)
-				hostResponse.Mark(iter.err)
-				if iter.err == nil {
-					iter.host = host
-					return iter, nil
-				}
-				if rt, _ := rp.GetRetryType(iter.err); rt != Retry {
-					break
-				}
+			// exit if the query was successful
+			if iter.err == nil {
+				return iter, nil
 			}
-			iter.err = err
-		case Rethrow:
-			return nil, iter.err
-		case Ignore:
-			return iter, nil
-		case RetryNextHost:
-		default:
-		}
 
-		if err := rp.Attempt(qry); err != nil {
-			iter.err = err
-			break
+			// check retryPolicy
+			var retryType RetryType
+			retryType, iter.err = retryPolicy.Attempt(qry, iter.err)
+			switch retryType {
+			case Retry:
+				continue inner
+			case Rethrow:
+				return nil, iter.err
+			case Ignore:
+				return iter, nil
+			case RetryNextHost:
+				continue outer
+			default:
+				return nil, ErrUnknownRetryType
+			}
 		}
 	}
 
-	if iter == nil {
-		return nil, ErrNoConnections
-	}
-
-	return iter, iter.err
+	// if we reach this point, there is no host in the pool
+	return nil, ErrNoConnections
 }
