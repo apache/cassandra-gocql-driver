@@ -39,13 +39,10 @@ type retryPolicyWrapper struct {
 
 func (w *retryPolicyWrapper) Attempt(rq RetryableQuery, err error) (RetryType, error) {
 	ctx := rq.GetContext()
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	if ctx.Err() != nil {
+	if ctx != nil && ctx.Err() != nil { // context on query expired or was canceled, bail
 		return Rethrow, ctx.Err()
 	}
-	if w.p == nil {
+	if w.p == nil { // bubble error to the caller if there is no retry policy
 		return Rethrow, err
 	}
 	if w.p.Attempt(rq) {
@@ -88,7 +85,7 @@ outer:
 				return iter, nil
 			}
 
-			// check retryPolicy
+			// consult retry policy on how to proceed
 			var retryType RetryType
 			retryType, iter.err = retryPolicy.Attempt(qry, iter.err)
 			switch retryType {
