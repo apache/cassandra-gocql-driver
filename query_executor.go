@@ -30,6 +30,8 @@ func (q *queryExecutor) attemptQuery(qry ExecutableQuery, conn *Conn) *Iter {
 	return iter
 }
 
+// ErrUnknownRetryType is returned if the retry policy returns a retry type
+// unknown to the query executor.
 var ErrUnknownRetryType = errors.New("unknown retry type returned by retry policy")
 
 type retryPolicyWrapper struct {
@@ -37,6 +39,8 @@ type retryPolicyWrapper struct {
 	ctx context.Context
 }
 
+// Attempt is used by the query executor to determine with retrying a query.
+// It consults the query context and the query's retry policy.
 func (w *retryPolicyWrapper) Attempt(rq RetryableQuery, err error) (RetryType, error) {
 	ctx := rq.GetContext()
 	if ctx != nil && ctx.Err() != nil { // context on query expired or was canceled, bail

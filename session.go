@@ -940,6 +940,8 @@ func (q *Query) Prefetch(p float64) *Query {
 	return q
 }
 
+// AttemptTimeout sets the duration to use before a query attempt is considered
+// as a timeout and will potentially be retried (according to the retry policy).
 func (q *Query) AttemptTimeout(timeout time.Duration) *Query {
 	q.attemptTimeout = timeout
 	return q
