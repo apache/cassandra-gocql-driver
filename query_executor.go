@@ -39,9 +39,9 @@ type retryPolicyWrapper struct {
 	ctx context.Context
 }
 
-// Attempt is used by the query executor to determine with retrying a query.
+// attempt is used by the query executor to determine with retrying a query.
 // It consults the query context and the query's retry policy.
-func (w *retryPolicyWrapper) Attempt(rq RetryableQuery, err error) (RetryType, error) {
+func (w *retryPolicyWrapper) attempt(rq RetryableQuery, err error) (RetryType, error) {
 	ctx := rq.GetContext()
 	if ctx != nil && ctx.Err() != nil { // context on query expired or was canceled, bail
 		return Rethrow, ctx.Err()
@@ -56,9 +56,9 @@ func (w *retryPolicyWrapper) Attempt(rq RetryableQuery, err error) (RetryType, e
 }
 
 func (q *queryExecutor) executeQuery(qry ExecutableQuery) (*Iter, error) {
-	retryPolicy := &retryPolicyWrapper{p: qry.retryPolicy(), ctx: qry.GetContext()}
-	var iter *Iter
+	retryPolicyWrapper := &retryPolicyWrapper{p: qry.retryPolicy(), ctx: qry.GetContext()}
 	hostIter := q.policy.Pick(qry)
+	var iter *Iter
 
 outer:
 	for hostResponse := hostIter(); hostResponse != nil; hostResponse = hostIter() {
@@ -91,7 +91,7 @@ outer:
 
 			// consult retry policy on how to proceed
 			var retryType RetryType
-			retryType, iter.err = retryPolicy.Attempt(qry, iter.err)
+			retryType, iter.err = retryPolicyWrapper.attempt(qry, iter.err)
 			switch retryType {
 			case Retry:
 				continue inner
