@@ -334,7 +334,7 @@ func TestQueryRetry(t *testing.T) {
 	rt := &testRetryPolicy{NumRetries: 10, t: t}
 	queryCtx, cancel := context.WithTimeout(context.Background(), time.Millisecond*200)
 	defer cancel()
-	qry := db.Query("killaftertimeout").RetryPolicy(rt).Observer(&testQueryObserver{}).WithContext(queryCtx).AttemptTimeout(time.Millisecond * 30)
+	qry := db.Query("killaftertimeout").RetryPolicy(rt).Observer(&testQueryObserver{}).WithContext(queryCtx).AttemptTimeout(time.Millisecond * 35)
 	if err := qry.Exec(); err == nil {
 		t.Fatalf("expected error")
 	}
@@ -345,6 +345,7 @@ func TestQueryRetry(t *testing.T) {
 		t.Fatalf("expected requests %v to match query attempts %v", requests, attempts)
 	}
 
+	// the 200ms timeout allows at most 8 retries
 	if requests > 8 {
 		t.Fatalf("too many retries executed for query. Query executed %v times", requests)
 	}
@@ -932,7 +933,7 @@ func (srv *TestServer) process(f *framer) {
 			f.writeInt(0x1001)
 			f.writeString("query killed")
 			rand.Seed(time.Now().UnixNano())
-			sleepFor := time.Duration(time.Millisecond * time.Duration((rand.Intn(30) + 20)))
+			sleepFor := time.Duration(time.Millisecond * time.Duration((rand.Intn(20) + 25)))
 			<-time.After(sleepFor)
 		case "use":
 			f.writeInt(resultKindKeyspace)
