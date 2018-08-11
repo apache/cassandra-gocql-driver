@@ -585,6 +585,10 @@ type callReq struct {
 }
 
 func (c *Conn) exec(ctx context.Context, req frameWriter, tracer Tracer) (*framer, error) {
+	if ctx != nil && ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+
 	// TODO: move tracer onto conn
 	stream, ok := c.streams.GetStream()
 	if !ok {
