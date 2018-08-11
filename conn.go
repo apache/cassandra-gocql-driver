@@ -795,12 +795,12 @@ func marshalQueryValue(typ TypeInfo, value interface{}, dst *queryValues) error 
 
 func (c *Conn) executeQuery(qry *Query) *Iter {
 	ctx := qry.context
-	if qry.attemptTimeout > 0 {
+	if rt, ok := qry.rt.(RetryPolicyWithAttemptTimeout); ok && rt.AttemptTimeout() > 0 {
 		if ctx == nil {
 			ctx = context.Background()
 		}
 		var cancel func()
-		ctx, cancel = context.WithTimeout(ctx, qry.attemptTimeout)
+		ctx, cancel = context.WithTimeout(ctx, rt.AttemptTimeout())
 		defer cancel()
 	}
 

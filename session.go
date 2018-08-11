@@ -681,7 +681,6 @@ type Query struct {
 	disableSkipMetadata   bool
 	context               context.Context
 	idempotent            bool
-	attemptTimeout        time.Duration
 
 	disableAutoPage bool
 }
@@ -937,13 +936,6 @@ func (q *Query) shouldPrepare() bool {
 // automatically.
 func (q *Query) Prefetch(p float64) *Query {
 	q.prefetch = p
-	return q
-}
-
-// AttemptTimeout sets the duration to use before a query attempt is considered
-// as a timeout and will potentially be retried (according to the retry policy).
-func (q *Query) AttemptTimeout(timeout time.Duration) *Query {
-	q.attemptTimeout = timeout
 	return q
 }
 

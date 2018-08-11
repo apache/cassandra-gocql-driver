@@ -155,6 +155,14 @@ type RetryPolicy interface {
 	GetRetryType(error) RetryType
 }
 
+// RetryPolicyWithAttemptTimeout is an optional interface retry policies can implement
+// in order to control the duration to use before a query attempt is considered
+// as a timeout and will potentially be retried.
+// It's not part of the RetryPolicy interface to remain backwards compatible.
+type RetryPolicyWithAttemptTimeout interface {
+	AttemptTimeout() time.Duration
+}
+
 // SimpleRetryPolicy has simple logic for attempting a query a fixed number of times.
 //
 // See below for examples of usage:
