@@ -280,7 +280,7 @@ func TestTimeout(t *testing.T) {
 }
 
 type testRetryPolicy struct {
-	NumRetries     int //Number of times to retry a query
+	numRetries     int // maximum number of times to retry a query
 	attemptTimeout time.Duration
 	t              *testing.T
 }
@@ -288,7 +288,7 @@ type testRetryPolicy struct {
 // Attempt tells gocql to attempt the query again based on query.Attempts being less
 // than the NumRetries defined in the policy.
 func (s *testRetryPolicy) Attempt(q RetryableQuery) bool {
-	return q.Attempts() <= s.NumRetries
+	return q.Attempts() <= s.numRetries
 }
 
 func (s *testRetryPolicy) GetRetryType(err error) RetryType {
@@ -337,7 +337,7 @@ func TestQueryRetry(t *testing.T) {
 		}
 	}()
 
-	rt := &testRetryPolicy{NumRetries: 10, t: t, attemptTimeout: time.Millisecond * 35}
+	rt := &testRetryPolicy{numRetries: 10, t: t, attemptTimeout: time.Millisecond * 35}
 	queryCtx, cancel := context.WithTimeout(context.Background(), time.Millisecond*200)
 	defer cancel()
 	qry := db.Query("killaftertimeout").RetryPolicy(rt).Observer(&testQueryObserver{}).WithContext(queryCtx)
