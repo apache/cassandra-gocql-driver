@@ -14,7 +14,9 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"math/rand"
 	"net"
+	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -277,11 +279,39 @@ func TestTimeout(t *testing.T) {
 	wg.Wait()
 }
 
+type testRetryPolicy struct {
+	NumRetries int //Number of times to retry a query
+	t          *testing.T
+}
+
+// Attempt tells gocql to attempt the query again based on query.Attempts being less
+// than the NumRetries defined in the policy.
+func (s *testRetryPolicy) Attempt(q RetryableQuery) bool {
+	return q.Attempts() <= s.NumRetries
+}
+
+func (s *testRetryPolicy) GetRetryType(err error) RetryType {
+	return Retry
+}
+
+type testQueryObserver struct{}
+
+func (o *testQueryObserver) ObserveQuery(ctx context.Context, q ObservedQuery) {
+	Logger.Printf("Observed query %q. Returned %v rows, took %v on host %q. Error: %q\n", q.Statement, q.Rows, q.End.Sub(q.Start), q.Host.ConnectAddress().String(), q.Err)
+}
+
 // TestQueryRetry will test to make sure that gocql will execute
 // the exact amount of retry queries designated by the user.
 func TestQueryRetry(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
+	log := &testLogger{}
+	Logger = log
+	defer func() {
+		Logger = &defaultLogger{}
+		os.Stdout.WriteString(log.String())
+	}()
 
 	srv := NewTestServer(t, defaultProto, ctx)
 	defer srv.Stop()
@@ -301,9 +331,10 @@ func TestQueryRetry(t *testing.T) {
 		}
 	}()
 
-	rt := &SimpleRetryPolicy{NumRetries: 1}
-
-	qry := db.Query("kill").RetryPolicy(rt)
+	rt := &testRetryPolicy{NumRetries: 10, t: t}
+	queryCtx, cancel := context.WithTimeout(context.Background(), time.Millisecond*200)
+	defer cancel()
+	qry := db.Query("killaftertimeout").RetryPolicy(rt).Observer(&testQueryObserver{}).WithContext(queryCtx).AttemptTimeout(time.Millisecond * 30)
 	if err := qry.Exec(); err == nil {
 		t.Fatalf("expected error")
 	}
@@ -314,9 +345,8 @@ func TestQueryRetry(t *testing.T) {
 		t.Fatalf("expected requests %v to match query attempts %v", requests, attempts)
 	}
 
-	// the query will only be attempted once, but is being retried
-	if requests != int64(rt.NumRetries) {
-		t.Fatalf("failed to retry the query %v time(s). Query executed %v times", rt.NumRetries, requests-1)
+	if requests > 8 {
+		t.Fatalf("too many retries executed for query. Query executed %v times", requests)
 	}
 }
 
@@ -896,6 +926,14 @@ func (srv *TestServer) process(f *framer) {
 			f.writeHeader(0, opError, head.stream)
 			f.writeInt(0x1001)
 			f.writeString("query killed")
+		case "killaftertimeout":
+			atomic.AddInt64(&srv.nKillReq, 1)
+			f.writeHeader(0, opError, head.stream)
+			f.writeInt(0x1001)
+			f.writeString("query killed")
+			rand.Seed(time.Now().UnixNano())
+			sleepFor := time.Duration(time.Millisecond * time.Duration((rand.Intn(30) + 20)))
+			<-time.After(sleepFor)
 		case "use":
 			f.writeInt(resultKindKeyspace)
 			f.writeString(strings.TrimSpace(query[3:]))
