@@ -353,7 +353,11 @@ func TestQueryRetry(t *testing.T) {
 
 	// the 200ms timeout allows at most 8 retries
 	if requests > 8 {
-		t.Fatalf("too many retries executed for query. Query executed %v times", requests)
+		t.Fatalf("Too many retries executed for query. Query executed %v times", requests)
+	}
+	// make sure query is retried to guard against regressions
+	if requests < 5 {
+		t.Fatalf("Not enough retries executed for query. Query executed %v times", requests)
 	}
 }
 
