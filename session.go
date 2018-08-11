@@ -804,6 +804,11 @@ func (q *Query) WithContext(ctx context.Context) *Query {
 	return q
 }
 
+// GetContext satisfies the ExecutableQuery interface.
+func (q *Query) GetContext() context.Context {
+	return q.context
+}
+
 func (q *Query) execute(conn *Conn) *Iter {
 	return conn.executeQuery(q)
 }
@@ -1489,6 +1494,11 @@ func (b *Batch) RetryPolicy(r RetryPolicy) *Batch {
 func (b *Batch) WithContext(ctx context.Context) *Batch {
 	b.context = ctx
 	return b
+}
+
+// GetContext satisfies the ExecutableQuery interface.
+func (b *Batch) GetContext() context.Context {
+	return b.context
 }
 
 // Size returns the number of batch statements to be executed by the batch operation.
