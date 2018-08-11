@@ -53,9 +53,12 @@ func (q *queryExecutor) executeQuery(qry ExecutableQuery) (*Iter, error) {
 		// Update host
 		hostResponse.Mark(iter.err)
 
-		if rt == nil {
-			iter.host = host
-			break
+		// note host the query was issued against
+		iter.host = host
+
+		// exit for loop if the query was successful
+		if iter.err == nil {
+			return iter, nil
 		}
 
 		switch rt.GetRetryType(iter.err) {
@@ -77,12 +80,6 @@ func (q *queryExecutor) executeQuery(qry ExecutableQuery) (*Iter, error) {
 			return iter, nil
 		case RetryNextHost:
 		default:
-		}
-
-		// Exit for loop if the query was successful
-		if iter.err == nil {
-			iter.host = host
-			return iter, nil
 		}
 
 		if !rt.Attempt(qry) {
