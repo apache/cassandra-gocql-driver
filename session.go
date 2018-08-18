@@ -681,6 +681,7 @@ type Query struct {
 	disableSkipMetadata   bool
 	context               context.Context
 	idempotent            bool
+	attemptTimeoutTimer   *time.Timer
 
 	disableAutoPage bool
 }

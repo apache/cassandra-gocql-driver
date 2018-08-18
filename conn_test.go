@@ -337,7 +337,7 @@ func TestQueryRetry(t *testing.T) {
 	}()
 
 	rt := &testRetryPolicy{numRetries: 10, t: t, attemptTimeout: time.Millisecond * 25}
-	queryCtx, cancel := context.WithTimeout(context.Background(), time.Millisecond*100)
+	queryCtx, cancel := context.WithTimeout(context.Background(), time.Millisecond*90)
 	defer cancel()
 	qry := db.Query("slow").RetryPolicy(rt).Observer(&testQueryObserver{}).WithContext(queryCtx)
 	if err := qry.Exec(); err == nil {
@@ -350,7 +350,7 @@ func TestQueryRetry(t *testing.T) {
 
 	numQueries := atomic.LoadUint64(&srv.nQueries)
 
-	// the 100ms timeout allows at most 4 retries
+	// the 90ms timeout allows at most 4 retries
 	if numQueries > 4 {
 		t.Fatalf("Too many retries executed for query. Query executed %v times", numQueries)
 	}

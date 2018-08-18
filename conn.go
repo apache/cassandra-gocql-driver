@@ -800,8 +800,33 @@ func (c *Conn) executeQuery(qry *Query) *Iter {
 			ctx = context.Background()
 		}
 		var cancel func()
-		ctx, cancel = context.WithTimeout(ctx, rt.AttemptTimeout())
+		ctx, cancel = context.WithCancel(ctx)
 		defer cancel()
+		if qry.attemptTimeoutTimer == nil {
+			qry.attemptTimeoutTimer = time.NewTimer(0)
+			<-qry.attemptTimeoutTimer.C
+		} else {
+			if !qry.attemptTimeoutTimer.Stop() {
+				select {
+				case <-qry.attemptTimeoutTimer.C:
+				default:
+				}
+			}
+		}
+
+		qry.attemptTimeoutTimer.Reset(rt.AttemptTimeout())
+		timeoutCh := qry.attemptTimeoutTimer.C
+
+		go func() {
+			select {
+			case <-ctx.Done():
+				qry.attemptTimeoutTimer.Stop()
+				break
+			case <-timeoutCh:
+				break
+			}
+			cancel()
+		}()
 	}
 
 	params := queryParams{
