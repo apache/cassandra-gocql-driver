@@ -161,6 +161,7 @@ type RetryPolicy interface {
 // It's not part of the RetryPolicy interface to remain backwards compatible.
 type RetryPolicyWithAttemptTimeout interface {
 	AttemptTimeout() time.Duration
+	RetryPolicy
 }
 
 // SimpleRetryPolicy has simple logic for attempting a query a fixed number of times.
