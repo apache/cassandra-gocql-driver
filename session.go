@@ -803,8 +803,8 @@ func (q *Query) WithContext(ctx context.Context) *Query {
 	return q
 }
 
-// GetContext satisfies the ExecutableQuery interface.
-func (q *Query) GetContext() context.Context {
+// Context satisfies the ExecutableQuery interface.
+func (q *Query) Context() context.Context {
 	return q.context
 }
 
@@ -1490,8 +1490,8 @@ func (b *Batch) WithContext(ctx context.Context) *Batch {
 	return b
 }
 
-// GetContext satisfies the ExecutableQuery interface.
-func (b *Batch) GetContext() context.Context {
+// Context satisfies the ExecutableQuery interface.
+func (b *Batch) Context() context.Context {
 	return b.context
 }
 

@@ -36,7 +36,7 @@ func (q *queryExecutor) attemptQuery(qry ExecutableQuery, conn *Conn) *Iter {
 // checkRetryPolicy is used by the query executor to determine how a failed query should be handled.
 // It consults the query context and the query's retry policy.
 func (q *queryExecutor) checkRetryPolicy(rq ExecutableQuery, err error) (RetryType, error) {
-	if ctx := rq.GetContext(); ctx != nil {
+	if ctx := rq.Context(); ctx != nil {
 		if ctx.Err() != nil {
 			return Rethrow, ctx.Err()
 		}
