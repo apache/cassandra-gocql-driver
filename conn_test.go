@@ -14,7 +14,6 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"math/rand"
 	"net"
 	"os"
 	"strings"
@@ -337,27 +336,27 @@ func TestQueryRetry(t *testing.T) {
 		}
 	}()
 
-	rt := &testRetryPolicy{numRetries: 10, t: t, attemptTimeout: time.Millisecond * 35}
-	queryCtx, cancel := context.WithTimeout(context.Background(), time.Millisecond*200)
+	rt := &testRetryPolicy{numRetries: 10, t: t, attemptTimeout: time.Millisecond * 25}
+	queryCtx, cancel := context.WithTimeout(context.Background(), time.Millisecond*100)
 	defer cancel()
-	qry := db.Query("killaftertimeout").RetryPolicy(rt).Observer(&testQueryObserver{}).WithContext(queryCtx)
+	qry := db.Query("slow").RetryPolicy(rt).Observer(&testQueryObserver{}).WithContext(queryCtx)
 	if err := qry.Exec(); err == nil {
 		t.Fatalf("expected error")
 	}
 
-	requests := atomic.LoadInt64(&srv.nKillReq)
-	attempts := qry.Attempts()
-	if requests != int64(attempts) {
-		t.Fatalf("expected requests %v to match query attempts %v", requests, attempts)
-	}
+	// wait for the last slow query to finish
+	// this prevents the test from flaking because of writing to a connection that's been closed
+	time.Sleep(100 * time.Millisecond)
 
-	// the 200ms timeout allows at most 8 retries
-	if requests > 8 {
-		t.Fatalf("Too many retries executed for query. Query executed %v times", requests)
+	numQueries := atomic.LoadUint64(&srv.nQueries)
+
+	// the 100ms timeout allows at most 4 retries
+	if numQueries > 4 {
+		t.Fatalf("Too many retries executed for query. Query executed %v times", numQueries)
 	}
 	// make sure query is retried to guard against regressions
-	if requests < 5 {
-		t.Fatalf("Not enough retries executed for query. Query executed %v times", requests)
+	if numQueries < 2 {
+		t.Fatalf("Not enough retries executed for query. Query executed %v times", numQueries)
 	}
 }
 
@@ -811,6 +810,7 @@ type TestServer struct {
 	nreq             uint64
 	listen           net.Listener
 	nKillReq         int64
+	nQueries         uint64
 	compressor       Compressor
 
 	protocol   byte
@@ -926,6 +926,7 @@ func (srv *TestServer) process(f *framer) {
 		f.writeHeader(0, opSupported, head.stream)
 		f.writeShort(0)
 	case opQuery:
+		atomic.AddUint64(&srv.nQueries, 1)
 		query := f.readLongString()
 		first := query
 		if n := strings.Index(query, " "); n > 0 {
@@ -937,14 +938,6 @@ func (srv *TestServer) process(f *framer) {
 			f.writeHeader(0, opError, head.stream)
 			f.writeInt(0x1001)
 			f.writeString("query killed")
-		case "killaftertimeout":
-			atomic.AddInt64(&srv.nKillReq, 1)
-			f.writeHeader(0, opError, head.stream)
-			f.writeInt(0x1001)
-			f.writeString("query killed")
-			rand.Seed(time.Now().UnixNano())
-			sleepFor := time.Duration(time.Millisecond * time.Duration((rand.Intn(20) + 25)))
-			<-time.After(sleepFor)
 		case "use":
 			f.writeInt(resultKindKeyspace)
 			f.writeString(strings.TrimSpace(query[3:]))
