@@ -943,9 +943,9 @@ func (q *Query) IsIdempotent() bool {
 	return q.idempotent
 }
 
-// Idempontent marks the query as being idempontent or not depending on
+// Idempotent marks the query as being idempotent or not depending on
 // the value.
-func (q *Query) Idempontent(value bool) *Query {
+func (q *Query) Idempotent(value bool) *Query {
 	q.idempotent = value
 	return q
 }
