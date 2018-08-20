@@ -472,10 +472,10 @@ func (c *Conn) recv() error {
 
 	if c.frameObserver != nil {
 		c.frameObserver.ObserveFrameHeader(context.Background(), ObservedFrameHeader{
-			Version: byte(head.version),
+			Version: protoVersion(head.version),
 			Flags:   head.flags,
 			Stream:  int16(head.stream),
-			Opcode:  byte(head.op),
+			Opcode:  frameOp(head.op),
 			Length:  int32(head.length),
 			Start:   headStartTime,
 			End:     headEndTime,
