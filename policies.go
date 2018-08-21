@@ -146,6 +146,9 @@ const (
 // users to implement their own logic to determine if a query can be attempted
 // again.
 //
+// RetryPolicy is a work in progress. Notably, query idempotence currently has
+// no effect on retry policies.
+//
 // See SimpleRetryPolicy as an example of implementing and using a RetryPolicy
 // interface.
 type RetryPolicy interface {
