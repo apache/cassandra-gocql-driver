@@ -585,6 +585,10 @@ type callReq struct {
 }
 
 func (c *Conn) exec(ctx context.Context, req frameWriter, tracer Tracer) (*framer, error) {
+	if ctx != nil && ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+
 	// TODO: move tracer onto conn
 	stream, ok := c.streams.GetStream()
 	if !ok {
@@ -790,6 +794,41 @@ func marshalQueryValue(typ TypeInfo, value interface{}, dst *queryValues) error 
 }
 
 func (c *Conn) executeQuery(qry *Query) *Iter {
+	ctx := qry.context
+	if rt, ok := qry.rt.(RetryPolicyWithAttemptTimeout); ok && rt.AttemptTimeout() > 0 {
+		if ctx == nil {
+			ctx = context.Background()
+		}
+		var cancel func()
+		ctx, cancel = context.WithCancel(ctx)
+		defer cancel()
+		if qry.attemptTimeoutTimer == nil {
+			qry.attemptTimeoutTimer = time.NewTimer(0)
+			<-qry.attemptTimeoutTimer.C
+		} else {
+			if !qry.attemptTimeoutTimer.Stop() {
+				select {
+				case <-qry.attemptTimeoutTimer.C:
+				default:
+				}
+			}
+		}
+
+		qry.attemptTimeoutTimer.Reset(rt.AttemptTimeout())
+		timeoutCh := qry.attemptTimeoutTimer.C
+
+		go func() {
+			select {
+			case <-ctx.Done():
+				qry.attemptTimeoutTimer.Stop()
+				break
+			case <-timeoutCh:
+				break
+			}
+			cancel()
+		}()
+	}
+
 	params := queryParams{
 		consistency: qry.cons,
 	}
@@ -814,7 +853,7 @@ func (c *Conn) executeQuery(qry *Query) *Iter {
 	if qry.shouldPrepare() {
 		// Prepare all DML queries. Other queries can not be prepared.
 		var err error
-		info, err = c.prepareStatement(qry.context, qry.stmt, qry.trace)
+		info, err = c.prepareStatement(ctx, qry.stmt, qry.trace)
 		if err != nil {
 			return &Iter{err: err}
 		}
@@ -863,7 +902,7 @@ func (c *Conn) executeQuery(qry *Query) *Iter {
 		}
 	}
 
-	framer, err := c.exec(qry.context, frame, qry.trace)
+	framer, err := c.exec(ctx, frame, qry.trace)
 	if err != nil {
 		return &Iter{err: err}
 	}

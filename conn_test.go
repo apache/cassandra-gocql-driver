@@ -15,6 +15,7 @@ import (
 	"io"
 	"io/ioutil"
 	"net"
+	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -277,11 +278,45 @@ func TestTimeout(t *testing.T) {
 	wg.Wait()
 }
 
+type testRetryPolicy struct {
+	numRetries     int // maximum number of times to retry a query
+	attemptTimeout time.Duration
+	t              *testing.T
+}
+
+// Attempt tells gocql to attempt the query again based on query.Attempts being less
+// than the NumRetries defined in the policy.
+func (s *testRetryPolicy) Attempt(q RetryableQuery) bool {
+	return q.Attempts() <= s.numRetries
+}
+
+func (s *testRetryPolicy) GetRetryType(err error) RetryType {
+	return Retry
+}
+
+// AttemptTimeout satisfies the optional RetryPolicyWithAttemptTimeout interface.
+func (s *testRetryPolicy) AttemptTimeout() time.Duration {
+	return s.attemptTimeout
+}
+
+type testQueryObserver struct{}
+
+func (o *testQueryObserver) ObserveQuery(ctx context.Context, q ObservedQuery) {
+	Logger.Printf("Observed query %q. Returned %v rows, took %v on host %q. Error: %q\n", q.Statement, q.Rows, q.End.Sub(q.Start), q.Host.ConnectAddress().String(), q.Err)
+}
+
 // TestQueryRetry will test to make sure that gocql will execute
 // the exact amount of retry queries designated by the user.
 func TestQueryRetry(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
+	log := &testLogger{}
+	Logger = log
+	defer func() {
+		Logger = &defaultLogger{}
+		os.Stdout.WriteString(log.String())
+	}()
 
 	srv := NewTestServer(t, defaultProto, ctx)
 	defer srv.Stop()
@@ -301,22 +336,27 @@ func TestQueryRetry(t *testing.T) {
 		}
 	}()
 
-	rt := &SimpleRetryPolicy{NumRetries: 1}
-
-	qry := db.Query("kill").RetryPolicy(rt)
+	rt := &testRetryPolicy{numRetries: 10, t: t, attemptTimeout: time.Millisecond * 25}
+	queryCtx, cancel := context.WithTimeout(context.Background(), time.Millisecond*90)
+	defer cancel()
+	qry := db.Query("slow").RetryPolicy(rt).Observer(&testQueryObserver{}).WithContext(queryCtx)
 	if err := qry.Exec(); err == nil {
 		t.Fatalf("expected error")
 	}
 
-	requests := atomic.LoadInt64(&srv.nKillReq)
-	attempts := qry.Attempts()
-	if requests != int64(attempts) {
-		t.Fatalf("expected requests %v to match query attempts %v", requests, attempts)
-	}
+	// wait for the last slow query to finish
+	// this prevents the test from flaking because of writing to a connection that's been closed
+	time.Sleep(100 * time.Millisecond)
 
-	// the query will only be attempted once, but is being retried
-	if requests != int64(rt.NumRetries) {
-		t.Fatalf("failed to retry the query %v time(s). Query executed %v times", rt.NumRetries, requests-1)
+	numQueries := atomic.LoadUint64(&srv.nQueries)
+
+	// the 90ms timeout allows at most 4 retries
+	if numQueries > 4 {
+		t.Fatalf("Too many retries executed for query. Query executed %v times", numQueries)
+	}
+	// make sure query is retried to guard against regressions
+	if numQueries < 2 {
+		t.Fatalf("Not enough retries executed for query. Query executed %v times", numQueries)
 	}
 }
 
@@ -770,6 +810,7 @@ type TestServer struct {
 	nreq             uint64
 	listen           net.Listener
 	nKillReq         int64
+	nQueries         uint64
 	compressor       Compressor
 
 	protocol   byte
@@ -885,6 +926,7 @@ func (srv *TestServer) process(f *framer) {
 		f.writeHeader(0, opSupported, head.stream)
 		f.writeShort(0)
 	case opQuery:
+		atomic.AddUint64(&srv.nQueries, 1)
 		query := f.readLongString()
 		first := query
 		if n := strings.Index(query, " "); n > 0 {
