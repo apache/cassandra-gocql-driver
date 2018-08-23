@@ -1797,7 +1797,7 @@ var (
 type ErrProtocol struct{ error }
 
 func NewErrProtocol(format string, args ...interface{}) error {
-	return ErrProtocol{fmt.Errorf(format, args...)}
+	return &ErrProtocol{fmt.Errorf(format, args...)}
 }
 
 // BatchSizeMaximum is the maximum number of statements a batch operation can have.
