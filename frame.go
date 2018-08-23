@@ -657,7 +657,7 @@ func (f *framer) parseErrorFrame() frame {
 		res.WriteType = f.readString()
 		return res
 	case errFunctionFailure:
-		res := RequestErrFunctionFailure{
+		res := &RequestErrFunctionFailure{
 			errorFrame: errD,
 		}
 		res.Keyspace = f.readString()
