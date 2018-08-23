@@ -29,6 +29,9 @@ type RequestError interface {
 	error
 }
 
+// make sure errorFrame satisfies error interface
+var _ error = (*errorFrame)(nil)
+
 type errorFrame struct {
 	frameHeader
 
