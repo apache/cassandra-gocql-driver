@@ -26,7 +26,7 @@ const (
 type RequestError interface {
 	Code() int
 	Message() string
-	Error() string
+	error
 }
 
 type errorFrame struct {
