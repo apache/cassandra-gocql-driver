@@ -876,7 +876,7 @@ func (c *Conn) executeQuery(qry *Query) *Iter {
 		}
 
 		if len(values) != info.request.actualColCount {
-			return &Iter{err: fmt.Errorf("gocql: expected %d values send got %d", info.request.actualColCount, len(values))}
+			return &Iter{err: NewErrProtocol("gocql: expected %d values send got %d", info.request.actualColCount, len(values))}
 		}
 
 		params.values = make([]queryValues, len(values))
