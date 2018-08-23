@@ -1784,7 +1784,6 @@ func (e Error) Error() string {
 
 var (
 	ErrNotFound             = errors.New("not found")
-	ErrUnavailable          = errors.New("unavailable")
 	ErrUnsupported          = errors.New("feature not supported")
 	ErrTooManyStmts         = errors.New("too many statements")
 	ErrUseStmt              = errors.New("use statements aren't supported. Please see https://github.com/gocql/gocql for explanation.")
