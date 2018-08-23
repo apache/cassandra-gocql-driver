@@ -121,7 +121,7 @@ func hostInfo(addr string, defaultPort int) ([]*HostInfo, error) {
 	}
 
 	// Look up host in DNS
-	ips, err := net.LookupIP(host)
+	ips, err := LookupIP(host)
 	if err != nil {
 		return nil, err
 	} else if len(ips) == 0 {
