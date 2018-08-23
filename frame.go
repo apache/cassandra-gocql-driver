@@ -664,8 +664,13 @@ func (f *framer) parseErrorFrame() frame {
 		res.Function = f.readString()
 		res.ArgTypes = f.readStringList()
 		return res
+	case errSyntax:
+		res := &RequestErrSyntax{
+			errorFrame: errD,
+		}
+		return res
 	case errInvalid, errBootstrapping, errConfig, errCredentials, errOverloaded,
-		errProtocol, errServer, errSyntax, errTruncate, errUnauthorized:
+		errProtocol, errServer, errTruncate, errUnauthorized:
 		// TODO(zariel): we should have some distinct types for these errors
 		return errD
 	default:

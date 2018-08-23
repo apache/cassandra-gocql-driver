@@ -117,3 +117,8 @@ type RequestErrFunctionFailure struct {
 	Function string
 	ArgTypes []string
 }
+
+// RequestErrSyntax denotes a syntax error returned by Cassandra.
+type RequestErrSyntax struct {
+	errorFrame
+}
