@@ -33,9 +33,24 @@ func (q *queryExecutor) attemptQuery(qry ExecutableQuery, conn *Conn) *Iter {
 	return iter
 }
 
+// checkErrorIsRetryable evaluates whether a particular error is retryable.
+// In cases that are ambiguous or should be decided on a case-by-case basis it errs on
+// the side of returning true and pushing the decision onto the retry policy.
+func (q *queryExecutor) checkErrorIsRetryable(err error) bool {
+	switch err.(type) {
+	case *RequestErrSyntax:
+		return false
+	}
+
+	return true
+}
+
 // checkRetryPolicy is used by the query executor to determine how a failed query should be handled.
 // It consults the query context and the query's retry policy.
 func (q *queryExecutor) checkRetryPolicy(rq ExecutableQuery, err error) (RetryType, error) {
+	if !q.checkErrorIsRetryable(err) {
+		return Rethrow, err
+	}
 	if ctx := rq.Context(); ctx != nil && ctx.Err() != nil {
 		return Rethrow, ctx.Err()
 	}
