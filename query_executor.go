@@ -37,8 +37,18 @@ func (q *queryExecutor) attemptQuery(qry ExecutableQuery, conn *Conn) *Iter {
 // In cases that are ambiguous or should be decided on a case-by-case basis it errs on
 // the side of returning true and pushing the decision onto the retry policy.
 func (q *queryExecutor) checkErrorIsRetryable(err error) bool {
+	switch err {
+	// skip ErrNotFound: evaluated after a query succeeds (just with 0 rows)
+	// skip ErrNoConnections because that's actually only returned below when the pool runs out of hosts to retry on
+	case ErrUnsupported, ErrTooManyStmts, ErrUseStmt, ErrSessionClosed, ErrNoKeyspace,
+		ErrKeyspaceDoesNotExist, ErrNoMetadata, ErrorUDTUnavailable:
+		return false
+	}
+
 	switch err.(type) {
 	case *RequestErrSyntax:
+		return false
+	case *ErrProtocol:
 		return false
 	}
 
