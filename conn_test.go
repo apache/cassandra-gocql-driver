@@ -152,6 +152,10 @@ func TestDNSLookupConnected(t *testing.T) {
 		Logger = &defaultLogger{}
 	}()
 
+	// Override the defaul DNS resolver and restore at the end
+	failDNS = true
+	defer func() { failDNS = false }()
+
 	srv := NewTestServer(t, defaultProto, context.Background())
 	defer srv.Stop()
 
@@ -178,8 +182,9 @@ func TestDNSLookupError(t *testing.T) {
 		Logger = &defaultLogger{}
 	}()
 
-	srv := NewTestServer(t, defaultProto, context.Background())
-	defer srv.Stop()
+	// Override the defaul DNS resolver and restore at the end
+	failDNS = true
+	defer func() { failDNS = false }()
 
 	cluster := NewCluster("cassandra1.invalid", "cassandra2.invalid")
 	cluster.ProtoVersion = int(defaultProto)
