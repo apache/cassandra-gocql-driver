@@ -657,13 +657,20 @@ func (f *framer) parseErrorFrame() frame {
 		res.WriteType = f.readString()
 		return res
 	case errFunctionFailure:
-		res := RequestErrFunctionFailure{
+		res := &RequestErrFunctionFailure{
 			errorFrame: errD,
 		}
 		res.Keyspace = f.readString()
 		res.Function = f.readString()
 		res.ArgTypes = f.readStringList()
 		return res
+
+	case errCDCWriteFailure:
+		res := &RequestErrCDCWriteFailure{
+			errorFrame: errD,
+		}
+		return res
+
 	case errInvalid, errBootstrapping, errConfig, errCredentials, errOverloaded,
 		errProtocol, errServer, errSyntax, errTruncate, errUnauthorized:
 		// TODO(zariel): we should have some distinct types for these errors

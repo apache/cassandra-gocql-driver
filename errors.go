@@ -15,6 +15,7 @@ const (
 	errReadFailure     = 0x1300
 	errFunctionFailure = 0x1400
 	errWriteFailure    = 0x1500
+	errCDCWriteFailure = 0x1600
 	errSyntax          = 0x2000
 	errUnauthorized    = 0x2100
 	errInvalid         = 0x2200
@@ -78,6 +79,10 @@ type RequestErrWriteFailure struct {
 	BlockFor    int
 	NumFailures int
 	WriteType   string
+}
+
+type RequestErrCDCWriteFailure struct {
+	errorFrame
 }
 
 type RequestErrReadTimeout struct {
