@@ -48,7 +48,7 @@ func (q *queryExecutor) checkRetryPolicy(rq ExecutableQuery, err error) (RetryTy
 	if p.Attempt(rq) {
 		return p.GetRetryType(err), nil
 	}
-	return Rethrow, err
+	return p.GetRetryType(err), err
 }
 
 func (q *queryExecutor) executeQuery(qry ExecutableQuery) (*Iter, error) {
