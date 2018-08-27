@@ -232,12 +232,13 @@ func unmarshalVarchar(info TypeInfo, data []byte, value interface{}) error {
 		return nil
 	case *[]byte:
 		if data != nil {
-			*v = copyBytes(data)
+			*v = append((*v)[:0], data...)
 		} else {
 			*v = nil
 		}
 		return nil
 	}
+
 	rv := reflect.ValueOf(value)
 	if rv.Kind() != reflect.Ptr {
 		return unmarshalErrorf("can not unmarshal into non-pointer %T", value)

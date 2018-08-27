@@ -1401,3 +1401,16 @@ func TestMarshalDate(t *testing.T) {
 		}
 	}
 }
+
+func BenchmarkUnmarshalVarchar(b *testing.B) {
+	b.ReportAllocs()
+	src := make([]byte, 1024)
+	dst := make([]byte, len(src))
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if err := unmarshalVarchar(NativeType{}, src, &dst); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
