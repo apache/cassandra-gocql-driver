@@ -681,7 +681,6 @@ type Query struct {
 	disableSkipMetadata   bool
 	context               context.Context
 	idempotent            bool
-	attemptTimeoutTimer   *time.Timer
 
 	disableAutoPage bool
 }
@@ -802,11 +801,6 @@ func (q *Query) RoutingKey(routingKey []byte) *Query {
 func (q *Query) WithContext(ctx context.Context) *Query {
 	q.context = ctx
 	return q
-}
-
-// Context satisfies the ExecutableQuery interface.
-func (q *Query) Context() context.Context {
-	return q.context
 }
 
 func (q *Query) execute(conn *Conn) *Iter {
@@ -1489,11 +1483,6 @@ func (b *Batch) RetryPolicy(r RetryPolicy) *Batch {
 func (b *Batch) WithContext(ctx context.Context) *Batch {
 	b.context = ctx
 	return b
-}
-
-// Context satisfies the ExecutableQuery interface.
-func (b *Batch) Context() context.Context {
-	return b.context
 }
 
 // Size returns the number of batch statements to be executed by the batch operation.
