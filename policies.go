@@ -5,7 +5,6 @@
 package gocql
 
 import (
-	"context"
 	"fmt"
 	"math"
 	"math/rand"
@@ -131,7 +130,6 @@ type RetryableQuery interface {
 	Attempts() int
 	SetConsistency(c Consistency)
 	GetConsistency() Consistency
-	Context() context.Context
 }
 
 type RetryType uint16
@@ -153,15 +151,6 @@ const (
 type RetryPolicy interface {
 	Attempt(RetryableQuery) bool
 	GetRetryType(error) RetryType
-}
-
-// RetryPolicyWithAttemptTimeout is an optional interface retry policies can implement
-// in order to control the duration to use before a query attempt is considered
-// as a timeout and will potentially be retried.
-// It's not part of the RetryPolicy interface to remain backwards compatible.
-type RetryPolicyWithAttemptTimeout interface {
-	AttemptTimeout() time.Duration
-	RetryPolicy
 }
 
 // SimpleRetryPolicy has simple logic for attempting a query a fixed number of times.
