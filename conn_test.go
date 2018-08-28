@@ -282,6 +282,23 @@ func TestTimeout(t *testing.T) {
 	wg.Wait()
 }
 
+type testQueryObserver struct {
+	metrics map[string]*queryMetrics
+	verbose bool
+}
+
+func (o *testQueryObserver) ObserveQuery(ctx context.Context, q ObservedQuery) {
+	host := q.Host.ConnectAddress().String()
+	o.metrics[host] = q.Metrics
+	if o.verbose {
+		Logger.Printf("Observed query %q. Returned %v rows, took %v on host %q with %v attempts and total latency %v. Error: %q\n",
+			q.Statement, q.Rows, q.End.Sub(q.Start), host, q.Metrics.Attempts, q.Metrics.TotalLatency, q.Err)
+	}
+}
+
+func (o *testQueryObserver) GetMetrics(host *HostInfo) *queryMetrics {
+	return o.metrics[host.ConnectAddress().String()]
+}
 
 // TestQueryRetry will test to make sure that gocql will execute
 // the exact amount of retry queries designated by the user.
@@ -324,6 +341,65 @@ func TestQueryRetry(t *testing.T) {
 	if requests != int64(rt.NumRetries) {
 		t.Fatalf("failed to retry the query %v time(s). Query executed %v times", rt.NumRetries, requests-1)
 	}
+}
+
+func TestQueryMultinodeWithMetrics(t *testing.T) {
+
+	// Build a 3 node cluster to test host metric mapping
+	var nodes []*TestServer
+	var addresses = []string{
+		"127.0.0.1",
+		"127.0.0.2",
+		"127.0.0.3",
+	}
+	// Can do with 1 context for all servers
+	ctx := context.Background()
+	for _, ip := range addresses {
+		srv := NewTestServerWithAddress(ip+":0", t, defaultProto, ctx)
+		defer srv.Stop()
+		nodes = append(nodes, srv)
+	}
+
+	db, err := newTestSession(defaultProto, nodes[0].Address, nodes[1].Address, nodes[2].Address)
+	if err != nil {
+		t.Fatalf("NewCluster: %v", err)
+	}
+	defer db.Close()
+
+	// 1 retry per host
+	rt := &SimpleRetryPolicy{NumRetries: 3}
+	observer := &testQueryObserver{metrics: make(map[string]*queryMetrics), verbose: false}
+	qry := db.Query("kill").RetryPolicy(rt).Observer(observer)
+	if err := qry.Exec(); err == nil {
+		t.Fatalf("expected error")
+	}
+
+	for i, ip := range addresses {
+		host := &HostInfo{connectAddress: net.ParseIP(ip)}
+		observedMetrics := observer.GetMetrics(host)
+
+		requests := int(atomic.LoadInt64(&nodes[i].nKillReq))
+		hostAttempts := qry.metrics[ip].Attempts
+		if requests != hostAttempts {
+			t.Fatalf("expected requests %v to match query attempts %v", requests, hostAttempts)
+		}
+
+		if hostAttempts != observedMetrics.Attempts {
+			t.Fatalf("expected observed attempts %v to match query attempts %v on host %v", observedMetrics.Attempts, hostAttempts, ip)
+		}
+
+		hostLatency := qry.metrics[ip].TotalLatency
+		observedLatency := observedMetrics.TotalLatency
+		if hostLatency != observedLatency {
+			t.Fatalf("expected observed latency %v to match query latency %v on host %v", observedLatency, hostLatency, ip)
+		}
+	}
+	// the query will only be attempted once, but is being retried
+	attempts := qry.Attempts()
+	if attempts != rt.NumRetries {
+		t.Fatalf("failed to retry the query %v time(s). Query executed %v times", rt.NumRetries, attempts)
+	}
+
 }
 
 func TestStreams_Protocol1(t *testing.T) {
