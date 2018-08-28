@@ -56,8 +56,8 @@ func TestJoinHostPort(t *testing.T) {
 	}
 }
 
-func testCluster(addr string, proto protoVersion) *ClusterConfig {
-	cluster := NewCluster(addr)
+func testCluster(proto protoVersion, addresses ...string) *ClusterConfig {
+	cluster := NewCluster(addresses...)
 	cluster.ProtoVersion = int(proto)
 	cluster.disableControlConn = true
 	return cluster
@@ -67,7 +67,7 @@ func TestSimple(t *testing.T) {
 	srv := NewTestServer(t, defaultProto, context.Background())
 	defer srv.Stop()
 
-	cluster := testCluster(srv.Address, defaultProto)
+	cluster := testCluster(defaultProto, srv.Address)
 	db, err := cluster.CreateSession()
 	if err != nil {
 		t.Fatalf("0x%x: NewCluster: %v", defaultProto, err)
@@ -107,7 +107,7 @@ func TestSSLSimpleNoClientCert(t *testing.T) {
 }
 
 func createTestSslCluster(addr string, proto protoVersion, useClientCert bool) *ClusterConfig {
-	cluster := testCluster(addr, proto)
+	cluster := testCluster(proto, addr)
 	sslOpts := &SslOptions{
 		CaPath:                 "testdata/pki/ca.crt",
 		EnableHostVerification: false,
@@ -128,7 +128,7 @@ func TestClosed(t *testing.T) {
 	srv := NewTestServer(t, defaultProto, context.Background())
 	defer srv.Stop()
 
-	session, err := newTestSession(srv.Address, defaultProto)
+	session, err := newTestSession(defaultProto, srv.Address)
 	if err != nil {
 		t.Fatalf("0x%x: NewCluster: %v", defaultProto, err)
 	}
@@ -140,8 +140,8 @@ func TestClosed(t *testing.T) {
 	}
 }
 
-func newTestSession(addr string, proto protoVersion) (*Session, error) {
-	return testCluster(addr, proto).CreateSession()
+func newTestSession(proto protoVersion, addresses ...string) (*Session, error) {
+	return testCluster(proto, addresses...).CreateSession()
 }
 
 func TestDNSLookupConnected(t *testing.T) {
@@ -255,7 +255,7 @@ func TestTimeout(t *testing.T) {
 	srv := NewTestServer(t, defaultProto, ctx)
 	defer srv.Stop()
 
-	db, err := newTestSession(srv.Address, defaultProto)
+	db, err := newTestSession(defaultProto, srv.Address)
 	if err != nil {
 		t.Fatalf("NewCluster: %v", err)
 	}
@@ -282,6 +282,7 @@ func TestTimeout(t *testing.T) {
 	wg.Wait()
 }
 
+
 // TestQueryRetry will test to make sure that gocql will execute
 // the exact amount of retry queries designated by the user.
 func TestQueryRetry(t *testing.T) {
@@ -291,7 +292,7 @@ func TestQueryRetry(t *testing.T) {
 	srv := NewTestServer(t, defaultProto, ctx)
 	defer srv.Stop()
 
-	db, err := newTestSession(srv.Address, defaultProto)
+	db, err := newTestSession(defaultProto, srv.Address)
 	if err != nil {
 		t.Fatalf("NewCluster: %v", err)
 	}
@@ -331,7 +332,7 @@ func TestStreams_Protocol1(t *testing.T) {
 
 	// TODO: these are more like session tests and should instead operate
 	// on a single Conn
-	cluster := testCluster(srv.Address, protoVersion1)
+	cluster := testCluster(protoVersion1, srv.Address)
 	cluster.NumConns = 1
 	cluster.ProtoVersion = 1
 
@@ -363,7 +364,7 @@ func TestStreams_Protocol3(t *testing.T) {
 
 	// TODO: these are more like session tests and should instead operate
 	// on a single Conn
-	cluster := testCluster(srv.Address, protoVersion3)
+	cluster := testCluster(protoVersion3, srv.Address)
 	cluster.NumConns = 1
 	cluster.ProtoVersion = 3
 
@@ -439,7 +440,7 @@ func TestQueryTimeout(t *testing.T) {
 	srv := NewTestServer(t, defaultProto, context.Background())
 	defer srv.Stop()
 
-	cluster := testCluster(srv.Address, defaultProto)
+	cluster := testCluster(defaultProto, srv.Address)
 	// Set the timeout arbitrarily low so that the query hits the timeout in a
 	// timely manner.
 	cluster.Timeout = 1 * time.Millisecond
@@ -476,7 +477,7 @@ func BenchmarkSingleConn(b *testing.B) {
 	srv := NewTestServer(b, 3, context.Background())
 	defer srv.Stop()
 
-	cluster := testCluster(srv.Address, 3)
+	cluster := testCluster(3, srv.Address)
 	// Set the timeout arbitrarily low so that the query hits the timeout in a
 	// timely manner.
 	cluster.Timeout = 500 * time.Millisecond
@@ -507,7 +508,7 @@ func TestQueryTimeoutReuseStream(t *testing.T) {
 	srv := NewTestServer(t, defaultProto, context.Background())
 	defer srv.Stop()
 
-	cluster := testCluster(srv.Address, defaultProto)
+	cluster := testCluster(defaultProto, srv.Address)
 	// Set the timeout arbitrarily low so that the query hits the timeout in a
 	// timely manner.
 	cluster.Timeout = 1 * time.Millisecond
@@ -531,7 +532,7 @@ func TestQueryTimeoutClose(t *testing.T) {
 	srv := NewTestServer(t, defaultProto, context.Background())
 	defer srv.Stop()
 
-	cluster := testCluster(srv.Address, defaultProto)
+	cluster := testCluster(defaultProto, srv.Address)
 	// Set the timeout arbitrarily low so that the query hits the timeout in a
 	// timely manner.
 	cluster.Timeout = 1000 * time.Millisecond
@@ -625,7 +626,7 @@ func TestContext_Timeout(t *testing.T) {
 	srv := NewTestServer(t, defaultProto, context.Background())
 	defer srv.Stop()
 
-	cluster := testCluster(srv.Address, defaultProto)
+	cluster := testCluster(defaultProto, srv.Address)
 	cluster.Timeout = 5 * time.Second
 	db, err := cluster.CreateSession()
 	if err != nil {
@@ -663,7 +664,7 @@ func TestFrameHeaderObserver(t *testing.T) {
 	srv := NewTestServer(t, defaultProto, context.Background())
 	defer srv.Stop()
 
-	cluster := testCluster(srv.Address, defaultProto)
+	cluster := testCluster(defaultProto, srv.Address)
 	cluster.NumConns = 1
 	observer := &recordingFrameHeaderObserver{t: t}
 	cluster.FrameHeaderObserver = observer
@@ -695,8 +696,8 @@ func TestFrameHeaderObserver(t *testing.T) {
 	}
 }
 
-func NewTestServer(t testing.TB, protocol uint8, ctx context.Context) *TestServer {
-	laddr, err := net.ResolveTCPAddr("tcp", "127.0.0.1:0")
+func NewTestServerWithAddress(addr string, t testing.TB, protocol uint8, ctx context.Context) *TestServer {
+	laddr, err := net.ResolveTCPAddr("tcp", addr)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -726,6 +727,10 @@ func NewTestServer(t testing.TB, protocol uint8, ctx context.Context) *TestServe
 	go srv.serve()
 
 	return srv
+}
+
+func NewTestServer(t testing.TB, protocol uint8, ctx context.Context) *TestServer {
+	return NewTestServerWithAddress("127.0.0.1:0", t, protocol, ctx)
 }
 
 func NewSSLTestServer(t testing.TB, protocol uint8, ctx context.Context) *TestServer {
@@ -788,7 +793,7 @@ type TestServer struct {
 }
 
 func (srv *TestServer) session() (*Session, error) {
-	return testCluster(srv.Address, protoVersion(srv.protocol)).CreateSession()
+	return testCluster(protoVersion(srv.protocol), srv.Address).CreateSession()
 }
 
 func (srv *TestServer) host() *HostInfo {

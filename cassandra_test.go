@@ -539,7 +539,7 @@ func TestBatch(t *testing.T) {
 		t.Fatal("create table:", err)
 	}
 
-	batch := NewBatch(LoggedBatch)
+	batch := session.NewBatch(LoggedBatch)
 	for i := 0; i < 100; i++ {
 		batch.Query(`INSERT INTO batch_table (id) VALUES (?)`, i)
 	}
@@ -571,9 +571,9 @@ func TestUnpreparedBatch(t *testing.T) {
 
 	var batch *Batch
 	if session.cfg.ProtoVersion == 2 {
-		batch = NewBatch(CounterBatch)
+		batch = session.NewBatch(CounterBatch)
 	} else {
-		batch = NewBatch(UnloggedBatch)
+		batch = session.NewBatch(UnloggedBatch)
 	}
 
 	for i := 0; i < 100; i++ {
@@ -612,7 +612,7 @@ func TestBatchLimit(t *testing.T) {
 		t.Fatal("create table:", err)
 	}
 
-	batch := NewBatch(LoggedBatch)
+	batch := session.NewBatch(LoggedBatch)
 	for i := 0; i < 65537; i++ {
 		batch.Query(`INSERT INTO batch_table2 (id) VALUES (?)`, i)
 	}
@@ -1817,7 +1817,7 @@ func TestBatchObserve(t *testing.T) {
 
 	var observedBatch *observation
 
-	batch := NewBatch(LoggedBatch)
+	batch := session.NewBatch(LoggedBatch)
 	batch.Observer(funcBatchObserver(func(ctx context.Context, o ObservedBatch) {
 		if observedBatch != nil {
 			t.Fatal("batch observe called more than once")
