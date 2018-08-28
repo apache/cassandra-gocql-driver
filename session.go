@@ -846,8 +846,8 @@ func (q *Query) attempt(keyspace string, end, start time.Time, iter *Iter, host 
 			End:       end,
 			Rows:      iter.numRows,
 			Host:      host,
+			Metrics:   hostMetrics,
 			Err:       iter.err,
-			Attempt:   q.attempts,
 		})
 	}
 }
@@ -1593,8 +1593,8 @@ func (b *Batch) attempt(keyspace string, end, start time.Time, iter *Iter, host 
 		End:        end,
 		// Rows not used in batch observations // TODO - might be able to support it when using BatchCAS
 		Host:    host,
+		Metrics: hostMetrics,
 		Err:     iter.err,
-		Attempt: b.attempts,
 	})
 }
 
@@ -1746,13 +1746,12 @@ type ObservedQuery struct {
 	// Host is the informations about the host that performed the query
 	Host *HostInfo
 
+	// The metrics per this host
+	Metrics *queryMetrics
 
 	// Err is the error in the query.
 	// It only tracks network errors or errors of bad cassandra syntax, in particular selects with no match return nil error
 	Err error
-
-	// Attempt contains the number of times the query has been attempted so far.
-	Attempt int
 }
 
 // QueryObserver is the interface implemented by query observers / stat collectors.
@@ -1779,8 +1778,8 @@ type ObservedBatch struct {
 	// It only tracks network errors or errors of bad cassandra syntax, in particular selects with no match return nil error
 	Err error
 
-	// Attempt contains the number of times the query has been attempted so far.
-	Attempt int
+	// The metrics per this host
+	Metrics *queryMetrics
 }
 
 // BatchObserver is the interface implemented by batch observers / stat collectors.
