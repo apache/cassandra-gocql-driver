@@ -27,6 +27,8 @@ env:
       AUTH=false
     - CASS=3.0.8
       AUTH=false
+    - CASS=3.11.3
+      AUTH=false
 
 go:
   - "1.9"
