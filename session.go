@@ -738,8 +738,8 @@ func (q *Query) Attempts() int {
 
 //Latency returns the average amount of nanoseconds per attempt of the query.
 func (q *Query) Latency() int64 {
-	attempts := 0
-	var latency int64 = 0
+	var attempts int
+	var latency int64
 	for _, metric := range q.metrics {
 		attempts += metric.Attempts
 		latency += metric.TotalLatency
