@@ -163,6 +163,7 @@ const (
 	flagTracing       byte = 0x02
 	flagCustomPayload byte = 0x04
 	flagWarning       byte = 0x08
+	flagBetaProtocol  byte = 0x10
 )
 
 type Consistency uint16
@@ -404,6 +405,9 @@ func newFramer(r io.Reader, w io.Writer, compressor Compressor, version byte) *f
 	if compressor != nil {
 		flags |= flagCompress
 	}
+	if version == protoVersion5 {
+		flags |= flagBetaProtocol
+	}
 
 	version &= protoVersionMask
 
@@ -441,7 +445,7 @@ func readHeader(r io.Reader, p []byte) (head frameHeader, err error) {
 
 	version := p[0] & protoVersionMask
 
-	if version < protoVersion1 || version > protoVersion4 {
+	if version < protoVersion1 || version > protoVersion5 {
 		return frameHeader{}, fmt.Errorf("gocql: unsupported protocol response version: %d", version)
 	}
 
@@ -1431,7 +1435,11 @@ func (f *framer) writeQueryParams(opts *queryParams) {
 		}
 	}
 
-	f.writeByte(flags)
+	if f.proto > protoVersion4 {
+		f.writeUint(uint32(flags))
+	} else {
+		f.writeByte(flags)
+	}
 
 	if n := len(opts.values); n > 0 {
 		f.writeShort(uint16(n))
@@ -1609,7 +1617,11 @@ func (f *framer) writeBatchFrame(streamID int, w *writeBatchFrame) error {
 			flags |= flagDefaultTimestamp
 		}
 
-		f.writeByte(flags)
+		if f.proto > protoVersion4 {
+			f.writeUint(uint32(flags))
+		} else {
+			f.writeByte(flags)
+		}
 
 		if w.serialConsistency > 0 {
 			f.writeConsistency(Consistency(w.serialConsistency))
@@ -1871,6 +1883,13 @@ func appendInt(p []byte, n int32) []byte {
 		byte(n))
 }
 
+func appendUint(p []byte, n uint32) []byte {
+	return append(p, byte(n>>24),
+		byte(n>>16),
+		byte(n>>8),
+		byte(n))
+}
+
 func appendLong(p []byte, n int64) []byte {
 	return append(p,
 		byte(n>>56),
@@ -1887,6 +1906,10 @@ func appendLong(p []byte, n int64) []byte {
 // these are protocol level binary types
 func (f *framer) writeInt(n int32) {
 	f.wbuf = appendInt(f.wbuf, n)
+}
+
+func (f *framer) writeUint(n uint32) {
+	f.wbuf = appendUint(f.wbuf, n)
 }
 
 func (f *framer) writeShort(n uint16) {
