@@ -60,6 +60,8 @@ func goType(t TypeInfo) reflect.Type {
 		return reflect.TypeOf(make(map[string]interface{}))
 	case TypeDate:
 		return reflect.TypeOf(*new(time.Time))
+	case TypeDuration:
+		return reflect.TypeOf(*new(Duration))
 	default:
 		return nil
 	}
@@ -203,6 +205,8 @@ func getApacheCassandraType(class string) Type {
 		return TypeSet
 	case "TupleType":
 		return TypeTuple
+	case "DurationType":
+		return TypeDuration
 	default:
 		return TypeCustom
 	}
