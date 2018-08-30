@@ -652,7 +652,14 @@ func (f *framer) parseErrorFrame() frame {
 		res.Consistency = f.readConsistency()
 		res.Received = f.readInt()
 		res.BlockFor = f.readInt()
+		if f.proto > protoVersion4 {
+			res.ErrorMap = f.readErrorMap()
+			res.NumFailures = len(res.ErrorMap)
+		} else {
+			res.NumFailures = f.readInt()
+		}
 		res.DataPresent = f.readByte() != 0
+
 		return res
 	case errWriteFailure:
 		res := &RequestErrWriteFailure{
@@ -661,7 +668,12 @@ func (f *framer) parseErrorFrame() frame {
 		res.Consistency = f.readConsistency()
 		res.Received = f.readInt()
 		res.BlockFor = f.readInt()
-		res.NumFailures = f.readInt()
+		if f.proto > protoVersion4 {
+			res.ErrorMap = f.readErrorMap()
+			res.NumFailures = len(res.ErrorMap)
+		} else {
+			res.NumFailures = f.readInt()
+		}
 		res.WriteType = f.readString()
 		return res
 	case errFunctionFailure:
@@ -1834,7 +1846,7 @@ func (f *framer) readShortBytes() []byte {
 	return l
 }
 
-func (f *framer) readInet() (net.IP, int) {
+func (f *framer) readInetAdressOnly() net.IP {
 	if len(f.rbuf) < 1 {
 		panic(fmt.Errorf("not enough bytes in buffer to read inet size require %d got: %d", 1, len(f.rbuf)))
 	}
@@ -1853,9 +1865,11 @@ func (f *framer) readInet() (net.IP, int) {
 	ip := make([]byte, size)
 	copy(ip, f.rbuf[:size])
 	f.rbuf = f.rbuf[size:]
+	return net.IP(ip)
+}
 
-	port := f.readInt()
-	return net.IP(ip), port
+func (f *framer) readInet() (net.IP, int) {
+	return f.readInetAdressOnly(), f.readInt()
 }
 
 func (f *framer) readConsistency() Consistency {
