@@ -157,6 +157,10 @@ const (
 	flagWithSerialConsistency byte = 0x10
 	flagDefaultTimestamp      byte = 0x20
 	flagWithNameValues        byte = 0x40
+	flagWithKeyspace          byte = 0x80
+
+	// prepare flags
+	flagWithPreparedKeyspace uint32 = 0x01
 
 	// header flags
 	flagCompress      byte = 0x01
@@ -684,6 +688,16 @@ func (f *framer) parseErrorFrame() frame {
 	}
 }
 
+func (f *framer) readErrorMap() (errMap ErrorMap) {
+	errMap = make(ErrorMap)
+	numErrs := f.readInt()
+	for i := 0; i < numErrs; i++ {
+		ip := f.readInetAdressOnly().String()
+		errMap[ip] = f.readShort()
+	}
+	return
+}
+
 func (f *framer) writeHeader(flags byte, op frameOp, stream int) {
 	f.wbuf = f.wbuf[:0]
 	f.wbuf = append(f.wbuf,
@@ -802,11 +816,28 @@ func (w *writeStartupFrame) writeFrame(f *framer, streamID int) error {
 
 type writePrepareFrame struct {
 	statement string
+	keyspace  string
 }
 
 func (w *writePrepareFrame) writeFrame(f *framer, streamID int) error {
 	f.writeHeader(f.flags, opPrepare, streamID)
 	f.writeLongString(w.statement)
+
+	var flags uint32 = 0
+	if w.keyspace != "" {
+		if f.proto > protoVersion4 {
+			flags |= flagWithPreparedKeyspace
+		} else {
+			panic(fmt.Errorf("The keyspace can only be set with protocol 5 or higher"))
+		}
+	}
+	if f.proto > protoVersion4 {
+		f.writeUint(flags)
+	}
+	if w.keyspace != "" {
+		f.writeString(w.keyspace)
+	}
+
 	return f.finishWrite()
 }
 
@@ -1390,11 +1421,13 @@ type queryParams struct {
 	// v3+
 	defaultTimestamp      bool
 	defaultTimestampValue int64
+	// v5+
+	keyspace string
 }
 
 func (q queryParams) String() string {
-	return fmt.Sprintf("[query_params consistency=%v skip_meta=%v page_size=%d paging_state=%q serial_consistency=%v default_timestamp=%v values=%v]",
-		q.consistency, q.skipMeta, q.pageSize, q.pagingState, q.serialConsistency, q.defaultTimestamp, q.values)
+	return fmt.Sprintf("[query_params consistency=%v skip_meta=%v page_size=%d paging_state=%q serial_consistency=%v default_timestamp=%v values=%v keyspace=%s]",
+		q.consistency, q.skipMeta, q.pageSize, q.pagingState, q.serialConsistency, q.defaultTimestamp, q.values, q.keyspace)
 }
 
 func (f *framer) writeQueryParams(opts *queryParams) {
@@ -1432,6 +1465,14 @@ func (f *framer) writeQueryParams(opts *queryParams) {
 		if len(opts.values) > 0 && opts.values[0].name != "" {
 			flags |= flagWithNameValues
 			names = true
+		}
+	}
+
+	if opts.keyspace != "" {
+		if f.proto > protoVersion4 {
+			flags |= flagWithKeyspace
+		} else {
+			panic(fmt.Errorf("The keyspace can only be set with protocol 5 or higher"))
 		}
 	}
 
@@ -1477,6 +1518,10 @@ func (f *framer) writeQueryParams(opts *queryParams) {
 			ts = time.Now().UnixNano() / 1000
 		}
 		f.writeLong(ts)
+	}
+
+	if opts.keyspace != "" {
+		f.writeString(opts.keyspace)
 	}
 }
 
