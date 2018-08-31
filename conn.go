@@ -721,6 +721,9 @@ func (c *Conn) prepareStatement(ctx context.Context, stmt string, tracer Tracer)
 	prep := &writePrepareFrame{
 		statement: stmt,
 	}
+	if c.version > protoVersion4 {
+		prep.keyspace = c.currentKeyspace
+	}
 
 	framer, err := c.exec(ctx, prep, tracer)
 	if err != nil {
@@ -804,6 +807,9 @@ func (c *Conn) executeQuery(qry *Query) *Iter {
 	}
 	if qry.pageSize > 0 {
 		params.pageSize = qry.pageSize
+	}
+	if c.version > protoVersion4 {
+		params.keyspace = c.currentKeyspace
 	}
 
 	var (

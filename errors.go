@@ -64,6 +64,8 @@ func (e *RequestErrUnavailable) String() string {
 	return fmt.Sprintf("[request_error_unavailable consistency=%s required=%d alive=%d]", e.Consistency, e.Required, e.Alive)
 }
 
+type ErrorMap map[string]uint16
+
 type RequestErrWriteTimeout struct {
 	errorFrame
 	Consistency Consistency
@@ -79,6 +81,7 @@ type RequestErrWriteFailure struct {
 	BlockFor    int
 	NumFailures int
 	WriteType   string
+	ErrorMap    ErrorMap
 }
 
 type RequestErrCDCWriteFailure struct {
@@ -111,6 +114,7 @@ type RequestErrReadFailure struct {
 	BlockFor    int
 	NumFailures int
 	DataPresent bool
+	ErrorMap    ErrorMap
 }
 
 type RequestErrFunctionFailure struct {

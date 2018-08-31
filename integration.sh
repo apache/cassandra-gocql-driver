@@ -51,7 +51,7 @@ function run_tests() {
 		proto=4
 		ccm updateconf 'enable_user_defined_functions: true'
 	elif [[ $version == 3.*.* ]]; then
-		proto=4
+		proto=5
 		ccm updateconf 'enable_user_defined_functions: true'
 	fi
 

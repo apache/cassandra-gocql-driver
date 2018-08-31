@@ -157,12 +157,17 @@ const (
 	flagWithSerialConsistency byte = 0x10
 	flagDefaultTimestamp      byte = 0x20
 	flagWithNameValues        byte = 0x40
+	flagWithKeyspace          byte = 0x80
+
+	// prepare flags
+	flagWithPreparedKeyspace uint32 = 0x01
 
 	// header flags
 	flagCompress      byte = 0x01
 	flagTracing       byte = 0x02
 	flagCustomPayload byte = 0x04
 	flagWarning       byte = 0x08
+	flagBetaProtocol  byte = 0x10
 )
 
 type Consistency uint16
@@ -404,6 +409,9 @@ func newFramer(r io.Reader, w io.Writer, compressor Compressor, version byte) *f
 	if compressor != nil {
 		flags |= flagCompress
 	}
+	if version == protoVersion5 {
+		flags |= flagBetaProtocol
+	}
 
 	version &= protoVersionMask
 
@@ -441,7 +449,7 @@ func readHeader(r io.Reader, p []byte) (head frameHeader, err error) {
 
 	version := p[0] & protoVersionMask
 
-	if version < protoVersion1 || version > protoVersion4 {
+	if version < protoVersion1 || version > protoVersion5 {
 		return frameHeader{}, fmt.Errorf("gocql: unsupported protocol response version: %d", version)
 	}
 
@@ -644,7 +652,14 @@ func (f *framer) parseErrorFrame() frame {
 		res.Consistency = f.readConsistency()
 		res.Received = f.readInt()
 		res.BlockFor = f.readInt()
+		if f.proto > protoVersion4 {
+			res.ErrorMap = f.readErrorMap()
+			res.NumFailures = len(res.ErrorMap)
+		} else {
+			res.NumFailures = f.readInt()
+		}
 		res.DataPresent = f.readByte() != 0
+
 		return res
 	case errWriteFailure:
 		res := &RequestErrWriteFailure{
@@ -653,7 +668,12 @@ func (f *framer) parseErrorFrame() frame {
 		res.Consistency = f.readConsistency()
 		res.Received = f.readInt()
 		res.BlockFor = f.readInt()
-		res.NumFailures = f.readInt()
+		if f.proto > protoVersion4 {
+			res.ErrorMap = f.readErrorMap()
+			res.NumFailures = len(res.ErrorMap)
+		} else {
+			res.NumFailures = f.readInt()
+		}
 		res.WriteType = f.readString()
 		return res
 	case errFunctionFailure:
@@ -678,6 +698,16 @@ func (f *framer) parseErrorFrame() frame {
 	default:
 		panic(fmt.Errorf("unknown error code: 0x%x", errD.code))
 	}
+}
+
+func (f *framer) readErrorMap() (errMap ErrorMap) {
+	errMap = make(ErrorMap)
+	numErrs := f.readInt()
+	for i := 0; i < numErrs; i++ {
+		ip := f.readInetAdressOnly().String()
+		errMap[ip] = f.readShort()
+	}
+	return
 }
 
 func (f *framer) writeHeader(flags byte, op frameOp, stream int) {
@@ -798,11 +828,28 @@ func (w *writeStartupFrame) writeFrame(f *framer, streamID int) error {
 
 type writePrepareFrame struct {
 	statement string
+	keyspace  string
 }
 
 func (w *writePrepareFrame) writeFrame(f *framer, streamID int) error {
 	f.writeHeader(f.flags, opPrepare, streamID)
 	f.writeLongString(w.statement)
+
+	var flags uint32 = 0
+	if w.keyspace != "" {
+		if f.proto > protoVersion4 {
+			flags |= flagWithPreparedKeyspace
+		} else {
+			panic(fmt.Errorf("The keyspace can only be set with protocol 5 or higher"))
+		}
+	}
+	if f.proto > protoVersion4 {
+		f.writeUint(flags)
+	}
+	if w.keyspace != "" {
+		f.writeString(w.keyspace)
+	}
+
 	return f.finishWrite()
 }
 
@@ -1386,11 +1433,13 @@ type queryParams struct {
 	// v3+
 	defaultTimestamp      bool
 	defaultTimestampValue int64
+	// v5+
+	keyspace string
 }
 
 func (q queryParams) String() string {
-	return fmt.Sprintf("[query_params consistency=%v skip_meta=%v page_size=%d paging_state=%q serial_consistency=%v default_timestamp=%v values=%v]",
-		q.consistency, q.skipMeta, q.pageSize, q.pagingState, q.serialConsistency, q.defaultTimestamp, q.values)
+	return fmt.Sprintf("[query_params consistency=%v skip_meta=%v page_size=%d paging_state=%q serial_consistency=%v default_timestamp=%v values=%v keyspace=%s]",
+		q.consistency, q.skipMeta, q.pageSize, q.pagingState, q.serialConsistency, q.defaultTimestamp, q.values, q.keyspace)
 }
 
 func (f *framer) writeQueryParams(opts *queryParams) {
@@ -1431,7 +1480,19 @@ func (f *framer) writeQueryParams(opts *queryParams) {
 		}
 	}
 
-	f.writeByte(flags)
+	if opts.keyspace != "" {
+		if f.proto > protoVersion4 {
+			flags |= flagWithKeyspace
+		} else {
+			panic(fmt.Errorf("The keyspace can only be set with protocol 5 or higher"))
+		}
+	}
+
+	if f.proto > protoVersion4 {
+		f.writeUint(uint32(flags))
+	} else {
+		f.writeByte(flags)
+	}
 
 	if n := len(opts.values); n > 0 {
 		f.writeShort(uint16(n))
@@ -1469,6 +1530,10 @@ func (f *framer) writeQueryParams(opts *queryParams) {
 			ts = time.Now().UnixNano() / 1000
 		}
 		f.writeLong(ts)
+	}
+
+	if opts.keyspace != "" {
+		f.writeString(opts.keyspace)
 	}
 }
 
@@ -1609,7 +1674,11 @@ func (f *framer) writeBatchFrame(streamID int, w *writeBatchFrame) error {
 			flags |= flagDefaultTimestamp
 		}
 
-		f.writeByte(flags)
+		if f.proto > protoVersion4 {
+			f.writeUint(uint32(flags))
+		} else {
+			f.writeByte(flags)
+		}
 
 		if w.serialConsistency > 0 {
 			f.writeConsistency(Consistency(w.serialConsistency))
@@ -1777,7 +1846,7 @@ func (f *framer) readShortBytes() []byte {
 	return l
 }
 
-func (f *framer) readInet() (net.IP, int) {
+func (f *framer) readInetAdressOnly() net.IP {
 	if len(f.rbuf) < 1 {
 		panic(fmt.Errorf("not enough bytes in buffer to read inet size require %d got: %d", 1, len(f.rbuf)))
 	}
@@ -1796,9 +1865,11 @@ func (f *framer) readInet() (net.IP, int) {
 	ip := make([]byte, size)
 	copy(ip, f.rbuf[:size])
 	f.rbuf = f.rbuf[size:]
+	return net.IP(ip)
+}
 
-	port := f.readInt()
-	return net.IP(ip), port
+func (f *framer) readInet() (net.IP, int) {
+	return f.readInetAdressOnly(), f.readInt()
 }
 
 func (f *framer) readConsistency() Consistency {
@@ -1871,6 +1942,13 @@ func appendInt(p []byte, n int32) []byte {
 		byte(n))
 }
 
+func appendUint(p []byte, n uint32) []byte {
+	return append(p, byte(n>>24),
+		byte(n>>16),
+		byte(n>>8),
+		byte(n))
+}
+
 func appendLong(p []byte, n int64) []byte {
 	return append(p,
 		byte(n>>56),
@@ -1887,6 +1965,10 @@ func appendLong(p []byte, n int64) []byte {
 // these are protocol level binary types
 func (f *framer) writeInt(n int32) {
 	f.wbuf = appendInt(f.wbuf, n)
+}
+
+func (f *framer) writeUint(n uint32) {
+	f.wbuf = appendUint(f.wbuf, n)
 }
 
 func (f *framer) writeShort(n uint16) {

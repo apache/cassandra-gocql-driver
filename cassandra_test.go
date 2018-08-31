@@ -485,6 +485,58 @@ func TestCAS(t *testing.T) {
 	}
 }
 
+func TestDurationType(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+
+	if session.cfg.ProtoVersion < 5 {
+		t.Skip("Duration type is not supported. Please use protocol version >= 4 and cassandra version >= 3.11")
+	}
+
+	if err := createTable(session, `CREATE TABLE gocql_test.duration_table (
+		k int primary key, v duration
+	)`); err != nil {
+		t.Fatal("create:", err)
+	}
+
+	durations := []Duration{
+		Duration{
+			Months:      250,
+			Days:        500,
+			Nanoseconds: 300010001,
+		},
+		Duration{
+			Months:      -250,
+			Days:        -500,
+			Nanoseconds: -300010001,
+		},
+		Duration{
+			Months:      0,
+			Days:        128,
+			Nanoseconds: 127,
+		},
+		Duration{
+			Months:      0x7FFFFFFF,
+			Days:        0x7FFFFFFF,
+			Nanoseconds: 0x7FFFFFFFFFFFFFFF,
+		},
+	}
+	for _, durationSend := range durations {
+		if err := session.Query(`INSERT INTO gocql_test.duration_table (k, v) VALUES (1, ?)`, durationSend).Exec(); err != nil {
+			t.Fatal(err)
+		}
+
+		var id int
+		var duration Duration
+		if err := session.Query(`SELECT k, v FROM gocql_test.duration_table`).Scan(&id, &duration); err != nil {
+			t.Fatal(err)
+		}
+		if duration.Months != durationSend.Months || duration.Days != durationSend.Days || duration.Nanoseconds != durationSend.Nanoseconds {
+			t.Fatalf("Unexpeted value returned, expected=%v, received=%v", durationSend, duration)
+		}
+	}
+}
+
 func TestMapScanCAS(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()

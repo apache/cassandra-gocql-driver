@@ -329,6 +329,27 @@ var marshalTests = []struct {
 		nil,
 	},
 	{
+		NativeType{proto: 5, typ: TypeDuration},
+		[]byte("\x89\xa2\xc3\xc2\x9a\xe0F\x91\x06"),
+		Duration{Months: 1233, Days: 123213, Nanoseconds: 2312323},
+		nil,
+		nil,
+	},
+	{
+		NativeType{proto: 5, typ: TypeDuration},
+		[]byte("\x89\xa1\xc3\xc2\x99\xe0F\x91\x05"),
+		Duration{Months: -1233, Days: -123213, Nanoseconds: -2312323},
+		nil,
+		nil,
+	},
+	{
+		NativeType{proto: 5, typ: TypeDuration},
+		[]byte("\x02\x04\x80\xe6"),
+		Duration{Months: 1, Days: 2, Nanoseconds: 115},
+		nil,
+		nil,
+	},
+	{
 		CollectionType{
 			NativeType: NativeType{proto: 2, typ: TypeList},
 			Elem:       NativeType{proto: 2, typ: TypeInt},
@@ -1411,6 +1432,51 @@ func BenchmarkUnmarshalVarchar(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		if err := unmarshalVarchar(NativeType{}, src, &dst); err != nil {
 			b.Fatal(err)
+		}
+	}
+}
+
+func TestMarshalDuration(t *testing.T) {
+	durationS := "1h10m10s"
+	duration, _ := time.ParseDuration(durationS)
+	expectedData := append([]byte{0, 0}, encVint(duration.Nanoseconds())...)
+	var marshalDurationTests = []struct {
+		Info  TypeInfo
+		Data  []byte
+		Value interface{}
+	}{
+		{
+			NativeType{proto: 5, typ: TypeDuration},
+			expectedData,
+			duration.Nanoseconds(),
+		},
+		{
+			NativeType{proto: 5, typ: TypeDuration},
+			expectedData,
+			duration,
+		},
+		{
+			NativeType{proto: 5, typ: TypeDuration},
+			expectedData,
+			durationS,
+		},
+		{
+			NativeType{proto: 5, typ: TypeDuration},
+			expectedData,
+			&duration,
+		},
+	}
+
+	for i, test := range marshalDurationTests {
+		t.Log(i, test)
+		data, err := Marshal(test.Info, test.Value)
+		if err != nil {
+			t.Errorf("marshalTest[%d]: %v", i, err)
+			continue
+		}
+		if !bytes.Equal(data, test.Data) {
+			t.Errorf("marshalTest[%d]: expected %x (%v), got %x (%v) for time %s", i,
+				test.Data, decInt(test.Data), data, decInt(data), test.Value)
 		}
 	}
 }
