@@ -56,8 +56,8 @@ func TestJoinHostPort(t *testing.T) {
 	}
 }
 
-func testCluster(addr string, proto protoVersion) *ClusterConfig {
-	cluster := NewCluster(addr)
+func testCluster(proto protoVersion, addresses ...string) *ClusterConfig {
+	cluster := NewCluster(addresses...)
 	cluster.ProtoVersion = int(proto)
 	cluster.disableControlConn = true
 	return cluster
@@ -67,7 +67,7 @@ func TestSimple(t *testing.T) {
 	srv := NewTestServer(t, defaultProto, context.Background())
 	defer srv.Stop()
 
-	cluster := testCluster(srv.Address, defaultProto)
+	cluster := testCluster(defaultProto, srv.Address)
 	db, err := cluster.CreateSession()
 	if err != nil {
 		t.Fatalf("0x%x: NewCluster: %v", defaultProto, err)
@@ -107,7 +107,7 @@ func TestSSLSimpleNoClientCert(t *testing.T) {
 }
 
 func createTestSslCluster(addr string, proto protoVersion, useClientCert bool) *ClusterConfig {
-	cluster := testCluster(addr, proto)
+	cluster := testCluster(proto, addr)
 	sslOpts := &SslOptions{
 		CaPath:                 "testdata/pki/ca.crt",
 		EnableHostVerification: false,
@@ -128,7 +128,7 @@ func TestClosed(t *testing.T) {
 	srv := NewTestServer(t, defaultProto, context.Background())
 	defer srv.Stop()
 
-	session, err := newTestSession(srv.Address, defaultProto)
+	session, err := newTestSession(defaultProto, srv.Address)
 	if err != nil {
 		t.Fatalf("0x%x: NewCluster: %v", defaultProto, err)
 	}
@@ -140,8 +140,8 @@ func TestClosed(t *testing.T) {
 	}
 }
 
-func newTestSession(addr string, proto protoVersion) (*Session, error) {
-	return testCluster(addr, proto).CreateSession()
+func newTestSession(proto protoVersion, addresses ...string) (*Session, error) {
+	return testCluster(proto, addresses...).CreateSession()
 }
 
 func TestDNSLookupConnected(t *testing.T) {
@@ -255,7 +255,7 @@ func TestTimeout(t *testing.T) {
 	srv := NewTestServer(t, defaultProto, ctx)
 	defer srv.Stop()
 
-	db, err := newTestSession(srv.Address, defaultProto)
+	db, err := newTestSession(defaultProto, srv.Address)
 	if err != nil {
 		t.Fatalf("NewCluster: %v", err)
 	}
@@ -282,6 +282,24 @@ func TestTimeout(t *testing.T) {
 	wg.Wait()
 }
 
+type testQueryObserver struct {
+	metrics map[string]*queryMetrics
+	verbose bool
+}
+
+func (o *testQueryObserver) ObserveQuery(ctx context.Context, q ObservedQuery) {
+	host := q.Host.ConnectAddress().String()
+	o.metrics[host] = q.Metrics
+	if o.verbose {
+		Logger.Printf("Observed query %q. Returned %v rows, took %v on host %q with %v attempts and total latency %v. Error: %q\n",
+			q.Statement, q.Rows, q.End.Sub(q.Start), host, q.Metrics.Attempts, q.Metrics.TotalLatency, q.Err)
+	}
+}
+
+func (o *testQueryObserver) GetMetrics(host *HostInfo) *queryMetrics {
+	return o.metrics[host.ConnectAddress().String()]
+}
+
 // TestQueryRetry will test to make sure that gocql will execute
 // the exact amount of retry queries designated by the user.
 func TestQueryRetry(t *testing.T) {
@@ -291,7 +309,7 @@ func TestQueryRetry(t *testing.T) {
 	srv := NewTestServer(t, defaultProto, ctx)
 	defer srv.Stop()
 
-	db, err := newTestSession(srv.Address, defaultProto)
+	db, err := newTestSession(defaultProto, srv.Address)
 	if err != nil {
 		t.Fatalf("NewCluster: %v", err)
 	}
@@ -325,13 +343,72 @@ func TestQueryRetry(t *testing.T) {
 	}
 }
 
+func TestQueryMultinodeWithMetrics(t *testing.T) {
+
+	// Build a 3 node cluster to test host metric mapping
+	var nodes []*TestServer
+	var addresses = []string{
+		"127.0.0.1",
+		"127.0.0.2",
+		"127.0.0.3",
+	}
+	// Can do with 1 context for all servers
+	ctx := context.Background()
+	for _, ip := range addresses {
+		srv := NewTestServerWithAddress(ip+":0", t, defaultProto, ctx)
+		defer srv.Stop()
+		nodes = append(nodes, srv)
+	}
+
+	db, err := newTestSession(defaultProto, nodes[0].Address, nodes[1].Address, nodes[2].Address)
+	if err != nil {
+		t.Fatalf("NewCluster: %v", err)
+	}
+	defer db.Close()
+
+	// 1 retry per host
+	rt := &SimpleRetryPolicy{NumRetries: 3}
+	observer := &testQueryObserver{metrics: make(map[string]*queryMetrics), verbose: false}
+	qry := db.Query("kill").RetryPolicy(rt).Observer(observer)
+	if err := qry.Exec(); err == nil {
+		t.Fatalf("expected error")
+	}
+
+	for i, ip := range addresses {
+		host := &HostInfo{connectAddress: net.ParseIP(ip)}
+		observedMetrics := observer.GetMetrics(host)
+
+		requests := int(atomic.LoadInt64(&nodes[i].nKillReq))
+		hostAttempts := qry.metrics[ip].Attempts
+		if requests != hostAttempts {
+			t.Fatalf("expected requests %v to match query attempts %v", requests, hostAttempts)
+		}
+
+		if hostAttempts != observedMetrics.Attempts {
+			t.Fatalf("expected observed attempts %v to match query attempts %v on host %v", observedMetrics.Attempts, hostAttempts, ip)
+		}
+
+		hostLatency := qry.metrics[ip].TotalLatency
+		observedLatency := observedMetrics.TotalLatency
+		if hostLatency != observedLatency {
+			t.Fatalf("expected observed latency %v to match query latency %v on host %v", observedLatency, hostLatency, ip)
+		}
+	}
+	// the query will only be attempted once, but is being retried
+	attempts := qry.Attempts()
+	if attempts != rt.NumRetries {
+		t.Fatalf("failed to retry the query %v time(s). Query executed %v times", rt.NumRetries, attempts)
+	}
+
+}
+
 func TestStreams_Protocol1(t *testing.T) {
 	srv := NewTestServer(t, protoVersion1, context.Background())
 	defer srv.Stop()
 
 	// TODO: these are more like session tests and should instead operate
 	// on a single Conn
-	cluster := testCluster(srv.Address, protoVersion1)
+	cluster := testCluster(protoVersion1, srv.Address)
 	cluster.NumConns = 1
 	cluster.ProtoVersion = 1
 
@@ -363,7 +440,7 @@ func TestStreams_Protocol3(t *testing.T) {
 
 	// TODO: these are more like session tests and should instead operate
 	// on a single Conn
-	cluster := testCluster(srv.Address, protoVersion3)
+	cluster := testCluster(protoVersion3, srv.Address)
 	cluster.NumConns = 1
 	cluster.ProtoVersion = 3
 
@@ -439,7 +516,7 @@ func TestQueryTimeout(t *testing.T) {
 	srv := NewTestServer(t, defaultProto, context.Background())
 	defer srv.Stop()
 
-	cluster := testCluster(srv.Address, defaultProto)
+	cluster := testCluster(defaultProto, srv.Address)
 	// Set the timeout arbitrarily low so that the query hits the timeout in a
 	// timely manner.
 	cluster.Timeout = 1 * time.Millisecond
@@ -476,7 +553,7 @@ func BenchmarkSingleConn(b *testing.B) {
 	srv := NewTestServer(b, 3, context.Background())
 	defer srv.Stop()
 
-	cluster := testCluster(srv.Address, 3)
+	cluster := testCluster(3, srv.Address)
 	// Set the timeout arbitrarily low so that the query hits the timeout in a
 	// timely manner.
 	cluster.Timeout = 500 * time.Millisecond
@@ -507,7 +584,7 @@ func TestQueryTimeoutReuseStream(t *testing.T) {
 	srv := NewTestServer(t, defaultProto, context.Background())
 	defer srv.Stop()
 
-	cluster := testCluster(srv.Address, defaultProto)
+	cluster := testCluster(defaultProto, srv.Address)
 	// Set the timeout arbitrarily low so that the query hits the timeout in a
 	// timely manner.
 	cluster.Timeout = 1 * time.Millisecond
@@ -531,7 +608,7 @@ func TestQueryTimeoutClose(t *testing.T) {
 	srv := NewTestServer(t, defaultProto, context.Background())
 	defer srv.Stop()
 
-	cluster := testCluster(srv.Address, defaultProto)
+	cluster := testCluster(defaultProto, srv.Address)
 	// Set the timeout arbitrarily low so that the query hits the timeout in a
 	// timely manner.
 	cluster.Timeout = 1000 * time.Millisecond
@@ -625,7 +702,7 @@ func TestContext_Timeout(t *testing.T) {
 	srv := NewTestServer(t, defaultProto, context.Background())
 	defer srv.Stop()
 
-	cluster := testCluster(srv.Address, defaultProto)
+	cluster := testCluster(defaultProto, srv.Address)
 	cluster.Timeout = 5 * time.Second
 	db, err := cluster.CreateSession()
 	if err != nil {
@@ -663,7 +740,7 @@ func TestFrameHeaderObserver(t *testing.T) {
 	srv := NewTestServer(t, defaultProto, context.Background())
 	defer srv.Stop()
 
-	cluster := testCluster(srv.Address, defaultProto)
+	cluster := testCluster(defaultProto, srv.Address)
 	cluster.NumConns = 1
 	observer := &recordingFrameHeaderObserver{t: t}
 	cluster.FrameHeaderObserver = observer
@@ -695,8 +772,8 @@ func TestFrameHeaderObserver(t *testing.T) {
 	}
 }
 
-func NewTestServer(t testing.TB, protocol uint8, ctx context.Context) *TestServer {
-	laddr, err := net.ResolveTCPAddr("tcp", "127.0.0.1:0")
+func NewTestServerWithAddress(addr string, t testing.TB, protocol uint8, ctx context.Context) *TestServer {
+	laddr, err := net.ResolveTCPAddr("tcp", addr)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -726,6 +803,10 @@ func NewTestServer(t testing.TB, protocol uint8, ctx context.Context) *TestServe
 	go srv.serve()
 
 	return srv
+}
+
+func NewTestServer(t testing.TB, protocol uint8, ctx context.Context) *TestServer {
+	return NewTestServerWithAddress("127.0.0.1:0", t, protocol, ctx)
 }
 
 func NewSSLTestServer(t testing.TB, protocol uint8, ctx context.Context) *TestServer {
@@ -788,7 +869,7 @@ type TestServer struct {
 }
 
 func (srv *TestServer) session() (*Session, error) {
-	return testCluster(srv.Address, protoVersion(srv.protocol)).CreateSession()
+	return testCluster(protoVersion(srv.protocol), srv.Address).CreateSession()
 }
 
 func (srv *TestServer) host() *HostInfo {
