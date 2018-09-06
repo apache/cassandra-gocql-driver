@@ -282,6 +282,38 @@ func TestTimeout(t *testing.T) {
 	wg.Wait()
 }
 
+func TestCancel(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	srv := NewTestServer(t, defaultProto, ctx)
+	defer srv.Stop()
+
+	db, err := newTestSession(defaultProto, srv.Address)
+	if err != nil {
+		t.Fatalf("NewCluster: %v", err)
+	}
+	defer db.Close()
+
+	qry := db.Query("veryslow")
+	startTime := time.Now()
+	go func() {
+		if err := qry.Exec(); err == nil {
+			t.Fatalf("expected error")
+		}
+	}()
+
+	// Very slow query runs for about 5 seconds, cancel qry after 2
+	time.AfterFunc(2*time.Second, qry.Cancel)
+
+	elapsed := time.Since(startTime)
+	// the 2 seconds is not exact, so just make sure it's not too big either,
+	// definitely should not get to 5
+	if elapsed > 4*time.Second {
+		t.Errorf("expected to cancel after about 2 seconds, failed after %v\n", elapsed)
+	}
+}
+
 type testQueryObserver struct {
 	metrics map[string]*queryMetrics
 	verbose bool
@@ -1000,6 +1032,19 @@ func (srv *TestServer) process(f *framer) {
 				case <-srv.ctx.Done():
 					return
 				case <-time.After(50 * time.Millisecond):
+					f.finishWrite()
+				}
+			}()
+			return
+		case "veryslow":
+			go func() {
+				f.writeHeader(0, opResult, head.stream)
+				f.writeInt(resultKindVoid)
+				f.wbuf[0] = srv.protocol | 0x80
+				select {
+				case <-srv.ctx.Done():
+					return
+				case <-time.After(5 * time.Second):
 					f.finishWrite()
 				}
 			}()
