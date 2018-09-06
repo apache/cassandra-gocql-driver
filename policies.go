@@ -130,7 +130,6 @@ type RetryableQuery interface {
 	Attempts() int
 	SetConsistency(c Consistency)
 	GetConsistency() Consistency
-	Cancel()
 }
 
 type RetryType uint16

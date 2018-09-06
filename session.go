@@ -831,9 +831,7 @@ func (q *Query) RoutingKey(routingKey []byte) *Query {
 // timeout when waiting for responses from Cassandra. Additionally it adds
 // the cancel function so that it can be called whenever necessary.
 func (q *Query) WithContext(ctx context.Context) *Query {
-	context, cancel := context.WithCancel(ctx)
-	q.context = context
-	q.cancelQuery = cancel
+	q.context, q.cancelQuery = context.WithCancel(ctx)
 	return q
 }
 
@@ -1546,9 +1544,7 @@ func (b *Batch) RetryPolicy(r RetryPolicy) *Batch {
 // timeout when waiting for responses from Cassandra. Additionally it adds
 // the cancel function so that it can be called whenever necessary.
 func (b *Batch) WithContext(ctx context.Context) *Batch {
-	context, cancel := context.WithCancel(ctx)
-	b.context = context
-	b.cancelBatch = cancel
+	b.context, b.cancelBatch = context.WithCancel(ctx)
 	return b
 }
 
