@@ -683,6 +683,7 @@ type Query struct {
 	defaultTimestampValue int64
 	disableSkipMetadata   bool
 	context               context.Context
+	cancelQuery           func()
 	idempotent            bool
 	metrics               map[string]*queryMetrics
 
@@ -703,6 +704,10 @@ func (q *Query) defaultsFromSession() {
 	q.defaultTimestamp = s.cfg.DefaultTimestamp
 	q.idempotent = s.cfg.DefaultIdempotence
 	q.metrics = make(map[string]*queryMetrics)
+
+	// Initiate an empty context with a cancel call
+	q.WithContext(context.Background())
+
 	s.mu.RUnlock()
 }
 
@@ -823,10 +828,15 @@ func (q *Query) RoutingKey(routingKey []byte) *Query {
 }
 
 // WithContext will set the context to use during a query, it will be used to
-// timeout when waiting for responses from Cassandra.
+// timeout when waiting for responses from Cassandra. Additionally it adds
+// the cancel function so that it can be called whenever necessary.
 func (q *Query) WithContext(ctx context.Context) *Query {
-	q.context = ctx
+	q.context, q.cancelQuery = context.WithCancel(ctx)
 	return q
+}
+
+func (q *Query) Cancel() {
+	q.cancelQuery()
 }
 
 func (q *Query) execute(conn *Conn) *Iter {
@@ -1418,6 +1428,7 @@ type Batch struct {
 	defaultTimestamp      bool
 	defaultTimestampValue int64
 	context               context.Context
+	cancelBatch           func()
 	keyspace              string
 	metrics               map[string]*queryMetrics
 }
@@ -1442,6 +1453,10 @@ func (s *Session) NewBatch(typ BatchType) *Batch {
 		keyspace:         s.cfg.Keyspace,
 		metrics:          make(map[string]*queryMetrics),
 	}
+
+	// Initiate an empty context with a cancel call
+	batch.WithContext(context.Background())
+
 	s.mu.RUnlock()
 	return batch
 }
@@ -1526,10 +1541,15 @@ func (b *Batch) RetryPolicy(r RetryPolicy) *Batch {
 }
 
 // WithContext will set the context to use during a query, it will be used to
-// timeout when waiting for responses from Cassandra.
+// timeout when waiting for responses from Cassandra. Additionally it adds
+// the cancel function so that it can be called whenever necessary.
 func (b *Batch) WithContext(ctx context.Context) *Batch {
-	b.context = ctx
+	b.context, b.cancelBatch = context.WithCancel(ctx)
 	return b
+}
+
+func (b *Batch) Cancel() {
+	b.cancelBatch()
 }
 
 // Size returns the number of batch statements to be executed by the batch operation.

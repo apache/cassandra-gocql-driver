@@ -282,6 +282,39 @@ func TestTimeout(t *testing.T) {
 	wg.Wait()
 }
 
+func TestCancel(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	srv := NewTestServer(t, defaultProto, ctx)
+	defer srv.Stop()
+
+	cluster := testCluster(defaultProto, srv.Address)
+	cluster.Timeout = 1 * time.Second
+	db, err := cluster.CreateSession()
+	if err != nil {
+		t.Fatalf("NewCluster: %v", err)
+	}
+	defer db.Close()
+
+	qry := db.Query("timeout")
+
+	// Make sure we finish the query without leftovers
+	var wg sync.WaitGroup
+	wg.Add(1)
+
+	go func() {
+		if err := qry.Exec(); err != context.Canceled {
+			t.Fatalf("expected to get context cancel error: '%v', got '%v'", context.Canceled, err)
+		}
+		wg.Done()
+	}()
+
+	// The query will timeout after about 1 seconds, so cancel it after a short pause
+	time.AfterFunc(20 * time.Millisecond, qry.Cancel)
+	wg.Wait()
+}
+
 type testQueryObserver struct {
 	metrics map[string]*queryMetrics
 	verbose bool
