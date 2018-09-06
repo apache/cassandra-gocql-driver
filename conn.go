@@ -124,8 +124,11 @@ var TimeoutLimit int64 = 0
 // queries, but users are usually advised to use a more reliable, higher
 // level API.
 type Conn struct {
-	conn          net.Conn
-	r             *bufio.Reader
+	conn net.Conn
+	r    *bufio.Reader
+
+	w *writeCoalescer
+
 	timeout       time.Duration
 	cfg           *ConnConfig
 	frameObserver FrameHeaderObserver
@@ -215,9 +218,9 @@ func (s *Session) dial(host *HostInfo, cfg *ConnConfig, errorHandler ConnErrorHa
 		cancel func()
 	)
 	if cfg.ConnectTimeout > 0 {
-		ctx, cancel = context.WithTimeout(context.Background(), cfg.ConnectTimeout)
+		ctx, cancel = context.WithTimeout(context.TODO(), cfg.ConnectTimeout)
 	} else {
-		ctx, cancel = context.WithCancel(context.Background())
+		ctx, cancel = context.WithCancel(context.TODO())
 	}
 	defer cancel()
 
@@ -257,17 +260,47 @@ func (s *Session) dial(host *HostInfo, cfg *ConnConfig, errorHandler ConnErrorHa
 		return nil, errors.New("gocql: no response to connection startup within timeout")
 	}
 
+	// dont coalesce startup frames
+	if s.cfg.WriteCoalesceWaitTime > 0 {
+		w := &writeCoalescer{
+			w:       conn,
+			timeout: cfg.Timeout,
+		}
+		w.cond = sync.NewCond(&w.mu)
+		c.w = w
+		go c.writeFlusher()
+	}
 	go c.serve()
 
 	return c, nil
 }
 
-func (c *Conn) Write(p []byte) (int, error) {
-	if c.timeout > 0 {
-		c.conn.SetWriteDeadline(time.Now().Add(c.timeout))
-	}
+func (c *Conn) writeFlusher() {
+	ticker := time.NewTicker(c.session.cfg.WriteCoalesceWaitTime)
+	defer ticker.Stop()
+	defer c.w.flush()
 
-	return c.conn.Write(p)
+	for {
+		select {
+		case <-c.quit:
+			return
+		case <-ticker.C:
+		}
+
+		c.w.flush()
+	}
+}
+
+func (c *Conn) Write(p []byte) (n int, err error) {
+	if c.w != nil {
+		n, err = c.w.write(p)
+	} else {
+		if c.timeout > 0 {
+			c.conn.SetWriteDeadline(time.Now().Add(c.timeout))
+		}
+		n, err = c.conn.Write(p)
+	}
+	return n, err
 }
 
 func (c *Conn) Read(p []byte) (n int, err error) {
@@ -582,6 +615,60 @@ type callReq struct {
 	streamID int           // current stream in use
 
 	timer *time.Timer
+}
+
+type writeCoalescer struct {
+	w       io.Writer
+	timeout time.Duration
+
+	cond    *sync.Cond
+	mu      sync.Mutex
+	buffers net.Buffers
+
+	// result of the write
+	err error
+}
+
+func (w *writeCoalescer) flush() {
+	if w.timeout > 0 {
+		type deadliner interface {
+			SetWriteDeadline(time.Time) error
+		}
+		w.w.(deadliner).SetWriteDeadline(time.Now().Add(w.timeout))
+	}
+
+	defer w.mu.Unlock()
+	w.mu.Lock()
+
+	if len(w.buffers) == 0 {
+		return
+	}
+
+	// TODO: do we care about the number of bytes written? Given
+	// we are going to do a fanout n is useless and according to
+	// the docs WriteTo should return 0 and err or bytes written and
+	// no error.
+	_, w.err = w.buffers.WriteTo(w.w)
+	if w.err != nil {
+		w.buffers = nil
+	}
+	w.cond.Broadcast()
+}
+
+func (w *writeCoalescer) write(p []byte) (int, error) {
+	w.mu.Lock()
+	w.buffers = append(w.buffers, p)
+
+	for len(w.buffers) != 0 {
+		w.cond.Wait()
+	}
+	err := w.err
+	w.mu.Unlock()
+
+	if err != nil {
+		return 0, err
+	}
+	return len(p), nil
 }
 
 func (c *Conn) exec(ctx context.Context, req frameWriter, tracer Tracer) (*framer, error) {

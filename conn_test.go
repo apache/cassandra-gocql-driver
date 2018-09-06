@@ -311,7 +311,7 @@ func TestCancel(t *testing.T) {
 	}()
 
 	// The query will timeout after about 1 seconds, so cancel it after a short pause
-	time.AfterFunc(20 * time.Millisecond, qry.Cancel)
+	time.AfterFunc(20*time.Millisecond, qry.Cancel)
 	wg.Wait()
 }
 
@@ -748,6 +748,39 @@ func TestContext_Timeout(t *testing.T) {
 	err = db.Query("timeout").WithContext(ctx).Exec()
 	if err != context.Canceled {
 		t.Fatalf("expected to get context cancel error: %v got %v", context.Canceled, err)
+	}
+}
+
+func TestWriteCoalescing(t *testing.T) {
+	var buf bytes.Buffer
+	w := &writeCoalescer{
+		w: &buf,
+	}
+	w.cond = sync.NewCond(&w.mu)
+
+	var wg sync.WaitGroup
+
+	wg.Add(1)
+	go func() {
+		wg.Done()
+		if _, err := w.write([]byte("one")); err != nil {
+			t.Error(err)
+		}
+	}()
+	wg.Wait()
+
+	wg.Add(1)
+	go func() {
+		wg.Done()
+		if _, err := w.write([]byte("two")); err != nil {
+			t.Error(err)
+		}
+	}()
+	wg.Wait()
+
+	w.flush()
+	if got := buf.String(); got != "onetwo" {
+		t.Fatalf("expected to get %q got %q", "onetwo", got)
 	}
 }
 
