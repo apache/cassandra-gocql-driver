@@ -778,6 +778,10 @@ func TestWriteCoalescing(t *testing.T) {
 	}()
 	wg.Wait()
 
+	if buf.Len() != 0 {
+		t.Fatalf("expected buffer to be empty have: %v", buf.String())
+	}
+
 	w.flush()
 	if got := buf.String(); got != "onetwo" {
 		t.Fatalf("expected to get %q got %q", "onetwo", got)

@@ -637,15 +637,13 @@ func (w *writeCoalescer) flush() {
 		w.w.(deadliner).SetWriteDeadline(time.Now().Add(w.timeout))
 	}
 
-	defer w.mu.Unlock()
 	w.mu.Lock()
-
+	defer w.mu.Unlock()
 	if len(w.buffers) == 0 {
 		return
 	}
 
-	// TODO: do we care about the number of bytes written? Given
-	// we are going to do a fanout n is useless and according to
+	// Given we are going to do a fanout n is useless and according to
 	// the docs WriteTo should return 0 and err or bytes written and
 	// no error.
 	_, w.err = w.buffers.WriteTo(w.w)
@@ -658,10 +656,10 @@ func (w *writeCoalescer) flush() {
 func (w *writeCoalescer) write(p []byte) (int, error) {
 	w.mu.Lock()
 	w.buffers = append(w.buffers, p)
-
 	for len(w.buffers) != 0 {
 		w.cond.Wait()
 	}
+
 	err := w.err
 	w.mu.Unlock()
 
