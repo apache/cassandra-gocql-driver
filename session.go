@@ -549,7 +549,8 @@ func (s *Session) routingKeyInfo(ctx context.Context, stmt string) (*routingKeyI
 
 		// find the column in the query info
 		for argIndex, boundColumn := range info.request.columns {
-			if keyColumn.Name == boundColumn.Name {
+			// Second part is the case in which the key is a IN (...) clause
+			if keyColumn.Name == boundColumn.Name || fmt.Sprintf("in(%s)", keyColumn.Name) == boundColumn.Name {
 				// there may be many such bound columns, pick the first
 				routingKeyInfo.indexes[keyIndex] = argIndex
 				routingKeyInfo.types[keyIndex] = boundColumn.TypeInfo
