@@ -316,7 +316,7 @@ func TestCancel(t *testing.T) {
 }
 
 type testQueryObserver struct {
-	metrics map[string]*queryMetrics
+	metrics map[string]*hostMetrics
 	verbose bool
 }
 
@@ -329,7 +329,7 @@ func (o *testQueryObserver) ObserveQuery(ctx context.Context, q ObservedQuery) {
 	}
 }
 
-func (o *testQueryObserver) GetMetrics(host *HostInfo) *queryMetrics {
+func (o *testQueryObserver) GetMetrics(host *HostInfo) *hostMetrics {
 	return o.metrics[host.ConnectAddress().String()]
 }
 
@@ -401,7 +401,7 @@ func TestQueryMultinodeWithMetrics(t *testing.T) {
 
 	// 1 retry per host
 	rt := &SimpleRetryPolicy{NumRetries: 3}
-	observer := &testQueryObserver{metrics: make(map[string]*queryMetrics), verbose: false}
+	observer := &testQueryObserver{metrics: make(map[string]*hostMetrics), verbose: false}
 	qry := db.Query("kill").RetryPolicy(rt).Observer(observer)
 	if err := qry.Exec(); err == nil {
 		t.Fatalf("expected error")
@@ -409,10 +409,11 @@ func TestQueryMultinodeWithMetrics(t *testing.T) {
 
 	for i, ip := range addresses {
 		host := &HostInfo{connectAddress: net.ParseIP(ip)}
+		queryMetric := qry.getHostMetrics(host)
 		observedMetrics := observer.GetMetrics(host)
 
 		requests := int(atomic.LoadInt64(&nodes[i].nKillReq))
-		hostAttempts := qry.metrics[ip].Attempts
+		hostAttempts := queryMetric.Attempts
 		if requests != hostAttempts {
 			t.Fatalf("expected requests %v to match query attempts %v", requests, hostAttempts)
 		}
@@ -421,7 +422,7 @@ func TestQueryMultinodeWithMetrics(t *testing.T) {
 			t.Fatalf("expected observed attempts %v to match query attempts %v on host %v", observedMetrics.Attempts, hostAttempts, ip)
 		}
 
-		hostLatency := qry.metrics[ip].TotalLatency
+		hostLatency := queryMetric.TotalLatency
 		observedLatency := observedMetrics.TotalLatency
 		if hostLatency != observedLatency {
 			t.Fatalf("expected observed latency %v to match query latency %v on host %v", observedLatency, hostLatency, ip)

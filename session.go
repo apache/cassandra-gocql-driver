@@ -658,9 +658,14 @@ func (s *Session) connect(host *HostInfo, errorHandler ConnErrorHandler) (*Conn,
 	return s.dial(host, s.connCfg, errorHandler)
 }
 
-type queryMetrics struct {
+type hostMetrics struct {
 	Attempts     int
 	TotalLatency int64
+}
+
+type queryMetrics struct {
+	l sync.RWMutex
+	m map[string]*hostMetrics
 }
 
 // Query represents a CQL statement that can be executed.
@@ -685,8 +690,8 @@ type Query struct {
 	context               context.Context
 	cancelQuery           func()
 	idempotent            bool
-	metrics               map[string]*queryMetrics
 	customPayload         map[string][]byte
+	metrics               *queryMetrics
 
 	disableAutoPage bool
 }
@@ -704,7 +709,7 @@ func (q *Query) defaultsFromSession() {
 	q.serialCons = s.cfg.SerialConsistency
 	q.defaultTimestamp = s.cfg.DefaultTimestamp
 	q.idempotent = s.cfg.DefaultIdempotence
-	q.metrics = make(map[string]*queryMetrics)
+	q.metrics = &queryMetrics{m: make(map[string]*hostMetrics)}
 
 	// Initiate an empty context with a cancel call
 	q.WithContext(context.Background())
@@ -712,15 +717,17 @@ func (q *Query) defaultsFromSession() {
 	s.mu.RUnlock()
 }
 
-func (q *Query) getHostMetrics(host *HostInfo) *queryMetrics {
-	hostMetrics, exists := q.metrics[host.ConnectAddress().String()]
+func (q *Query) getHostMetrics(host *HostInfo) *hostMetrics {
+	q.metrics.l.Lock()
+	defer q.metrics.l.Unlock()
+	metrics, exists := q.metrics.m[host.ConnectAddress().String()]
 	if !exists {
 		// if the host is not in the map, it means it's been accessed for the first time
-		hostMetrics = &queryMetrics{Attempts: 0, TotalLatency: 0}
-		q.metrics[host.ConnectAddress().String()] = hostMetrics
+		metrics = &hostMetrics{}
+		q.metrics.m[host.ConnectAddress().String()] = metrics
 	}
 
-	return hostMetrics
+	return metrics
 }
 
 // Statement returns the statement that was used to generate this query.
@@ -735,18 +742,29 @@ func (q Query) String() string {
 
 //Attempts returns the number of times the query was executed.
 func (q *Query) Attempts() int {
-	attempts := 0
-	for _, metric := range q.metrics {
+	q.metrics.l.Lock()
+	defer q.metrics.l.Unlock()
+	var attempts int
+	for _, metric := range q.metrics.m {
 		attempts += metric.Attempts
 	}
 	return attempts
 }
 
+func (q *Query) AddAttempts(i int, host *HostInfo) {
+	hostMetric := q.getHostMetrics(host)
+	q.metrics.l.Lock()
+	hostMetric.Attempts += i
+	q.metrics.l.Unlock()
+}
+
 //Latency returns the average amount of nanoseconds per attempt of the query.
 func (q *Query) Latency() int64 {
+	q.metrics.l.Lock()
+	defer q.metrics.l.Unlock()
 	var attempts int
 	var latency int64
-	for _, metric := range q.metrics {
+	for _, metric := range q.metrics.m {
 		attempts += metric.Attempts
 		latency += metric.TotalLatency
 	}
@@ -754,6 +772,13 @@ func (q *Query) Latency() int64 {
 		return latency / int64(attempts)
 	}
 	return 0
+}
+
+func (q *Query) AddLatency(l int64, host *HostInfo) {
+	hostMetric := q.getHostMetrics(host)
+	q.metrics.l.Lock()
+	hostMetric.TotalLatency += l
+	q.metrics.l.Unlock()
 }
 
 // Consistency sets the consistency level for this query. If no consistency
@@ -851,9 +876,8 @@ func (q *Query) execute(conn *Conn) *Iter {
 }
 
 func (q *Query) attempt(keyspace string, end, start time.Time, iter *Iter, host *HostInfo) {
-	hostMetrics := q.getHostMetrics(host)
-	hostMetrics.Attempts++
-	hostMetrics.TotalLatency += end.Sub(start).Nanoseconds()
+	q.AddAttempts(1, host)
+	q.AddLatency(end.Sub(start).Nanoseconds(), host)
 
 	if q.observer != nil {
 		q.observer.ObserveQuery(q.context, ObservedQuery{
@@ -863,7 +887,7 @@ func (q *Query) attempt(keyspace string, end, start time.Time, iter *Iter, host 
 			End:       end,
 			Rows:      iter.numRows,
 			Host:      host,
-			Metrics:   hostMetrics,
+			Metrics:   q.getHostMetrics(host),
 			Err:       iter.err,
 		})
 	}
@@ -1438,7 +1462,7 @@ type Batch struct {
 	context               context.Context
 	cancelBatch           func()
 	keyspace              string
-	metrics               map[string]*queryMetrics
+	metrics               *queryMetrics
 }
 
 // NewBatch creates a new batch operation without defaults from the cluster
@@ -1459,7 +1483,7 @@ func (s *Session) NewBatch(typ BatchType) *Batch {
 		Cons:             s.cons,
 		defaultTimestamp: s.cfg.DefaultTimestamp,
 		keyspace:         s.cfg.Keyspace,
-		metrics:          make(map[string]*queryMetrics),
+		metrics:          &queryMetrics{m: make(map[string]*hostMetrics)},
 	}
 
 	// Initiate an empty context with a cancel call
@@ -1469,15 +1493,18 @@ func (s *Session) NewBatch(typ BatchType) *Batch {
 	return batch
 }
 
-func (b *Batch) getHostMetrics(host *HostInfo) *queryMetrics {
-	hostMetrics, exists := b.metrics[host.ConnectAddress().String()]
+func (b *Batch) getHostMetrics(host *HostInfo) *hostMetrics {
+	b.metrics.l.Lock()
+	defer b.metrics.l.Unlock()
+
+	metrics, exists := b.metrics.m[host.ConnectAddress().String()]
 	if !exists {
 		// if the host is not in the map, it means it's been accessed for the first time
-		hostMetrics = &queryMetrics{Attempts: 0, TotalLatency: 0}
-		b.metrics[host.ConnectAddress().String()] = hostMetrics
+		metrics = &hostMetrics{}
+		b.metrics.m[host.ConnectAddress().String()] = metrics
 	}
 
-	return hostMetrics
+	return metrics
 }
 
 // Observer enables batch-level observer on this batch.
@@ -1493,18 +1520,33 @@ func (b *Batch) Keyspace() string {
 
 // Attempts returns the number of attempts made to execute the batch.
 func (b *Batch) Attempts() int {
-	attempts := 0
-	for _, metric := range b.metrics {
+	b.metrics.l.Lock()
+	defer b.metrics.l.Unlock()
+
+	var attempts int
+	for _, metric := range b.metrics.m {
 		attempts += metric.Attempts
 	}
 	return attempts
 }
 
+func (b *Batch) AddAttempts(i int, host *HostInfo) {
+	hostMetric := b.getHostMetrics(host)
+	b.metrics.l.Lock()
+	hostMetric.Attempts += i
+	b.metrics.l.Unlock()
+}
+
 //Latency returns the average number of nanoseconds to execute a single attempt of the batch.
 func (b *Batch) Latency() int64 {
-	attempts := 0
-	var latency int64 = 0
-	for _, metric := range b.metrics {
+	b.metrics.l.Lock()
+	defer b.metrics.l.Unlock()
+
+	var (
+		attempts int
+		latency  int64
+	)
+	for _, metric := range b.metrics.m {
 		attempts += metric.Attempts
 		latency += metric.TotalLatency
 	}
@@ -1512,6 +1554,13 @@ func (b *Batch) Latency() int64 {
 		return latency / int64(attempts)
 	}
 	return 0
+}
+
+func (b *Batch) AddLatency(l int64, host *HostInfo) {
+	hostMetric := b.getHostMetrics(host)
+	b.metrics.l.Lock()
+	hostMetric.TotalLatency += l
+	b.metrics.l.Unlock()
 }
 
 // GetConsistency returns the currently configured consistency level for the batch
@@ -1601,9 +1650,8 @@ func (b *Batch) WithTimestamp(timestamp int64) *Batch {
 }
 
 func (b *Batch) attempt(keyspace string, end, start time.Time, iter *Iter, host *HostInfo) {
-	hostMetrics := b.getHostMetrics(host)
-	hostMetrics.Attempts++
-	hostMetrics.TotalLatency += end.Sub(start).Nanoseconds()
+	b.AddAttempts(1, host)
+	b.AddLatency(end.Sub(start).Nanoseconds(), host)
 
 	if b.observer == nil {
 		return
@@ -1621,7 +1669,7 @@ func (b *Batch) attempt(keyspace string, end, start time.Time, iter *Iter, host 
 		End:        end,
 		// Rows not used in batch observations // TODO - might be able to support it when using BatchCAS
 		Host:    host,
-		Metrics: hostMetrics,
+		Metrics: b.getHostMetrics(host),
 		Err:     iter.err,
 	})
 }
@@ -1775,7 +1823,7 @@ type ObservedQuery struct {
 	Host *HostInfo
 
 	// The metrics per this host
-	Metrics *queryMetrics
+	Metrics *hostMetrics
 
 	// Err is the error in the query.
 	// It only tracks network errors or errors of bad cassandra syntax, in particular selects with no match return nil error
@@ -1807,7 +1855,7 @@ type ObservedBatch struct {
 	Err error
 
 	// The metrics per this host
-	Metrics *queryMetrics
+	Metrics *hostMetrics
 }
 
 // BatchObserver is the interface implemented by batch observers / stat collectors.
