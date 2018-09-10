@@ -14,7 +14,9 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"math/rand"
 	"net"
+	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -44,8 +46,8 @@ func TestApprove(t *testing.T) {
 
 func TestJoinHostPort(t *testing.T) {
 	tests := map[string]string{
-		"127.0.0.1:0":                                 JoinHostPort("127.0.0.1", 0),
-		"127.0.0.1:1":                                 JoinHostPort("127.0.0.1:1", 9142),
+		"127.0.0.1:0": JoinHostPort("127.0.0.1", 0),
+		"127.0.0.1:1": JoinHostPort("127.0.0.1:1", 9142),
 		"[2001:0db8:85a3:0000:0000:8a2e:0370:7334]:0": JoinHostPort("2001:0db8:85a3:0000:0000:8a2e:0370:7334", 0),
 		"[2001:0db8:85a3:0000:0000:8a2e:0370:7334]:1": JoinHostPort("[2001:0db8:85a3:0000:0000:8a2e:0370:7334]:1", 9142),
 	}
@@ -434,6 +436,75 @@ func TestQueryMultinodeWithMetrics(t *testing.T) {
 		t.Fatalf("failed to retry the query %v time(s). Query executed %v times", rt.NumRetries, attempts)
 	}
 
+}
+
+type testRetryPolicy struct {
+	NumRetries int
+}
+
+func (t *testRetryPolicy) Attempt(qry RetryableQuery) bool {
+	return qry.Attempts() <= t.NumRetries
+}
+func (t *testRetryPolicy) GetRetryType(err error) RetryType {
+	return Retry
+}
+
+func TestSpeculativeExecution(t *testing.T) {
+	log := &testLogger{}
+	Logger = log
+	defer func() {
+		Logger = &defaultLogger{}
+		os.Stdout.WriteString(log.String())
+	}()
+
+	// Build a 3 node cluster to test host metric mapping
+	var nodes []*TestServer
+	var addresses = []string{
+		"127.0.0.1",
+		"127.0.0.2",
+		"127.0.0.3",
+	}
+	// Can do with 1 context for all servers
+	ctx := context.Background()
+	for _, ip := range addresses {
+		srv := NewTestServerWithAddress(ip+":0", t, defaultProto, ctx)
+		defer srv.Stop()
+		nodes = append(nodes, srv)
+	}
+
+	db, err := newTestSession(defaultProto, nodes[0].Address, nodes[1].Address, nodes[2].Address)
+	if err != nil {
+		t.Fatalf("NewCluster: %v", err)
+	}
+	defer db.Close()
+
+	// Create a test policy with retries
+	rt := &testRetryPolicy{NumRetries: 7}
+	// Create a test Speculative policy with number of executions less than nodes
+	sp := &SimpleSpeculativeExecution{Attempts: 2, Pause: 200 * time.Millisecond}
+
+	// Build the query
+	qry := db.Query("speculative").RetryPolicy(rt).SetSpeculativeExecutionPolicy(sp).Idempotent(true)
+
+	// Execute the query and close, check that it doesn't error out
+	if err := qry.Exec(); err != nil {
+		t.Errorf("The query failed with '%v'!\n", err)
+	}
+	requests1 := atomic.LoadInt64(&nodes[0].nKillReq)
+	requests2 := atomic.LoadInt64(&nodes[1].nKillReq)
+	requests3 := atomic.LoadInt64(&nodes[2].nKillReq)
+
+	// Spec Attempts == 2, so expecting to see only 2 nodes attempted
+	if requests1 != 0 && requests2 != 0 && requests3 != 0 {
+		t.Error("error: all 3 nodes were attempted, should have been only 2")
+	}
+
+	// "speculative" query will succeed on one arbitrary node after 3 attempts, so
+	// expecting to see 3 (on successful node) + not more than 2 (on failed node) == 5
+	// retries in total
+	if requests1+requests2+requests3 > 5 {
+		t.Errorf("error: expected to see 5 attempts maximum, got %v\n", requests1+requests2+requests3)
+	}
 }
 
 func TestStreams_Protocol1(t *testing.T) {
@@ -1076,6 +1147,20 @@ func (srv *TestServer) process(f *framer) {
 				}
 			}()
 			return
+		case "speculative":
+			atomic.AddInt64(&srv.nKillReq, 1)
+			if atomic.LoadInt64(&srv.nKillReq) > 2 {
+				f.writeHeader(0, opResult, head.stream)
+				f.writeInt(resultKindVoid)
+				f.writeString("speculative query success on the node " + srv.Address)
+			} else {
+				f.writeHeader(0, opError, head.stream)
+				f.writeInt(0x1001)
+				f.writeString("speculative error")
+				rand.Seed(time.Now().UnixNano())
+				sleepFor := time.Duration(time.Millisecond * time.Duration((rand.Intn(50) + 25)))
+				<-time.After(sleepFor)
+			}
 		default:
 			f.writeHeader(0, opResult, head.stream)
 			f.writeInt(resultKindVoid)

@@ -1,6 +1,7 @@
 package gocql
 
 import (
+	"sync"
 	"time"
 )
 
@@ -19,6 +20,7 @@ type ExecutableQuery interface {
 type queryExecutor struct {
 	pool   *policyConnPool
 	policy HostSelectionPolicy
+	specWG sync.WaitGroup
 }
 
 func (q *queryExecutor) attemptQuery(qry ExecutableQuery, conn *Conn) *Iter {
@@ -32,12 +34,28 @@ func (q *queryExecutor) attemptQuery(qry ExecutableQuery, conn *Conn) *Iter {
 }
 
 func (q *queryExecutor) executeQuery(qry ExecutableQuery) (*Iter, error) {
-	rt := qry.retryPolicy()
-	hostIter := q.policy.Pick(qry)
 
-	var iter *Iter
-	for hostResponse := hostIter(); hostResponse != nil; hostResponse = hostIter() {
-		host := hostResponse.Info()
+	// check whether the query execution set to speculative
+	// to make sure, we check if the policy is NonSpeculative or marked as non-idempotent, if it is
+	// run normal, otherwise, runs speculative.
+	_, nonSpeculativeExecution := qry.speculativeExecutionPolicy().(NonSpeculativeExecution)
+	if nonSpeculativeExecution || !qry.IsIdempotent() {
+		return q.executeNormalQuery(qry)
+	} else {
+		return q.executeSpeculativeQuery(qry)
+	}
+}
+
+func (q *queryExecutor) executeNormalQuery(qry ExecutableQuery) (*Iter, error) {
+
+	var res queryResponse
+
+	results := make(chan queryResponse)
+	defer close(results)
+
+	hostIter := q.policy.Pick(qry)
+	for selectedHost := hostIter(); selectedHost != nil; selectedHost = hostIter() {
+		host := selectedHost.Info()
 		if host == nil || !host.IsUp() {
 			continue
 		}
@@ -52,51 +70,148 @@ func (q *queryExecutor) executeQuery(qry ExecutableQuery) (*Iter, error) {
 			continue
 		}
 
-		iter = q.attemptQuery(qry, conn)
-		// Update host
-		hostResponse.Mark(iter.err)
+		// store the result
+		q.specWG.Add(1)
+		go q.runAndStore(qry, conn, selectedHost, results, nil)
 
-		if rt == nil {
-			iter.host = host
-			break
+		// fetch from the channel whatever is there
+		res = <-results
+
+		if res.retryType == RetryNextHost {
+			continue
 		}
 
-		switch rt.GetRetryType(iter.err) {
-		case Retry:
-			for rt.Attempt(qry) {
-				iter = q.attemptQuery(qry, conn)
-				hostResponse.Mark(iter.err)
-				if iter.err == nil {
-					iter.host = host
-					return iter, nil
-				}
-				if rt.GetRetryType(iter.err) != Retry {
-					break
-				}
-			}
-		case Rethrow:
-			return nil, iter.err
-		case Ignore:
-			return iter, nil
-		case RetryNextHost:
-		default:
-		}
+		return res.iter, res.err
 
-		// Exit for loop if the query was successful
-		if iter.err == nil {
-			iter.host = host
-			return iter, nil
-		}
-
-		if !rt.Attempt(qry) {
-			// What do here? Should we just return an error here?
-			break
-		}
 	}
 
-	if iter == nil {
+	if res.iter == nil {
 		return nil, ErrNoConnections
 	}
 
-	return iter, nil
+	return res.iter, nil
+}
+
+func (q *queryExecutor) executeSpeculativeQuery(qry ExecutableQuery) (*Iter, error) {
+	hostIter := q.policy.Pick(qry)
+	sp := qry.speculativeExecutionPolicy()
+
+	results := make(chan queryResponse)
+
+	stopExecutions := make(chan struct{})
+	defer close(stopExecutions)
+
+	var (
+		res             queryResponse
+		specExecCounter int
+	)
+	for selectedHost := hostIter(); selectedHost != nil && specExecCounter < sp.Executions(); selectedHost = hostIter() {
+		host := selectedHost.Info()
+		if host == nil || !host.IsUp() {
+			continue
+		}
+
+		pool, ok := q.pool.getPool(host)
+		if !ok {
+			continue
+		}
+
+		conn := pool.Pick()
+		if conn == nil {
+			continue
+		}
+
+		// if it's not the first attempt, pause
+		if specExecCounter > 0 {
+			<-time.After(sp.Delay())
+		}
+
+		// push the results into a channel
+		q.specWG.Add(1)
+		go q.runAndStore(qry, conn, selectedHost, results, stopExecutions)
+		specExecCounter += 1
+	}
+
+	// defer cleaning
+	go func() {
+		q.specWG.Wait()
+		close(results)
+	}()
+
+	// check the results
+	for res := range results {
+		if res.retryType == RetryNextHost {
+			continue
+		}
+
+		if res.err == nil {
+			return res.iter, res.err
+		}
+	}
+
+	if res.iter == nil {
+		return nil, ErrNoConnections
+	}
+
+	return res.iter, nil
+}
+
+func (q *queryExecutor) runAndStore(qry ExecutableQuery, conn *Conn, selectedHost SelectedHost, results chan queryResponse, stopExecutions chan struct{}) {
+
+	rt := qry.retryPolicy()
+	host := selectedHost.Info()
+
+	// Run the query
+	iter := q.attemptQuery(qry, conn)
+	iter.host = host
+	// Update host
+	selectedHost.Mark(iter.err)
+
+	// Handle the wait group
+	defer q.specWG.Done()
+
+	// Exit if the query was successful
+	// or no retry policy defined
+	if rt == nil || iter.err == nil {
+		results <- queryResponse{iter: iter}
+		return
+	}
+
+	// If query is unsuccessful, use RetryPolicy to retry
+	select {
+	case <-stopExecutions:
+		// We're done, stop everyone else
+		qry.Cancel()
+	default:
+		for rt.Attempt(qry) {
+			switch rt.GetRetryType(iter.err) {
+			case Retry:
+				iter = q.attemptQuery(qry, conn)
+				selectedHost.Mark(iter.err)
+				if iter.err == nil {
+					iter.host = host
+					results <- queryResponse{iter: iter}
+					return
+				}
+			case Rethrow:
+				results <- queryResponse{err: iter.err}
+				return
+			case Ignore:
+				results <- queryResponse{iter: iter}
+				return
+			case RetryNextHost:
+				results <- queryResponse{retryType: RetryNextHost}
+				return
+			default:
+				results <- queryResponse{iter: iter, err: iter.err}
+				return
+			}
+		}
+	}
+}
+
+type queryResponse struct {
+	iter      *Iter
+	err       error
+	retryType RetryType
 }
