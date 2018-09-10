@@ -12,6 +12,7 @@ type ExecutableQuery interface {
 	GetRoutingKey() ([]byte, error)
 	Keyspace() string
 	Cancel()
+	IsIdempotent() bool
 	RetryableQuery
 }
 

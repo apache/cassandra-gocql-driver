@@ -1590,6 +1590,15 @@ func (b *Batch) SetConsistency(c Consistency) {
 	b.Cons = c
 }
 
+func (b *Batch) IsIdempotent() bool {
+	for _, entry := range b.Entries {
+		if !entry.Idempotent {
+			return false
+		}
+	}
+	return true
+}
+
 func (b *Batch) speculativeExecutionPolicy() SpeculativeExecutionPolicy {
 	return b.spec
 }
@@ -1712,9 +1721,10 @@ const (
 )
 
 type BatchEntry struct {
-	Stmt    string
-	Args    []interface{}
-	binding func(q *QueryInfo) ([]interface{}, error)
+	Stmt       string
+	Args       []interface{}
+	Idempotent bool
+	binding    func(q *QueryInfo) ([]interface{}, error)
 }
 
 type ColumnInfo struct {
