@@ -852,3 +852,21 @@ func (e *ExponentialReconnectionPolicy) GetInterval(currentRetry int) time.Durat
 func (e *ExponentialReconnectionPolicy) GetMaxRetries() int {
 	return e.MaxRetries
 }
+
+type SpeculativeExecutionPolicy interface {
+	Executions() int
+	Delay() time.Duration
+}
+
+type NonSpeculativeExecution struct{}
+
+func (sp NonSpeculativeExecution) Executions() int      { return 1 }
+func (sp NonSpeculativeExecution) Delay() time.Duration { return 0 }
+
+type SimpleSpeculativeExecution struct {
+	Attempts int
+	Pause    time.Duration
+}
+
+func (sp *SimpleSpeculativeExecution) Executions() int      { return sp.Attempts }
+func (sp *SimpleSpeculativeExecution) Delay() time.Duration { return sp.Pause }

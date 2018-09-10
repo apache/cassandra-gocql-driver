@@ -682,6 +682,7 @@ type Query struct {
 	observer              QueryObserver
 	session               *Session
 	rt                    RetryPolicy
+	spec                  SpeculativeExecutionPolicy
 	binding               func(q *QueryInfo) ([]interface{}, error)
 	serialCons            SerialConsistency
 	defaultTimestamp      bool
@@ -714,6 +715,7 @@ func (q *Query) defaultsFromSession() {
 	// Initiate an empty context with a cancel call
 	q.WithContext(context.Background())
 
+	q.spec = &NonSpeculativeExecution{}
 	s.mu.RUnlock()
 }
 
@@ -1005,6 +1007,17 @@ func (q *Query) Prefetch(p float64) *Query {
 func (q *Query) RetryPolicy(r RetryPolicy) *Query {
 	q.rt = r
 	return q
+}
+
+// SetSpeculativeExecutionPolicy sets the execution policy
+func (q *Query) SetSpeculativeExecutionPolicy(sp SpeculativeExecutionPolicy) *Query {
+	q.spec = sp
+	return q
+}
+
+// speculativeExecutionPolicy fetches the policy
+func (q *Query) speculativeExecutionPolicy() SpeculativeExecutionPolicy {
+	return q.spec
 }
 
 func (q *Query) IsIdempotent() bool {
@@ -1455,6 +1468,7 @@ type Batch struct {
 	Cons                  Consistency
 	CustomPayload         map[string][]byte
 	rt                    RetryPolicy
+	spec                  SpeculativeExecutionPolicy
 	observer              BatchObserver
 	serialCons            SerialConsistency
 	defaultTimestamp      bool
@@ -1484,6 +1498,7 @@ func (s *Session) NewBatch(typ BatchType) *Batch {
 		defaultTimestamp: s.cfg.DefaultTimestamp,
 		keyspace:         s.cfg.Keyspace,
 		metrics:          &queryMetrics{m: make(map[string]*hostMetrics)},
+		spec:             &NonSpeculativeExecution{},
 	}
 
 	// Initiate an empty context with a cancel call
@@ -1573,6 +1588,15 @@ func (b *Batch) GetConsistency() Consistency {
 // operation.
 func (b *Batch) SetConsistency(c Consistency) {
 	b.Cons = c
+}
+
+func (b *Batch) speculativeExecutionPolicy() SpeculativeExecutionPolicy {
+	return b.spec
+}
+
+func (b *Batch) SpeculativeExecutionPolicy(sp SpeculativeExecutionPolicy) *Batch {
+	b.spec = sp
+	return b
 }
 
 // Query adds the query to the batch operation
