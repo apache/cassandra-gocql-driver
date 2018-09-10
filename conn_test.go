@@ -754,16 +754,16 @@ func TestContext_Timeout(t *testing.T) {
 func TestWriteCoalescing(t *testing.T) {
 	var buf bytes.Buffer
 	w := &writeCoalescer{
-		w: &buf,
+		w:    &buf,
+		cond: sync.NewCond(&sync.Mutex{}),
 	}
-	w.cond = sync.NewCond(&w.mu)
 
 	var wg sync.WaitGroup
 
 	wg.Add(1)
 	go func() {
 		wg.Done()
-		if _, err := w.write([]byte("one")); err != nil {
+		if _, err := w.Write([]byte("one")); err != nil {
 			t.Error(err)
 		}
 	}()
@@ -772,7 +772,7 @@ func TestWriteCoalescing(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		wg.Done()
-		if _, err := w.write([]byte("two")); err != nil {
+		if _, err := w.Write([]byte("two")); err != nil {
 			t.Error(err)
 		}
 	}()
