@@ -946,13 +946,15 @@ func (c *Conn) executeQuery(qry *Query) *Iter {
 		params.skipMeta = !(c.session.cfg.DisableSkipMetadata || qry.disableSkipMetadata)
 
 		frame = &writeExecuteFrame{
-			preparedID: info.id,
-			params:     params,
+			preparedID:    info.id,
+			params:        params,
+			customPayload: qry.customPayload,
 		}
 	} else {
 		frame = &writeQueryFrame{
-			statement: qry.stmt,
-			params:    params,
+			statement:     qry.stmt,
+			params:        params,
+			customPayload: qry.customPayload,
 		}
 	}
 
@@ -1093,6 +1095,7 @@ func (c *Conn) executeBatch(batch *Batch) *Iter {
 		serialConsistency:     batch.serialCons,
 		defaultTimestamp:      batch.defaultTimestamp,
 		defaultTimestampValue: batch.defaultTimestampValue,
+		customPayload:         batch.CustomPayload,
 	}
 
 	stmts := make(map[string]string, len(batch.Entries))

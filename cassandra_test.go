@@ -2422,6 +2422,64 @@ func TestTokenAwareConnPool(t *testing.T) {
 	// TODO add verification that the query went to the correct host
 }
 
+func TestCustomPayloadMessages(t *testing.T) {
+	cluster := createCluster()
+	session := createSessionFromCluster(cluster, t)
+	defer session.Close()
+
+	if err := createTable(session, "CREATE TABLE gocql_test.testCustomPayloadMessages (id int, value int, PRIMARY KEY (id))"); err != nil {
+		t.Fatal(err)
+	}
+
+	// QueryMessage
+	var customPayload = map[string][]byte{"a": []byte{10, 20}, "b": []byte{20, 30}}
+	query := session.Query("SELECT id FROM testCustomPayloadMessages where id = ?", 42).Consistency(One).CustomPayload(customPayload)
+	iter := query.Iter()
+	rCustomPayload := iter.GetCustomPayload()
+	if !reflect.DeepEqual(customPayload, rCustomPayload) {
+		t.Fatal("The received custom payload should match the sent")
+	}
+	iter.Close()
+
+	// Insert query
+	query = session.Query("INSERT INTO testCustomPayloadMessages(id,value) VALUES(1, 1)").Consistency(One).CustomPayload(customPayload)
+	iter = query.Iter()
+	rCustomPayload = iter.GetCustomPayload()
+	if !reflect.DeepEqual(customPayload, rCustomPayload) {
+		t.Fatal("The received custom payload should match the sent")
+	}
+	iter.Close()
+
+	// Batch Message
+	b := session.NewBatch(LoggedBatch)
+	b.CustomPayload = customPayload
+	b.Query("INSERT INTO testCustomPayloadMessages(id,value) VALUES(1, 1)")
+	if err := session.ExecuteBatch(b); err != nil {
+		t.Fatalf("query failed. %v", err)
+	}
+}
+
+func TestCustomPayloadValues(t *testing.T) {
+	cluster := createCluster()
+	session := createSessionFromCluster(cluster, t)
+	defer session.Close()
+
+	if err := createTable(session, "CREATE TABLE gocql_test.testCustomPayloadValues (id int, value int, PRIMARY KEY (id))"); err != nil {
+		t.Fatal(err)
+	}
+
+	values := []map[string][]byte{map[string][]byte{"a": []byte{10, 20}, "b": []byte{20, 30}}, nil, map[string][]byte{"a": []byte{10, 20}, "b": nil}}
+
+	for _, customPayload := range values {
+		query := session.Query("SELECT id FROM testCustomPayloadValues where id = ?", 42).Consistency(One).CustomPayload(customPayload)
+		iter := query.Iter()
+		rCustomPayload := iter.GetCustomPayload()
+		if !reflect.DeepEqual(customPayload, rCustomPayload) {
+			t.Fatal("The received custom payload should match the sent")
+		}
+	}
+}
+
 func TestNegativeStream(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
