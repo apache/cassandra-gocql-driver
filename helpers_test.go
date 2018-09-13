@@ -77,6 +77,46 @@ func TestGetCassandraType(t *testing.T) {
 				},
 			},
 		},
+		{
+			"frozen<tuple<frozen<tuple<int, int>>, int, frozen<tuple<int, int>>>>", TupleTypeInfo{
+				NativeType: NativeType{typ: TypeTuple},
+
+				Elems: []TypeInfo{
+					TupleTypeInfo{
+						NativeType: NativeType{typ: TypeTuple},
+
+						Elems: []TypeInfo{
+							NativeType{typ: TypeInt},
+							NativeType{typ: TypeInt},
+						},
+					},
+					NativeType{typ: TypeInt},
+					TupleTypeInfo{
+						NativeType: NativeType{typ: TypeTuple},
+
+						Elems: []TypeInfo{
+							NativeType{typ: TypeInt},
+							NativeType{typ: TypeInt},
+						},
+					},
+				},
+			},
+		},
+		{
+			"frozen<map<frozen<tuple<int, int>>, int>>", CollectionType{
+				NativeType: NativeType{typ: TypeMap},
+
+				Key: TupleTypeInfo{
+					NativeType: NativeType{typ: TypeTuple},
+
+					Elems: []TypeInfo{
+						NativeType{typ: TypeInt},
+						NativeType{typ: TypeInt},
+					},
+				},
+				Elem: NativeType{typ: TypeInt},
+			},
+		},
 	}
 
 	for _, test := range tests {
