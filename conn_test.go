@@ -758,33 +758,34 @@ func TestWriteCoalescing(t *testing.T) {
 		cond: sync.NewCond(&sync.Mutex{}),
 	}
 
-	var wg sync.WaitGroup
-
-	wg.Add(1)
 	go func() {
-		wg.Done()
 		if _, err := w.Write([]byte("one")); err != nil {
 			t.Error(err)
 		}
 	}()
-	wg.Wait()
 
-	wg.Add(1)
 	go func() {
-		wg.Done()
 		if _, err := w.Write([]byte("two")); err != nil {
 			t.Error(err)
 		}
 	}()
-	wg.Wait()
 
 	if buf.Len() != 0 {
 		t.Fatalf("expected buffer to be empty have: %v", buf.String())
 	}
 
+	for true {
+		w.cond.L.Lock()
+		if len(w.buffers) == 2 {
+			w.cond.L.Unlock()
+			break
+		}
+		w.cond.L.Unlock()
+	}
+
 	w.flush()
-	if got := buf.String(); got != "onetwo" {
-		t.Fatalf("expected to get %q got %q", "onetwo", got)
+	if got := buf.String(); got != "onetwo" && got != "twoone" {
+		t.Fatalf("expected to get %q got %q", "onetwo or twoone", got)
 	}
 }
 
