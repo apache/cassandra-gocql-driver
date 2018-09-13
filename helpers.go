@@ -132,11 +132,7 @@ func getCassandraType(name string) TypeInfo {
 			Elem:       getCassandraType(strings.TrimPrefix(name[:len(name)-1], "list<")),
 		}
 	} else if strings.HasPrefix(name, "map<") {
-		names := strings.Split(strings.TrimPrefix(name[:len(name)-1], "map<"), ", ")
-		if len(names) != 2 {
-			panic(fmt.Sprintf("invalid map type: %v", name))
-		}
-
+		names := strings.SplitN(strings.TrimPrefix(name[:len(name)-1], "map<"), ", ", 2)
 		return CollectionType{
 			NativeType: NativeType{typ: TypeMap},
 			Key:        getCassandraType(names[0]),
