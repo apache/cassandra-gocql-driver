@@ -686,6 +686,7 @@ type Query struct {
 	cancelQuery           func()
 	idempotent            bool
 	metrics               map[string]*queryMetrics
+	customPayload         map[string][]byte
 
 	disableAutoPage bool
 }
@@ -772,6 +773,12 @@ func (q *Query) GetConsistency() Consistency {
 // Same as Consistency but without a return value
 func (q *Query) SetConsistency(c Consistency) {
 	q.cons = c
+}
+
+// CustomPayload sets the custom payload level for this query.
+func (q *Query) CustomPayload(customPayload map[string][]byte) *Query {
+	q.customPayload = customPayload
+	return q
 }
 
 // Trace enables tracing of this query. Look at the documentation of the
@@ -1344,7 +1351,7 @@ func (iter *Iter) Scan(dest ...interface{}) bool {
 // custom QueryHandlers running in your C* cluster.
 // See https://datastax.github.io/java-driver/manual/custom_payloads/
 func (iter *Iter) GetCustomPayload() map[string][]byte {
-	return iter.framer.header.customPayload
+	return iter.framer.customPayload
 }
 
 // Warnings returns any warnings generated if given in the response from Cassandra.
@@ -1422,6 +1429,7 @@ type Batch struct {
 	Type                  BatchType
 	Entries               []BatchEntry
 	Cons                  Consistency
+	CustomPayload         map[string][]byte
 	rt                    RetryPolicy
 	observer              BatchObserver
 	serialCons            SerialConsistency

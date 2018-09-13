@@ -332,13 +332,12 @@ func readShort(p []byte) uint16 {
 }
 
 type frameHeader struct {
-	version       protoVersion
-	flags         byte
-	stream        int
-	op            frameOp
-	length        int
-	customPayload map[string][]byte
-	warnings      []string
+	version  protoVersion
+	flags    byte
+	stream   int
+	op       frameOp
+	length   int
+	warnings []string
 }
 
 func (f frameHeader) String() string {
@@ -398,6 +397,8 @@ type framer struct {
 
 	rbuf []byte
 	wbuf []byte
+
+	customPayload map[string][]byte
 }
 
 func newFramer(r io.Reader, w io.Writer, compressor Compressor, version byte) *framer {
@@ -494,6 +495,11 @@ func (f *framer) trace() {
 	f.flags |= flagTracing
 }
 
+// explicitly enables the custom payload flag
+func (f *framer) payload() {
+	f.flags |= flagCustomPayload
+}
+
 // reads a frame form the wire into the framers buffer
 func (f *framer) readFrame(head *frameHeader) error {
 	if head.length < 0 {
@@ -558,7 +564,7 @@ func (f *framer) parseFrame() (frame frame, err error) {
 	}
 
 	if f.header.flags&flagCustomPayload == flagCustomPayload {
-		f.header.customPayload = f.readBytesMap()
+		f.customPayload = f.readBytesMap()
 	}
 
 	// assumes that the frame body has been read into rbuf
@@ -827,12 +833,17 @@ func (w *writeStartupFrame) writeFrame(f *framer, streamID int) error {
 }
 
 type writePrepareFrame struct {
-	statement string
-	keyspace  string
+	statement     string
+	keyspace      string
+	customPayload map[string][]byte
 }
 
 func (w *writePrepareFrame) writeFrame(f *framer, streamID int) error {
+	if len(w.customPayload) > 0 {
+		f.payload()
+	}
 	f.writeHeader(f.flags, opPrepare, streamID)
+	f.writeCustomPayload(&w.customPayload)
 	f.writeLongString(w.statement)
 
 	var flags uint32 = 0
@@ -1540,6 +1551,9 @@ func (f *framer) writeQueryParams(opts *queryParams) {
 type writeQueryFrame struct {
 	statement string
 	params    queryParams
+
+	// v4+
+	customPayload map[string][]byte
 }
 
 func (w *writeQueryFrame) String() string {
@@ -1547,11 +1561,15 @@ func (w *writeQueryFrame) String() string {
 }
 
 func (w *writeQueryFrame) writeFrame(framer *framer, streamID int) error {
-	return framer.writeQueryFrame(streamID, w.statement, &w.params)
+	return framer.writeQueryFrame(streamID, w.statement, &w.params, w.customPayload)
 }
 
-func (f *framer) writeQueryFrame(streamID int, statement string, params *queryParams) error {
+func (f *framer) writeQueryFrame(streamID int, statement string, params *queryParams, customPayload map[string][]byte) error {
+	if len(customPayload) > 0 {
+		f.payload()
+	}
 	f.writeHeader(f.flags, opQuery, streamID)
+	f.writeCustomPayload(&customPayload)
 	f.writeLongString(statement)
 	f.writeQueryParams(params)
 
@@ -1571,6 +1589,9 @@ func (f frameWriterFunc) writeFrame(framer *framer, streamID int) error {
 type writeExecuteFrame struct {
 	preparedID []byte
 	params     queryParams
+
+	// v4+
+	customPayload map[string][]byte
 }
 
 func (e *writeExecuteFrame) String() string {
@@ -1578,11 +1599,15 @@ func (e *writeExecuteFrame) String() string {
 }
 
 func (e *writeExecuteFrame) writeFrame(fr *framer, streamID int) error {
-	return fr.writeExecuteFrame(streamID, e.preparedID, &e.params)
+	return fr.writeExecuteFrame(streamID, e.preparedID, &e.params, &e.customPayload)
 }
 
-func (f *framer) writeExecuteFrame(streamID int, preparedID []byte, params *queryParams) error {
+func (f *framer) writeExecuteFrame(streamID int, preparedID []byte, params *queryParams, customPayload *map[string][]byte) error {
+	if len(*customPayload) > 0 {
+		f.payload()
+	}
 	f.writeHeader(f.flags, opExecute, streamID)
+	f.writeCustomPayload(customPayload)
 	f.writeShortBytes(preparedID)
 	if f.proto > protoVersion1 {
 		f.writeQueryParams(params)
@@ -1619,14 +1644,21 @@ type writeBatchFrame struct {
 	serialConsistency     SerialConsistency
 	defaultTimestamp      bool
 	defaultTimestampValue int64
+
+	//v4+
+	customPayload map[string][]byte
 }
 
 func (w *writeBatchFrame) writeFrame(framer *framer, streamID int) error {
-	return framer.writeBatchFrame(streamID, w)
+	return framer.writeBatchFrame(streamID, w, w.customPayload)
 }
 
-func (f *framer) writeBatchFrame(streamID int, w *writeBatchFrame) error {
+func (f *framer) writeBatchFrame(streamID int, w *writeBatchFrame, customPayload map[string][]byte) error {
+	if len(customPayload) > 0 {
+		f.payload()
+	}
 	f.writeHeader(f.flags, opBatch, streamID)
+	f.writeCustomPayload(&customPayload)
 	f.writeByte(byte(w.typ))
 
 	n := len(w.statements)
@@ -1962,6 +1994,15 @@ func appendLong(p []byte, n int64) []byte {
 	)
 }
 
+func (f *framer) writeCustomPayload(customPayload *map[string][]byte) {
+	if len(*customPayload) > 0 {
+		if f.proto < protoVersion4 {
+			panic("Custom payload is not supported with version V3 or less")
+		}
+		f.writeBytesMap(*customPayload)
+	}
+}
+
 // these are protocol level binary types
 func (f *framer) writeInt(n int32) {
 	f.wbuf = appendInt(f.wbuf, n)
@@ -2046,5 +2087,13 @@ func (f *framer) writeStringMap(m map[string]string) {
 	for k, v := range m {
 		f.writeString(k)
 		f.writeString(v)
+	}
+}
+
+func (f *framer) writeBytesMap(m map[string][]byte) {
+	f.writeShort(uint16(len(m)))
+	for k, v := range m {
+		f.writeString(k)
+		f.writeBytes(v)
 	}
 }
