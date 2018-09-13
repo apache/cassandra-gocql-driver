@@ -1999,7 +1999,6 @@ func (f *framer) writeCustomPayload(customPayload *map[string][]byte) {
 		if f.proto < protoVersion4 {
 			panic("Custom payload is not supported with version V3 or less")
 		}
-		f.payload()
 		f.writeBytesMap(*customPayload)
 	}
 }
