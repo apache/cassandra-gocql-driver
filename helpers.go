@@ -132,14 +132,20 @@ func getCassandraType(name string) TypeInfo {
 			Elem:       getCassandraType(strings.TrimPrefix(name[:len(name)-1], "list<")),
 		}
 	} else if strings.HasPrefix(name, "map<") {
-		names := strings.SplitN(strings.TrimPrefix(name[:len(name)-1], "map<"), ", ", 2)
+		names := splitCompositeTypes(strings.TrimPrefix(name[:len(name)-1], "map<"))
+		if len(names) != 2 {
+			Logger.Printf("Error parsing map type, it has %d subelements, expecting 2\n", len(names))
+			return NativeType{
+				typ: TypeCustom,
+			}
+		}
 		return CollectionType{
 			NativeType: NativeType{typ: TypeMap},
 			Key:        getCassandraType(names[0]),
 			Elem:       getCassandraType(names[1]),
 		}
 	} else if strings.HasPrefix(name, "tuple<") {
-		names := strings.Split(strings.TrimPrefix(name[:len(name)-1], "tuple<"), ", ")
+		names := splitCompositeTypes(strings.TrimPrefix(name[:len(name)-1], "tuple<"))
 		types := make([]TypeInfo, len(names))
 
 		for i, name := range names {
@@ -155,6 +161,34 @@ func getCassandraType(name string) TypeInfo {
 			typ: getCassandraBaseType(name),
 		}
 	}
+}
+
+func splitCompositeTypes(name string) []string {
+	if !strings.Contains(name, "<") {
+		return strings.Split(name, ", ")
+	}
+	var parts []string
+	lessCount := 0
+	segment := ""
+	for _, char := range name {
+		if char == ',' && lessCount == 0 {
+			if segment != "" {
+				parts = append(parts, strings.TrimSpace(segment))
+			}
+			segment = ""
+			continue
+		}
+		segment += string(char)
+		if char == '<' {
+			lessCount++
+		} else if char == '>' {
+			lessCount--
+		}
+	}
+	if segment != "" {
+		parts = append(parts, strings.TrimSpace(segment))
+	}
+	return parts
 }
 
 func getApacheCassandraType(class string) Type {
