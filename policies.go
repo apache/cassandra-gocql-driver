@@ -5,6 +5,7 @@
 package gocql
 
 import (
+	"context"
 	"fmt"
 	"math"
 	"math/rand"
@@ -130,6 +131,7 @@ type RetryableQuery interface {
 	Attempts() int
 	SetConsistency(c Consistency)
 	GetConsistency() Consistency
+	GetContext() context.Context
 }
 
 type RetryType uint16
@@ -854,19 +856,19 @@ func (e *ExponentialReconnectionPolicy) GetMaxRetries() int {
 }
 
 type SpeculativeExecutionPolicy interface {
-	Executions() int
+	Attempts() int
 	Delay() time.Duration
 }
 
 type NonSpeculativeExecution struct{}
 
-func (sp NonSpeculativeExecution) Executions() int      { return 1 }
-func (sp NonSpeculativeExecution) Delay() time.Duration { return 0 }
+func (sp NonSpeculativeExecution) Attempts() int        { return 0 }
+func (sp NonSpeculativeExecution) Delay() time.Duration { return 1 }
 
 type SimpleSpeculativeExecution struct {
-	Attempts int
-	Pause    time.Duration
+	NumAttempts  int
+	TimeoutDelay time.Duration
 }
 
-func (sp *SimpleSpeculativeExecution) Executions() int      { return sp.Attempts }
-func (sp *SimpleSpeculativeExecution) Delay() time.Duration { return sp.Pause }
+func (sp *SimpleSpeculativeExecution) Attempts() int        { return sp.NumAttempts }
+func (sp *SimpleSpeculativeExecution) Delay() time.Duration { return sp.TimeoutDelay }

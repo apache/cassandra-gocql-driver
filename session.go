@@ -808,6 +808,10 @@ func (q *Query) CustomPayload(customPayload map[string][]byte) *Query {
 	return q
 }
 
+func (q *Query) GetContext() context.Context {
+	return q.context
+}
+
 // Trace enables tracing of this query. Look at the documentation of the
 // Tracer interface to learn more about tracing.
 func (q *Query) Trace(trace Tracer) *Query {
@@ -1588,6 +1592,10 @@ func (b *Batch) GetConsistency() Consistency {
 // operation.
 func (b *Batch) SetConsistency(c Consistency) {
 	b.Cons = c
+}
+
+func (b *Batch) GetContext() context.Context {
+	return b.context
 }
 
 func (b *Batch) IsIdempotent() bool {

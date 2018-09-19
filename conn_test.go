@@ -379,6 +379,12 @@ func TestQueryRetry(t *testing.T) {
 }
 
 func TestQueryMultinodeWithMetrics(t *testing.T) {
+	log := &testLogger{}
+	Logger = log
+	defer func() {
+		Logger = &defaultLogger{}
+		os.Stdout.WriteString(log.String())
+	}()
 
 	// Build a 3 node cluster to test host metric mapping
 	var nodes []*TestServer
@@ -457,7 +463,7 @@ func TestSpeculativeExecution(t *testing.T) {
 		os.Stdout.WriteString(log.String())
 	}()
 
-	// Build a 3 node cluster to test host metric mapping
+	// Build a 3 node cluster
 	var nodes []*TestServer
 	var addresses = []string{
 		"127.0.0.1",
@@ -478,10 +484,10 @@ func TestSpeculativeExecution(t *testing.T) {
 	}
 	defer db.Close()
 
-	// Create a test policy with retries
-	rt := &testRetryPolicy{NumRetries: 7}
-	// Create a test Speculative policy with number of executions less than nodes
-	sp := &SimpleSpeculativeExecution{Attempts: 2, Pause: 200 * time.Millisecond}
+	// Create a test retry policy, 6 retries will cover 2 executions
+	rt := &testRetryPolicy{NumRetries: 8}
+	// test Speculative policy with 1 additional execution
+	sp := &SimpleSpeculativeExecution{NumAttempts: 1, TimeoutDelay: 200 * time.Millisecond}
 
 	// Build the query
 	qry := db.Query("speculative").RetryPolicy(rt).SetSpeculativeExecutionPolicy(sp).Idempotent(true)
@@ -494,16 +500,20 @@ func TestSpeculativeExecution(t *testing.T) {
 	requests2 := atomic.LoadInt64(&nodes[1].nKillReq)
 	requests3 := atomic.LoadInt64(&nodes[2].nKillReq)
 
-	// Spec Attempts == 2, so expecting to see only 2 nodes attempted
+	// Spec Attempts == 1, so expecting to see only 1 regular + 1 speculative = 2 nodes attempted
 	if requests1 != 0 && requests2 != 0 && requests3 != 0 {
 		t.Error("error: all 3 nodes were attempted, should have been only 2")
 	}
 
-	// "speculative" query will succeed on one arbitrary node after 3 attempts, so
-	// expecting to see 3 (on successful node) + not more than 2 (on failed node) == 5
-	// retries in total
-	if requests1+requests2+requests3 > 5 {
-		t.Errorf("error: expected to see 5 attempts maximum, got %v\n", requests1+requests2+requests3)
+	// Only the 4th request will generate results, so
+	if requests1 != 4 && requests2 != 4 && requests3 != 4 {
+		t.Error("error: none of 3 nodes was attempted 4 times!")
+	}
+
+	// "speculative" query will succeed on one arbitrary node after 4 attempts, so
+	// expecting to see 4 (on successful node) + not more than 2 (as cancelled on another node) == 6
+	if requests1+requests2+requests3 > 6 {
+		t.Errorf("error: expected to see 6 attempts, got %v\n", requests1+requests2+requests3)
 	}
 }
 
@@ -1149,7 +1159,7 @@ func (srv *TestServer) process(f *framer) {
 			return
 		case "speculative":
 			atomic.AddInt64(&srv.nKillReq, 1)
-			if atomic.LoadInt64(&srv.nKillReq) > 2 {
+			if atomic.LoadInt64(&srv.nKillReq) > 3 {
 				f.writeHeader(0, opResult, head.stream)
 				f.writeInt(resultKindVoid)
 				f.writeString("speculative query success on the node " + srv.Address)
@@ -1158,8 +1168,7 @@ func (srv *TestServer) process(f *framer) {
 				f.writeInt(0x1001)
 				f.writeString("speculative error")
 				rand.Seed(time.Now().UnixNano())
-				sleepFor := time.Duration(time.Millisecond * time.Duration((rand.Intn(50) + 25)))
-				<-time.After(sleepFor)
+				<-time.After(time.Millisecond * 120)
 			}
 		default:
 			f.writeHeader(0, opResult, head.stream)
