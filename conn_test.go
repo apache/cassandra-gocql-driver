@@ -815,23 +815,24 @@ func TestWriteCoalescer(t *testing.T) {
 		buf bytes.Buffer
 		wg  sync.WaitGroup
 
-		w    = &writeCoalescer{wCh: make(chan *writeOp), w: &buf}
-		done = make(chan struct{})
+		w = &writeCoalescer{wCh: make(chan *writeOp, 2), w: &buf}
 	)
 
-	wg.Add(1)
+	wg.Add(2)
 
 	go func() {
 		defer wg.Done()
 
-		t := time.NewTicker(100 * time.Microsecond)
-		for {
-			select {
-			case <-done:
-				return
-			case <-t.C:
-				w.flush()
-			}
+		if _, err := w.Write([]byte("one")); err != nil {
+			t.Error(err)
+		}
+	}()
+
+	go func() {
+		defer wg.Done()
+
+		if _, err := w.Write([]byte("two")); err != nil {
+			t.Error(err)
 		}
 	}()
 
@@ -839,14 +840,18 @@ func TestWriteCoalescer(t *testing.T) {
 		t.Fatalf("expected buffer to be empty have: %v", buf.String())
 	}
 
-	w.Write([]byte("one"))
-	w.Write([]byte("two"))
+	op1 := <-w.wCh
+	op2 := <-w.wCh
+
+	w.wCh <- op1
+	w.wCh <- op2
+
+	w.flush()
 
 	if got := buf.String(); got != "onetwo" && got != "twoone" {
 		t.Fatalf("expected to get %q got %q", "onetwo or twoone", got)
 	}
 
-	close(done)
 	wg.Wait()
 }
 
