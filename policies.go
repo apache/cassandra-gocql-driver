@@ -6,6 +6,7 @@ package gocql
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"math/rand"
@@ -142,6 +143,10 @@ const (
 	Ignore        RetryType = 0x02 // ignore error and return result
 	Rethrow       RetryType = 0x03 // raise error and stop retrying
 )
+
+// ErrUnknownRetryType is returned if the retry policy returns a retry type
+// unknown to the query executor.
+var ErrUnknownRetryType = errors.New("unknown retry type returned by retry policy")
 
 // RetryPolicy interface is used by gocql to determine if a query can be attempted
 // again after a retryable error has been received. The interface allows gocql
@@ -862,8 +867,8 @@ type SpeculativeExecutionPolicy interface {
 
 type NonSpeculativeExecution struct{}
 
-func (sp NonSpeculativeExecution) Attempts() int        { return 0 }
-func (sp NonSpeculativeExecution) Delay() time.Duration { return 1 }
+func (sp NonSpeculativeExecution) Attempts() int        { return 0 } // No additional attempts
+func (sp NonSpeculativeExecution) Delay() time.Duration { return 1 } // The delay. Must be positive to be used in a ticker.
 
 type SimpleSpeculativeExecution struct {
 	NumAttempts  int

@@ -96,7 +96,6 @@ func (q *queryExecutor) executeQuery(qry ExecutableQuery) (*Iter, error) {
 }
 
 func (q *queryExecutor) run(qry ExecutableQuery, specWG *sync.WaitGroup, results chan queryResponse, stop chan struct{}) {
-
 	// Handle the wait group
 	defer specWG.Done()
 
@@ -134,7 +133,7 @@ func (q *queryExecutor) run(qry ExecutableQuery, specWG *sync.WaitGroup, results
 
 			// Exit if the query was successful
 			// or no retry policy defined or retry attempts were reached
-			if rt == nil || iter.err == nil || !rt.Attempt(qry) {
+			if iter.err == nil || rt == nil || !rt.Attempt(qry) {
 				results <- queryResponse{iter: iter}
 				return
 			}
@@ -155,8 +154,8 @@ func (q *queryExecutor) run(qry ExecutableQuery, specWG *sync.WaitGroup, results
 				selectedHost = hostIter()
 				continue
 			default:
-				// Undefined?
-				results <- queryResponse{iter: iter, err: iter.err}
+				// Undefined? Return nil and error, this will panic in the requester
+				results <- queryResponse{iter: nil, err: ErrUnknownRetryType}
 				return
 			}
 		}

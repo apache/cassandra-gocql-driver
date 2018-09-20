@@ -721,13 +721,13 @@ func (q *Query) defaultsFromSession() {
 
 func (q *Query) getHostMetrics(host *HostInfo) *hostMetrics {
 	q.metrics.l.Lock()
-	defer q.metrics.l.Unlock()
 	metrics, exists := q.metrics.m[host.ConnectAddress().String()]
 	if !exists {
 		// if the host is not in the map, it means it's been accessed for the first time
 		metrics = &hostMetrics{}
 		q.metrics.m[host.ConnectAddress().String()] = metrics
 	}
+	q.metrics.l.Unlock()
 
 	return metrics
 }
@@ -745,11 +745,11 @@ func (q Query) String() string {
 //Attempts returns the number of times the query was executed.
 func (q *Query) Attempts() int {
 	q.metrics.l.Lock()
-	defer q.metrics.l.Unlock()
 	var attempts int
 	for _, metric := range q.metrics.m {
 		attempts += metric.Attempts
 	}
+	q.metrics.l.Unlock()
 	return attempts
 }
 
@@ -763,7 +763,7 @@ func (q *Query) AddAttempts(i int, host *HostInfo) {
 //Latency returns the average amount of nanoseconds per attempt of the query.
 func (q *Query) Latency() int64 {
 	q.metrics.l.Lock()
-	defer q.metrics.l.Unlock()
+	q.metrics.l.Unlock()
 	var attempts int
 	var latency int64
 	for _, metric := range q.metrics.m {
@@ -1514,14 +1514,13 @@ func (s *Session) NewBatch(typ BatchType) *Batch {
 
 func (b *Batch) getHostMetrics(host *HostInfo) *hostMetrics {
 	b.metrics.l.Lock()
-	defer b.metrics.l.Unlock()
-
 	metrics, exists := b.metrics.m[host.ConnectAddress().String()]
 	if !exists {
 		// if the host is not in the map, it means it's been accessed for the first time
 		metrics = &hostMetrics{}
 		b.metrics.m[host.ConnectAddress().String()] = metrics
 	}
+	b.metrics.l.Unlock()
 
 	return metrics
 }
