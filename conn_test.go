@@ -751,20 +751,86 @@ func TestContext_Timeout(t *testing.T) {
 	}
 }
 
-func TestWriteCoalescing(t *testing.T) {
-	var buf bytes.Buffer
-	w := &writeCoalescer{
-		w:    &buf,
-		cond: sync.NewCond(&sync.Mutex{}),
+func BenchmarkFlushCoalescer(b *testing.B) {
+	var w = &writeCoalescer{wCh: make(chan *writeOp)}
+
+	for i := 0; i < b.N; i++ {
+		w.flush()
 	}
+}
+
+func BenchmarkWriteCoalescer(b *testing.B) {
+	var (
+		buf bytes.Buffer
+		wg  sync.WaitGroup
+
+		w    = &writeCoalescer{wCh: make(chan *writeOp), w: &buf}
+		done = make(chan struct{})
+		work = make(chan struct{})
+		p    = []byte("blobbloblblob")
+	)
+
+	wg.Add(11)
 
 	go func() {
+		defer wg.Done()
+
+		t := time.NewTicker(10 * time.Microsecond)
+		for {
+			select {
+			case <-done:
+				return
+			case <-t.C:
+				w.flush()
+			}
+		}
+	}()
+
+	for i := 0; i < 10; i++ {
+		go func() {
+			defer wg.Done()
+
+			for {
+				select {
+				case <-done:
+					return
+				case <-work:
+					w.Write(p)
+				}
+			}
+		}()
+	}
+
+	for i := 0; i < b.N; i++ {
+		work <- struct{}{}
+	}
+
+	close(done)
+	w.flush()
+	wg.Wait()
+}
+
+func TestWriteCoalescer(t *testing.T) {
+	var (
+		buf bytes.Buffer
+		wg  sync.WaitGroup
+
+		w = &writeCoalescer{wCh: make(chan *writeOp, 2), w: &buf}
+	)
+
+	wg.Add(2)
+
+	go func() {
+		defer wg.Done()
+
 		if _, err := w.Write([]byte("one")); err != nil {
 			t.Error(err)
 		}
 	}()
 
 	go func() {
+		defer wg.Done()
+
 		if _, err := w.Write([]byte("two")); err != nil {
 			t.Error(err)
 		}
@@ -774,19 +840,19 @@ func TestWriteCoalescing(t *testing.T) {
 		t.Fatalf("expected buffer to be empty have: %v", buf.String())
 	}
 
-	for true {
-		w.cond.L.Lock()
-		if len(w.buffers) == 2 {
-			w.cond.L.Unlock()
-			break
-		}
-		w.cond.L.Unlock()
-	}
+	op1 := <-w.wCh
+	op2 := <-w.wCh
+
+	w.wCh <- op1
+	w.wCh <- op2
 
 	w.flush()
+
 	if got := buf.String(); got != "onetwo" && got != "twoone" {
 		t.Fatalf("expected to get %q got %q", "onetwo or twoone", got)
 	}
+
+	wg.Wait()
 }
 
 type recordingFrameHeaderObserver struct {

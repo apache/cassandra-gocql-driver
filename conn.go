@@ -266,8 +266,8 @@ func (s *Session) dial(host *HostInfo, cfg *ConnConfig, errorHandler ConnErrorHa
 	// dont coalesce startup frames
 	if s.cfg.WriteCoalesceWaitTime > 0 {
 		w := &writeCoalescer{
-			cond: sync.NewCond(&sync.Mutex{}),
-			w:    c.w,
+			wCh: make(chan *writeOp),
+			w:   c.w,
 		}
 		go w.writeFlusher(s.cfg.WriteCoalesceWaitTime, c.quit)
 		c.w = w
@@ -612,44 +612,68 @@ func (c *deadlineWriter) Write(p []byte) (int, error) {
 }
 
 type writeCoalescer struct {
-	w io.Writer
+	w   io.Writer
+	wCh chan *writeOp
+}
 
-	cond    *sync.Cond
-	buffers net.Buffers
+type writeOp struct {
+	buf []byte
 
-	// result of the write
-	err error
+	resCh chan error
+}
+
+var writeOpPool = &sync.Pool{
+	New: func() interface{} { return &writeOp{resCh: make(chan error, 1)} },
 }
 
 func (w *writeCoalescer) flush() {
-	w.cond.L.Lock()
-	defer w.cond.L.Unlock()
+	var (
+		buffers net.Buffers
+		resChs  []chan error
+		done    bool
+	)
 
-	if len(w.buffers) == 0 {
+	for {
+		select {
+		case w := <-w.wCh:
+			buffers = append(buffers, w.buf)
+			resChs = append(resChs, w.resCh)
+		default:
+			done = true
+		}
+
+		if done {
+			break
+		}
+	}
+
+	if len(buffers) == 0 {
 		return
 	}
 
 	// Given we are going to do a fanout n is useless and according to
 	// the docs WriteTo should return 0 and err or bytes written and
 	// no error.
-	_, w.err = w.buffers.WriteTo(w.w)
-	if w.err != nil {
-		w.buffers = nil
+	_, err := buffers.WriteTo(w.w)
+
+	for _, ch := range resChs {
+		ch <- err
 	}
-	w.cond.Broadcast()
 }
 
 func (w *writeCoalescer) Write(p []byte) (int, error) {
-	w.cond.L.Lock()
-	w.buffers = append(w.buffers, p)
-	for len(w.buffers) != 0 {
-		w.cond.Wait()
+	op := writeOpPool.Get().(*writeOp)
+	defer func() { writeOpPool.Put(op) }()
+
+	select {
+	case <-op.resCh:
+	default:
 	}
 
-	err := w.err
-	w.cond.L.Unlock()
+	op.buf = p
+	w.wCh <- op
 
-	if err != nil {
+	if err := <-op.resCh; err != nil {
 		return 0, err
 	}
 	return len(p), nil
