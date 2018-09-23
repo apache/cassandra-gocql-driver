@@ -678,6 +678,11 @@ func (w *writeCoalescer) writeFlusher(interval time.Duration, quit chan struct{}
 		<-timer.C
 	}
 
+	go func() {
+		<-quit
+		w.fcond.Broadcast()
+	}()
+
 	for {
 		// wait for a write to start the flush loop
 		w.fcond.L.Lock()
