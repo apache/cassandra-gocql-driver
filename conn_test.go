@@ -754,8 +754,9 @@ func TestContext_Timeout(t *testing.T) {
 func TestWriteCoalescing(t *testing.T) {
 	var buf bytes.Buffer
 	w := &writeCoalescer{
-		w:    &buf,
-		cond: sync.NewCond(&sync.Mutex{}),
+		w:     &buf,
+		cond:  sync.NewCond(&sync.Mutex{}),
+		fcond: sync.NewCond(&sync.Mutex{}),
 	}
 
 	go func() {
