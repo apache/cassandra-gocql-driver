@@ -763,13 +763,13 @@ func (q *Query) AddAttempts(i int, host *HostInfo) {
 //Latency returns the average amount of nanoseconds per attempt of the query.
 func (q *Query) Latency() int64 {
 	q.metrics.l.Lock()
-	q.metrics.l.Unlock()
 	var attempts int
 	var latency int64
 	for _, metric := range q.metrics.m {
 		attempts += metric.Attempts
 		latency += metric.TotalLatency
 	}
+	q.metrics.l.Unlock()
 	if attempts > 0 {
 		return latency / int64(attempts)
 	}
