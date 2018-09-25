@@ -1220,6 +1220,7 @@ func (c *Conn) executeBatch(batch *Batch) *Iter {
 
 func (c *Conn) query(statement string, values ...interface{}) (iter *Iter) {
 	q := c.session.Query(statement, values...).Consistency(One)
+	q.trace = nil
 	return c.executeQuery(q)
 }
 
