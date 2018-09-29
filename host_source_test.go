@@ -38,10 +38,11 @@ func TestCassVersionBefore(t *testing.T) {
 
 		{cassVersion{1, 0, 0}, 0, 1, 0},
 		{cassVersion{0, 1, 0}, 0, 0, 1},
+		{cassVersion{4, 1, 0}, 3, 1, 2},
 	}
 
 	for i, test := range tests {
-		if !test.version.Before(test.major, test.minor, test.patch) {
+		if test.version.Before(test.major, test.minor, test.patch) {
 			t.Errorf("%d: expected v%d.%d.%d to be before %v", i, test.major, test.minor, test.patch, test.version)
 		}
 	}
