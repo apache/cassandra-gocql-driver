@@ -38,6 +38,7 @@ func TestCassVersionBefore(t *testing.T) {
 
 		{cassVersion{1, 0, 0}, 0, 1, 0},
 		{cassVersion{0, 1, 0}, 0, 0, 1},
+		{cassVersion{4, 1, 0}, 3, 1, 2},
 	}
 
 	for i, test := range tests {

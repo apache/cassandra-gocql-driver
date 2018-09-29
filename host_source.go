@@ -77,10 +77,13 @@ func (c cassVersion) Before(major, minor, patch int) bool {
 	// We return true if our version is lower (comes before) than the provided one.
 	if c.Major < major {
 		return true
-	} else if c.Major == major && c.Minor < minor {
-		return true
-	} else if c.Minor == minor && c.Patch < patch {
-		return true
+	} else if c.Major == major {
+		if c.Minor < minor {
+			return true
+		} else if c.Minor == minor && c.Patch < patch {
+			return true
+		}
+
 	}
 	return false
 }
