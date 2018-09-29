@@ -1565,9 +1565,6 @@ func TestPrepare_PreparedCacheEviction(t *testing.T) {
 }
 
 func TestWriteFailure(t *testing.T) {
-	if flagCassVersion.Major == 0 || flagCassVersion.Before(3, 11, 0) {
-		t.Skipf("write failure can only be tested against Cassandra 3.11 or higher version=%v", flagCassVersion)
- 	}
 	cluster := createCluster()
 	createKeyspace(t, cluster, "test")
 	cluster.Keyspace = "test"
@@ -1585,7 +1582,7 @@ func TestWriteFailure(t *testing.T) {
 		if ok {
 			if session.cfg.ProtoVersion >= 5 {
 				// ErrorMap should be filled with some hosts that should've errored
-				if len(errWrite.ErrorMap)  == 0 {
+				if len(errWrite.ErrorMap) == 0 {
 					t.Fatal("errWrite.ErrorMap should have some failed hosts but it didn't have any")
 				}
 			} else {
