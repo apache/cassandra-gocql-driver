@@ -13,7 +13,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/hailocab/go-hostpool"
+	hostpool "github.com/hailocab/go-hostpool"
 )
 
 // cowHostList implements a copy on write host list, its equivalent type is []*HostInfo
@@ -117,7 +117,7 @@ func (c *cowHostList) remove(ip net.IP) bool {
 		return false
 	}
 
-	newL = newL[:size-1 : size-1]
+	newL = newL[: size-1 : size-1]
 	c.list.Store(&newL)
 	c.mu.Unlock()
 
@@ -168,12 +168,12 @@ type ExponentialBackoffRetryPolicy struct {
 	Min, Max   time.Duration
 }
 
-func (e *ExponentialBackoffRetryPolicy) Attempt(q RetryableQuery) bool {
+func (e *ExponentialBackoffRetryPolicy) Attempt(q RetryableQuery, err error) (bool, bool) {
 	if q.Attempts() > e.NumRetries {
-		return false
+		return false, false
 	}
 	time.Sleep(e.napTime(q.Attempts()))
-	return true
+	return true, false
 }
 
 func (e *ExponentialBackoffRetryPolicy) napTime(attempts int) time.Duration {
