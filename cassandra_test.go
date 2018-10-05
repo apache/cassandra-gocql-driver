@@ -19,7 +19,7 @@ import (
 	"time"
 	"unicode"
 
-	"gopkg.in/inf.v0"
+	inf "gopkg.in/inf.v0"
 )
 
 // TestAuthentication verifies that gocql will work with a host configured to only accept authenticated connections
@@ -158,14 +158,15 @@ func TestTracing(t *testing.T) {
 	}
 
 	buf := &bytes.Buffer{}
-	trace := NewTraceWriter(session, buf)
-
+	trace := &traceWriter{session: session, w: buf}
 	if err := session.Query(`INSERT INTO trace (id) VALUES (?)`, 42).Trace(trace).Exec(); err != nil {
 		t.Fatal("insert:", err)
 	} else if buf.Len() == 0 {
 		t.Fatal("insert: failed to obtain any tracing")
 	}
+	trace.mu.Lock()
 	buf.Reset()
+	trace.mu.Unlock()
 
 	var value int
 	if err := session.Query(`SELECT id FROM trace WHERE id = ?`, 42).Trace(trace).Scan(&value); err != nil {
@@ -178,7 +179,9 @@ func TestTracing(t *testing.T) {
 
 	// also works from session tracer
 	session.SetTrace(trace)
+	trace.mu.Lock()
 	buf.Reset()
+	trace.mu.Unlock()
 	if err := session.Query(`SELECT id FROM trace WHERE id = ?`, 42).Scan(&value); err != nil {
 		t.Fatal("select:", err)
 	}
@@ -1567,7 +1570,7 @@ func TestPrepare_PreparedCacheEviction(t *testing.T) {
 func TestWriteFailure(t *testing.T) {
 	if flagCassVersion.Major == 0 || flagCassVersion.Before(3, 11, 0) {
 		t.Skipf("write failure can only be tested against Cassandra 3.11 or higher version=%v", flagCassVersion)
- 	}
+	}
 	cluster := createCluster()
 	createKeyspace(t, cluster, "test")
 	cluster.Keyspace = "test"
@@ -1585,7 +1588,7 @@ func TestWriteFailure(t *testing.T) {
 		if ok {
 			if session.cfg.ProtoVersion >= 5 {
 				// ErrorMap should be filled with some hosts that should've errored
-				if len(errWrite.ErrorMap)  == 0 {
+				if len(errWrite.ErrorMap) == 0 {
 					t.Fatal("errWrite.ErrorMap should have some failed hosts but it didn't have any")
 				}
 			} else {
