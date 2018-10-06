@@ -752,11 +752,16 @@ func TestContext_Timeout(t *testing.T) {
 }
 
 func TestWriteCoalescing(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	var buf bytes.Buffer
 	w := &writeCoalescer{
-		w:     &buf,
-		cond:  sync.NewCond(&sync.Mutex{}),
-		fcond: sync.NewCond(&sync.Mutex{}),
+		w:       &buf,
+		writeCh: make(chan struct{}),
+		cond:    sync.NewCond(&sync.Mutex{}),
+		quit:    ctx.Done(),
+		running: true,
 	}
 
 	go func() {
@@ -787,6 +792,32 @@ func TestWriteCoalescing(t *testing.T) {
 	w.flush()
 	if got := buf.String(); got != "onetwo" && got != "twoone" {
 		t.Fatalf("expected to get %q got %q", "onetwo or twoone", got)
+	}
+}
+
+func TestWriteCoalescing_WriteAfterClose(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	var buf bytes.Buffer
+	w := newWriteCoalescer(&buf, 5*time.Millisecond, ctx.Done())
+
+	// ensure 1 write works
+	if _, err := w.Write([]byte("one")); err != nil {
+		t.Fatal(err)
+	}
+
+	if v := buf.String(); v != "one" {
+		t.Fatalf("expected buffer to be %q got %q", "one", v)
+	}
+
+	// now close and do a write, we should error
+	cancel()
+
+	if _, err := w.Write([]byte("two")); err == nil {
+		t.Fatal("expected to get error for write after closing")
+	} else if err != io.EOF {
+		t.Fatalf("expected to get EOF got %v", err)
 	}
 }
 
