@@ -701,6 +701,11 @@ func (w *writeCoalescer) writeFlusher(interval time.Duration) {
 		<-timer.C
 	}
 
+	go func() {
+		<-quit
+		w.fcond.Broadcast()
+	}()
+
 	for {
 		// wait for a write to start the flush loop
 		select {
