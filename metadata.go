@@ -267,10 +267,10 @@ func compileMetadata(
 		keyspace.Functions[functions[i].Name] = &functions[i]
 	}
 	keyspace.Aggregates = make(map[string]*AggregateMetadata, len(aggregates))
-	for i, aggregate := range aggregates {
+	for _, aggregate := range aggregates {
 		aggregate.FinalFunc = *keyspace.Functions[aggregate.finalFunc]
 		aggregate.StateFunc = *keyspace.Functions[aggregate.stateFunc]
-		keyspace.Aggregates[aggregates[i].Name] = &aggregate
+		keyspace.Aggregates[aggregate.Name] = &aggregate
 	}
 
 	// add columns from the schema data
@@ -842,7 +842,7 @@ func getColumnMetadata(session *Session, keyspaceName string) ([]ColumnMetadata,
 	return columns, nil
 }
 
-func getTypeInfo(t string) TypeInfo{
+func getTypeInfo(t string) TypeInfo {
 	if strings.HasPrefix(t, apacheCassandraTypePrefix) {
 		t = apacheToCassandraType(t)
 	}

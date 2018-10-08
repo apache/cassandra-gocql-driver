@@ -2273,8 +2273,8 @@ func TestAggregateMetadata(t *testing.T) {
 	}
 
 	// In this case cassandra is returning a blob
-	if  flagCassVersion.Before(3, 0, 0) {
-		expectedAggregrate.InitCond = string([]byte{0, 0 ,0 , 4, 0, 0, 0, 0, 0, 0, 0,  8, 0, 0, 0, 0, 0, 0, 0, 0})
+	if flagCassVersion.Before(3, 0, 0) {
+		expectedAggregrate.InitCond = string([]byte{0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 8, 0, 0, 0, 0, 0, 0, 0, 0})
 	}
 
 	if !reflect.DeepEqual(aggregate, expectedAggregrate) {
