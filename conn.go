@@ -705,19 +705,12 @@ func (w *writeCoalescer) writeFlusher(interval time.Duration) {
 		// wait for a write to start the flush loop
 		select {
 		case <-w.writeCh:
-		case <-w.quit:
-			return
-		}
-
-		timer.Reset(interval)
-
-		select {
+			timer.Reset(interval)
 		case <-w.quit:
 			return
 		case <-timer.C:
+			w.flush()
 		}
-
-		w.flush()
 	}
 }
 
