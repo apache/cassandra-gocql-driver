@@ -658,7 +658,7 @@ func TestQueryTimeout(t *testing.T) {
 		if err != ErrTimeoutNoResponse {
 			t.Fatalf("expected to get %v for timeout got %v", ErrTimeoutNoResponse, err)
 		}
-	case <-time.After(10*time.Millisecond + db.cfg.Timeout):
+	case <-time.After(100*time.Millisecond + db.cfg.Timeout):
 		// ensure that the query goroutines have been scheduled
 		t.Fatalf("query did not timeout after %v", db.cfg.Timeout)
 	}
