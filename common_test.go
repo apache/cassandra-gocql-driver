@@ -181,10 +181,10 @@ func createFunctions(t *testing.T, session *Session) {
 	}
 	if err := session.Query(`
 		CREATE OR REPLACE FUNCTION gocql_test.avgFinal ( state tuple<int,bigint> )
-			CALLED ON NULL INPUT
-			RETURNS double
-			LANGUAGE java AS
-			$$double r = 0; if (state.getInt(0) == 0) return null; r = state.getLong(1); r/= state.getInt(0); return Double.valueOf(r);$$ 
+		CALLED ON NULL INPUT
+		RETURNS double
+		LANGUAGE java AS
+		$$double r = 0; if (state.getInt(0) == 0) return null; r = state.getLong(1); r/= state.getInt(0); return Double.valueOf(r);$$ 
 	`).Exec(); err != nil {
 		t.Fatalf("failed to create function with err: %v", err)
 	}
@@ -194,10 +194,10 @@ func createAggregate(t *testing.T, session *Session) {
 	createFunctions(t, session)
 	if err := session.Query(`
 		CREATE OR REPLACE AGGREGATE gocql_test.average(int)
-			SFUNC avgState
-			STYPE tuple<int,bigint>
-			FINALFUNC avgFinal
-			INITCOND (0,0);
+		SFUNC avgState
+		STYPE tuple<int,bigint>
+		FINALFUNC avgFinal
+		INITCOND (0,0);
 	`).Exec(); err != nil {
 		t.Fatalf("failed to create aggregate with err: %v", err)
 	}
