@@ -75,6 +75,7 @@ function run_tests() {
 	else
 		sleep 1s
 		go test -tags "integration gocql_debug" -timeout=5m -race $args
+		go test -tags "integration_env gocql_debug" -timeout=5m -race $args
 
 		ccm clear
 		ccm start
