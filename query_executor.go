@@ -103,7 +103,7 @@ func (q *queryExecutor) do(ctx context.Context, qry ExecutableQuery) *Iter {
 			continue
 		}
 
-		conn := pool.Pick()
+		conn := pool.Pick(selectedHost.Token())
 		if conn == nil {
 			selectedHost = hostIter()
 			continue
