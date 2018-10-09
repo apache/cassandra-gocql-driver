@@ -479,6 +479,10 @@ func (s *startupCoordinator) authenticateHandshake(ctx context.Context, authFram
 }
 
 func (c *Conn) closeWithError(err error) {
+	if c == nil {
+		return
+	}
+
 	if !atomic.CompareAndSwapInt32(&c.closed, 0, 1) {
 		return
 	}
