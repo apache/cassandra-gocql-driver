@@ -314,16 +314,24 @@ type HostSelectionPolicy interface {
 // selection policy.
 type SelectedHost interface {
 	Info() *HostInfo
+	Token() token
 	Mark(error)
 }
 
-type selectedHost HostInfo
-
-func (host *selectedHost) Info() *HostInfo {
-	return (*HostInfo)(host)
+type selectedHost struct {
+	info  *HostInfo
+	token token
 }
 
-func (host *selectedHost) Mark(err error) {}
+func (host selectedHost) Info() *HostInfo {
+	return host.info
+}
+
+func (host selectedHost) Token() token {
+	return host.token
+}
+
+func (host selectedHost) Mark(err error) {}
 
 // NextHost is an iteration function over picked hosts
 type NextHost func() SelectedHost
@@ -635,7 +643,7 @@ func (t *tokenAwareHostPolicy) Pick(qry ExecutableQuery) NextHost {
 
 			if h.IsUp() {
 				used[h] = true
-				return (*selectedHost)(h)
+				return selectedHost{info: h, token: token}
 			}
 		}
 
@@ -646,7 +654,7 @@ func (t *tokenAwareHostPolicy) Pick(qry ExecutableQuery) NextHost {
 
 				if h.IsUp() {
 					used[h] = true
-					return (*selectedHost)(h)
+					return selectedHost{info: h}
 				}
 			}
 		}
@@ -796,6 +804,10 @@ func (host selectedHostPoolHost) Info() *HostInfo {
 	return host.info
 }
 
+func (host selectedHostPoolHost) Token() token {
+	return nil
+}
+
 func (host selectedHostPoolHost) Mark(err error) {
 	ip := host.info.ConnectAddress().String()
 
@@ -872,10 +884,9 @@ func roundRobbin(hosts []*HostInfo) NextHost {
 			i++
 
 			if h.IsUp() {
-				return (*selectedHost)(h)
+				return selectedHost{info: h}
 			}
 		}
-
 		return nil
 	}
 }
