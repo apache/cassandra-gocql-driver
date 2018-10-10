@@ -13,7 +13,6 @@ import (
 	"math/rand"
 	"net"
 	"sync"
-	"sync/atomic"
 	"time"
 )
 
@@ -250,41 +249,39 @@ func (p *policyConnPool) hostDown(ip net.IP) {
 // hostConnPool is a connection pool for a single host.
 // Connection selection is based on a provided ConnSelectionPolicy
 type hostConnPool struct {
-	session  *Session
-	host     *HostInfo
-	port     int
-	addr     string
-	size     int
-	keyspace string
-	// protection for conns, closed, filling
+	session        *Session
+	host           *HostInfo
+	port           int
+	addr           string
+	size           int
+	keyspace       string
+	connPicker     ConnPicker
+	connPickerOnce sync.Once
+	// protection for conns, connsCount, closed, filling
 	mu      sync.RWMutex
-	conns   []*Conn
 	closed  bool
 	filling bool
-
-	pos uint32
 }
 
 func (h *hostConnPool) String() string {
-	h.mu.RLock()
-	defer h.mu.RUnlock()
+	sz, _ := h.connPicker.Size()
 	return fmt.Sprintf("[filling=%v closed=%v conns=%v size=%v host=%v]",
-		h.filling, h.closed, len(h.conns), h.size, h.host)
+		h.filling, h.closed, sz, h.size, h.host)
 }
 
 func newHostConnPool(session *Session, host *HostInfo, port, size int,
 	keyspace string) *hostConnPool {
 
 	pool := &hostConnPool{
-		session:  session,
-		host:     host,
-		port:     port,
-		addr:     (&net.TCPAddr{IP: host.ConnectAddress(), Port: host.Port()}).String(),
-		size:     size,
-		keyspace: keyspace,
-		conns:    make([]*Conn, 0, size),
-		filling:  false,
-		closed:   false,
+		session:    session,
+		host:       host,
+		port:       port,
+		addr:       (&net.TCPAddr{IP: host.ConnectAddress(), Port: host.Port()}).String(),
+		size:       size,
+		keyspace:   keyspace,
+		connPicker: NewDefaultConnPicker(size),
+		filling:    false,
+		closed:     false,
 	}
 
 	// the pool is not filled or connected
@@ -292,7 +289,7 @@ func newHostConnPool(session *Session, host *HostInfo, port, size int,
 }
 
 // Pick a connection from this connection pool for the given query.
-func (pool *hostConnPool) Pick() *Conn {
+func (pool *hostConnPool) Pick(token token) *Conn {
 	pool.mu.RLock()
 	defer pool.mu.RUnlock()
 
@@ -300,33 +297,17 @@ func (pool *hostConnPool) Pick() *Conn {
 		return nil
 	}
 
-	size := len(pool.conns)
-	if size < pool.size {
+	sz, missing := pool.connPicker.Size()
+	if missing > 0 {
 		// try to fill the pool
 		go pool.fill()
 
-		if size == 0 {
+		if sz == 0 {
 			return nil
 		}
 	}
 
-	pos := int(atomic.AddUint32(&pool.pos, 1) - 1)
-
-	var (
-		leastBusyConn    *Conn
-		streamsAvailable int
-	)
-
-	// find the conn which has the most available streams, this is racy
-	for i := 0; i < size; i++ {
-		conn := pool.conns[(pos+i)%size]
-		if streams := conn.AvailableStreams(); streams > streamsAvailable {
-			leastBusyConn = conn
-			streamsAvailable = streams
-		}
-	}
-
-	return leastBusyConn
+	return pool.connPicker.Pick(token)
 }
 
 //Size returns the number of connections currently active in the pool
@@ -334,38 +315,19 @@ func (pool *hostConnPool) Size() int {
 	pool.mu.RLock()
 	defer pool.mu.RUnlock()
 
-	return len(pool.conns)
+	sz, _ := pool.connPicker.Size()
+	return sz
 }
 
 //Close the connection pool
 func (pool *hostConnPool) Close() {
 	pool.mu.Lock()
+	defer pool.mu.Unlock()
 
-	if pool.closed {
-		pool.mu.Unlock()
-		return
+	if !pool.closed {
+		pool.connPicker.Close()
 	}
 	pool.closed = true
-
-	// ensure we dont try to reacquire the lock in handleError
-	// TODO: improve this as the following can happen
-	// 1) we have locked pool.mu write lock
-	// 2) conn.Close calls conn.closeWithError(nil)
-	// 3) conn.closeWithError calls conn.Close() which returns an error
-	// 4) conn.closeWithError calls pool.HandleError with the error from conn.Close
-	// 5) pool.HandleError tries to lock pool.mu
-	// deadlock
-
-	// empty the pool
-	conns := pool.conns
-	pool.conns = nil
-
-	pool.mu.Unlock()
-
-	// close the connections
-	for _, conn := range conns {
-		conn.Close()
-	}
 }
 
 // Fill the connection pool
@@ -378,8 +340,7 @@ func (pool *hostConnPool) fill() {
 	}
 
 	// determine the filling work to be done
-	startCount := len(pool.conns)
-	fillCount := pool.size - startCount
+	startCount, fillCount := pool.connPicker.Size()
 
 	// avoid filling a full (or overfull) pool
 	if fillCount <= 0 {
@@ -391,9 +352,7 @@ func (pool *hostConnPool) fill() {
 	pool.mu.RUnlock()
 	pool.mu.Lock()
 
-	// double check everything since the lock was released
-	startCount = len(pool.conns)
-	fillCount = pool.size - startCount
+	startCount, fillCount = pool.connPicker.Size()
 	if pool.closed || pool.filling || fillCount <= 0 {
 		// looks like another goroutine already beat this
 		// goroutine to the filling
@@ -427,8 +386,10 @@ func (pool *hostConnPool) fill() {
 			return
 		}
 
-		// filled one
-		fillCount--
+		// filled one, let's reload it to see if it has changed
+		pool.mu.RLock()
+		_, fillCount = pool.connPicker.Size()
+		pool.mu.RUnlock()
 	}
 
 	// fill the rest of the pool asynchronously
@@ -534,7 +495,6 @@ func (pool *hostConnPool) connect() (err error) {
 		}
 	}
 
-	// add the Conn to the pool
 	pool.mu.Lock()
 	defer pool.mu.Unlock()
 
@@ -543,7 +503,9 @@ func (pool *hostConnPool) connect() (err error) {
 		return nil
 	}
 
-	pool.conns = append(pool.conns, conn)
+	// lazily initialize the connPicker when we know the required type
+	pool.initConnPicker(conn)
+	pool.connPicker.Put(conn)
 
 	return nil
 }
@@ -557,23 +519,25 @@ func (pool *hostConnPool) HandleError(conn *Conn, err error, closed bool) {
 
 	// TODO: track the number of errors per host and detect when a host is dead,
 	// then also have something which can detect when a host comes back.
-	pool.mu.Lock()
-	defer pool.mu.Unlock()
 
+	pool.mu.RLock()
 	if pool.closed {
 		// pool closed
+		pool.mu.RUnlock()
 		return
 	}
+	pool.mu.RUnlock()
 
-	// find the connection index
-	for i, candidate := range pool.conns {
-		if candidate == conn {
-			// remove the connection, not preserving order
-			pool.conns[i], pool.conns = pool.conns[len(pool.conns)-1], pool.conns[:len(pool.conns)-1]
-
-			// lost a connection, so fill the pool
-			go pool.fill()
-			break
+	pool.mu.Lock()
+	pool.connPicker.Remove(conn)
+	pool.mu.Unlock()
+}
+func (pool *hostConnPool) initConnPicker(conn *Conn) {
+	pool.connPickerOnce.Do(func() {
+		if conn.shard == noSharding {
+			pool.connPicker = NewDefaultConnPicker(pool.size)
+		} else {
+			pool.connPicker = NewScyllaConnPicker()
 		}
-	}
+	})
 }

@@ -123,6 +123,7 @@ type HostInfo struct {
 	version          cassVersion
 	state            nodeState
 	tokens           []string
+	shardingInfo     shardingInfo
 }
 
 func (h *HostInfo) Equal(host *HostInfo) bool {
@@ -340,6 +341,19 @@ func (h *HostInfo) setPort(port int) *HostInfo {
 	return h
 }
 
+func (h *HostInfo) ShardingInfo() shardingInfo {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return h.shardingInfo
+}
+
+func (h *HostInfo) setShardingInfo(si shardingInfo) *HostInfo {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.shardingInfo = si
+	return h
+}
+
 func (h *HostInfo) update(from *HostInfo) {
 	if h == from {
 		return
@@ -399,6 +413,9 @@ func (h *HostInfo) update(from *HostInfo) {
 	}
 	if h.tokens == nil {
 		h.tokens = from.tokens
+	}
+	if h.shardingInfo == (shardingInfo{}) {
+		h.shardingInfo = from.shardingInfo
 	}
 }
 
@@ -539,6 +556,7 @@ func (s *Session) hostInfoFromMap(row map[string]interface{}, port int) (*HostIn
 				return nil, fmt.Errorf(assertErrorMsg, "dse_version")
 			}
 		}
+
 		// TODO(thrawn01): Add 'port'? once CASSANDRA-7544 is complete
 		// Not sure what the port field will be called until the JIRA issue is complete
 	}
