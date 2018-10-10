@@ -1,4 +1,4 @@
-// +build all integration
+// +build all cassandra
 
 package gocql
 
@@ -66,17 +66,6 @@ func TestIsValidPeer(t *testing.T) {
 	if isValidPeer(host) {
 		t.Errorf("expected %+v to NOT be a valid peer", host)
 	}
-}
-
-func TestGetHosts(t *testing.T) {
-	cluster := createCluster()
-	session := createSessionFromCluster(cluster, t)
-
-	hosts, partitioner, err := session.hostSource.GetHosts()
-
-	assertTrue(t, "err == nil", err == nil)
-	assertEqual(t, "len(hosts)", len(clusterHosts), len(hosts))
-	assertTrue(t, "len(partitioner) != 0", len(partitioner) != 0)
 }
 
 func TestHostInfo_ConnectAddress(t *testing.T) {

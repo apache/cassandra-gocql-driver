@@ -1,4 +1,4 @@
-// +build all unit
+//+build all unit
 
 package gocql
 
