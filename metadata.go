@@ -886,14 +886,13 @@ func getFunctionsMetadata(session *Session, keyspaceName string) ([]FunctionMeta
 			&function.Language,
 			&returnType,
 		)
+		if err != nil {
+			return nil, err
+		}
 		function.ReturnType = getTypeInfo(returnType)
 		function.ArgumentTypes = make([]TypeInfo, len(argumentTypes))
 		for i, argumentType := range argumentTypes {
 			function.ArgumentTypes[i] = getTypeInfo(argumentType)
-		}
-
-		if err != nil {
-			return nil, err
 		}
 		functions = append(functions, function)
 	}
@@ -944,16 +943,14 @@ func getAggregatesMetadata(session *Session, keyspaceName string) ([]AggregateMe
 			&aggregate.stateFunc,
 			&stateType,
 		)
-
+		if err != nil {
+			return nil, err
+		}
 		aggregate.ReturnType = getTypeInfo(returnType)
 		aggregate.StateType = getTypeInfo(stateType)
 		aggregate.ArgumentTypes = make([]TypeInfo, len(argumentTypes))
 		for i, argumentType := range argumentTypes {
 			aggregate.ArgumentTypes[i] = getTypeInfo(argumentType)
-		}
-
-		if err != nil {
-			return nil, err
 		}
 		aggregates = append(aggregates, aggregate)
 	}
