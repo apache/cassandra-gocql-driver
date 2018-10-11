@@ -152,6 +152,9 @@ func (q *queryExecutor) run(qry ExecutableQuery, specWG *sync.WaitGroup, results
 			case RetryNextHost:
 				// retry on the next host
 				selectedHost = hostIter()
+				if selectedHost == nil {
+					results <- queryResponse{iter: iter}
+				}
 				continue
 			default:
 				// Undefined? Return nil and error, this will panic in the requester
