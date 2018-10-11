@@ -154,6 +154,7 @@ func (q *queryExecutor) run(qry ExecutableQuery, specWG *sync.WaitGroup, results
 				selectedHost = hostIter()
 				if selectedHost == nil {
 					results <- queryResponse{iter: iter}
+					return
 				}
 				continue
 			default:
