@@ -940,18 +940,17 @@ func TestFrameHeaderObserver(t *testing.T) {
 	}
 
 	frames := observer.getFrames()
+	expFrames := []frameOp{opSupported, opReady, opResult}
+	if len(frames) != len(expFrames) {
+		t.Fatalf("Expected to receive %d frames, instead received %d", len(expFrames), len(frames))
+	}
 
-	if len(frames) != 2 {
-		t.Fatalf("Expected to receive 2 frames, instead received %d", len(frames))
+	for i, op := range expFrames {
+		if op != frames[i].Opcode {
+			t.Fatalf("expected frame %d to be %v got %v", i, op, frames[i])
+		}
 	}
-	readyFrame := frames[0]
-	if readyFrame.Opcode != frameOp(opReady) {
-		t.Fatalf("Expected to receive ready frame, instead received frame of opcode %d", readyFrame.Opcode)
-	}
-	voidResultFrame := frames[1]
-	if voidResultFrame.Opcode != frameOp(opResult) {
-		t.Fatalf("Expected to receive result frame, instead received frame of opcode %d", voidResultFrame.Opcode)
-	}
+	voidResultFrame := frames[2]
 	if voidResultFrame.Length != int32(4) {
 		t.Fatalf("Expected to receive frame with body length 4, instead received body length %d", voidResultFrame.Length)
 	}
