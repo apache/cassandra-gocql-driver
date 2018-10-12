@@ -359,6 +359,10 @@ func (s *startupCoordinator) startup(ctx context.Context, supported map[string][
 				break
 			}
 		}
+
+		if _, ok := m["COMPRESSION"]; !ok {
+			s.conn.compressor = nil
+		}
 	}
 
 	frame, err := s.write(ctx, &writeStartupFrame{opts: m})
