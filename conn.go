@@ -153,6 +153,7 @@ type Conn struct {
 	version         uint8
 	currentKeyspace string
 	host            *HostInfo
+	supported       map[string][]string
 
 	session *Session
 
@@ -391,21 +392,22 @@ func (s *startupCoordinator) options(ctx context.Context) error {
 		return err
 	}
 
-	supported, ok := frame.(*supportedFrame)
+	v, ok := frame.(*supportedFrame)
 	if !ok {
 		return NewErrProtocol("Unknown type of response to startup frame: %T", frame)
 	}
+	s.conn.supported = v.supported
 
-	return s.startup(ctx, supported.supported)
+	return s.startup(ctx)
 }
 
-func (s *startupCoordinator) startup(ctx context.Context, supported map[string][]string) error {
+func (s *startupCoordinator) startup(ctx context.Context) error {
 	m := map[string]string{
 		"CQL_VERSION": s.conn.cfg.CQLVersion,
 	}
 
 	if s.conn.compressor != nil {
-		comp := supported["COMPRESSION"]
+		comp := s.conn.supported["COMPRESSION"]
 		name := s.conn.compressor.Name()
 		for _, compressor := range comp {
 			if compressor == name {
