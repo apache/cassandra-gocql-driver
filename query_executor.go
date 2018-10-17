@@ -107,16 +107,19 @@ func (q *queryExecutor) run(qry ExecutableQuery, specWG *sync.WaitGroup, results
 	for selectedHost != nil {
 		host := selectedHost.Info()
 		if host == nil || !host.IsUp() {
+			selectedHost = hostIter()
 			continue
 		}
 
 		pool, ok := q.pool.getPool(host)
 		if !ok {
+			selectedHost = hostIter()
 			continue
 		}
 
 		conn := pool.Pick()
 		if conn == nil {
+			selectedHost = hostIter()
 			continue
 		}
 
