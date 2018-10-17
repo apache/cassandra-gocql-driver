@@ -199,7 +199,6 @@ func (s *Session) dial(host *HostInfo, cfg *ConnConfig, errorHandler ConnErrorHa
 		r:             bufio.NewReader(conn),
 		cfg:           cfg,
 		calls:         make(map[int]*callReq),
-		timeout:       cfg.Timeout,
 		version:       uint8(cfg.ProtoVersion),
 		addr:          conn.RemoteAddr().String(),
 		errorHandler:  errorHandler,
@@ -232,10 +231,13 @@ func (s *Session) dial(host *HostInfo, cfg *ConnConfig, errorHandler ConnErrorHa
 		conn:        c,
 	}
 
+	c.timeout = cfg.ConnectTimeout
 	if err := startup.setupConn(ctx); err != nil {
 		c.close()
 		return nil, err
 	}
+
+	c.timeout = cfg.Timeout
 
 	// dont coalesce startup frames
 	if s.cfg.WriteCoalesceWaitTime > 0 {
