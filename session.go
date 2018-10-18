@@ -1487,7 +1487,11 @@ type Batch struct {
 //
 // Deprecated: use session.NewBatch instead
 func NewBatch(typ BatchType) *Batch {
-	return &Batch{Type: typ, metrics: &queryMetrics{m: make(map[string]*hostMetrics)}}
+	return &Batch{
+		Type:    typ,
+		metrics: &queryMetrics{m: make(map[string]*hostMetrics)},
+		spec:    &NonSpeculativeExecution{},
+	}
 }
 
 // NewBatch creates a new batch operation using defaults defined in the cluster
