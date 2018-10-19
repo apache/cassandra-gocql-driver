@@ -19,7 +19,7 @@ import (
 	"time"
 	"unicode"
 
-	"gopkg.in/inf.v0"
+	inf "gopkg.in/inf.v0"
 )
 
 func TestEmptyHosts(t *testing.T) {
@@ -105,14 +105,15 @@ func TestTracing(t *testing.T) {
 	}
 
 	buf := &bytes.Buffer{}
-	trace := NewTraceWriter(session, buf)
-
+	trace := &traceWriter{session: session, w: buf}
 	if err := session.Query(`INSERT INTO trace (id) VALUES (?)`, 42).Trace(trace).Exec(); err != nil {
 		t.Fatal("insert:", err)
 	} else if buf.Len() == 0 {
 		t.Fatal("insert: failed to obtain any tracing")
 	}
+	trace.mu.Lock()
 	buf.Reset()
+	trace.mu.Unlock()
 
 	var value int
 	if err := session.Query(`SELECT id FROM trace WHERE id = ?`, 42).Trace(trace).Scan(&value); err != nil {
@@ -125,7 +126,9 @@ func TestTracing(t *testing.T) {
 
 	// also works from session tracer
 	session.SetTrace(trace)
+	trace.mu.Lock()
 	buf.Reset()
+	trace.mu.Unlock()
 	if err := session.Query(`SELECT id FROM trace WHERE id = ?`, 42).Scan(&value); err != nil {
 		t.Fatal("select:", err)
 	}
@@ -1508,6 +1511,48 @@ func TestPrepare_PreparedCacheEviction(t *testing.T) {
 		if !ok {
 			t.Errorf("expected delete to be cached for host=%q", host)
 		}
+	}
+}
+
+func TestWriteFailure(t *testing.T) {
+	if flagCassVersion.Major == 0 || flagCassVersion.Before(3, 11, 0) {
+		t.Skipf("write failure can only be tested against Cassandra 3.11 or higher version=%v", flagCassVersion)
+	}
+	cluster := createCluster()
+	createKeyspace(t, cluster, "test")
+	cluster.Keyspace = "test"
+	session, err := cluster.CreateSession()
+	if err != nil {
+		t.Fatal("create session:", err)
+	}
+	defer session.Close()
+
+	if err := createTable(session, "CREATE TABLE test.test (id int,value int,PRIMARY KEY (id))"); err != nil {
+		t.Fatalf("failed to create table with error '%v'", err)
+	}
+	if err := session.Query(`INSERT INTO test.test (id, value) VALUES (1, 1)`).Exec(); err != nil {
+		errWrite, ok := err.(*RequestErrWriteFailure)
+		if ok {
+			if session.cfg.ProtoVersion >= 5 {
+				// ErrorMap should be filled with some hosts that should've errored
+				if len(errWrite.ErrorMap) == 0 {
+					t.Fatal("errWrite.ErrorMap should have some failed hosts but it didn't have any")
+				}
+			} else {
+				// Map doesn't get filled for V4
+				if len(errWrite.ErrorMap) != 0 {
+					t.Fatal("errWrite.ErrorMap should have length 0, it's: ", len(errWrite.ErrorMap))
+				}
+			}
+		} else {
+			t.Fatal("error should be RequestErrWriteFailure, it's: ", errWrite)
+		}
+	} else {
+		t.Fatal("a write fail error should have happened when querying test keyspace")
+	}
+
+	if err = session.Query("DROP KEYSPACE test").Exec(); err != nil {
+		t.Fatal(err)
 	}
 }
 

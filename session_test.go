@@ -100,17 +100,17 @@ func TestQueryBasicAPI(t *testing.T) {
 	qry := &Query{}
 
 	// Initialise metrics map
-	qry.metrics = make(map[string]*queryMetrics)
+	qry.metrics = &queryMetrics{m: make(map[string]*hostMetrics)}
 
 	// Initiate host
 	ip := "127.0.0.1"
 
-	qry.metrics[ip] = &queryMetrics{Attempts: 0, TotalLatency: 0}
+	qry.metrics.m[ip] = &hostMetrics{Attempts: 0, TotalLatency: 0}
 	if qry.Latency() != 0 {
 		t.Fatalf("expected Query.Latency() to return 0, got %v", qry.Latency())
 	}
 
-	qry.metrics[ip] = &queryMetrics{Attempts: 2, TotalLatency: 4}
+	qry.metrics.m[ip] = &hostMetrics{Attempts: 2, TotalLatency: 4}
 	if qry.Attempts() != 2 {
 		t.Fatalf("expected Query.Attempts() to return 2, got %v", qry.Attempts())
 	}
@@ -202,10 +202,11 @@ func TestBatchBasicAPI(t *testing.T) {
 		t.Fatalf("expected batch.Type to be '%v', got '%v'", LoggedBatch, b.Type)
 	}
 
+	b.metrics = &queryMetrics{m: make(map[string]*hostMetrics)}
 	ip := "127.0.0.1"
 
 	// Test attempts
-	b.metrics[ip] = &queryMetrics{Attempts: 1}
+	b.metrics.m[ip] = &hostMetrics{Attempts: 1}
 	if b.Attempts() != 1 {
 		t.Fatalf("expected batch.Attempts() to return %v, got %v", 1, b.Attempts())
 	}
@@ -215,7 +216,7 @@ func TestBatchBasicAPI(t *testing.T) {
 		t.Fatalf("expected batch.Latency() to be 0, got %v", b.Latency())
 	}
 
-	b.metrics[ip] = &queryMetrics{Attempts: 1, TotalLatency: 4}
+	b.metrics.m[ip] = &hostMetrics{Attempts: 1, TotalLatency: 4}
 	if b.Latency() != 4 {
 		t.Fatalf("expected batch.Latency() to return %v, got %v", 4, b.Latency())
 	}
