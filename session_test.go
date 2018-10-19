@@ -1,4 +1,4 @@
-// +build all integration
+// +build all cassandra
 
 package gocql
 
