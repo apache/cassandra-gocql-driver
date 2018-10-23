@@ -264,7 +264,7 @@ func TestObserve_Pagination(t *testing.T) {
 		Iter().Scanner()
 	for i := 0; i < 50; i++ {
 		if !scanner.Next() {
-			t.Fatalf("next: should still be true: %d", i)
+			t.Fatalf("next: should still be true: %d: %v", i, scanner.Err())
 		}
 		if i%10 == 0 {
 			if observedRows != 10 {
@@ -1354,15 +1354,15 @@ func injectInvalidPreparedStatement(t *testing.T, session *Session, table string
 }
 
 func TestPrepare_MissingSchemaPrepare(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	s := createSession(t)
 	conn := getRandomConn(t, s)
 	defer s.Close()
 
-	insertQry := &Query{stmt: "INSERT INTO invalidschemaprep (val) VALUES (?)", values: []interface{}{5}, cons: s.cons,
-		session: s, pageSize: s.pageSize, trace: s.trace,
-		prefetch: s.prefetch, rt: s.cfg.RetryPolicy}
-
-	if err := conn.executeQuery(insertQry).err; err == nil {
+	insertQry := s.Query("INSERT INTO invalidschemaprep (val) VALUES (?)", 5)
+	if err := conn.executeQuery(ctx, insertQry).err; err == nil {
 		t.Fatal("expected error, but got nil.")
 	}
 
@@ -1370,22 +1370,29 @@ func TestPrepare_MissingSchemaPrepare(t *testing.T) {
 		t.Fatal("create table:", err)
 	}
 
-	if err := conn.executeQuery(insertQry).err; err != nil {
+	if err := conn.executeQuery(ctx, insertQry).err; err != nil {
 		t.Fatal(err) // unconfigured columnfamily
 	}
 }
 
 func TestPrepare_ReprepareStatement(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	session := createSession(t)
 	defer session.Close()
+
 	stmt, conn := injectInvalidPreparedStatement(t, session, "test_reprepare_statement")
 	query := session.Query(stmt, "bar")
-	if err := conn.executeQuery(query).Close(); err != nil {
+	if err := conn.executeQuery(ctx, query).Close(); err != nil {
 		t.Fatalf("Failed to execute query for reprepare statement: %v", err)
 	}
 }
 
 func TestPrepare_ReprepareBatch(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	session := createSession(t)
 	defer session.Close()
 
@@ -1396,7 +1403,7 @@ func TestPrepare_ReprepareBatch(t *testing.T) {
 	stmt, conn := injectInvalidPreparedStatement(t, session, "test_reprepare_statement_batch")
 	batch := session.NewBatch(UnloggedBatch)
 	batch.Query(stmt, "bar")
-	if err := conn.executeBatch(batch).Close(); err != nil {
+	if err := conn.executeBatch(ctx, batch).Close(); err != nil {
 		t.Fatalf("Failed to execute query for reprepare statement: %v", err)
 	}
 }
