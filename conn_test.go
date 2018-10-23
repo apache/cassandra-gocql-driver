@@ -46,8 +46,8 @@ func TestApprove(t *testing.T) {
 
 func TestJoinHostPort(t *testing.T) {
 	tests := map[string]string{
-		"127.0.0.1:0": JoinHostPort("127.0.0.1", 0),
-		"127.0.0.1:1": JoinHostPort("127.0.0.1:1", 9142),
+		"127.0.0.1:0":                                 JoinHostPort("127.0.0.1", 0),
+		"127.0.0.1:1":                                 JoinHostPort("127.0.0.1:1", 9142),
 		"[2001:0db8:85a3:0000:0000:8a2e:0370:7334]:0": JoinHostPort("2001:0db8:85a3:0000:0000:8a2e:0370:7334", 0),
 		"[2001:0db8:85a3:0000:0000:8a2e:0370:7334]:1": JoinHostPort("[2001:0db8:85a3:0000:0000:8a2e:0370:7334]:1", 9142),
 	}
