@@ -1,6 +1,7 @@
 package gocql
 
 import (
+	"context"
 	"sync"
 	"time"
 )
@@ -12,7 +13,6 @@ type ExecutableQuery interface {
 	speculativeExecutionPolicy() SpeculativeExecutionPolicy
 	GetRoutingKey() ([]byte, error)
 	Keyspace() string
-	Cancel()
 	IsIdempotent() bool
 	RetryableQuery
 }
@@ -38,7 +38,6 @@ func (q *queryExecutor) attemptQuery(qry ExecutableQuery, conn *Conn) *Iter {
 }
 
 func (q *queryExecutor) executeQuery(qry ExecutableQuery) (*Iter, error) {
-
 	// check if the query is not marked as idempotent, if
 	// it is, we force the policy to NonSpeculative
 	sp := qry.speculativeExecutionPolicy()
@@ -46,14 +45,15 @@ func (q *queryExecutor) executeQuery(qry ExecutableQuery) (*Iter, error) {
 		sp = NonSpeculativeExecution{}
 	}
 
+	ctx, cancel := context.WithCancel(qry.GetContext())
+	defer cancel()
+
 	results := make(chan queryResponse, 1)
-	stop := make(chan struct{})
-	defer close(stop)
 	var specWG sync.WaitGroup
 
 	// Launch the main execution
 	specWG.Add(1)
-	go q.run(qry, &specWG, results, stop)
+	go q.run(ctx, qry, &specWG, results)
 
 	// The speculative executions are launched _in addition_ to the main
 	// execution, on a timer. So Speculation{2} would make 3 executions running
@@ -76,11 +76,8 @@ func (q *queryExecutor) executeQuery(qry ExecutableQuery) (*Iter, error) {
 			case <-ticker.C:
 				// Launch the additional execution
 				specWG.Add(1)
-				go q.run(qry, &specWG, results, stop)
-			case <-qry.GetContext().Done():
-				// not starting additional executions
-				return
-			case <-stop:
+				go q.run(ctx, qry, &specWG, results)
+			case <-ctx.Done():
 				// not starting additional executions
 				return
 			}
@@ -95,7 +92,7 @@ func (q *queryExecutor) executeQuery(qry ExecutableQuery) (*Iter, error) {
 	return res.iter, res.err
 }
 
-func (q *queryExecutor) run(qry ExecutableQuery, specWG *sync.WaitGroup, results chan queryResponse, stop chan struct{}) {
+func (q *queryExecutor) run(ctx context.Context, qry ExecutableQuery, specWG *sync.WaitGroup, results chan queryResponse) {
 	// Handle the wait group
 	defer specWG.Done()
 
@@ -124,49 +121,56 @@ func (q *queryExecutor) run(qry ExecutableQuery, specWG *sync.WaitGroup, results
 		}
 
 		select {
-		case <-stop:
-			// stop this execution and return
+		case <-ctx.Done():
 			return
 		default:
-			// Run the query
-			iter = q.attemptQuery(qry, conn)
-			iter.host = selectedHost.Info()
-			// Update host
-			selectedHost.Mark(iter.err)
+		}
 
-			// Exit if the query was successful
-			// or no retry policy defined or retry attempts were reached
-			if iter.err == nil || rt == nil || !rt.Attempt(qry) {
+		// TODO(zariel): we need to pass the context into attemptQuery to have the underlying
+		// query cancel. Once WithContext returns a new copy of the query do qry.WithContext(ctx)
+		// here
+		iter = q.attemptQuery(qry, conn)
+		iter.host = selectedHost.Info()
+		// Update host
+		selectedHost.Mark(iter.err)
+
+		// Exit if the query was successful
+		// or no retry policy defined or retry attempts were reached
+		if iter.err == nil || rt == nil || !rt.Attempt(qry) {
+			results <- queryResponse{iter: iter}
+			return
+		}
+
+		// If query is unsuccessful, check the error with RetryPolicy to retry
+		switch rt.GetRetryType(iter.err) {
+		case Retry:
+			// retry on the same host
+			continue
+		case Rethrow:
+			results <- queryResponse{err: iter.err}
+			return
+		case Ignore:
+			results <- queryResponse{iter: iter}
+			return
+		case RetryNextHost:
+			// retry on the next host
+			selectedHost = hostIter()
+			if selectedHost == nil {
 				results <- queryResponse{iter: iter}
 				return
 			}
-
-			// If query is unsuccessful, check the error with RetryPolicy to retry
-			switch rt.GetRetryType(iter.err) {
-			case Retry:
-				// retry on the same host
-				continue
-			case Rethrow:
-				results <- queryResponse{err: iter.err}
-				return
-			case Ignore:
-				results <- queryResponse{iter: iter}
-				return
-			case RetryNextHost:
-				// retry on the next host
-				selectedHost = hostIter()
-				if selectedHost == nil {
-					results <- queryResponse{iter: iter}
-					return
-				}
-				continue
-			default:
-				// Undefined? Return nil and error, this will panic in the requester
-				results <- queryResponse{iter: nil, err: ErrUnknownRetryType}
-				return
-			}
+			continue
+		default:
+			// Undefined? Return nil and error, this will panic in the requester
+			results <- queryResponse{err: ErrUnknownRetryType}
+			return
 		}
 
 	}
-	// All hosts are exhausted, return nothing
+	select {
+	case <-ctx.Done():
+		results <- queryResponse{err: ctx.Err()}
+	default:
+		results <- queryResponse{err: ErrNoConnections}
+	}
 }

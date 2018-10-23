@@ -712,9 +712,6 @@ func (q *Query) defaultsFromSession() {
 	q.idempotent = s.cfg.DefaultIdempotence
 	q.metrics = &queryMetrics{m: make(map[string]*hostMetrics)}
 
-	// Initiate an empty context with a cancel call
-	q.WithContext(context.Background())
-
 	q.spec = &NonSpeculativeExecution{}
 	s.mu.RUnlock()
 }
@@ -809,6 +806,9 @@ func (q *Query) CustomPayload(customPayload map[string][]byte) *Query {
 }
 
 func (q *Query) GetContext() context.Context {
+	if q.context == nil {
+		return context.Background()
+	}
 	return q.context
 }
 
@@ -866,15 +866,17 @@ func (q *Query) RoutingKey(routingKey []byte) *Query {
 }
 
 // WithContext will set the context to use during a query, it will be used to
-// timeout when waiting for responses from Cassandra. Additionally it adds
-// the cancel function so that it can be called whenever necessary.
+// timeout when waiting for responses from Cassandra. Queries will be canceled
+// once the ctx is canceled..
 func (q *Query) WithContext(ctx context.Context) *Query {
-	q.context, q.cancelQuery = context.WithCancel(ctx)
+	// TODO: return copy of q here
+	q.context = ctx
 	return q
 }
 
+// Deprecate: does nothing, cancel the context passed to WithContext
 func (q *Query) Cancel() {
-	q.cancelQuery()
+	// TODO: delete
 }
 
 func (q *Query) execute(conn *Conn) *Iter {
@@ -1509,9 +1511,6 @@ func (s *Session) NewBatch(typ BatchType) *Batch {
 		spec:             &NonSpeculativeExecution{},
 	}
 
-	// Initiate an empty context with a cancel call
-	batch.WithContext(context.Background())
-
 	s.mu.RUnlock()
 	return batch
 }
@@ -1598,6 +1597,9 @@ func (b *Batch) SetConsistency(c Consistency) {
 }
 
 func (b *Batch) GetContext() context.Context {
+	if b.context == nil {
+		return context.Background()
+	}
 	return b.context
 }
 
@@ -1642,15 +1644,17 @@ func (b *Batch) RetryPolicy(r RetryPolicy) *Batch {
 }
 
 // WithContext will set the context to use during a query, it will be used to
-// timeout when waiting for responses from Cassandra. Additionally it adds
-// the cancel function so that it can be called whenever necessary.
+// timeout when waiting for responses from Cassandra. Queries will be canceled
+// once the ctx is canceled.
 func (b *Batch) WithContext(ctx context.Context) *Batch {
-	b.context, b.cancelBatch = context.WithCancel(ctx)
+	// TODO: return a copy of b here
+	b.context = ctx
 	return b
 }
 
-func (b *Batch) Cancel() {
-	b.cancelBatch()
+// Deprecate: does nothing, cancel the context passed to WithContext
+func (*Batch) Cancel() {
+	// TODO: delete
 }
 
 // Size returns the number of batch statements to be executed by the batch operation.

@@ -299,7 +299,7 @@ func TestCancel(t *testing.T) {
 	}
 	defer db.Close()
 
-	qry := db.Query("timeout")
+	qry := db.Query("timeout").WithContext(ctx)
 
 	// Make sure we finish the query without leftovers
 	var wg sync.WaitGroup
@@ -313,7 +313,7 @@ func TestCancel(t *testing.T) {
 	}()
 
 	// The query will timeout after about 1 seconds, so cancel it after a short pause
-	time.AfterFunc(20*time.Millisecond, qry.Cancel)
+	time.AfterFunc(20*time.Millisecond, cancel)
 	wg.Wait()
 }
 
@@ -814,7 +814,10 @@ func TestConnClosedBlocked(t *testing.T) {
 }
 
 func TestContext_Timeout(t *testing.T) {
-	srv := NewTestServer(t, defaultProto, context.Background())
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	srv := NewTestServer(t, defaultProto, ctx)
 	defer srv.Stop()
 
 	cluster := testCluster(defaultProto, srv.Address)
@@ -825,8 +828,9 @@ func TestContext_Timeout(t *testing.T) {
 	}
 	defer db.Close()
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel = context.WithCancel(ctx)
 	cancel()
+
 	err = db.Query("timeout").WithContext(ctx).Exec()
 	if err != context.Canceled {
 		t.Fatalf("expected to get context cancel error: %v got %v", context.Canceled, err)
