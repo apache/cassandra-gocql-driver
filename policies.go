@@ -132,7 +132,7 @@ type RetryableQuery interface {
 	Attempts() int
 	SetConsistency(c Consistency)
 	GetConsistency() Consistency
-	GetContext() context.Context
+	Context() context.Context
 }
 
 type RetryType uint16

@@ -1011,6 +1011,10 @@ type resultMetadata struct {
 	actualColCount int
 }
 
+func (r *resultMetadata) morePages() bool {
+	return r.flags&flagHasMorePages == flagHasMorePages
+}
+
 func (r resultMetadata) String() string {
 	return fmt.Sprintf("[metadata flags=0x%x paging_state=% X columns=%v]", r.flags, r.pagingState, r.columns)
 }

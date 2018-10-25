@@ -964,7 +964,7 @@ func marshalQueryValue(typ TypeInfo, value interface{}, dst *queryValues) error 
 	return nil
 }
 
-func (c *Conn) executeQuery(qry *Query) *Iter {
+func (c *Conn) executeQuery(ctx context.Context, qry *Query) *Iter {
 	params := queryParams{
 		consistency: qry.cons,
 	}
@@ -992,7 +992,7 @@ func (c *Conn) executeQuery(qry *Query) *Iter {
 	if qry.shouldPrepare() {
 		// Prepare all DML queries. Other queries can not be prepared.
 		var err error
-		info, err = c.prepareStatement(qry.context, qry.stmt, qry.trace)
+		info, err = c.prepareStatement(ctx, qry.stmt, qry.trace)
 		if err != nil {
 			return &Iter{err: err}
 		}
@@ -1043,7 +1043,7 @@ func (c *Conn) executeQuery(qry *Query) *Iter {
 		}
 	}
 
-	framer, err := c.exec(qry.context, frame, qry.trace)
+	framer, err := c.exec(ctx, frame, qry.trace)
 	if err != nil {
 		return &Iter{err: err}
 	}
@@ -1070,7 +1070,7 @@ func (c *Conn) executeQuery(qry *Query) *Iter {
 		if params.skipMeta {
 			if info != nil {
 				iter.meta = info.response
-				iter.meta.pagingState = x.meta.pagingState
+				iter.meta.pagingState = copyBytes(x.meta.pagingState)
 			} else {
 				return &Iter{framer: framer, err: errors.New("gocql: did not receive metadata but prepared info is nil")}
 			}
@@ -1078,11 +1078,10 @@ func (c *Conn) executeQuery(qry *Query) *Iter {
 			iter.meta = x.meta
 		}
 
-		if len(x.meta.pagingState) > 0 && !qry.disableAutoPage {
+		if x.meta.morePages() && !qry.disableAutoPage {
 			iter.next = &nextIter{
-				qry:  *qry,
-				pos:  int((1 - qry.prefetch) * float64(x.numRows)),
-				conn: c,
+				qry: qry,
+				pos: int((1 - qry.prefetch) * float64(x.numRows)),
 			}
 
 			iter.next.qry.pageState = copyBytes(x.meta.pagingState)
@@ -1096,7 +1095,7 @@ func (c *Conn) executeQuery(qry *Query) *Iter {
 		return &Iter{framer: framer}
 	case *schemaChangeKeyspace, *schemaChangeTable, *schemaChangeFunction, *schemaChangeAggregate, *schemaChangeType:
 		iter := &Iter{framer: framer}
-		if err := c.awaitSchemaAgreement(); err != nil {
+		if err := c.awaitSchemaAgreement(ctx); err != nil {
 			// TODO: should have this behind a flag
 			Logger.Println(err)
 		}
@@ -1107,7 +1106,7 @@ func (c *Conn) executeQuery(qry *Query) *Iter {
 	case *RequestErrUnprepared:
 		stmtCacheKey := c.session.stmtsLRU.keyFor(c.addr, c.currentKeyspace, qry.stmt)
 		if c.session.stmtsLRU.remove(stmtCacheKey) {
-			return c.executeQuery(qry)
+			return c.executeQuery(ctx, qry)
 		}
 
 		return &Iter{err: x, framer: framer}
@@ -1167,7 +1166,7 @@ func (c *Conn) UseKeyspace(keyspace string) error {
 	return nil
 }
 
-func (c *Conn) executeBatch(batch *Batch) *Iter {
+func (c *Conn) executeBatch(ctx context.Context, batch *Batch) *Iter {
 	if c.version == protoVersion1 {
 		return &Iter{err: ErrUnsupported}
 	}
@@ -1190,7 +1189,7 @@ func (c *Conn) executeBatch(batch *Batch) *Iter {
 		b := &req.statements[i]
 
 		if len(entry.Args) > 0 || entry.binding != nil {
-			info, err := c.prepareStatement(batch.context, entry.Stmt, nil)
+			info, err := c.prepareStatement(batch.Context(), entry.Stmt, nil)
 			if err != nil {
 				return &Iter{err: err}
 			}
@@ -1233,7 +1232,7 @@ func (c *Conn) executeBatch(batch *Batch) *Iter {
 	}
 
 	// TODO: should batch support tracing?
-	framer, err := c.exec(batch.context, req, nil)
+	framer, err := c.exec(batch.Context(), req, nil)
 	if err != nil {
 		return &Iter{err: err}
 	}
@@ -1254,7 +1253,7 @@ func (c *Conn) executeBatch(batch *Batch) *Iter {
 		}
 
 		if found {
-			return c.executeBatch(batch)
+			return c.executeBatch(ctx, batch)
 		} else {
 			return &Iter{err: x, framer: framer}
 		}
@@ -1273,13 +1272,13 @@ func (c *Conn) executeBatch(batch *Batch) *Iter {
 	}
 }
 
-func (c *Conn) query(statement string, values ...interface{}) (iter *Iter) {
+func (c *Conn) query(ctx context.Context, statement string, values ...interface{}) (iter *Iter) {
 	q := c.session.Query(statement, values...).Consistency(One)
 	q.trace = nil
-	return c.executeQuery(q)
+	return c.executeQuery(ctx, q)
 }
 
-func (c *Conn) awaitSchemaAgreement() (err error) {
+func (c *Conn) awaitSchemaAgreement(ctx context.Context) (err error) {
 	const (
 		peerSchemas  = "SELECT schema_version, peer FROM system.peers"
 		localSchemas = "SELECT schema_version FROM system.local WHERE key='local'"
@@ -1289,7 +1288,7 @@ func (c *Conn) awaitSchemaAgreement() (err error) {
 
 	endDeadline := time.Now().Add(c.session.cfg.MaxWaitSchemaAgreement)
 	for time.Now().Before(endDeadline) {
-		iter := c.query(peerSchemas)
+		iter := c.query(ctx, peerSchemas)
 
 		versions = make(map[string]struct{})
 
@@ -1309,7 +1308,7 @@ func (c *Conn) awaitSchemaAgreement() (err error) {
 			goto cont
 		}
 
-		iter = c.query(localSchemas)
+		iter = c.query(ctx, localSchemas)
 		for iter.Scan(&schemaVersion) {
 			versions[schemaVersion] = struct{}{}
 			schemaVersion = ""
@@ -1324,11 +1323,15 @@ func (c *Conn) awaitSchemaAgreement() (err error) {
 		}
 
 	cont:
-		time.Sleep(200 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(200 * time.Millisecond):
+		}
 	}
 
 	if err != nil {
-		return
+		return err
 	}
 
 	schemas := make([]string, 0, len(versions))
@@ -1340,10 +1343,8 @@ func (c *Conn) awaitSchemaAgreement() (err error) {
 	return fmt.Errorf("gocql: cluster schema versions not consistent: %+v", schemas)
 }
 
-const localHostInfo = "SELECT * FROM system.local WHERE key='local'"
-
-func (c *Conn) localHostInfo() (*HostInfo, error) {
-	row, err := c.query(localHostInfo).rowMap()
+func (c *Conn) localHostInfo(ctx context.Context) (*HostInfo, error) {
+	row, err := c.query(ctx, "SELECT * FROM system.local WHERE key='local'").rowMap()
 	if err != nil {
 		return nil, err
 	}
