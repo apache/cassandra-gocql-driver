@@ -1741,7 +1741,7 @@ func (w *writeOptionsFrame) writeFrame(framer *framer, streamID int) error {
 }
 
 func (f *framer) writeOptionsFrame(stream int, _ *writeOptionsFrame) error {
-	f.writeHeader(f.flags, opOptions, stream)
+	f.writeHeader(f.flags&^flagCompress, opOptions, stream)
 	return f.finishWrite()
 }
 
