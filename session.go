@@ -1443,7 +1443,7 @@ func (iter *Iter) checkErrAndNotFound() error {
 }
 
 // PageState return the current paging state for a query which can be used for
-// subsequent quries to resume paging this point.
+// subsequent queries to resume paging this point.
 func (iter *Iter) PageState() []byte {
 	return iter.meta.pagingState
 }
