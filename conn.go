@@ -498,10 +498,8 @@ func (p *protocolError) Error() string {
 func (c *Conn) recv() error {
 	// not safe for concurrent reads
 
-	// read a full header, ignore timeouts, as this is being ran in a loop
-	// TODO: TCP level deadlines? or just query level deadlines?
 	if c.timeout > 0 {
-		c.conn.SetReadDeadline(time.Time{})
+		c.conn.SetReadDeadline(time.Now().Add(c.timeout))
 	}
 
 	headStartTime := time.Now()
