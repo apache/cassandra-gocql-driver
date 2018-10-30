@@ -1,9 +1,46 @@
 gocql
 =====
 
-[![Join the chat at https://gitter.im/gocql/gocql](https://badges.gitter.im/Join%20Chat.svg)](https://gitter.im/gocql/gocql?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
-[![Build Status](https://travis-ci.org/gocql/gocql.svg?branch=master)](https://travis-ci.org/gocql/gocql)
-[![GoDoc](https://godoc.org/github.com/gocql/gocql?status.svg)](https://godoc.org/github.com/gocql/gocql)
+[![Build Status](https://travis-ci.org/scylladb/gocql.svg?branch=master)](https://travis-ci.org/scylladb/gocql)
+[![GoDoc](https://godoc.org/github.com/scylladb/gocql?status.svg)](https://godoc.org/github.com/scylladb/gocql)
+
+This is a fork of [gocql](https://github.com/gocql/gocql) package that we created at Scylla.
+It contains extensions to tokenAwareHostPolicy supported by the Scylla 2.3 and onwards.
+It allows driver to select a connection to a particular shard on a host based on the token.
+This eliminates passing data between shards and significantly reduces latency. 
+The protocol extension spec is available [here](https://github.com/scylladb/scylla/blob/master/docs/protocol-extensions.md).
+
+There are open pull requests to merge the functionality to the upstream project:
+ 
+* [gocql/gocql#1210](https://github.com/gocql/gocql/pull/1210)
+* [gocql/gocql#1211](https://github.com/gocql/gocql/pull/1211).
+
+Installation
+------------
+
+This is a drop-in replacement to gocql, to use it vendor as `github.com/gocql/gocql`.
+
+With `dep` you can use source option:
+
+```
+[[constraint]]
+  name = "github.com/gocql/gocql"
+  source = "git@github.com:scylladb/gocql.git"
+  branch = "master"
+```
+
+With glide you can use repo option:
+
+```
+- package: github.com/gocql/gocql
+  vcs: git
+  version: master
+  repo: git@github.com:scylladb/gocql.git
+```
+
+With new Go modules using forks is not yet supported [golang/go#26904](https://github.com/golang/go/issues/26904).
+
+---
 
 Package gocql implements a fast and robust Cassandra client for the
 Go programming language.
@@ -126,7 +163,7 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/gocql/gocql"
+	"github.com/scylladb/gocql"
 )
 
 func main() {
