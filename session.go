@@ -1364,6 +1364,12 @@ func (iter *Iter) Scan(dest ...interface{}) bool {
 		go iter.next.fetch()
 	}
 
+	// Support scanning without params
+	// build an array of nils as if the scannig was called as Scan(nil, nil, ...)
+	if len(dest) == 0 {
+		dest = make([]interface{}, iter.meta.actualColCount)
+	}
+
 	// currently only support scanning into an expand tuple, such that its the same
 	// as scanning in more values from a single column
 	if len(dest) != iter.meta.actualColCount {
