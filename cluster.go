@@ -71,7 +71,7 @@ type ClusterConfig struct {
 	ReconnectInterval time.Duration
 
 	// The maximum amount of time to wait for schema agreement in a cluster after
-	// receiving a schema change frame. (deault: 60s)
+	// receiving a schema change frame. (default: 60s)
 	MaxWaitSchemaAgreement time.Duration
 
 	// HostFilter will filter all incoming events for host, any which don't pass
