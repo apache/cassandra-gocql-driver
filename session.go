@@ -1133,6 +1133,10 @@ func (q *Query) Scan(dest ...interface{}) error {
 // statement containing an IF clause). If the transaction fails because
 // the existing values did not match, the previous values will be stored
 // in dest.
+//
+// You must always supply the same number of dest parameters as the number of
+// fields being modified. If there is a count mismatch, an error is returned.
+// Supplying nil for dest parameters not of interest is supported.
 func (q *Query) ScanCAS(dest ...interface{}) (applied bool, err error) {
 	q.disableSkipMetadata = true
 	iter := q.Iter()
