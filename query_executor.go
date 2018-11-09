@@ -34,12 +34,30 @@ func (q *queryExecutor) attemptQuery(ctx context.Context, qry ExecutableQuery, c
 	return iter
 }
 
+func (q *queryExecutor) speculate(ctx context.Context, qry ExecutableQuery, sp SpeculativeExecutionPolicy, results chan *Iter) *Iter {
+	ticker := time.NewTicker(sp.Delay())
+	defer ticker.Stop()
+
+	for i := 0; i < sp.Attempts(); i++ {
+		select {
+		case <-ticker.C:
+			go q.run(ctx, qry, results)
+		case <-ctx.Done():
+			return &Iter{err: ctx.Err()}
+		case iter := <-results:
+			return iter
+		}
+	}
+
+	return nil
+}
+
 func (q *queryExecutor) executeQuery(qry ExecutableQuery) (*Iter, error) {
 	// check if the query is not marked as idempotent, if
 	// it is, we force the policy to NonSpeculative
 	sp := qry.speculativeExecutionPolicy()
-	if !qry.IsIdempotent() {
-		sp = NonSpeculativeExecution{}
+	if !qry.IsIdempotent() || sp.Attempts() == 0 {
+		return q.do(qry.Context(), qry), nil
 	}
 
 	ctx, cancel := context.WithCancel(qry.Context())
@@ -53,22 +71,9 @@ func (q *queryExecutor) executeQuery(qry ExecutableQuery) (*Iter, error) {
 	// The speculative executions are launched _in addition_ to the main
 	// execution, on a timer. So Speculation{2} would make 3 executions running
 	// in total.
-	go func() {
-		// setup a ticker
-		ticker := time.NewTicker(sp.Delay())
-		defer ticker.Stop()
-
-		for i := 0; i < sp.Attempts(); i++ {
-			select {
-			case <-ticker.C:
-				// Launch the additional execution
-				go q.run(ctx, qry, results)
-			case <-ctx.Done():
-				// not starting additional executions
-				return
-			}
-		}
-	}()
+	if iter := q.speculate(ctx, qry, sp, results); iter != nil {
+		return iter, nil
+	}
 
 	select {
 	case iter := <-results:
@@ -140,7 +145,7 @@ func (q *queryExecutor) do(ctx context.Context, qry ExecutableQuery) *Iter {
 	return &Iter{err: ErrNoConnections}
 }
 
-func (q *queryExecutor) run(ctx context.Context, qry ExecutableQuery, results chan *Iter) {
+func (q *queryExecutor) run(ctx context.Context, qry ExecutableQuery, results chan<- *Iter) {
 	select {
 	case results <- q.do(ctx, qry):
 	case <-ctx.Done():
