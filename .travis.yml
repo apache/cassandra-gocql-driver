@@ -35,6 +35,7 @@ go:
 install:
   - ./install_test_deps.sh $TRAVIS_REPO_SLUG
   - cd ../..
+  - mv scylladb gocql
   - cd gocql/gocql
   - go get .
 
