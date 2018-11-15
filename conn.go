@@ -98,6 +98,7 @@ type ConnConfig struct {
 	ConnectTimeout time.Duration
 	Compressor     Compressor
 	Authenticator  Authenticator
+	AuthProvider   func(h string) (Authenticator, error)
 	Keepalive      time.Duration
 	tlsConfig      *tls.Config
 }
@@ -203,7 +204,6 @@ func (s *Session) dial(host *HostInfo, cfg *ConnConfig, errorHandler ConnErrorHa
 		addr:          conn.RemoteAddr().String(),
 		errorHandler:  errorHandler,
 		compressor:    cfg.Compressor,
-		auth:          cfg.Authenticator,
 		quit:          make(chan struct{}),
 		session:       s,
 		streams:       streams.New(cfg.ProtoVersion),
@@ -213,6 +213,15 @@ func (s *Session) dial(host *HostInfo, cfg *ConnConfig, errorHandler ConnErrorHa
 			w:       conn,
 			timeout: cfg.Timeout,
 		},
+	}
+
+	if cfg.AuthProvider != nil {
+		c.auth, err = cfg.AuthProvider(host.ConnectAddress().String())
+		if err != nil {
+			// Fail?
+		}
+	} else {
+		c.auth = cfg.Authenticator
 	}
 
 	var (
