@@ -35,9 +35,11 @@ go:
 install:
   - ./install_test_deps.sh $TRAVIS_REPO_SLUG
   - cd ../..
+  - ls -al
   - mv scylladb gocql
   - cd gocql/gocql
   - go get .
+  - export TRAVIS_BUILD_DIR=${TRAVIS_HOME}/gopath/src/github.com/gocql/gocql
 
 script:
   - set -e
