@@ -99,7 +99,9 @@ type ConnConfig struct {
 	Compressor     Compressor
 	Authenticator  Authenticator
 	Keepalive      time.Duration
-	tlsConfig      *tls.Config
+
+	tlsConfig       *tls.Config
+	disableCoalesce bool
 }
 
 type ConnErrorHandler interface {
@@ -240,7 +242,7 @@ func (s *Session) dial(host *HostInfo, cfg *ConnConfig, errorHandler ConnErrorHa
 	c.timeout = cfg.Timeout
 
 	// dont coalesce startup frames
-	if s.cfg.WriteCoalesceWaitTime > 0 {
+	if s.cfg.WriteCoalesceWaitTime > 0 && !cfg.disableCoalesce {
 		c.w = newWriteCoalescer(c.w, s.cfg.WriteCoalesceWaitTime, c.quit)
 	}
 
