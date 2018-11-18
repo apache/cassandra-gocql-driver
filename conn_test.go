@@ -804,13 +804,78 @@ func TestContext_Timeout(t *testing.T) {
 	}
 }
 
+// tcpConnPair returns a matching set of a TCP client side and server side connection.
+func tcpConnPair() (s, c net.Conn, err error) {
+	l, err := net.Listen("tcp", "localhost:0")
+	if err != nil {
+		// maybe ipv6 works, if ipv4 fails?
+		l, err = net.Listen("tcp6", "[::1]:0")
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+	defer l.Close() // we only try to accept one connection, so will stop listening.
+
+	addr := l.Addr()
+	done := make(chan struct{})
+	var errDial error
+	go func(done chan<- struct{}) {
+		c, errDial = net.Dial(addr.Network(), addr.String())
+		close(done)
+	}(done)
+
+	s, err = l.Accept()
+	<-done
+
+	if err == nil {
+		err = errDial
+	}
+
+	if err != nil {
+		if s != nil {
+			s.Close()
+		}
+		if c != nil {
+			c.Close()
+		}
+	}
+
+	return s, c, err
+}
+
 func TestWriteCoalescing(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+	server, client, err := tcpConnPair()
+	if err != nil {
+		t.Fatal(err)
+	}
 
-	var buf bytes.Buffer
+	done := make(chan struct{}, 1)
+	var (
+		buf      bytes.Buffer
+		bufMutex sync.Mutex
+	)
+	go func() {
+		defer close(done)
+		defer server.Close()
+		var err error
+		b := make([]byte, 256)
+		var n int
+		for {
+			if n, err = server.Read(b); err != nil {
+				break
+			}
+			bufMutex.Lock()
+			buf.Write(b[:n])
+			bufMutex.Unlock()
+		}
+		if err != io.EOF {
+			t.Errorf("unexpected read error: %v", err)
+		}
+	}()
 	w := &writeCoalescer{
-		w:       &buf,
+		c:       client,
 		writeCh: make(chan struct{}),
 		cond:    sync.NewCond(&sync.Mutex{}),
 		quit:    ctx.Done(),
@@ -829,9 +894,11 @@ func TestWriteCoalescing(t *testing.T) {
 		}
 	}()
 
+	bufMutex.Lock()
 	if buf.Len() != 0 {
 		t.Fatalf("expected buffer to be empty have: %v", buf.String())
 	}
+	bufMutex.Unlock()
 
 	for true {
 		w.cond.L.Lock()
@@ -843,6 +910,9 @@ func TestWriteCoalescing(t *testing.T) {
 	}
 
 	w.flush()
+	client.Close()
+	<-done
+
 	if got := buf.String(); got != "onetwo" && got != "twoone" {
 		t.Fatalf("expected to get %q got %q", "onetwo or twoone", got)
 	}
@@ -853,19 +923,34 @@ func TestWriteCoalescing_WriteAfterClose(t *testing.T) {
 	defer cancel()
 
 	var buf bytes.Buffer
-	w := newWriteCoalescer(&buf, 5*time.Millisecond, ctx.Done())
+	defer cancel()
+	server, client, err := tcpConnPair()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	done := make(chan struct{}, 1)
+	go func() {
+		io.Copy(&buf, server)
+		server.Close()
+		close(done)
+	}()
+	w := newWriteCoalescer(client, 0, 5*time.Millisecond, ctx.Done())
 
 	// ensure 1 write works
 	if _, err := w.Write([]byte("one")); err != nil {
 		t.Fatal(err)
 	}
 
+	client.Close()
+	<-done
 	if v := buf.String(); v != "one" {
 		t.Fatalf("expected buffer to be %q got %q", "one", v)
 	}
 
 	// now close and do a write, we should error
 	cancel()
+	client.Close() // close client conn too, since server won't see the answer anyway.
 
 	if _, err := w.Write([]byte("two")); err == nil {
 		t.Fatal("expected to get error for write after closing")
