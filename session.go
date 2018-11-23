@@ -107,6 +107,11 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 		return nil, ErrNoHosts
 	}
 
+	// Check that either Authenticator is set or AuthProvider, not both
+	if cfg.Authenticator != nil && cfg.AuthProvider != nil {
+		return nil, errors.New("Can't use both Authenticator and AuthProvider in cluster config.")
+	}
+
 	s := &Session{
 		cons:            cfg.Consistency,
 		prefetch:        0.25,

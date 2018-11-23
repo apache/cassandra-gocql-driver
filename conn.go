@@ -98,7 +98,7 @@ type ConnConfig struct {
 	ConnectTimeout time.Duration
 	Compressor     Compressor
 	Authenticator  Authenticator
-	AuthProvider   func(h string) (Authenticator, error)
+	AuthProvider   func(h *HostInfo) (Authenticator, error)
 	Keepalive      time.Duration
 	tlsConfig      *tls.Config
 }
@@ -216,9 +216,9 @@ func (s *Session) dial(host *HostInfo, cfg *ConnConfig, errorHandler ConnErrorHa
 	}
 
 	if cfg.AuthProvider != nil {
-		c.auth, err = cfg.AuthProvider(host.ConnectAddress().String())
+		c.auth, err = cfg.AuthProvider(host)
 		if err != nil {
-			// Fail?
+			return nil, err
 		}
 	} else {
 		c.auth = cfg.Authenticator
