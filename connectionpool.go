@@ -96,6 +96,7 @@ func connConfig(cfg *ClusterConfig) (*ConnConfig, error) {
 		ConnectTimeout: cfg.ConnectTimeout,
 		Compressor:     cfg.Compressor,
 		Authenticator:  cfg.Authenticator,
+		AuthProvider:   cfg.AuthProvider,
 		Keepalive:      cfg.SocketKeepalive,
 		tlsConfig:      tlsConfig,
 	}, nil
