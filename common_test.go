@@ -170,6 +170,17 @@ func createTestSession() *Session {
 	return session
 }
 
+func createViews(t *testing.T, session *Session) {
+	if err := session.Query(`
+		CREATE TYPE IF NOT EXISTS gocql_test.basicView (
+		birthday timestamp,
+		nationality text,
+		weight text,
+		height text);	`).Exec(); err != nil {
+		t.Fatalf("failed to create view with err: %v", err)
+	}
+}
+
 func createFunctions(t *testing.T, session *Session) {
 	if err := session.Query(`
 		CREATE OR REPLACE FUNCTION gocql_test.avgState ( state tuple<int,bigint>, val int )
