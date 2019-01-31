@@ -467,7 +467,9 @@ func (t *tokenAwareHostPolicy) SetPartitioner(partitioner string) {
 }
 
 func (t *tokenAwareHostPolicy) AddHost(host *HostInfo) {
-	t.hosts.add(host)
+	if t.fallback.IsLocal(host) {
+		t.hosts.add(host)
+	}
 	t.fallback.AddHost(host)
 
 	t.mu.RLock()
