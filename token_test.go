@@ -156,43 +156,43 @@ func TestTokenRing_Int(t *testing.T) {
 
 	sort.Sort(ring)
 
-	if ring.GetHostForToken(intToken(0)) != host0 {
+	if host, endToken := ring.GetHostForToken(intToken(0)); host != host0 || endToken != intToken(0) {
 		t.Error("Expected host 0 for token 0")
 	}
-	if ring.GetHostForToken(intToken(1)) != host25 {
+	if host, endToken := ring.GetHostForToken(intToken(1)); host != host25 || endToken != intToken(25) {
 		t.Error("Expected host 25 for token 1")
 	}
-	if ring.GetHostForToken(intToken(24)) != host25 {
+	if host, endToken := ring.GetHostForToken(intToken(24)); host != host25 || endToken != intToken(25) {
 		t.Error("Expected host 25 for token 24")
 	}
-	if ring.GetHostForToken(intToken(25)) != host25 {
+	if host, endToken := ring.GetHostForToken(intToken(25)); host != host25 || endToken != intToken(25) {
 		t.Error("Expected host 25 for token 25")
 	}
-	if ring.GetHostForToken(intToken(26)) != host50 {
+	if host, endToken := ring.GetHostForToken(intToken(26)); host != host50 || endToken != intToken(50) {
 		t.Error("Expected host 50 for token 26")
 	}
-	if ring.GetHostForToken(intToken(49)) != host50 {
+	if host, endToken := ring.GetHostForToken(intToken(49)); host != host50 || endToken != intToken(50) {
 		t.Error("Expected host 50 for token 49")
 	}
-	if ring.GetHostForToken(intToken(50)) != host50 {
+	if host, endToken := ring.GetHostForToken(intToken(50)); host != host50 || endToken != intToken(50) {
 		t.Error("Expected host 50 for token 50")
 	}
-	if ring.GetHostForToken(intToken(51)) != host75 {
+	if host, endToken := ring.GetHostForToken(intToken(51)); host != host75 || endToken != intToken(75) {
 		t.Error("Expected host 75 for token 51")
 	}
-	if ring.GetHostForToken(intToken(74)) != host75 {
+	if host, endToken := ring.GetHostForToken(intToken(74)); host != host75 || endToken != intToken(75) {
 		t.Error("Expected host 75 for token 74")
 	}
-	if ring.GetHostForToken(intToken(75)) != host75 {
+	if host, endToken := ring.GetHostForToken(intToken(75)); host != host75 || endToken != intToken(75) {
 		t.Error("Expected host 75 for token 75")
 	}
-	if ring.GetHostForToken(intToken(76)) != host0 {
+	if host, endToken := ring.GetHostForToken(intToken(76)); host != host0 || endToken != intToken(0) {
 		t.Error("Expected host 0 for token 76")
 	}
-	if ring.GetHostForToken(intToken(99)) != host0 {
+	if host, endToken := ring.GetHostForToken(intToken(99)); host != host0 || endToken != intToken(0) {
 		t.Error("Expected host 0 for token 99")
 	}
-	if ring.GetHostForToken(intToken(100)) != host0 {
+	if host, endToken := ring.GetHostForToken(intToken(100)); host != host0 || endToken != intToken(0) {
 		t.Error("Expected host 0 for token 100")
 	}
 }
@@ -201,10 +201,10 @@ func TestTokenRing_Int(t *testing.T) {
 func TestTokenRing_Nil(t *testing.T) {
 	var ring *tokenRing = nil
 
-	if ring.GetHostForToken(nil) != nil {
+	if host, endToken := ring.GetHostForToken(nil); host != nil || endToken != nil {
 		t.Error("Expected nil for nil token ring")
 	}
-	if ring.GetHostForPartitionKey(nil) != nil {
+	if host, endToken := ring.GetHostForPartitionKey(nil); host != nil || endToken != nil {
 		t.Error("Expected nil for nil token ring")
 	}
 }
@@ -242,19 +242,19 @@ func TestTokenRing_Murmur3(t *testing.T) {
 	p := murmur3Partitioner{}
 
 	for _, host := range hosts {
-		actual := ring.GetHostForToken(p.ParseString(host.tokens[0]))
+		actual, _ := ring.GetHostForToken(p.ParseString(host.tokens[0]))
 		if !actual.ConnectAddress().Equal(host.ConnectAddress()) {
 			t.Errorf("Expected address %v for token %q, but was %v", host.ConnectAddress(),
 				host.tokens[0], actual.ConnectAddress())
 		}
 	}
 
-	actual := ring.GetHostForToken(p.ParseString("12"))
+	actual, _ := ring.GetHostForToken(p.ParseString("12"))
 	if !actual.ConnectAddress().Equal(hosts[1].ConnectAddress()) {
 		t.Errorf("Expected address 1 for token \"12\", but was %s", actual.ConnectAddress())
 	}
 
-	actual = ring.GetHostForToken(p.ParseString("24324545443332"))
+	actual, _ = ring.GetHostForToken(p.ParseString("24324545443332"))
 	if !actual.ConnectAddress().Equal(hosts[0].ConnectAddress()) {
 		t.Errorf("Expected address 0 for token \"24324545443332\", but was %s", actual.ConnectAddress())
 	}
@@ -274,19 +274,19 @@ func TestTokenRing_Ordered(t *testing.T) {
 
 	var actual *HostInfo
 	for _, host := range hosts {
-		actual = ring.GetHostForToken(p.ParseString(host.tokens[0]))
+		actual, _ := ring.GetHostForToken(p.ParseString(host.tokens[0]))
 		if !actual.ConnectAddress().Equal(host.ConnectAddress()) {
 			t.Errorf("Expected address %v for token %q, but was %v", host.ConnectAddress(),
 				host.tokens[0], actual.ConnectAddress())
 		}
 	}
 
-	actual = ring.GetHostForToken(p.ParseString("12"))
+	actual, _ = ring.GetHostForToken(p.ParseString("12"))
 	if !actual.peer.Equal(hosts[1].peer) {
 		t.Errorf("Expected address 1 for token \"12\", but was %s", actual.ConnectAddress())
 	}
 
-	actual = ring.GetHostForToken(p.ParseString("24324545443332"))
+	actual, _ = ring.GetHostForToken(p.ParseString("24324545443332"))
 	if !actual.ConnectAddress().Equal(hosts[1].ConnectAddress()) {
 		t.Errorf("Expected address 1 for token \"24324545443332\", but was %s", actual.ConnectAddress())
 	}
@@ -305,19 +305,19 @@ func TestTokenRing_Random(t *testing.T) {
 
 	var actual *HostInfo
 	for _, host := range hosts {
-		actual = ring.GetHostForToken(p.ParseString(host.tokens[0]))
+		actual, _ := ring.GetHostForToken(p.ParseString(host.tokens[0]))
 		if !actual.ConnectAddress().Equal(host.ConnectAddress()) {
 			t.Errorf("Expected address %v for token %q, but was %v", host.ConnectAddress(),
 				host.tokens[0], actual.ConnectAddress())
 		}
 	}
 
-	actual = ring.GetHostForToken(p.ParseString("12"))
+	actual, _ = ring.GetHostForToken(p.ParseString("12"))
 	if !actual.peer.Equal(hosts[1].peer) {
 		t.Errorf("Expected address 1 for token \"12\", but was %s", actual.ConnectAddress())
 	}
 
-	actual = ring.GetHostForToken(p.ParseString("24324545443332"))
+	actual, _ = ring.GetHostForToken(p.ParseString("24324545443332"))
 	if !actual.ConnectAddress().Equal(hosts[0].ConnectAddress()) {
 		t.Errorf("Expected address 1 for token \"24324545443332\", but was %s", actual.ConnectAddress())
 	}

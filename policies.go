@@ -437,9 +437,11 @@ func (t *tokenAwareHostPolicy) KeyspaceChanged(update KeyspaceUpdateEvent) {
 	ks, err := t.session.KeyspaceMetadata(update.Keyspace)
 	if err == nil {
 		strat := getStrategy(ks)
-		tr := t.tokenRing.Load().(*tokenRing)
-		if tr != nil {
-			newMeta.replicas[update.Keyspace] = strat.replicaMap(t.hosts.get(), tr.tokens)
+		if strat != nil {
+			tr := t.tokenRing.Load().(*tokenRing)
+			if tr != nil {
+				newMeta.replicas[update.Keyspace] = strat.replicaMap(t.hosts.get(), tr.tokens)
+			}
 		}
 	}
 
@@ -520,8 +522,8 @@ func (t *tokenAwareHostPolicy) getReplicas(keyspace string, token token) ([]*Hos
 	if meta == nil {
 		return nil, false
 	}
-	tokens, ok := meta.replicas[keyspace][token]
-	return tokens, ok
+	replicas, ok := meta.replicas[keyspace][token]
+	return replicas, ok
 }
 
 func (t *tokenAwareHostPolicy) Pick(qry ExecutableQuery) NextHost {
@@ -541,9 +543,7 @@ func (t *tokenAwareHostPolicy) Pick(qry ExecutableQuery) NextHost {
 		return t.fallback.Pick(qry)
 	}
 
-	token := tr.partitioner.Hash(routingKey)
-	primaryEndpoint := tr.GetHostForToken(token)
-
+	primaryEndpoint, token := tr.GetHostForPartitionKey(routingKey)
 	if primaryEndpoint == nil || token == nil {
 		return t.fallback.Pick(qry)
 	}
