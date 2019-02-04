@@ -442,7 +442,7 @@ func (t *tokenAwareHostPolicy) updateKeyspaceMetadata(keyspace string) {
 	if err == nil {
 		strat := getStrategy(ks)
 		if strat != nil {
-			tr := t.tokenRing.Load().(*tokenRing)
+			tr, _ := t.tokenRing.Load().(*tokenRing)
 			if tr != nil {
 				newMeta.replicas[keyspace] = strat.replicaMap(t.hosts.get(), tr.tokens)
 			}
