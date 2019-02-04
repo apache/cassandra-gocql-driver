@@ -424,6 +424,10 @@ func (t *tokenAwareHostPolicy) IsLocal(host *HostInfo) bool {
 }
 
 func (t *tokenAwareHostPolicy) KeyspaceChanged(update KeyspaceUpdateEvent) {
+	t.updateKeyspaceMetadata(update.Keyspace)
+}
+
+func (t *tokenAwareHostPolicy) updateKeyspaceMetadata(keyspace string) {
 	meta, _ := t.keyspaces.Load().(*keyspaceMeta)
 	var size = 1
 	if meta != nil {
@@ -434,20 +438,20 @@ func (t *tokenAwareHostPolicy) KeyspaceChanged(update KeyspaceUpdateEvent) {
 		replicas: make(map[string]map[token][]*HostInfo, size),
 	}
 
-	ks, err := t.session.KeyspaceMetadata(update.Keyspace)
+	ks, err := t.session.KeyspaceMetadata(keyspace)
 	if err == nil {
 		strat := getStrategy(ks)
 		if strat != nil {
 			tr := t.tokenRing.Load().(*tokenRing)
 			if tr != nil {
-				newMeta.replicas[update.Keyspace] = strat.replicaMap(t.hosts.get(), tr.tokens)
+				newMeta.replicas[keyspace] = strat.replicaMap(t.hosts.get(), tr.tokens)
 			}
 		}
 	}
 
 	if meta != nil {
 		for ks, replicas := range meta.replicas {
-			if ks != update.Keyspace {
+			if ks != keyspace {
 				newMeta.replicas[ks] = replicas
 			}
 		}
@@ -469,6 +473,20 @@ func (t *tokenAwareHostPolicy) SetPartitioner(partitioner string) {
 }
 
 func (t *tokenAwareHostPolicy) AddHost(host *HostInfo) {
+	t.HostUp(host)
+	if t.session != nil { // disable for unit tests
+		t.updateKeyspaceMetadata(t.session.cfg.Keyspace)
+	}
+}
+
+func (t *tokenAwareHostPolicy) RemoveHost(host *HostInfo) {
+	t.HostDown(host)
+	if t.session != nil { // disable for unit tests
+		t.updateKeyspaceMetadata(t.session.cfg.Keyspace)
+	}
+}
+
+func (t *tokenAwareHostPolicy) HostUp(host *HostInfo) {
 	t.hosts.add(host)
 	t.fallback.AddHost(host)
 
@@ -478,7 +496,7 @@ func (t *tokenAwareHostPolicy) AddHost(host *HostInfo) {
 	t.resetTokenRing(partitioner)
 }
 
-func (t *tokenAwareHostPolicy) RemoveHost(host *HostInfo) {
+func (t *tokenAwareHostPolicy) HostDown(host *HostInfo) {
 	t.hosts.remove(host.ConnectAddress())
 	t.fallback.RemoveHost(host)
 
@@ -486,17 +504,6 @@ func (t *tokenAwareHostPolicy) RemoveHost(host *HostInfo) {
 	partitioner := t.partitioner
 	t.mu.RUnlock()
 	t.resetTokenRing(partitioner)
-}
-
-func (t *tokenAwareHostPolicy) HostUp(host *HostInfo) {
-	// TODO: need to avoid doing all the work on AddHost on hostup/down
-	// because it now expensive to calculate the replica map for each
-	// token
-	t.AddHost(host)
-}
-
-func (t *tokenAwareHostPolicy) HostDown(host *HostInfo) {
-	t.RemoveHost(host)
 }
 
 func (t *tokenAwareHostPolicy) resetTokenRing(partitioner string) {
