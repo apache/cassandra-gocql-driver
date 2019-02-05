@@ -1,3 +1,17 @@
+// Copyright 2019 Gocql Owners
+
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+
+//     http://www.apache.org/licenses/LICENSE-2.0
+
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package gocql
 
 import (
@@ -195,7 +209,7 @@ func createFunctions(t *testing.T, session *Session) {
 		CALLED ON NULL INPUT
 		RETURNS double
 		LANGUAGE java AS
-		$$double r = 0; if (state.getInt(0) == 0) return null; r = state.getLong(1); r/= state.getInt(0); return Double.valueOf(r);$$ 
+		$$double r = 0; if (state.getInt(0) == 0) return null; r = state.getLong(1); r/= state.getInt(0); return Double.valueOf(r);$$
 	`).Exec(); err != nil {
 		t.Fatalf("failed to create function with err: %v", err)
 	}

@@ -1,5 +1,5 @@
 /*
-Copyright 2015 To gocql authors
+Copyright 2015 Gocql Owners
 Copyright 2013 Google Inc.
 
 Licensed under the Apache License, Version 2.0 (the "License");
