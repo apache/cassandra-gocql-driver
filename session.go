@@ -62,8 +62,9 @@ type Session struct {
 	schemaEvents *eventDebouncer
 
 	// ring metadata
-	hosts           []HostInfo
-	useSystemSchema bool
+	hosts                     []HostInfo
+	useSystemSchema           bool
+	hasAggregatesAndFunctions bool
 
 	cfg ClusterConfig
 
@@ -240,8 +241,9 @@ func (s *Session) init() error {
 		newer, _ := checkSystemSchema(s.control)
 		s.useSystemSchema = newer
 	} else {
-		host := s.ring.rrHost()
-		s.useSystemSchema = host.Version().Major >= 3
+		version := s.ring.rrHost().Version()
+		s.useSystemSchema = version.AtLeast(3, 0, 0)
+		s.hasAggregatesAndFunctions = version.AtLeast(2, 2, 0)
 	}
 
 	if s.pool.Size() == 0 {
