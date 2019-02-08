@@ -913,7 +913,7 @@ func getViewsMetadata(session *Session, keyspaceName string) ([]ViewMetadata, er
 }
 
 func getFunctionsMetadata(session *Session, keyspaceName string) ([]FunctionMetadata, error) {
-	if session.cfg.ProtoVersion == protoVersion1 {
+	if session.cfg.ProtoVersion == protoVersion1 || !session.hasAggregatesAndFunctions {
 		return nil, nil
 	}
 	var tableName string
@@ -968,7 +968,7 @@ func getFunctionsMetadata(session *Session, keyspaceName string) ([]FunctionMeta
 }
 
 func getAggregatesMetadata(session *Session, keyspaceName string) ([]AggregateMetadata, error) {
-	if session.cfg.ProtoVersion == protoVersion1 {
+	if session.cfg.ProtoVersion == protoVersion1 || !session.hasAggregatesAndFunctions {
 		return nil, nil
 	}
 	var tableName string
