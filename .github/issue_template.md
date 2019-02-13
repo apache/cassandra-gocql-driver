@@ -1,6 +1,6 @@
 Please answer these questions before submitting your issue. Thanks!
 
-### What version of Cassandra are you using?
+### What version of Scylla or Cassandra are you using?
 
 
 ### What version of Gocql are you using?
