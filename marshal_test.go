@@ -1480,3 +1480,88 @@ func TestMarshalDuration(t *testing.T) {
 		}
 	}
 }
+
+func TestReadCollectionSize(t *testing.T) {
+	listV2 := CollectionType{
+		NativeType: NativeType{proto: 2, typ: TypeList},
+		Elem:       NativeType{proto: 2, typ: TypeVarchar},
+	}
+	listV3 := CollectionType{
+		NativeType: NativeType{proto: 3, typ: TypeList},
+		Elem:       NativeType{proto: 3, typ: TypeVarchar},
+	}
+
+	tests := []struct {
+		name string
+		info CollectionType
+		data []byte
+		isError bool
+		expectedSize int
+	}{
+		{
+			name: "short read 0 proto 2",
+			info: listV2,
+			data: []byte{},
+			isError: true,
+		},
+		{
+			name: "short read 1 proto 2",
+			info: listV2,
+			data: []byte{0x01},
+			isError: true,
+		},
+		{
+			name: "good read proto 2",
+			info: listV2,
+			data: []byte{0x01, 0x38},
+			expectedSize: 0x0138,
+		},
+		{
+			name: "short read 0 proto 3",
+			info: listV3,
+			data: []byte{},
+			isError: true,
+		},
+		{
+			name: "short read 1 proto 3",
+			info: listV3,
+			data: []byte{0x01},
+			isError: true,
+		},
+		{
+			name: "short read 2 proto 3",
+			info: listV3,
+			data: []byte{0x01, 0x38},
+			isError: true,
+		},
+		{
+			name: "short read 3 proto 3",
+			info: listV3,
+			data: []byte{0x01, 0x38, 0x42},
+			isError: true,
+		},
+		{
+			name: "good read proto 3",
+			info: listV3,
+			data: []byte{0x01, 0x38, 0x42, 0x22},
+			expectedSize: 0x01384222,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			size, _, err := readCollectionSize(test.info, test.data)
+			if test.isError {
+				if err == nil {
+					t.Fatal("Expected error, but it was nil")
+				}
+			} else {
+				if err != nil {
+					t.Fatalf("Expected no error, got %v", err)
+				}
+				if size != test.expectedSize {
+					t.Fatalf("Expected size of %d, but got %d", test.expectedSize, size)
+				}
+			}
+		})
+	}
+}
