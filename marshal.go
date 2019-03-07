@@ -1212,6 +1212,16 @@ func unmarshalDate(info TypeInfo, data []byte, value interface{}) error {
 		timestamp := (int64(current) - int64(origin)) * 86400000
 		*v = time.Unix(0, timestamp*int64(time.Millisecond)).In(time.UTC)
 		return nil
+	case *string:
+                if len(data) == 0 {
+                        *v = ""
+                        return nil
+                }
+                var origin uint32 = 1 << 31
+                var current uint32 = binary.BigEndian.Uint32(data)
+                timestamp := (int64(current) - int64(origin)) * 86400000
+                *v = time.Unix(0, timestamp*int64(time.Millisecond)).Format("2006-01-01")
+                return nil
 	}
 	return unmarshalErrorf("can not unmarshal %s into %T", info, value)
 }
