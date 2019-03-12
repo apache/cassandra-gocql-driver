@@ -16,7 +16,7 @@ func getReplicationFactorFromOpts(keyspace string, val interface{}) int {
 	// than spamming
 	switch v := val.(type) {
 	case int:
-		if v <= 0 {
+		if v < 0 {
 			panic(fmt.Sprintf("invalid replication_factor %d. Is the %q keyspace configured correctly?", v, keyspace))
 		}
 		return v
@@ -24,7 +24,7 @@ func getReplicationFactorFromOpts(keyspace string, val interface{}) int {
 		n, err := strconv.Atoi(v)
 		if err != nil {
 			panic(fmt.Sprintf("invalid replication_factor. Is the %q keyspace configured correctly? %v", keyspace, err))
-		} else if n <= 0 {
+		} else if n < 0 {
 			panic(fmt.Sprintf("invalid replication_factor %d. Is the %q keyspace configured correctly?", n, keyspace))
 		}
 		return n
@@ -44,7 +44,17 @@ func getStrategy(ks *KeyspaceMetadata) placementStrategy {
 				continue
 			}
 
-			dcs[dc] = getReplicationFactorFromOpts(ks.Name+":dc="+dc, rf)
+			rfFinal := getReplicationFactorFromOpts(ks.Name+":dc="+dc, rf)
+			if rfFinal == 0 {
+				// Sometimes, we purposefully configure a
+				// NetworkTopologyStrategy to have a ReplicationFactor of 0 on
+				// one or more cluster; this allows us to easily switch to a
+				// multi-DC deployment if and when the need arises.
+				// In the meantime, if the RF is zero, we simply want to discard
+				// it from the topology.
+				continue
+			}
+			dcs[dc] = rfFinal
 		}
 		return &networkTopology{dcs: dcs}
 	case strings.Contains(ks.StrategyClass, "LocalStrategy"):
