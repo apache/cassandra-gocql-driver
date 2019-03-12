@@ -161,7 +161,28 @@ type RetryPolicy interface {
 }
 
 type DualRetryPolicy interface {
-	AttemptWithError(RetryableQuery, error) (bool, bool)
+	AttemptWithError(RetryableQuery, error) RetryType
+}
+
+type retryPolicyWrapper struct {
+	rt RetryPolicy
+}
+
+func (rtw *retryPolicyWrapper) AttemptWithError(
+	q RetryableQuery,
+	err error,
+) RetryType {
+	if !rtw.rt.Attempt(q) {
+		return Rethrow
+	}
+	return rtw.rt.GetRetryType(err)
+}
+
+func newDualRetryPolicy(rt RetryPolicy) DualRetryPolicy {
+	if rt == nil {
+		return nil
+	}
+	return &retryPolicyWrapper{rt: rt}
 }
 
 // SimpleRetryPolicy has simple logic for attempting a query a fixed number of times.

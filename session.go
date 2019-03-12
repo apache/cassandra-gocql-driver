@@ -692,7 +692,7 @@ type Query struct {
 	trace                 Tracer
 	observer              QueryObserver
 	session               *Session
-	rt                    RetryPolicy
+	rt                    DualRetryPolicy
 	spec                  SpeculativeExecutionPolicy
 	binding               func(q *QueryInfo) ([]interface{}, error)
 	serialCons            SerialConsistency
@@ -716,7 +716,7 @@ func (q *Query) defaultsFromSession() {
 	q.trace = s.trace
 	q.observer = s.queryObserver
 	q.prefetch = s.prefetch
-	q.rt = s.cfg.RetryPolicy
+	q.rt = s.cfg.retryPolicy()
 	q.serialCons = s.cfg.SerialConsistency
 	q.defaultTimestamp = s.cfg.DefaultTimestamp
 	q.idempotent = s.cfg.DefaultIdempotence
@@ -919,7 +919,7 @@ func (q *Query) attempt(keyspace string, end, start time.Time, iter *Iter, host 
 	}
 }
 
-func (q *Query) retryPolicy() RetryPolicy {
+func (q *Query) retryPolicy() DualRetryPolicy {
 	return q.rt
 }
 
@@ -1029,7 +1029,7 @@ func (q *Query) Prefetch(p float64) *Query {
 
 // RetryPolicy sets the policy to use when retrying the query.
 func (q *Query) RetryPolicy(r RetryPolicy) *Query {
-	q.rt = r
+	q.rt = newDualRetryPolicy(r)
 	return q
 }
 
@@ -1485,7 +1485,7 @@ type Batch struct {
 	Entries               []BatchEntry
 	Cons                  Consistency
 	CustomPayload         map[string][]byte
-	rt                    RetryPolicy
+	rt                    DualRetryPolicy
 	spec                  SpeculativeExecutionPolicy
 	observer              BatchObserver
 	serialCons            SerialConsistency
@@ -1513,7 +1513,7 @@ func (s *Session) NewBatch(typ BatchType) *Batch {
 	s.mu.RLock()
 	batch := &Batch{
 		Type:             typ,
-		rt:               s.cfg.RetryPolicy,
+		rt:               s.cfg.retryPolicy(),
 		serialCons:       s.cfg.SerialConsistency,
 		observer:         s.batchObserver,
 		Cons:             s.cons,
@@ -1645,13 +1645,13 @@ func (b *Batch) Bind(stmt string, bind func(q *QueryInfo) ([]interface{}, error)
 	b.Entries = append(b.Entries, BatchEntry{Stmt: stmt, binding: bind})
 }
 
-func (b *Batch) retryPolicy() RetryPolicy {
+func (b *Batch) retryPolicy() DualRetryPolicy {
 	return b.rt
 }
 
 // RetryPolicy sets the retry policy to use when executing the batch operation
 func (b *Batch) RetryPolicy(r RetryPolicy) *Batch {
-	b.rt = r
+	b.rt = newDualRetryPolicy(r)
 	return b
 }
 

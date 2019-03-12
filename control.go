@@ -38,7 +38,7 @@ type controlConn struct {
 	session *Session
 	conn    atomic.Value
 
-	retry RetryPolicy
+	retry DualRetryPolicy
 
 	quit chan struct{}
 }
@@ -47,7 +47,7 @@ func createControlConn(session *Session) *controlConn {
 	control := &controlConn{
 		session: session,
 		quit:    make(chan struct{}),
-		retry:   &SimpleRetryPolicy{NumRetries: 3},
+		retry:   newDualRetryPolicy(&SimpleRetryPolicy{NumRetries: 3}),
 	}
 
 	control.conn.Store((*connHost)(nil))
@@ -460,13 +460,8 @@ retryLoop:
 
 		q.AddAttempts(1, c.getConn().host)
 
-		var shouldRetry bool
-		if drt, ok := c.retry.(DualRetryPolicy); ok {
-			shouldRetry, _ = drt.AttemptWithError(q, iter.err)
-		} else {
-			shouldRetry = c.retry.Attempt(q)
-		}
-		if iter.err == nil || iter.err == ErrNotFound || !shouldRetry {
+		retryType := c.retry.AttemptWithError(q, nil)
+		if iter.err == nil || retryType == Ignore || retryType == Rethrow {
 			break retryLoop
 		}
 	}

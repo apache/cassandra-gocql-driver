@@ -55,6 +55,7 @@ type ClusterConfig struct {
 	Authenticator      Authenticator                            // authenticator (default: nil)
 	AuthProvider       func(h *HostInfo) (Authenticator, error) // an authenticator factory. Can be used to create alternative authenticators (default: nil)
 	RetryPolicy        RetryPolicy                              // Default retry policy to use for queries (default: 0)
+	DualRetryPolicy    DualRetryPolicy                          // Default retry policy to use for queries (default: 0)
 	ConvictionPolicy   ConvictionPolicy                         // Decide whether to mark host as down based on the error and host info (default: SimpleConvictionPolicy)
 	ReconnectionPolicy ReconnectionPolicy                       // Default reconnection policy to use for reconnecting before trying to mark host as down (default: see below)
 	SocketKeepalive    time.Duration                            // The keepalive period to use, enabled if > 0 (default: 0)
@@ -146,6 +147,18 @@ type ClusterConfig struct {
 
 	// internal config for testing
 	disableControlConn bool
+}
+
+func (cc *ClusterConfig) retryPolicy() DualRetryPolicy {
+	if cc.DualRetryPolicy != nil {
+		return cc.DualRetryPolicy
+	}
+
+	if cc.RetryPolicy != nil {
+		return newDualRetryPolicy(cc.RetryPolicy)
+	}
+
+	return nil
 }
 
 // NewCluster generates a new config for the default cluster implementation.

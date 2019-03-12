@@ -8,7 +8,7 @@ import (
 type ExecutableQuery interface {
 	execute(ctx context.Context, conn *Conn) *Iter
 	attempt(keyspace string, end, start time.Time, iter *Iter, host *HostInfo)
-	retryPolicy() RetryPolicy
+	retryPolicy() DualRetryPolicy
 	speculativeExecutionPolicy() SpeculativeExecutionPolicy
 	GetRoutingKey() ([]byte, error)
 	Keyspace() string
@@ -129,20 +129,8 @@ func (q *queryExecutor) do(ctx context.Context, qry ExecutableQuery) *Iter {
 		}
 		lastErr = iter.err
 
-		if drt, ok := rt.(DualRetryPolicy); ok {
-			shouldRetry, nextHost := drt.AttemptWithError(qry, iter.err)
-			if !shouldRetry {
-				return iter
-			}
-			if nextHost {
-				// retry on the next host
-				selectedHost = hostIter()
-			}
-			continue
-		}
-
 		// If query is unsuccessful, check the error with RetryPolicy to retry
-		switch rt.GetRetryType(iter.err) {
+		switch rt.AttemptWithError(qry, iter.err) {
 		case Retry:
 			// retry on the same host
 			continue
