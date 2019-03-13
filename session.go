@@ -40,6 +40,7 @@ type Session struct {
 	queryObserver       QueryObserver
 	batchObserver       BatchObserver
 	connectObserver     ConnectObserver
+	connErrorObserver   ConnErrorObserver
 	frameObserver       FrameHeaderObserver
 	hostSource          *ringDescriber
 	stmtsLRU            *preparedLRU
@@ -113,13 +114,14 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 	}
 
 	s := &Session{
-		cons:            cfg.Consistency,
-		prefetch:        0.25,
-		cfg:             cfg,
-		pageSize:        cfg.PageSize,
-		stmtsLRU:        &preparedLRU{lru: lru.New(cfg.MaxPreparedStmts)},
-		quit:            make(chan struct{}),
-		connectObserver: cfg.ConnectObserver,
+		cons:              cfg.Consistency,
+		prefetch:          0.25,
+		cfg:               cfg,
+		pageSize:          cfg.PageSize,
+		stmtsLRU:          &preparedLRU{lru: lru.New(cfg.MaxPreparedStmts)},
+		quit:              make(chan struct{}),
+		connectObserver:   cfg.ConnectObserver,
+		connErrorObserver: cfg.ConnErrorObserver,
 	}
 
 	s.schemaDescriber = newSchemaDescriber(s)
@@ -654,6 +656,23 @@ func (s *Session) MapExecuteBatchCAS(batch *Batch, dest map[string]interface{}) 
 	return applied, iter, iter.err
 }
 
+type connErrorObserverHandler struct {
+	observer       ConnErrorObserver
+	wrappedHandler ConnErrorHandler
+}
+
+func (h connErrorObserverHandler) HandleError(conn *Conn, err error, closed bool) {
+	h.observer.ObserveConnError(ObservedConnError{
+		Conn:   conn,
+		Host:   conn.host,
+		Err:    err,
+		Closed: closed,
+	})
+	if h.wrappedHandler != nil {
+		h.wrappedHandler.HandleError(conn, err, closed)
+	}
+}
+
 func (s *Session) connect(host *HostInfo, errorHandler ConnErrorHandler) (*Conn, error) {
 	if s.connectObserver != nil {
 		obs := ObservedConnect{
@@ -665,6 +684,10 @@ func (s *Session) connect(host *HostInfo, errorHandler ConnErrorHandler) (*Conn,
 		obs.Err = err
 		s.connectObserver.ObserveConnect(obs)
 		return conn, err
+	}
+	errorHandler = connErrorObserverHandler{
+		observer:       s.connErrorObserver,
+		wrappedHandler: errorHandler,
 	}
 	return s.dial(host, s.connCfg, errorHandler)
 }
@@ -1951,6 +1974,19 @@ type ObservedConnect struct {
 type ConnectObserver interface {
 	// ObserveConnect gets called when a new connection to cassandra is made.
 	ObserveConnect(ObservedConnect)
+}
+
+type ObservedConnError struct {
+	Conn   *Conn
+	Host   *HostInfo
+	Err    error
+	Closed bool
+}
+
+// ConnErrorObserver is the interface implemented by conn-error observers / stat collectors.
+type ConnErrorObserver interface {
+	// ObserveConnError gets called when a new connection to cassandra is made.
+	ObserveConnError(ObservedConnError)
 }
 
 type Error struct {
