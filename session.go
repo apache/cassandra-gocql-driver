@@ -337,6 +337,81 @@ func (s *Session) Query(stmt string, values ...interface{}) *Query {
 	return qry
 }
 
+// QuerySharded takes a query statement of *exactly* the form
+// `SELECT * FROM t WHERE pkey IN (??)` and returns N Query objects, where N is
+// the number of hosts in the token ring.
+// Each of these queries can then safely be executed in parallel and will
+// benefit from both the host- and cpu-level topology awareness of the
+// underlying CQL client.
+//
+// Note the presence of a special placeholder '(??)': this method will panic if
+// it is not present.
+// Don't forget to loop over the returned slice of queries once you're done in
+// order to Release() each one of them.
+func (s *Session) QuerySharded(stmt string, pkeys ...string) []*Query {
+	const _placeholder = "(??)"
+	if !strings.Contains(stmt, _placeholder) {
+		panic(fmt.Sprintf("stmt must contain a special placeholder '%s'", _placeholder))
+	}
+
+	hosts := s.ring.hostList
+	if len(hosts) <= 0 {
+		// For now, we'll just go on and assume that if we the underlying CQL
+		// client cannot detect even one host in the cluster, we are doomed
+		// anyhow.
+		panic("unreachable")
+	}
+	partitioner := hosts[0].partitioner
+
+	// We must compute a new TokenRing for every query, as the topology of the
+	// ring might have changed since our last query.
+	// This is obviously eventually-consistent: the topology might change
+	// between now and the moment we actually run the queries. This is not an
+	// issue, though, as it will just result in a performance penalty due to the
+	// brokers reshuffling the queries that ended up in the wrong place.
+	tr, err := newTokenRing(partitioner, hosts)
+	if err != nil {
+		// The only way this can happen is if the partitioner retrieved above
+		// is not compatible with the underlying CQL client; which should be
+		// impossible since we just retrieved it from said client.
+		panic("unreachable")
+	}
+
+	// Sort the pkeys per host in the token ring.
+	keysPerHost := make(map[string][]interface{}, len(hosts))
+	keysPerHostLen := len(pkeys) / len(hosts) // not quite true, but good enough
+	for _, pkey := range pkeys {
+		host, _ := tr.GetHostForPartitionKey([]byte(pkey))
+		hostID := host.HostID()
+
+		var keys []interface{}
+		var ok bool
+		if keys, ok = keysPerHost[hostID]; !ok {
+			keys = make([]interface{}, 0, keysPerHostLen)
+			keysPerHost[hostID] = keys
+		}
+
+		keys = append(keys, pkey)
+		keysPerHost[hostID] = keys
+	}
+
+	// Generate the per-host bulk queries.
+	queries := make([]*Query, 0, len(hosts))
+	for _, keys := range keysPerHost {
+		query := strings.Replace(
+			stmt,
+			_placeholder,
+			"("+strings.Repeat("?,", len(keys))+")",
+			-1,
+		)
+		query = strings.Replace(query, "?,)", "?)", -1)
+
+		queries = append(queries, s.Query(query, keys...))
+	}
+
+	return queries
+}
+
 type QueryInfo struct {
 	Id          []byte
 	Args        []ColumnInfo
