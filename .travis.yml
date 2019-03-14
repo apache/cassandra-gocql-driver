@@ -42,6 +42,7 @@ script:
   - set -e
   - PATH=$PATH:$HOME/.local/bin bash integration.sh $CASS $AUTH
   - go vet .
+  - ./authors.py --check
 
 notifications:
   - email: false
