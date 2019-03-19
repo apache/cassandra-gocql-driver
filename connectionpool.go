@@ -218,7 +218,7 @@ func (p *policyConnPool) addHost(host *HostInfo) {
 	}
 	p.mu.Unlock()
 
-	pool.fill()
+	pool.fill(true)
 }
 
 func (p *policyConnPool) removeHost(ip net.IP) {
@@ -303,7 +303,7 @@ func (pool *hostConnPool) Pick(token token) *Conn {
 	size, missing := pool.connPicker.Size()
 	if missing > 0 {
 		// try to fill the pool
-		go pool.fill()
+		go pool.fill(false)
 
 		if size == 0 {
 			return nil
@@ -334,7 +334,7 @@ func (pool *hostConnPool) Close() {
 }
 
 // Fill the connection pool
-func (pool *hostConnPool) fill() {
+func (pool *hostConnPool) fill(retryUntilFull bool) {
 	pool.mu.RLock()
 	// avoid filling a closed pool, or concurrent filling
 	if pool.closed || pool.filling {
@@ -427,7 +427,7 @@ func (pool *hostConnPool) fillingStopped(hadError bool) {
 }
 
 // connectMany creates new connections concurrent.
-func (pool *hostConnPool) connectMany() error {
+func (pool *hostConnPool) connectMany(retryUntilFull bool) error {
 	fillCount := 0
 	var connectErr error
 
@@ -457,6 +457,10 @@ func (pool *hostConnPool) connectMany() error {
 		}
 		// wait for all connections are done
 		wg.Wait()
+
+		if !retryUntilFull {
+			break
+		}
 	}
 
 	return connectErr
