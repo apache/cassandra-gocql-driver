@@ -166,12 +166,13 @@ func (c *controlConn) shuffleDial(endpoints []*HostInfo) (*Conn, error) {
 	// node.
 	shuffled := shuffleHosts(endpoints)
 
-	var (
-		err  error
-		conn *Conn
-	)
+	cfg := *c.session.connCfg
+	cfg.disableCoalesce = true
+
+	var err error
 	for _, host := range shuffled {
-		conn, err = c.session.connect(host, c)
+		var conn *Conn
+		conn, err = c.session.dial(host, &cfg, c)
 		if err == nil {
 			return conn, nil
 		}
