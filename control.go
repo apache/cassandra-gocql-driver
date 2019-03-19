@@ -172,8 +172,7 @@ func (c *controlConn) shuffleDial(endpoints []*HostInfo) (*Conn, error) {
 	var err error
 	for _, host := range shuffled {
 		var conn *Conn
-		c.session.dial(host, &cfg, c)
-		conn, err = c.session.connect(host, c)
+		conn, err = c.session.dial(host, &cfg, c)
 		if err == nil {
 			return conn, nil
 		}
