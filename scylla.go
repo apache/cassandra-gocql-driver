@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"strconv"
+	"sync"
 	"sync/atomic"
 )
 
@@ -81,7 +82,9 @@ func isScyllaConn(conn *Conn) bool {
 // scyllaConnPicker is a specialised ConnPicker that selects connections based
 // on token trying to get connection to a shard containing the given token.
 type scyllaConnPicker struct {
-	conns     []*Conn
+	muConnsPerShard sync.RWMutex
+	connsPerShard   [][]*Conn
+
 	nrConns   int
 	nrShards  int
 	msbIgnore uint64
@@ -97,11 +100,12 @@ func newScyllaConnPicker(conn *Conn) *scyllaConnPicker {
 	if gocqlDebug {
 		Logger.Printf("scylla: %s sharding options %+v", conn.Address(), s)
 	}
-
-	return &scyllaConnPicker{
-		nrShards:  s.nrShards,
-		msbIgnore: s.msbIgnore,
+	v := &scyllaConnPicker{
+		nrShards:      s.nrShards,
+		msbIgnore:     s.msbIgnore,
+		connsPerShard: make([][]*Conn, s.nrShards),
 	}
+	return v
 }
 
 func (p *scyllaConnPicker) Remove(conn *Conn) {
@@ -118,20 +122,25 @@ func (p *scyllaConnPicker) Remove(conn *Conn) {
 		Logger.Printf("scylla: %s remove shard %d connection", conn.Address(), s.shard)
 	}
 
-	if p.conns[s.shard] != nil {
-		p.conns[s.shard] = nil
+	p.muConnsPerShard.Lock()
+	if len(p.connsPerShard[s.shard]) > 0 {
 		p.nrConns--
 	}
+	p.connsPerShard[s.shard] = p.connsPerShard[s.shard][:]
+	p.muConnsPerShard.Unlock()
 }
 
 func (p *scyllaConnPicker) Close() {
-	conns := p.conns
-	p.conns = nil
-	for _, conn := range conns {
-		if conn != nil {
-			conn.Close()
+	connsPerShard := p.connsPerShard
+	p.connsPerShard = nil
+
+	p.muConnsPerShard.RLock()
+	for _, conns := range connsPerShard {
+		for _, c := range conns {
+			c.Close()
 		}
 	}
+	p.muConnsPerShard.RUnlock()
 }
 
 func (p *scyllaConnPicker) Size() (int, int) {
@@ -139,18 +148,23 @@ func (p *scyllaConnPicker) Size() (int, int) {
 }
 
 func (p *scyllaConnPicker) Pick(t token) *Conn {
-	if len(p.conns) == 0 {
+	if p.nrConns == 0 {
 		return nil
 	}
 
 	if t == nil {
 		idx := int(atomic.AddInt32(&p.pos, 1))
-		for i := 0; i < len(p.conns); i++ {
-			if conn := p.conns[(idx+i)%len(p.conns)]; conn != nil {
-				return conn
+		conn := (*Conn)(nil)
+		p.muConnsPerShard.RLock()
+		for i := range p.connsPerShard {
+			conns := p.connsPerShard[(idx+i)%len(p.connsPerShard)]
+			if len(conns) > 0 {
+				conn = conns[0]
+				break
 			}
 		}
-		return nil
+		p.muConnsPerShard.RUnlock()
+		return conn
 	}
 
 	mmt, ok := t.(murmur3Token)
@@ -160,7 +174,15 @@ func (p *scyllaConnPicker) Pick(t token) *Conn {
 	}
 
 	idx := p.shardOf(mmt)
-	return p.conns[idx]
+
+	conn := (*Conn)(nil)
+	p.muConnsPerShard.RLock()
+	conns := p.connsPerShard[idx]
+	if len(conns) > 0 {
+		conn = conns[0]
+	}
+	p.muConnsPerShard.RUnlock()
+	return conn
 }
 
 func (p *scyllaConnPicker) shardOf(token murmur3Token) int {
@@ -179,21 +201,28 @@ func (p *scyllaConnPicker) Put(conn *Conn) {
 	if s.nrShards == 0 {
 		panic(fmt.Sprintf("scylla: %s not a sharded connection", conn.Address()))
 	}
+	if s.nrShards != p.nrShards {
+		panic(fmt.Sprintf("scylla: %s invalid number of shards", conn.Address()))
+	}
 
-	if s.nrShards != len(p.conns) {
-		if s.nrShards != p.nrShards {
-			panic(fmt.Sprintf("scylla: %s invalid number of shards", conn.Address()))
+	p.muConnsPerShard.Lock()
+	conns := p.connsPerShard[s.shard]
+	wasEmpty := len(conns) == 0
+	conns = append(conns, conn)
+	p.connsPerShard[s.shard] = conns
+	if wasEmpty {
+		p.nrConns++
+	}
+	if p.nrConns == p.nrShards {
+		for i, conns := range p.connsPerShard {
+			for _, c := range conns[1:] {
+				c.Close()
+			}
+			p.connsPerShard[i] = conns[:1] // keep the first connection
 		}
-		conns := p.conns
-		p.conns = make([]*Conn, s.nrShards, s.nrShards)
-		copy(p.conns, conns)
 	}
-	if c := p.conns[s.shard]; c != nil {
-		conn.Close()
-		return
-	}
-	p.conns[s.shard] = conn
-	p.nrConns++
+	p.muConnsPerShard.Unlock()
+
 	if gocqlDebug {
 		Logger.Printf("scylla: %s put shard %d connection total: %d missing: %d", conn.Address(), s.shard, p.nrConns, p.nrShards-p.nrConns)
 	}
