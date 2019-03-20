@@ -80,10 +80,10 @@ func isScyllaConn(conn *Conn) bool {
 
 // scyllaConnPicker is a specialised ConnPicker that selects connections based
 // on token trying to get connection to a shard containing the given token.
-// A list of excess connections is maintained to allow for lazy removal of.
-// excess connections. Keeping excess connections open helps reaching equilibrium
-// faster since the likelihood of hitting the same shard decreases with the number
-// of connections to the shard.
+// A list of excess connections is maintained to allow for lazy closing of
+// connections to already opened shards. Keeping excess connections open helps
+// reaching equilibrium faster since the likelihood of hitting the same shard
+// decreases with the number of connections to the shard.
 type scyllaConnPicker struct {
 	conns       []*Conn
 	excessConns []*Conn
@@ -149,13 +149,7 @@ func (p *scyllaConnPicker) Pick(t token) *Conn {
 	}
 
 	if t == nil {
-		idx := int(atomic.AddInt32(&p.pos, 1))
-		for i := 0; i < len(p.conns); i++ {
-			if conn := p.conns[(idx+i)%len(p.conns)]; conn != nil {
-				return conn
-			}
-		}
-		return nil
+		return p.randomConn()
 	}
 
 	mmt, ok := t.(murmur3Token)
@@ -165,7 +159,12 @@ func (p *scyllaConnPicker) Pick(t token) *Conn {
 	}
 
 	idx := p.shardOf(mmt)
-	return p.conns[idx]
+	if c := p.conns[idx]; c != nil {
+		// We have this shard's connection
+		// so let's give it to the caller.
+		return c
+	}
+	return p.randomConn()
 }
 
 func (p *scyllaConnPicker) shardOf(token murmur3Token) int {
@@ -229,4 +228,14 @@ func (p *scyllaConnPicker) closeExcessConns() {
 		c.Close()
 	}
 	p.excessConns = nil
+}
+
+func (p *scyllaConnPicker) randomConn() *Conn {
+	idx := int(atomic.AddInt32(&p.pos, 1))
+	for i := 0; i < len(p.conns); i++ {
+		if conn := p.conns[(idx+i)%len(p.conns)]; conn != nil {
+			return conn
+		}
+	}
+	return nil
 }
