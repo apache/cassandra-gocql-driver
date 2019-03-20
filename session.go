@@ -737,12 +737,14 @@ type connErrorObserverHandler struct {
 }
 
 func (h connErrorObserverHandler) HandleError(conn *Conn, err error, closed bool) {
-	h.observer.ObserveConnError(ObservedConnError{
-		Conn:   conn,
-		Host:   conn.host,
-		Err:    err,
-		Closed: closed,
-	})
+	if h.observer != nil {
+		h.observer.ObserveConnError(ObservedConnError{
+			Conn:   conn,
+			Host:   conn.host,
+			Err:    err,
+			Closed: closed,
+		})
+	}
 	if h.wrappedHandler != nil {
 		h.wrappedHandler.HandleError(conn, err, closed)
 	}
