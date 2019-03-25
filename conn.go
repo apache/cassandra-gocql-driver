@@ -159,8 +159,34 @@ type Conn struct {
 	timeouts int64
 }
 
-// Connect establishes a connection to a Cassandra node.
-func (s *Session) dial(host *HostInfo, cfg *ConnConfig, errorHandler ConnErrorHandler) (*Conn, error) {
+// connect establishes a connection to a Cassandra node using session's connection config.
+func (s *Session) connect(host *HostInfo, errorHandler ConnErrorHandler) (*Conn, error) {
+	return s.dial(host, s.connCfg, errorHandler)
+}
+
+// dial establishes a connection to a Cassandra node and notifies the session's connectObserver.
+func (s *Session) dial(host *HostInfo, connConfig *ConnConfig, errorHandler ConnErrorHandler) (*Conn, error) {
+	var obs ObservedConnect
+	if s.connectObserver != nil {
+		obs.Host = host
+		obs.Start = time.Now()
+	}
+
+	conn, err := s.dialWithoutObserver(host, connConfig, errorHandler)
+
+	if s.connectObserver != nil {
+		obs.End = time.Now()
+		obs.Err = err
+		s.connectObserver.ObserveConnect(obs)
+	}
+
+	return conn, err
+}
+
+// dialWithoutObserver establishes connection to a Cassandra node.
+//
+// dialWithoutObserver does not notify the connection observer, so you most probably want to call dial() instead.
+func (s *Session) dialWithoutObserver(host *HostInfo, cfg *ConnConfig, errorHandler ConnErrorHandler) (*Conn, error) {
 	ip := host.ConnectAddress()
 	port := host.port
 

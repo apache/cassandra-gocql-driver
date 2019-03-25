@@ -656,21 +656,6 @@ func (s *Session) MapExecuteBatchCAS(batch *Batch, dest map[string]interface{}) 
 	return applied, iter, iter.err
 }
 
-func (s *Session) connect(host *HostInfo, errorHandler ConnErrorHandler) (*Conn, error) {
-	if s.connectObserver != nil {
-		obs := ObservedConnect{
-			Host:  host,
-			Start: time.Now(),
-		}
-		conn, err := s.dial(host, s.connCfg, errorHandler)
-		obs.End = time.Now()
-		obs.Err = err
-		s.connectObserver.ObserveConnect(obs)
-		return conn, err
-	}
-	return s.dial(host, s.connCfg, errorHandler)
-}
-
 type hostMetrics struct {
 	Attempts     int
 	TotalLatency int64
