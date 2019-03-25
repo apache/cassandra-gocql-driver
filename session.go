@@ -72,6 +72,10 @@ type Session struct {
 
 	closeMu  sync.RWMutex
 	isClosed bool
+
+	// Session Logger
+
+	Logger StdLogger
 }
 
 var queryPool = &sync.Pool{
@@ -80,14 +84,14 @@ var queryPool = &sync.Pool{
 	},
 }
 
-func addrsToHosts(addrs []string, defaultPort int) ([]*HostInfo, error) {
+func addrsToHosts(addrs []string, defaultPort int, logger StdLogger) ([]*HostInfo, error) {
 	var hosts []*HostInfo
 	for _, hostport := range addrs {
 		resolvedHosts, err := hostInfo(hostport, defaultPort)
 		if err != nil {
 			// Try other hosts if unable to resolve DNS name
 			if _, ok := err.(*net.DNSError); ok {
-				Logger.Printf("gocql: dns error: %v\n", err)
+				logger.Printf("gocql: dns error: %v\n", err)
 				continue
 			}
 			return nil, err
@@ -101,8 +105,13 @@ func addrsToHosts(addrs []string, defaultPort int) ([]*HostInfo, error) {
 	return hosts, nil
 }
 
-// NewSession wraps an existing Node.
+// NewSession wraps an existing Node
 func NewSession(cfg ClusterConfig) (*Session, error) {
+	return NewSessionWithLogger(cfg, cfg.Logger)
+}
+
+// NewSessionWithLogger wraps an existing Node and uses a specified Logger object.
+func NewSessionWithLogger(cfg ClusterConfig, logger StdLogger) (*Session, error) {
 	// Check that hosts in the ClusterConfig is not empty
 	if len(cfg.Hosts) < 1 {
 		return nil, ErrNoHosts
@@ -121,12 +130,13 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 		stmtsLRU:        &preparedLRU{lru: lru.New(cfg.MaxPreparedStmts)},
 		quit:            make(chan struct{}),
 		connectObserver: cfg.ConnectObserver,
+		Logger:          logger,
 	}
 
 	s.schemaDescriber = newSchemaDescriber(s)
 
-	s.nodeEvents = newEventDebouncer("NodeEvents", s.handleNodeEvent)
-	s.schemaEvents = newEventDebouncer("SchemaEvents", s.handleSchemaEvent)
+	s.nodeEvents = newEventDebouncer("NodeEvents", s.handleNodeEvent, s)
+	s.schemaEvents = newEventDebouncer("SchemaEvents", s.handleSchemaEvent, s)
 
 	s.routingKeyInfoCache.lru = lru.New(cfg.MaxRoutingKeyInfo)
 
@@ -174,7 +184,7 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 }
 
 func (s *Session) init() error {
-	hosts, err := addrsToHosts(s.cfg.Hosts, s.cfg.Port)
+	hosts, err := addrsToHosts(s.cfg.Hosts, s.cfg.Port, s.Logger)
 	if err != nil {
 		return err
 	}
@@ -274,7 +284,7 @@ func (s *Session) reconnectDownedHosts(intv time.Duration) {
 				for _, h := range hosts {
 					buf.WriteString("[" + h.ConnectAddress().String() + ":" + h.State().String() + "]")
 				}
-				Logger.Println(buf.String())
+				s.Logger.Println(buf.String())
 			}
 
 			for _, h := range hosts {

@@ -247,7 +247,8 @@ func (d *DowngradingConsistencyRetryPolicy) Attempt(q RetryableQuery) bool {
 	} else if currentAttempt > 0 {
 		q.SetConsistency(d.ConsistencyLevelsToTry[currentAttempt-1])
 		if gocqlDebug {
-			Logger.Printf("%T: set consistency to %q\n",
+			logger := &defaultLogger{}
+			logger.Printf("%T: set consistency to %q\n",
 				d,
 				d.ConsistencyLevelsToTry[currentAttempt-1])
 		}
@@ -516,7 +517,8 @@ func (t *tokenAwareHostPolicy) resetTokenRing(partitioner string) {
 	hosts := t.hosts.get()
 	tokenRing, err := newTokenRing(partitioner, hosts)
 	if err != nil {
-		Logger.Printf("Unable to update the token ring due to error: %s", err)
+		logger := &defaultLogger{}
+		logger.Printf("Unable to update the token ring due to error: %s", err)
 		return
 	}
 
