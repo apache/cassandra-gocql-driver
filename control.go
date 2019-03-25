@@ -454,7 +454,7 @@ retryLoop:
 			return conn.executeQuery(context.TODO(), q)
 		})
 
-		if gocqlDebug && iter.err != nil {
+		if GoCQLDebug && iter.err != nil {
 			Logger.Printf("control: error executing %q: %v\n", statement, iter.err)
 		}
 

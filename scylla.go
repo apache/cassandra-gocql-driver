@@ -32,21 +32,21 @@ func parseSupported(supported map[string][]string) scyllaSupported {
 
 	if s, ok := supported[scyllaShard]; ok {
 		if si.shard, err = strconv.Atoi(s[0]); err != nil {
-			if gocqlDebug {
+			if GoCQLDebug {
 				Logger.Printf("scylla: failed to parse %s value %v: %s", scyllaShard, s, err)
 			}
 		}
 	}
 	if s, ok := supported[scyllaNrShards]; ok {
 		if si.nrShards, err = strconv.Atoi(s[0]); err != nil {
-			if gocqlDebug {
+			if GoCQLDebug {
 				Logger.Printf("scylla: failed to parse %s value %v: %s", scyllaNrShards, s, err)
 			}
 		}
 	}
 	if s, ok := supported[scyllaShardingIgnoreMSB]; ok {
 		if si.msbIgnore, err = strconv.ParseUint(s[0], 10, 64); err != nil {
-			if gocqlDebug {
+			if GoCQLDebug {
 				Logger.Printf("scylla: failed to parse %s value %v: %s", scyllaShardingIgnoreMSB, s, err)
 			}
 		}
@@ -64,7 +64,7 @@ func parseSupported(supported map[string][]string) scyllaSupported {
 	}
 
 	if partitioner != "org.apache.cassandra.dht.Murmur3Partitioner" || algorithm != "biased-token-round-robin" || si.nrShards == 0 || si.msbIgnore == 0 {
-		if gocqlDebug {
+		if GoCQLDebug {
 			Logger.Printf("scylla: unsupported sharding configuration")
 		}
 		return scyllaSupported{}
@@ -97,7 +97,7 @@ func newScyllaConnPicker(conn *Conn) *scyllaConnPicker {
 		panic(fmt.Sprintf("scylla: %s not a sharded connection", conn.Address()))
 	}
 
-	if gocqlDebug {
+	if GoCQLDebug {
 		Logger.Printf("scylla: %s sharding options %+v", conn.Address(), s)
 	}
 	v := &scyllaConnPicker{
@@ -113,12 +113,12 @@ func (p *scyllaConnPicker) Remove(conn *Conn) {
 	if s.nrShards == 0 {
 		// It is possible for Remove to be called before the connection is added to the pool.
 		// Ignoring these connections here is safe.
-		if gocqlDebug {
+		if GoCQLDebug {
 			Logger.Printf("scylla: %s has unknown sharding state, ignoring it", conn.Address())
 		}
 		return
 	}
-	if gocqlDebug {
+	if GoCQLDebug {
 		Logger.Printf("scylla: %s remove shard %d connection", conn.Address(), s.shard)
 	}
 
@@ -223,7 +223,7 @@ func (p *scyllaConnPicker) Put(conn *Conn) {
 	}
 	p.muConnsPerShard.Unlock()
 
-	if gocqlDebug {
+	if GoCQLDebug {
 		Logger.Printf("scylla: %s put shard %d connection total: %d missing: %d", conn.Address(), s.shard, p.nrConns, p.nrShards-p.nrConns)
 	}
 }

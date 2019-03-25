@@ -269,7 +269,7 @@ func (s *Session) reconnectDownedHosts(intv time.Duration) {
 			hosts := s.ring.allHosts()
 
 			// Print session.ring for debug.
-			if gocqlDebug {
+			if GoCQLDebug {
 				buf := bytes.NewBufferString("Session.ring:")
 				for _, h := range hosts {
 					buf.WriteString("[" + h.ConnectAddress().String() + ":" + h.State().String() + "]")

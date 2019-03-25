@@ -271,7 +271,7 @@ func (d *DowngradingConsistencyRetryPolicy) Attempt(q RetryableQuery) bool {
 		return false
 	} else if currentAttempt > 0 {
 		q.SetConsistency(d.ConsistencyLevelsToTry[currentAttempt-1])
-		if gocqlDebug {
+		if GoCQLDebug {
 			Logger.Printf("%T: set consistency to %q\n",
 				d,
 				d.ConsistencyLevelsToTry[currentAttempt-1])

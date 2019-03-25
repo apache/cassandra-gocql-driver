@@ -87,7 +87,7 @@ func (s *Session) handleEvent(framer *framer) {
 		return
 	}
 
-	if gocqlDebug {
+	if GoCQLDebug {
 		Logger.Printf("gocql: handling frame: %v\n", frame)
 	}
 
@@ -158,7 +158,7 @@ func (s *Session) handleNodeEvent(frames []frame) {
 	}
 
 	for _, f := range events {
-		if gocqlDebug {
+		if GoCQLDebug {
 			Logger.Printf("gocql: dispatching event: %+v\n", f)
 		}
 
@@ -189,7 +189,7 @@ func (s *Session) addNewNode(host *HostInfo) {
 }
 
 func (s *Session) handleNewNode(ip net.IP, port int, waitForBinary bool) {
-	if gocqlDebug {
+	if GoCQLDebug {
 		Logger.Printf("gocql: Session.handleNewNode: %s:%d\n", ip.String(), port)
 	}
 
@@ -221,7 +221,7 @@ func (s *Session) handleNewNode(ip net.IP, port int, waitForBinary bool) {
 }
 
 func (s *Session) handleRemovedNode(ip net.IP, port int) {
-	if gocqlDebug {
+	if GoCQLDebug {
 		Logger.Printf("gocql: Session.handleRemovedNode: %s:%d\n", ip.String(), port)
 	}
 
@@ -248,7 +248,7 @@ func (s *Session) handleRemovedNode(ip net.IP, port int) {
 }
 
 func (s *Session) handleNodeUp(eventIp net.IP, eventPort int, waitForBinary bool) {
-	if gocqlDebug {
+	if GoCQLDebug {
 		Logger.Printf("gocql: Session.handleNodeUp: %s:%d\n", eventIp.String(), eventPort)
 	}
 
@@ -274,7 +274,7 @@ func (s *Session) handleNodeUp(eventIp net.IP, eventPort int, waitForBinary bool
 }
 
 func (s *Session) handleNodeDown(ip net.IP, port int) {
-	if gocqlDebug {
+	if GoCQLDebug {
 		Logger.Printf("gocql: Session.handleNodeDown: %s:%d\n", ip.String(), port)
 	}
 

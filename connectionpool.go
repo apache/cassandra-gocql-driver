@@ -403,7 +403,7 @@ func (pool *hostConnPool) logConnectErr(err error) {
 	if opErr, ok := err.(*net.OpError); ok && (opErr.Op == "dial" || opErr.Op == "read") {
 		// connection refused
 		// these are typical during a node outage so avoid log spam.
-		if gocqlDebug {
+		if GoCQLDebug {
 			Logger.Printf("unable to dial %q: %v\n", pool.host.ConnectAddress(), err)
 		}
 	} else if err != nil {
@@ -485,7 +485,7 @@ func (pool *hostConnPool) connect() (err error) {
 				break
 			}
 		}
-		if gocqlDebug {
+		if GoCQLDebug {
 			Logger.Printf("connection failed %q: %v, reconnecting with %T\n",
 				pool.host.ConnectAddress(), err, reconnectionPolicy)
 		}
