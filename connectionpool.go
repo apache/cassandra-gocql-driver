@@ -343,7 +343,7 @@ func (pool *hostConnPool) fill() {
 	}
 
 	// determine the filling work to be done
-	_, fillCount := pool.connPicker.Size()
+	startCount, fillCount := pool.connPicker.Size()
 
 	// avoid filling a full (or overfull) pool
 	if fillCount <= 0 {
@@ -355,7 +355,7 @@ func (pool *hostConnPool) fill() {
 	pool.mu.RUnlock()
 	pool.mu.Lock()
 
-	startCount, fillCount := pool.connPicker.Size()
+	startCount, fillCount = pool.connPicker.Size()
 	if pool.closed || pool.filling || fillCount <= 0 {
 		// looks like another goroutine already beat this
 		// goroutine to the filling
@@ -388,15 +388,20 @@ func (pool *hostConnPool) fill() {
 			}
 			return
 		}
+
+		// filled one, let's reload it to see if it has changed
+		pool.mu.RLock()
+		_, fillCount = pool.connPicker.Size()
+		pool.mu.RUnlock()
 	}
 
 	// fill the rest of the pool asynchronously
-	// go func() {
-	err := pool.connectMany()
+	go func() {
+		err := pool.connectMany(fillCount)
 
-	// mark the end of filling
-	pool.fillingStopped(err != nil)
-	// }()
+		// mark the end of filling
+		pool.fillingStopped(err != nil)
+	}()
 }
 
 func (pool *hostConnPool) logConnectErr(err error) {
@@ -427,37 +432,30 @@ func (pool *hostConnPool) fillingStopped(hadError bool) {
 }
 
 // connectMany creates new connections concurrent.
-func (pool *hostConnPool) connectMany() error {
-	fillCount := 0
-	var connectErr error
-
-	for {
-		pool.mu.RLock()
-		_, fillCount = pool.connPicker.Size()
-		pool.mu.RUnlock()
-		if fillCount == 0 {
-			return nil
-		}
-		var (
-			wg sync.WaitGroup
-			mu sync.Mutex
-		)
-		wg.Add(fillCount)
-		for i := 0; i < fillCount; i++ {
-			go func() {
-				defer wg.Done()
-				err := pool.connect()
-				pool.logConnectErr(err)
-				if err != nil {
-					mu.Lock()
-					connectErr = err
-					mu.Unlock()
-				}
-			}()
-		}
-		// wait for all connections are done
-		wg.Wait()
+func (pool *hostConnPool) connectMany(count int) error {
+	if count == 0 {
+		return nil
 	}
+	var (
+		wg         sync.WaitGroup
+		mu         sync.Mutex
+		connectErr error
+	)
+	wg.Add(count)
+	for i := 0; i < count; i++ {
+		go func() {
+			defer wg.Done()
+			err := pool.connect()
+			pool.logConnectErr(err)
+			if err != nil {
+				mu.Lock()
+				connectErr = err
+				mu.Unlock()
+			}
+		}()
+	}
+	// wait for all connections are done
+	wg.Wait()
 
 	return connectErr
 }
