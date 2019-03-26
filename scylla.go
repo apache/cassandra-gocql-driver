@@ -197,7 +197,7 @@ func (p *scyllaConnPicker) Put(conn *Conn) {
 	if c := p.conns[s.shard]; c != nil {
 		p.excessConns = append(p.excessConns, conn)
 		if len(p.excessConns) > maxExcessConnsFactor*p.nrShards {
-			if gocqlDebug {
+			if GoCQLDebug {
 				Logger.Printf("scylla: excess connections limit reached (%d)", maxExcessConnsFactor*p.nrShards)
 			}
 			p.closeExcessConns()
@@ -221,7 +221,7 @@ func (p *scyllaConnPicker) Put(conn *Conn) {
 // in a goroutine safe context, i.e. when the external pool
 // write lock is held or other synchronization is needed.
 func (p *scyllaConnPicker) closeExcessConns() {
-	if gocqlDebug {
+	if GoCQLDebug {
 		Logger.Printf("scylla: closing %d excess connections", len(p.excessConns))
 	}
 	for _, c := range p.excessConns {
