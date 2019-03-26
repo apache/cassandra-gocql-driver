@@ -391,12 +391,12 @@ func (pool *hostConnPool) fill() {
 	}
 
 	// fill the rest of the pool asynchronously
-	go func() {
-		err := pool.connectMany(retryUntilFull)
+	// go func() {
+	err := pool.connectMany()
 
-		// mark the end of filling
-		pool.fillingStopped(err != nil)
-	}()
+	// mark the end of filling
+	pool.fillingStopped(err != nil)
+	// }()
 }
 
 func (pool *hostConnPool) logConnectErr(err error) {
