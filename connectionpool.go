@@ -218,7 +218,7 @@ func (p *policyConnPool) addHost(host *HostInfo) {
 	}
 	p.mu.Unlock()
 
-	pool.fill(false)
+	pool.fill(true)
 }
 
 func (p *policyConnPool) removeHost(ip net.IP) {
