@@ -171,7 +171,7 @@ func (cframer *CqlFramer) WriteSetupFrame(stream int, version uint8, w io.Writer
 	return req.writeFrame(framer, stream)
 }
 
-// WriteQueryFrame generates the the QUERY frame bytes with the provided head
+// WriteQueryFrame generates QUERY frame bytes with the provided head
 // and parsed frame.
 func (cframer *CqlFramer) WriteQueryFrame(head *FrameHeader, qf Frame) ([]byte, error) {
 	var hdr = ((*frameHeader)(head))
@@ -181,6 +181,42 @@ func (cframer *CqlFramer) WriteQueryFrame(head *FrameHeader, qf Frame) ([]byte, 
 	qfw := &writeQueryFrame{
 		statement: frame.(*queryFrame).statement,
 		params:    frame.(*queryFrame).params,
+	}
+	if err := qfw.writeFrame(f, hdr.Header().stream); err != nil {
+		return nil, err
+	}
+	return b.Bytes(), nil
+}
+
+// WritePrepareFrame generates PREPARE frame bytes with the provided head
+// and parsed frame.
+func (cframer *CqlFramer) WritePrepareFrame(head *FrameHeader, qf Frame) ([]byte, error) {
+	var hdr = ((*frameHeader)(head))
+	var frame = frame(qf)
+	b := new(bytes.Buffer)
+	f := newFramer(nil, b, nil, cframer.protoVersion)
+	qfw := &writePrepareFrame{
+		statement:     frame.(*prepareFrame).statement,
+		keyspace:      frame.(*prepareFrame).keyspace,
+		customPayload: frame.(*prepareFrame).customPayload,
+	}
+	if err := qfw.writeFrame(f, hdr.Header().stream); err != nil {
+		return nil, err
+	}
+	return b.Bytes(), nil
+}
+
+// WriteExecuteFrame generates EXECUTE frame bytes with the provided head
+// and parsed frame.
+func (cframer *CqlFramer) WriteExecuteFrame(head *FrameHeader, qf Frame) ([]byte, error) {
+	var hdr = ((*frameHeader)(head))
+	var frame = frame(qf)
+	b := new(bytes.Buffer)
+	f := newFramer(nil, b, nil, cframer.protoVersion)
+	qfw := &writeExecuteFrame{
+		preparedID:    frame.(*executeFrame).preparedID,
+		params:        frame.(*executeFrame).params,
+		customPayload: frame.(*executeFrame).customPayload,
 	}
 	if err := qfw.writeFrame(f, hdr.Header().stream); err != nil {
 		return nil, err
@@ -242,11 +278,28 @@ func (cframer *CqlFramer) PullStatementFromFrame(f Frame) (string, bool, error) 
 	return "", false, errors.New("Unknown frame")
 }
 
-// ReadResultFrame reads the frame body for the frame head from the connection
-// associated with the CqlFramer and returns the parsed results.
-// It also returns the frame bytes, and the list of columns returned.
-func (cframer *CqlFramer) ReadResultFrame(head *FrameHeader) (cols []ColumnInfo,
-	results []map[string]interface{}, frameBytes []byte, err error) {
+// PullFromExecuteFrame returns prepared ID and parameters from the EXECUTE frame.
+func (cframer *CqlFramer) PullFromExecuteFrame(f Frame) ([]byte, QueryParams, error) {
+	var frame = frame(f)
+	if f, ok := frame.(*executeFrame); ok {
+
+		values := make([]QueryValues, 0, len(f.params.values))
+		for _, v := range f.params.values {
+			values = append(values, QueryValues{
+				Value:   v.value,
+				Name:    v.name,
+				IsUnset: v.isUnset,
+			})
+		}
+		return f.preparedID, QueryParams{Values: values}, nil
+	}
+	return nil, QueryParams{}, errors.New("Unknown frame")
+}
+
+// ReadResultFrame reads the frame body for the frame head from the associated
+// reader and returns the parsed result. It also returns the full frame bytes.
+func (cframer *CqlFramer) ReadResultFrame(head *FrameHeader, ci []ColumnInfo) (result interface{},
+	frameBytes []byte, err error) {
 
 	var hdr = ((*frameHeader)(head))
 	f := cframer.framer
@@ -257,32 +310,52 @@ func (cframer *CqlFramer) ReadResultFrame(head *FrameHeader) (cols []ColumnInfo,
 	if err = f.readFrame(hdr); err != nil {
 		return
 	}
-
-	if parsedFrame, perr := f.parseResultFrame(); perr != nil {
+	parsedFrame, perr := f.parseResultFrame()
+	if perr != nil {
 		err = perr
 		return
-	} else {
-		if frame, ok := parsedFrame.(*resultRowsFrame); !ok {
-			err = errors.New("Expected Rows kind of Result Frame")
-			return
-		} else {
-			// Set the final result frame flag value, if needed
-			// final = frame.meta.flags&flagHasMorePages == 0
-
-			iter := Iter{
-				meta:    frame.meta,
-				numRows: frame.numRows,
-				framer:  cframer.framer,
-			}
-			if results, err = iter.SliceMap(); err != nil {
-				return
-			}
-			cols = frame.meta.columns
-
-			// Write out the frame bytes, leverage the framer's buffer
-			frameBytes, err = cframer.writeFullFrameBytes(hdr, f.readBuffer)
-		}
 	}
+	switch frame := parsedFrame.(type) {
+	default:
+		// Includes these possible types
+		// (*resultVoidFrame)
+		// (*schemaChangeKeyspace), (*schemaChangeTable), (*schemaChangeType),
+		// (*schemaChangeFunction), (*schemaChangeAggregate)
+		result = nil
+	case (*resultKeyspaceFrame):
+		// We don't do anything now with USE KEYSPACE response
+		result = nil
+	case (*resultPreparedFrame):
+		r := PreparedResult{
+			ID:      frame.preparedID,
+			Columns: frame.respMeta.columns,
+		}
+		result = r
+	case (*resultRowsFrame):
+		meta := frame.meta
+		columns := frame.meta.columns
+		if ci != nil {
+			// Swap in column info from the earlier PREPARE result
+			columns = ci
+			meta.columns = ci
+		}
+		iter := Iter{
+			meta:    meta,
+			numRows: frame.numRows,
+			framer:  cframer.framer,
+		}
+		r := RowsResult{
+			Cols:             columns,
+			FlagHasMorePages: frame.meta.flags&flagHasMorePages == 1,
+		}
+		if r.Rows, err = iter.SliceMap(); err != nil {
+			return
+		}
+		result = r
+	}
+	// Write out the frame bytes, leverage the framer's buffer
+	frameBytes, err = cframer.writeFullFrameBytes(hdr, f.readBuffer)
+
 	return
 }
 
@@ -343,6 +416,8 @@ func (f *framer) parseClientFrame() (frame frame, err error) {
 		frame = f.parseQueryFrame()
 	case opPrepare:
 		frame = f.parsePrepareFrame()
+	case opExecute:
+		frame = f.parseExecuteFrame()
 	case opBatch:
 		frame = f.parseBatchFrame()
 	default:
@@ -387,6 +462,20 @@ func (f *framer) parseOptionsFrame() frame {
 	}
 }
 
+// QueryParams defines parameters for EXECUTE frame
+type QueryParams struct {
+	Values []QueryValues
+}
+
+// QueryValues defines a value provided in the EXECUTE frame
+type QueryValues struct {
+	Value []byte
+
+	// optional name, will set With names for values flag
+	Name    string
+	IsUnset bool
+}
+
 type queryFrame struct {
 	frameHeader
 	statement string
@@ -422,11 +511,11 @@ func (f *framer) readQueryParams() (opts queryParams) {
 				opts.values[i].name = f.readString()
 			}
 			b := f.readBytes()
-			if b != nil {
+			if b == nil {
 				opts.values[i].isUnset = true
 			} else {
 				opts.values[i].isUnset = false
-				opts.values[i].value = f.readBytes()
+				opts.values[i].value = b
 			}
 		}
 	}
@@ -455,13 +544,32 @@ func (f *framer) readQueryParams() (opts queryParams) {
 
 type prepareFrame struct {
 	frameHeader
-	statement string
+	statement     string
+	keyspace      string
+	customPayload map[string][]byte
 }
 
 func (f *framer) parsePrepareFrame() frame {
 	return &prepareFrame{
 		frameHeader: *f.header,
 		statement:   f.readLongString(),
+	}
+}
+
+type executeFrame struct {
+	frameHeader
+	preparedID []byte
+	params     queryParams
+
+	// v4+
+	customPayload map[string][]byte
+}
+
+func (f *framer) parseExecuteFrame() frame {
+	return &executeFrame{
+		frameHeader: *f.header,
+		preparedID:  f.readShortBytes(),
+		params:      f.readQueryParams(),
 	}
 }
 
@@ -561,4 +669,26 @@ func (f *framer) writeErrorFrame(streamID int, code int32, message string) error
 	f.writeString(message)
 
 	return f.finishWrite()
+}
+
+// RowsResult represents the ResultFrame payload from Rows "kind".
+type RowsResult struct {
+	Cols             []ColumnInfo
+	Rows             []map[string]interface{}
+	FlagHasMorePages bool
+}
+
+// PreparedResult represents the ResultFrame payload from Prepared "kind".
+type PreparedResult struct {
+	ID      []byte
+	Columns []ColumnInfo
+}
+
+// CassandraType returns the type information for the Cassandra type string
+// representation such as the one returned when querying system tables.
+func CassandraType(name string) TypeInfo {
+	// OK to use a reasonably recent protocol version. We want consider
+	// a large set of possible types: protocols are backward compatible.
+	p := byte(protoVersion4)
+	return NativeType{proto: p, typ: getCassandraBaseType(name)}
 }
