@@ -378,11 +378,22 @@ func (s *Session) querySharded(
 		// associated with the "primary" host for this partition-key.
 		hostPrimary, token := tr.GetHostForPartitionKey([]byte(pkey))
 		if hostPrimary == nil || token == nil {
-			panic("unreachable: token-ring is empty")
+			if GoCQLDebug {
+				msg := "WARN: querySharded: no primary host found"
+				Logger.Println(msg)
+			}
+			// If no host was found for this partition-key within our local copy
+			// of the token-ring, it might just be that we haven't fetched the
+			// necessary topology metadata yet.
+			// Should that happen, just fall back to good old round-robin.
+			hostPrimary = s.ring.rrHost()
+			if hostPrimary == nil {
+				panic("unreachable: no hosts available")
+			}
 		}
 		hostConnPool, ok := s.pool.getPool(hostPrimary)
 		if !ok {
-			panic("unreachable: host both exists and doesn't exist??")
+			panic("unreachable: host has no connecton pool")
 		}
 
 		// If the underlying connection-pool is CPU-aware, we can go one step
