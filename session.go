@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -337,67 +338,84 @@ func (s *Session) Query(stmt string, values ...interface{}) *Query {
 	return qry
 }
 
-// QuerySharded takes a query statement of *exactly* the form
-// `SELECT * FROM t WHERE pkey IN (??)` and returns N Query objects, where N is
-// the number of hosts in the token ring.
-// Each of these queries can then safely be executed in parallel and will
-// benefit from both the host- and cpu-level topology awareness of the
-// underlying CQL client.
-//
-// Note the presence of a special placeholder '(??)': this method will panic if
-// it is not present.
-// Don't forget to loop over the returned slice of queries once you're done in
-// order to Release() each one of them.
-func (s *Session) QuerySharded(stmt string, pkeys ...string) []*Query {
+// -----------------------------------------------------------------------------
+
+/* Sharded IN Queries */
+
+func (s *Session) querySharded(
+	stmt string,
+	pkeys []string,
+	perCore bool,
+) []*Query {
+	// Panic if the query isn't of the form `SELECT x FROM y WHERE z IN (??)`.
 	const _placeholder = "(??)"
 	if !strings.Contains(stmt, _placeholder) {
-		panic(fmt.Sprintf("stmt must contain a special placeholder '%s'", _placeholder))
+		msg := fmt.Sprintf(
+			"stmt must contain special placeholder '%s'",
+			_placeholder,
+		)
+		panic(msg)
 	}
 
-	hosts := s.ring.hostList
-	if len(hosts) <= 0 {
-		// For now, we'll just go on and assume that if we the underlying CQL
-		// client cannot detect even one host in the cluster, we are doomed
-		// anyhow.
-		panic("unreachable")
+	// We can safely assume that the current client is running a token-aware
+	// host-selection policy; otherwise there is no point in trying to shard a
+	// query in the first place.
+	// Knowing that, we can piggyback on the underlying policy's token-ring,
+	// which we know is properly maintained and updated when topology changes
+	// happen in the background.
+	taPolicy, ok := s.policy.(*tokenAwareHostPolicy)
+	if !ok {
+		panic("unreachable: sharded queries require token-awareness")
 	}
-	partitioner := hosts[0].partitioner
+	tr, _ := taPolicy.tokenRing.Load().(*tokenRing)
 
-	// We must compute a new TokenRing for every query, as the topology of the
-	// ring might have changed since our last query.
-	// This is obviously eventually-consistent: the topology might change
-	// between now and the moment we actually run the queries. This is not an
-	// issue, though, as it will just result in a performance penalty due to the
-	// brokers reshuffling the queries that ended up in the wrong place.
-	tr, err := newTokenRing(partitioner, hosts)
-	if err != nil {
-		// The only way this can happen is if the partitioner retrieved above
-		// is not compatible with the underlying CQL client; which should be
-		// impossible since we just retrieved it from said client.
-		panic("unreachable")
-	}
-
-	// Sort the pkeys per host in the token ring.
-	keysPerHost := make(map[string][]interface{}, len(hosts))
-	keysPerHostLen := len(pkeys) / len(hosts) // not quite true, but good enough
+	const _nbShardsHeuristic = 16 // this
+	// TODO(cmc): pool these?
+	keysPerShard := make(map[string][]interface{}, _nbShardsHeuristic) // is
+	keysPerShardLen := len(pkeys) / _nbShardsHeuristic                 // arbitrary
 	for _, pkey := range pkeys {
-		host, _ := tr.GetHostForPartitionKey([]byte(pkey))
-		hostID := host.HostID()
-
-		var keys []interface{}
-		var ok bool
-		if keys, ok = keysPerHost[hostID]; !ok {
-			keys = make([]interface{}, 0, keysPerHostLen)
-			keysPerHost[hostID] = keys
+		// Use the metadata from the token-ring to retrieve the connection pool
+		// associated with the "primary" host for this partition-key.
+		hostPrimary, token := tr.GetHostForPartitionKey([]byte(pkey))
+		if hostPrimary == nil || token == nil {
+			panic("unreachable: token-ring is empty")
+		}
+		hostConnPool, ok := s.pool.getPool(hostPrimary)
+		if !ok {
+			panic("unreachable: host both exists and doesn't exist??")
 		}
 
-		keys = append(keys, pkey)
-		keysPerHost[hostID] = keys
+		// If the underlying connection-pool is CPU-aware, we can go one step
+		// further and sub-divide the query-space per (host:cpu).
+		var cpuCore int
+		if perCore {
+			if hcp, ok := hostConnPool.connPicker.(*scyllaConnPicker); ok {
+				// ScyllaDB's ConnPicker only works with a Murmur3Partitioner,
+				// hence we can safely assume that we're working with a
+				// murmur3Token.
+				cpuCore = hcp.shardOf(token.(murmur3Token))
+			}
+		}
+
+		// I'd rather not have to allocate and build a string here, but relying
+		// on the host to have an IPv4 address seems hackish at best...
+		shardID := hostPrimary.HostID() + "-" + strconv.Itoa(cpuCore)
+
+		var keys []interface{} // TODO(cmc): pool these?
+		if keys, ok = keysPerShard[shardID]; !ok {
+			keys = make([]interface{}, 0, keysPerShardLen)
+			keysPerShard[shardID] = keys
+		}
+		keysPerShard[shardID] = append(keys, pkey)
 	}
 
-	// Generate the per-host bulk queries.
-	queries := make([]*Query, 0, len(hosts))
-	for _, keys := range keysPerHost {
+	queries := make([]*Query, 0, len(keysPerShard))
+	for _, keys := range keysPerShard {
+		if len(keys) == 0 {
+			panic("unreachable: len(keys) == 0")
+		}
+
+		// TODO(cmc): cache these?
 		query := strings.Replace(
 			stmt,
 			_placeholder,
@@ -411,6 +429,43 @@ func (s *Session) QuerySharded(stmt string, pkeys ...string) []*Query {
 
 	return queries
 }
+
+// QueryShardedPerHost takes a query statement of *exactly* the form
+// `SELECT * FROM t WHERE pkey IN (??)` and returns N Query objects, where N is,
+// in the worst case, the number of hosts in the token ring.
+// Each of these queries can then be safely executed in parallel and will
+// benefit from the host-level topology awareness of the underlying CQL client.
+//
+// Note the presence of a special placeholder '(??)': this method will panic if
+// it is not present.
+// Don't forget to loop over the returned slice of queries once you're done in
+// order to Release() each one of them.
+//
+// TODO(cmc): Explain when to use and when not to use this.
+// TODO(cmc): Explain how various level of quorums interact with this.
+func (s *Session) QueryShardedPerHost(stmt string, pkeys ...string) []*Query {
+	return s.querySharded(stmt, pkeys, false)
+}
+
+// QueryShardedPerCore takes a query statement of *exactly* the form
+// `SELECT * FROM t WHERE pkey IN (??)` and returns N Query objects, where N is,
+// in the worst case, the number of CPU cores in the token ring.
+// Each of these queries can then be safely executed in parallel and will
+// benefit from both the host- and CPU-level topology awareness of the
+// underlying CQL client.
+//
+// Note the presence of a special placeholder '(??)': this method will panic if
+// it is not present.
+// Don't forget to loop over the returned slice of queries once you're done in
+// order to Release() each one of them.
+//
+// TODO(cmc): Explain when to use and when not to use this.
+// TODO(cmc): Explain how various level of quorums interact with this.
+func (s *Session) QueryShardedPerCore(stmt string, pkeys ...string) []*Query {
+	return s.querySharded(stmt, pkeys, true)
+}
+
+// -----------------------------------------------------------------------------
 
 type QueryInfo struct {
 	Id          []byte
@@ -847,6 +902,19 @@ func (q Query) Statement() string {
 // String implements the stringer interface.
 func (q Query) String() string {
 	return fmt.Sprintf("[query statement=%q values=%+v consistency=%s]", q.stmt, q.values, q.cons)
+}
+
+// AsString
+func (q Query) AsString() string {
+	stmt := q.stmt
+	for _, v := range q.values {
+		if v, ok := v.(string); !ok {
+			panic("unreachable")
+		} else {
+			stmt = strings.Replace(stmt, "?", "'"+v+"'", 1)
+		}
+	}
+	return stmt
 }
 
 //Attempts returns the number of times the query was executed.
@@ -1953,6 +2021,7 @@ func (t *traceWriter) Trace(traceId []byte) {
 		activity  string
 		source    string
 		elapsed   int
+		thread    string
 	)
 
 	t.mu.Lock()
@@ -1961,13 +2030,19 @@ func (t *traceWriter) Trace(traceId []byte) {
 	fmt.Fprintf(t.w, "Tracing session %016x (coordinator: %s, duration: %v):\n",
 		traceId, coordinator, time.Duration(duration)*time.Microsecond)
 
-	iter = t.session.control.query(`SELECT event_id, activity, source, source_elapsed
+	iter = t.session.control.query(`SELECT event_id, activity, source, source_elapsed, thread
 			FROM system_traces.events
 			WHERE session_id = ?`, traceId)
 
-	for iter.Scan(&timestamp, &activity, &source, &elapsed) {
-		fmt.Fprintf(t.w, "%s: %s (source: %s, elapsed: %d)\n",
-			timestamp.Format("2006/01/02 15:04:05.999999"), activity, source, elapsed)
+	for iter.Scan(&timestamp, &activity, &source, &elapsed, &thread) {
+		fmt.Fprintf(
+			t.w,
+			"%s: %s (source: %s, thread: %s, elapsed: %d)\n",
+			timestamp.Format("2006/01/02 15:04:05.999999"),
+			activity,
+			source,
+			thread,
+			elapsed)
 	}
 
 	if err := iter.Close(); err != nil {
