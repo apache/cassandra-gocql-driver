@@ -849,6 +849,19 @@ func (q Query) String() string {
 	return fmt.Sprintf("[query statement=%q values=%+v consistency=%s]", q.stmt, q.values, q.cons)
 }
 
+// AsString
+func (q Query) AsString() string {
+	stmt := q.stmt
+	for _, v := range q.values {
+		if v, ok := v.(string); !ok {
+			panic("unreachable")
+		} else {
+			stmt = strings.Replace(stmt, "?", "'"+v+"'", 1)
+		}
+	}
+	return stmt
+}
+
 //Attempts returns the number of times the query was executed.
 func (q *Query) Attempts() int {
 	q.metrics.l.Lock()
