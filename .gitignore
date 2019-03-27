@@ -3,3 +3,4 @@ fuzz-corpus
 fuzz-work
 gocql.test
 .idea
+vendor/
