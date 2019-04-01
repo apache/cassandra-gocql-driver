@@ -315,6 +315,20 @@ var marshalTests = []struct {
 		nil,
 	},
 	{
+		NativeType{proto: 4, typ: TypeTime},
+		[]byte("\x00\x00\x01\x40\x77\x16\xe1\xb8"),
+		time.Duration(int64(1376387523000)),
+		nil,
+		nil,
+	},
+	{
+		NativeType{proto: 4, typ: TypeTime},
+		[]byte("\x00\x00\x01\x40\x77\x16\xe1\xb8"),
+		int64(1376387523000),
+		nil,
+		nil,
+	},
+	{
 		NativeType{proto: 2, typ: TypeTimestamp},
 		[]byte("\x00\x00\x01\x40\x77\x16\xe1\xb8"),
 		time.Date(2013, time.August, 13, 9, 52, 3, 0, time.UTC),
@@ -1214,6 +1228,46 @@ func TestMarshalPointer(t *testing.T) {
 	}
 	if len(data) != 1 || data[0] != 42 {
 		t.Errorf("Pointer marshaling failed. Expected %+v, got %+v", []byte{42}, data)
+	}
+}
+
+func TestMarshalTime(t *testing.T) {
+	durationS := "1h10m10s"
+	duration, _ := time.ParseDuration(durationS)
+	expectedData := encBigInt(duration.Nanoseconds())
+	var marshalTimeTests = []struct {
+		Info  TypeInfo
+		Data  []byte
+		Value interface{}
+	}{
+		{
+			NativeType{proto: 4, typ: TypeTime},
+			expectedData,
+			duration.Nanoseconds(),
+		},
+		{
+			NativeType{proto: 4, typ: TypeTime},
+			expectedData,
+			duration,
+		},
+		{
+			NativeType{proto: 4, typ: TypeTime},
+			expectedData,
+			&duration,
+		},
+	}
+
+	for i, test := range marshalTimeTests {
+		t.Log(i, test)
+		data, err := Marshal(test.Info, test.Value)
+		if err != nil {
+			t.Errorf("marshalTest[%d]: %v", i, err)
+			continue
+		}
+		if !bytes.Equal(data, test.Data) {
+			t.Errorf("marshalTest[%d]: expected %x (%v), got %x (%v) for time %s", i,
+				test.Data, decInt(test.Data), data, decInt(data), test.Value)
+		}
 	}
 }
 

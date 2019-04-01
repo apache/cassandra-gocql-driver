@@ -82,7 +82,9 @@ func Marshal(info TypeInfo, value interface{}) ([]byte, error) {
 		return marshalDouble(info, value)
 	case TypeDecimal:
 		return marshalDecimal(info, value)
-	case TypeTimestamp, TypeTime:
+	case TypeTime:
+		return marshalTime(info, value)
+	case TypeTimestamp:
 		return marshalTimestamp(info, value)
 	case TypeList, TypeSet:
 		return marshalList(info, value)
@@ -146,7 +148,9 @@ func Unmarshal(info TypeInfo, data []byte, value interface{}) error {
 		return unmarshalDouble(info, data, value)
 	case TypeDecimal:
 		return unmarshalDecimal(info, data, value)
-	case TypeTimestamp, TypeTime:
+	case TypeTime:
+		return unmarshalTime(info, data, value)
+	case TypeTimestamp:
 		return unmarshalTimestamp(info, data, value)
 	case TypeList, TypeSet:
 		return unmarshalList(info, data, value)
@@ -1090,7 +1094,7 @@ func encBigInt2C(n *big.Int) []byte {
 	return nil
 }
 
-func marshalTimestamp(info TypeInfo, value interface{}) ([]byte, error) {
+func marshalTime(info TypeInfo, value interface{}) ([]byte, error) {
 	switch v := value.(type) {
 	case Marshaler:
 		return v.MarshalCQL(info)
@@ -1098,12 +1102,6 @@ func marshalTimestamp(info TypeInfo, value interface{}) ([]byte, error) {
 		return nil, nil
 	case int64:
 		return encBigInt(v), nil
-	case time.Time:
-		if v.IsZero() {
-			return []byte{}, nil
-		}
-		x := int64(v.UTC().Unix()*1e3) + int64(v.UTC().Nanosecond()/1e6)
-		return encBigInt(x), nil
 	case time.Duration:
 		return encBigInt(v.Nanoseconds()), nil
 	}
@@ -1118,6 +1116,59 @@ func marshalTimestamp(info TypeInfo, value interface{}) ([]byte, error) {
 		return encBigInt(rv.Int()), nil
 	}
 	return nil, marshalErrorf("can not marshal %T into %s", value, info)
+}
+
+func marshalTimestamp(info TypeInfo, value interface{}) ([]byte, error) {
+	switch v := value.(type) {
+	case Marshaler:
+		return v.MarshalCQL(info)
+	case unsetColumn:
+		return nil, nil
+	case int64:
+		return encBigInt(v), nil
+	case time.Time:
+		if v.IsZero() {
+			return []byte{}, nil
+		}
+		x := int64(v.UTC().Unix()*1e3) + int64(v.UTC().Nanosecond()/1e6)
+		return encBigInt(x), nil
+	}
+
+	if value == nil {
+		return nil, nil
+	}
+
+	rv := reflect.ValueOf(value)
+	switch rv.Type().Kind() {
+	case reflect.Int64:
+		return encBigInt(rv.Int()), nil
+	}
+	return nil, marshalErrorf("can not marshal %T into %s", value, info)
+}
+
+func unmarshalTime(info TypeInfo, data []byte, value interface{}) error {
+	switch v := value.(type) {
+	case Unmarshaler:
+		return v.UnmarshalCQL(info, data)
+	case *int64:
+		*v = decBigInt(data)
+		return nil
+	case *time.Duration:
+		*v = time.Duration(decBigInt(data))
+		return nil
+	}
+
+	rv := reflect.ValueOf(value)
+	if rv.Kind() != reflect.Ptr {
+		return unmarshalErrorf("can not unmarshal into non-pointer %T", value)
+	}
+	rv = rv.Elem()
+	switch rv.Type().Kind() {
+	case reflect.Int64:
+		rv.SetInt(decBigInt(data))
+		return nil
+	}
+	return unmarshalErrorf("can not unmarshal %s into %T", info, value)
 }
 
 func unmarshalTimestamp(info TypeInfo, data []byte, value interface{}) error {
@@ -1137,8 +1188,6 @@ func unmarshalTimestamp(info TypeInfo, data []byte, value interface{}) error {
 		nsec := (x - sec*1000) * 1000000
 		*v = time.Unix(sec, nsec).In(time.UTC)
 		return nil
-	case *time.Duration:
-		*v = time.Duration(decBigInt(data))
 	}
 
 	rv := reflect.ValueOf(value)
