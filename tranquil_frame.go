@@ -50,11 +50,6 @@ func (hdr *FrameHeader) Stream() int {
 	return ((*frameHeader)(hdr)).Header().stream
 }
 
-// Derive a request id from the CQL frame header.
-func (hdr *FrameHeader) RequestId() uint64 {
-	return uint64(hdr.Stream())
-}
-
 type Frame frame
 
 const (
