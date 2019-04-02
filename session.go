@@ -358,7 +358,18 @@ func (s *Session) findAvailableHostForPkey(
 ) (*HostInfo, token) {
 	hostPrimary, token := tr.GetHostForPartitionKey(pkey)
 	if token == nil {
-		panic("unreachable: nil token")
+		if GoCQLDebug {
+			msg := "WARN: querySharded: couldn't compute token (topology unknown?)"
+			Logger.Println(msg)
+		}
+
+		// This can only happen if the SDK was intentionally configured to
+		// discard topology information and related events (see
+		// `DisableInitialHostLookup` & `Events.DisableTopologyEvents), as seen
+		// in some development and/or testing environments.
+		//
+		// These logs should never be seen in production.
+		return nil, nil
 	}
 	if hostPrimary != nil {
 		return hostPrimary, token
@@ -435,7 +446,7 @@ func (s *Session) querySharded(
 		host, token := s.findAvailableHostForPkey(
 			taPolicy, tr, keyspace, []byte(pkey),
 		)
-		if host == nil {
+		if host == nil || token == nil {
 			// We coudn't find any host whatsoever, just put this query in the
 			// common bucket and let the SDK deal with this mess at query
 			// execution time.
