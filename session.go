@@ -342,6 +342,56 @@ func (s *Session) Query(stmt string, values ...interface{}) *Query {
 
 /* Sharded IN Queries */
 
+// findAvailableHostForPkey uses the metadata from the token-ring to find a
+// suitable host for the specified partition-key.
+//
+// The token ring is maintained asynchronously; so, at any point, it might be
+// modified behind our backs: i.e. hosts may have come and gone, token
+// distribution might have changed, etc.
+// This method gracefully handles these edge cases and will try to return a
+// suitable host no matter what.
+func (s *Session) findAvailableHostForPkey(
+	taPolicy *tokenAwareHostPolicy,
+	tr *tokenRing,
+	keyspace string,
+	pkey []byte,
+) (*HostInfo, token) {
+	hostPrimary, token := tr.GetHostForPartitionKey(pkey)
+	if token == nil {
+		panic("unreachable: nil token")
+	}
+	if hostPrimary != nil {
+		return hostPrimary, token
+	}
+
+	if GoCQLDebug {
+		msg := "WARN: querySharded: no primary host found"
+		Logger.Println(msg)
+	}
+
+	// The "main" host for the current token wasn't found in our local
+	// cached copy of the token ring; let's see if there are any
+	// replicas that we do know of.
+	replicas, _ := taPolicy.getReplicas(keyspace, token)
+	if len(replicas) > 0 {
+		return replicas[0], token
+	}
+
+	// We couldn't find any host responsible for this vNode in our cache, it's
+	// time to fall back to good old round-robin.
+	hostPrimary = s.ring.rrHost()
+	if hostPrimary != nil {
+		return hostPrimary, token
+	}
+
+	if GoCQLDebug {
+		msg := "WARN: querySharded: no hosts available"
+		Logger.Println(msg)
+	}
+
+	return nil, token
+}
+
 func (s *Session) querySharded(
 	stmt string,
 	pkeys []string,
@@ -369,48 +419,57 @@ func (s *Session) querySharded(
 	}
 	tr, _ := taPolicy.tokenRing.Load().(*tokenRing)
 
-	const _nbShardsHeuristic = 16 // this
+	// Parse the template to extract the keyspace; we might need it to find
+	// replica nodes later on.
+	keyspace := s.Query(stmt).Keyspace()
+
 	// TODO(cmc): pool these?
+	const _nbShardsHeuristic = 16                                      // this
 	keysPerShard := make(map[string][]interface{}, _nbShardsHeuristic) // is
 	keysPerShardLen := len(pkeys) / _nbShardsHeuristic                 // arbitrary
 	for _, pkey := range pkeys {
-		// Use the metadata from the token-ring to retrieve the connection pool
-		// associated with the "primary" host for this partition-key.
-		hostPrimary, token := tr.GetHostForPartitionKey([]byte(pkey))
-		if hostPrimary == nil || token == nil {
-			if GoCQLDebug {
-				msg := "WARN: querySharded: no primary host found"
-				Logger.Println(msg)
-			}
-			// If no host was found for this partition-key within our local copy
-			// of the token-ring, it might just be that we haven't fetched the
-			// necessary topology metadata yet.
-			// Should that happen, just fall back to good old round-robin.
-			hostPrimary = s.ring.rrHost()
-			if hostPrimary == nil {
-				panic("unreachable: no hosts available")
-			}
-		}
-		hostConnPool, ok := s.pool.getPool(hostPrimary)
-		if !ok {
-			panic("unreachable: host has no connecton pool")
-		}
-
-		// If the underlying connection-pool is CPU-aware, we can go one step
-		// further and sub-divide the query-space per (host:cpu).
-		var cpuCore int
-		if perCore {
-			if hcp, ok := hostConnPool.connPicker.(*scyllaConnPicker); ok {
-				// ScyllaDB's ConnPicker only works with a Murmur3Partitioner,
-				// hence we can safely assume that we're working with a
-				// murmur3Token.
-				cpuCore = hcp.shardOf(token.(murmur3Token))
-			}
-		}
-
 		// I'd rather not have to allocate and build a string here, but relying
 		// on the host to have an IPv4 address seems hackish at best...
-		shardID := hostPrimary.HostID() + "-" + strconv.Itoa(cpuCore)
+		var shardID string
+
+		host, token := s.findAvailableHostForPkey(
+			taPolicy, tr, keyspace, []byte(pkey),
+		)
+		if host == nil {
+			// We coudn't find any host whatsoever, just put this query in the
+			// common bucket and let the SDK deal with this mess at query
+			// execution time.
+		} else if perCore {
+			// If the underlying connection-pool is CPU-aware, we can go one step
+			// further and sub-divide the query-space per (host:cpu) tuple.
+			hostConnPool, ok := s.pool.getPool(host)
+			if !ok {
+				if GoCQLDebug {
+					msg := "WARN: querySharded: host has no connecton pool"
+					Logger.Println(msg)
+				}
+				// This can happen if the host dies while we're in the process
+				// of building the sharded query and the background threads
+				// maintaining our cached copy of the token-ring decide to
+				// remove it from the pool altogether.
+				//
+				// We could decide to try and find a suitable host all over
+				// again here (i.e. we might know of a replica that it still
+				// available to us), but that would open a can of worms that's
+				// better left close for now.
+				// Instead, we just give up on CPU-level sharding, and just
+				// leave it to host-level precision.
+				shardID = host.HostID()
+			} else {
+				if hcp, ok := hostConnPool.connPicker.(*scyllaConnPicker); ok {
+					// ScyllaDB's ConnPicker only works with a Murmur3Partitioner,
+					// hence we can safely assume that we're working with a
+					// murmur3Token.
+					cpuCore := hcp.shardOf(token.(murmur3Token))
+					shardID = host.HostID() + "-" + strconv.Itoa(cpuCore)
+				}
+			}
+		}
 
 		var keys []interface{} // TODO(cmc): pool these?
 		if keys, ok = keysPerShard[shardID]; !ok {
