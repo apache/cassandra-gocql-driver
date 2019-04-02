@@ -682,7 +682,6 @@ func (c *Conn) releaseStream(stream int) {
 		call.timer.Stop()
 	}
 
-	streamPool.Put(call)
 	c.streams.Clear(stream)
 }
 
@@ -691,16 +690,6 @@ func (c *Conn) handleTimeout() {
 		c.closeWithError(ErrTooManyTimeouts)
 	}
 }
-
-var (
-	streamPool = sync.Pool{
-		New: func() interface{} {
-			return &callReq{
-				resp: make(chan error),
-			}
-		},
-	}
-)
 
 type callReq struct {
 	// could use a waitgroup but this allows us to do timeouts on the read/send
@@ -858,10 +847,12 @@ func (c *Conn) exec(ctx context.Context, req frameWriter, tracer Tracer) (*frame
 	// resp is basically a waiting semaphore protecting the framer
 	framer := newFramer(c, c, c.compressor, c.version)
 
-	call := streamPool.Get().(*callReq)
-	call.framer = framer
-	call.timeout = make(chan struct{})
-	call.streamID = stream
+	call := &callReq{
+		framer:   framer,
+		timeout:  make(chan struct{}),
+		streamID: stream,
+		resp:     make(chan error),
+	}
 
 	c.mu.Lock()
 	existingCall := c.calls[stream]
