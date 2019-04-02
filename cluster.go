@@ -144,6 +144,14 @@ type ClusterConfig struct {
 	// (default: 200 microseconds)
 	WriteCoalesceWaitTime time.Duration
 
+	// The size of the internal stream request pool.
+	// Set it to something matching your expected concurrency.
+	// Setting it to a too low value will result in increased allocations but
+	// it will not block your application.
+	//
+	// (default: runtime.NumCPU()*1024)
+	StreamPoolSize int
+
 	// internal config for testing
 	disableControlConn bool
 }

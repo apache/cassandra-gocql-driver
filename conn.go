@@ -13,6 +13,7 @@ import (
 	"io"
 	"io/ioutil"
 	"net"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -104,6 +105,8 @@ type ConnConfig struct {
 
 	tlsConfig       *tls.Config
 	disableCoalesce bool
+
+	streamPoolSize int
 }
 
 type ConnErrorHandler interface {
@@ -138,9 +141,10 @@ type Conn struct {
 
 	headerBuf [maxFrameHeaderSize]byte
 
-	streams *streams.IDGenerator
-	mu      sync.RWMutex
-	calls   map[int]*callReq
+	streams    *streams.IDGenerator
+	mu         sync.RWMutex
+	calls      map[int]*callReq
+	streamPool *callReqPool
 
 	errorHandler ConnErrorHandler
 	compressor   Compressor
@@ -242,6 +246,7 @@ func (s *Session) dialWithoutObserver(host *HostInfo, cfg *ConnConfig, errorHand
 			w:       conn,
 			timeout: cfg.Timeout,
 		},
+		streamPool: s.streamPool,
 	}
 
 	if cfg.AuthProvider != nil {
@@ -682,7 +687,7 @@ func (c *Conn) releaseStream(stream int) {
 		call.timer.Stop()
 	}
 
-	streamPool.Put(call)
+	c.streamPool.Put(call)
 	c.streams.Clear(stream)
 }
 
@@ -692,15 +697,40 @@ func (c *Conn) handleTimeout() {
 	}
 }
 
-var (
-	streamPool = sync.Pool{
-		New: func() interface{} {
-			return &callReq{
-				resp: make(chan error),
-			}
-		},
+type callReqPool struct {
+	ch chan *callReq
+}
+
+func newCallReqPool(size int) *callReqPool {
+	if size <= 0 {
+		size = runtime.NumCPU() * 1024
 	}
-)
+	return &callReqPool{
+		ch: make(chan *callReq, size),
+	}
+}
+
+func (crc *callReqPool) Get() *callReq {
+	select {
+	case cr := <-crc.ch:
+		return cr
+	default:
+		return &callReq{
+			resp: make(chan error),
+		}
+	}
+}
+
+func (crc *callReqPool) Put(cr *callReq) {
+	select {
+	case crc.ch <- cr:
+		return
+	default:
+		//if gocqlDebug {
+		Logger.Println("unable to reuse the callReq since the pool is full")
+		//}
+	}
+}
 
 type callReq struct {
 	// could use a waitgroup but this allows us to do timeouts on the read/send
@@ -858,7 +888,7 @@ func (c *Conn) exec(ctx context.Context, req frameWriter, tracer Tracer) (*frame
 	// resp is basically a waiting semaphore protecting the framer
 	framer := newFramer(c, c, c.compressor, c.version)
 
-	call := streamPool.Get().(*callReq)
+	call := c.streamPool.Get()
 	call.framer = framer
 	call.timeout = make(chan struct{})
 	call.streamID = stream

@@ -72,6 +72,8 @@ type Session struct {
 
 	closeMu  sync.RWMutex
 	isClosed bool
+
+	streamPool *callReqPool
 }
 
 var queryPool = &sync.Pool{
@@ -121,6 +123,7 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 		stmtsLRU:        &preparedLRU{lru: lru.New(cfg.MaxPreparedStmts)},
 		quit:            make(chan struct{}),
 		connectObserver: cfg.ConnectObserver,
+		streamPool:      newCallReqPool(cfg.StreamPoolSize),
 	}
 
 	s.schemaDescriber = newSchemaDescriber(s)
