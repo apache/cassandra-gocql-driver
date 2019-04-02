@@ -432,7 +432,12 @@ func (s *Session) querySharded(
 
 	// Parse the template to extract the keyspace; we might need it to find
 	// replica nodes later on.
-	keyspace := s.Query(stmt).Keyspace()
+	var keyspace string
+	{ // just make sure this temp query doesn't outlive that scope
+		q := s.Query(stmt)
+		keyspace = q.Keyspace()
+		q.Release()
+	}
 
 	// TODO(cmc): pool these?
 	const _nbShardsHeuristic = 16                                      // this
