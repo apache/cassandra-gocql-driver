@@ -144,6 +144,17 @@ type ClusterConfig struct {
 	// (default: 200 microseconds)
 	WriteCoalesceWaitTime time.Duration
 
+	// If set the tracer will be used for all queries. Alternativly it can be set of on a
+	// per query basis.
+	// default: nil
+	Tracer Tracer
+
+	// NextPagePrefetch sets the default threshold for pre-fetching new pages. If
+	// there are only p*pageSize rows remaining, the next page will be requested
+	// automatically. This value can also be changed on a per-query basis and
+	// the default value is 0.25.
+	NextPagePrefetch float64
+
 	// internal config for testing
 	disableControlConn bool
 }
@@ -175,6 +186,7 @@ func NewCluster(hosts ...string) *ClusterConfig {
 		ConvictionPolicy:       &SimpleConvictionPolicy{},
 		ReconnectionPolicy:     &ConstantReconnectionPolicy{MaxRetries: 3, Interval: 1 * time.Second},
 		WriteCoalesceWaitTime:  200 * time.Microsecond,
+		NextPagePrefetch:       0.25,
 	}
 	return cfg
 }
