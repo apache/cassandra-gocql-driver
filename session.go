@@ -118,7 +118,7 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 		prefetch:        0.25,
 		cfg:             cfg,
 		pageSize:        cfg.PageSize,
-		stmtsLRU:        &preparedLRU{lru: lru.New(cfg.MaxPreparedStmts)},
+		stmtsLRU:        newPreparedLRU(cfg.MaxPreparedStmts),
 		quit:            make(chan struct{}),
 		connectObserver: cfg.ConnectObserver,
 	}
