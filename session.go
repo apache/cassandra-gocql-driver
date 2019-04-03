@@ -18,6 +18,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/cornelk/hashmap"
 	"github.com/gocql/gocql/internal/lru"
 )
 
@@ -118,7 +119,7 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 		prefetch:        0.25,
 		cfg:             cfg,
 		pageSize:        cfg.PageSize,
-		stmtsLRU:        &preparedLRU{lru: lru.New(cfg.MaxPreparedStmts)},
+		stmtsLRU:        &preparedLRU{cache: hashmap.New(uintptr(cfg.MaxPreparedStmts))},
 		quit:            make(chan struct{}),
 		connectObserver: cfg.ConnectObserver,
 	}

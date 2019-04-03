@@ -1,61 +1,43 @@
 package gocql
 
 import (
-	"github.com/gocql/gocql/internal/lru"
-	"sync"
+	"github.com/cornelk/hashmap"
 )
 
 const defaultMaxPreparedStmts = 1000
 
 // preparedLRU is the prepared statement cache
 type preparedLRU struct {
-	mu  sync.Mutex
-	lru *lru.Cache
+	cache *hashmap.HashMap
 }
 
 // Max adjusts the maximum size of the cache and cleans up the oldest records if
 // the new max is lower than the previous value. Not concurrency safe.
 func (p *preparedLRU) max(max int) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	for p.lru.Len() > max {
-		p.lru.RemoveOldest()
+	if p.cache.Len() > max {
+		p.cache.Grow(uintptr(max))
 	}
-	p.lru.MaxEntries = max
 }
 
 func (p *preparedLRU) clear() {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	for p.lru.Len() > 0 {
-		p.lru.RemoveOldest()
+	for elem := range p.cache.Iter() {
+		p.cache.Del(elem.Key)
 	}
 }
 
 func (p *preparedLRU) add(key string, val *inflightPrepare) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	p.lru.Add(key, val)
+	p.cache.Insert(key, val)
 }
 
 func (p *preparedLRU) remove(key string) bool {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	return p.lru.Remove(key)
+	p.cache.Del(key)
+	return true
 }
 
-func (p *preparedLRU) execIfMissing(key string, fn func(lru *lru.Cache) *inflightPrepare) (*inflightPrepare, bool) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	val, ok := p.lru.Get(key)
-	if ok {
-		return val.(*inflightPrepare), true
-	}
-
-	return fn(p.lru), false
+func (p *preparedLRU) execIfMissing(key string, fn func() *inflightPrepare) (*inflightPrepare, bool) {
+	val := fn()
+	v, ok := p.cache.GetOrInsert(key, val)
+	return v.(*inflightPrepare), ok
 }
 
 func (p *preparedLRU) keyFor(addr, keyspace, statement string) string {
