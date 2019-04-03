@@ -165,7 +165,7 @@ func (s *Session) dial(host *HostInfo, cfg *ConnConfig, errorHandler ConnErrorHa
 	port := host.port
 
 	// TODO(zariel): remove these
-	if len(ip) == 0 || ip.IsUnspecified() {
+	if !validIpAddr(ip) {
 		panic(fmt.Sprintf("host missing connect ip address: %v", ip))
 	} else if port == 0 {
 		panic(fmt.Sprintf("host missing port: %v", port))
@@ -1418,7 +1418,7 @@ func (c *Conn) localHostInfo(ctx context.Context) (*HostInfo, error) {
 	port := c.conn.RemoteAddr().(*net.TCPAddr).Port
 
 	// TODO(zariel): avoid doing this here
-	host, err := c.session.hostInfoFromMap(row, port)
+	host, err := c.session.hostInfoFromMap(row, &HostInfo{connectAddress: c.host.connectAddress, port: port})
 	if err != nil {
 		return nil, err
 	}
