@@ -19,7 +19,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/gocql/gocql/internal/lru"
 	"github.com/gocql/gocql/internal/streams"
 )
 
@@ -953,10 +952,9 @@ type inflightPrepare struct {
 
 func (c *Conn) prepareStatement(ctx context.Context, stmt string, tracer Tracer) (*preparedStatment, error) {
 	stmtCacheKey := c.session.stmtsLRU.keyFor(c.addr, c.currentKeyspace, stmt)
-	flight, ok := c.session.stmtsLRU.execIfMissing(stmtCacheKey, func(lru *lru.Cache) *inflightPrepare {
+	flight, ok := c.session.stmtsLRU.execIfMissing(stmtCacheKey, func() *inflightPrepare {
 		flight := new(inflightPrepare)
 		flight.wg.Add(1)
-		lru.Add(stmtCacheKey, flight)
 		return flight
 	})
 

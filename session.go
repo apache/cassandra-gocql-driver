@@ -118,7 +118,7 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 		prefetch:        0.25,
 		cfg:             cfg,
 		pageSize:        cfg.PageSize,
-		stmtsLRU:        &preparedLRU{lru: lru.New(cfg.MaxPreparedStmts)},
+		stmtsLRU:        &preparedLRU{lru: lru.New(cfg.MaxPreparedStmts, cfg.PreparedStmtWindow)},
 		quit:            make(chan struct{}),
 		connectObserver: cfg.ConnectObserver,
 	}
@@ -128,7 +128,7 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 	s.nodeEvents = newEventDebouncer("NodeEvents", s.handleNodeEvent)
 	s.schemaEvents = newEventDebouncer("SchemaEvents", s.handleSchemaEvent)
 
-	s.routingKeyInfoCache.lru = lru.New(cfg.MaxRoutingKeyInfo)
+	s.routingKeyInfoCache.lru = lru.New(cfg.MaxRoutingKeyInfo, time.Second)
 
 	s.hostSource = &ringDescriber{session: s}
 

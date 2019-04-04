@@ -146,6 +146,11 @@ type ClusterConfig struct {
 
 	// internal config for testing
 	disableControlConn bool
+
+	// The time window that the prepared statement cache uses to avoid updating it's LRU list.
+	// For more info see: https://www.openmymind.net/High-Concurrency-LRU-Caching/
+	// Setting this to zero effectively disables this feature.
+	PreparedStmtWindow time.Duration
 }
 
 // NewCluster generates a new config for the default cluster implementation.
@@ -167,6 +172,7 @@ func NewCluster(hosts ...string) *ClusterConfig {
 		NumConns:               2,
 		Consistency:            Quorum,
 		MaxPreparedStmts:       defaultMaxPreparedStmts,
+		PreparedStmtWindow:     defaultPreparedStmtsWindow,
 		MaxRoutingKeyInfo:      1000,
 		PageSize:               5000,
 		DefaultTimestamp:       true,

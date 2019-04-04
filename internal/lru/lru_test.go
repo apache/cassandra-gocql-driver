@@ -18,7 +18,12 @@ limitations under the License.
 package lru
 
 import (
+	"math/rand"
+	"runtime"
+	"strconv"
+	"sync"
 	"testing"
+	"time"
 )
 
 type simpleStruct struct {
@@ -45,7 +50,7 @@ var getTests = []struct {
 
 func TestGet(t *testing.T) {
 	for _, tt := range getTests {
-		lru := New(0)
+		lru := New(0, 0)
 		lru.Add(tt.keyToAdd, 1234)
 		val, ok := lru.Get(tt.keyToGet)
 		if ok != tt.expectedOk {
@@ -56,8 +61,43 @@ func TestGet(t *testing.T) {
 	}
 }
 
+var evictTests = []struct {
+	name        string
+	maxElems    int
+	elemsToAdd  int
+	expectedLen int
+}{
+	{"only_one", 10, 1, 1},
+	{"just_full", 10, 10, 10},
+	{"overflow", 10, 20, 20},
+}
+
+func TestAutomaticEvictionNoWindow(t *testing.T) {
+	for _, tt := range evictTests {
+		lru := New(tt.maxElems, 0)
+		for i := 0; i < tt.elemsToAdd; i++ {
+			lru.Add(strconv.Itoa(i), i)
+		}
+		if lru.Len() != tt.expectedLen {
+			t.Fatalf("automatic eviction, %s: expected %d got %d", tt.name, tt.expectedLen, lru.Len())
+		}
+	}
+}
+
+func TestAutomaticEvictionWithWindow(t *testing.T) {
+	for _, tt := range evictTests {
+		lru := New(tt.maxElems, time.Second)
+		for i := 0; i < tt.elemsToAdd; i++ {
+			lru.Add(strconv.Itoa(i), i)
+		}
+		if lru.Len() != tt.expectedLen {
+			t.Fatalf("automatic eviction, %s: expected %d got %d", tt.name, tt.expectedLen, lru.Len())
+		}
+	}
+}
+
 func TestRemove(t *testing.T) {
-	lru := New(0)
+	lru := New(0, 0)
 	lru.Add("mystring", 1234)
 	if val, ok := lru.Get("mystring"); !ok {
 		t.Fatal("TestRemove returned no match")
@@ -69,4 +109,68 @@ func TestRemove(t *testing.T) {
 	if _, ok := lru.Get("mystring"); ok {
 		t.Fatal("TestRemove returned a removed entry")
 	}
+}
+
+func hammerLRU(lru *Cache, n int64, loops int) {
+	for i := 0; i < loops; i++ {
+		key := strconv.Itoa(i)
+		switch rand.Intn(100) % 7 {
+		case 1:
+			lru.getWithLock(key, time.Now())
+		case 2:
+			lru.Get(key)
+		case 3:
+			lru.Add(key, n)
+		case 4:
+			lru.Len()
+		case 5:
+			lru.RemoveOldest()
+		case 6:
+			lru.Remove(key)
+		default:
+			lru.GetOrInsert(key, n)
+		}
+	}
+}
+
+func TestStressWithWindow(t *testing.T) {
+	t.Parallel()
+
+	n := runtime.GOMAXPROCS(0)
+	loops := 1000000 / n
+	var wg sync.WaitGroup
+	wg.Add(n)
+
+	lru := New(1000, 10*time.Microsecond)
+	lru.OnEvicted = func(key string, value interface{}) {}
+
+	for i := 0; i < n; i++ {
+		i := i
+		go func() {
+			defer wg.Done()
+			hammerLRU(lru, int64(i), loops)
+		}()
+	}
+	wg.Wait()
+}
+
+func TestStressWithoutWindow(t *testing.T) {
+	t.Parallel()
+
+	n := runtime.GOMAXPROCS(0)
+	loops := 1000000 / n
+	var wg sync.WaitGroup
+	wg.Add(n)
+
+	lru := New(1000, 0)
+	lru.OnEvicted = func(key string, value interface{}) {}
+
+	for i := 0; i < n; i++ {
+		i := i
+		go func() {
+			defer wg.Done()
+			hammerLRU(lru, int64(i), loops)
+		}()
+	}
+	wg.Wait()
 }

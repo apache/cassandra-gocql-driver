@@ -1484,9 +1484,6 @@ func TestPrepare_PreparedCacheEviction(t *testing.T) {
 		t.Fatalf("insert into prepcachetest failed, error '%v'", err)
 	}
 
-	session.stmtsLRU.mu.Lock()
-	defer session.stmtsLRU.mu.Unlock()
-
 	//Make sure the cache size is maintained
 	if session.stmtsLRU.lru.Len() != session.stmtsLRU.lru.MaxEntries {
 		t.Fatalf("expected cache size of %v, got %v", session.stmtsLRU.lru.MaxEntries, session.stmtsLRU.lru.Len())
