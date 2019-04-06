@@ -1327,8 +1327,9 @@ func injectInvalidPreparedStatement(t *testing.T, session *Session, table string
 	conn := getRandomConn(t, session)
 
 	flight := new(inflightPrepare)
-	key := session.stmtsLRU.keyFor(conn.addr, "", stmt)
-	session.stmtsLRU.add(key, flight)
+	stmtLRU := session.stmtsLRU.forHost(conn.addr)
+	key := stmtLRU.keyFor("", stmt)
+	stmtLRU.add(key, flight)
 
 	flight.preparedStatment = &preparedStatment{
 		id: []byte{'f', 'o', 'o', 'b', 'a', 'r'},
@@ -1484,40 +1485,35 @@ func TestPrepare_PreparedCacheEviction(t *testing.T) {
 		t.Fatalf("insert into prepcachetest failed, error '%v'", err)
 	}
 
-	session.stmtsLRU.mu.Lock()
-	defer session.stmtsLRU.mu.Unlock()
-
-	//Make sure the cache size is maintained
-	if session.stmtsLRU.lru.Len() != session.stmtsLRU.lru.MaxEntries {
-		t.Fatalf("expected cache size of %v, got %v", session.stmtsLRU.lru.MaxEntries, session.stmtsLRU.lru.Len())
-	}
-
 	// Walk through all the configured hosts and test cache retention and eviction
 	for _, host := range session.cfg.Hosts {
-		_, ok := session.stmtsLRU.lru.Get(session.stmtsLRU.keyFor(host+":9042", session.cfg.Keyspace, "SELECT id,mod FROM prepcachetest WHERE id = 0"))
+		stmtLRU := session.stmtsLRU.forHost(host + ":9042")
+		stmtLRU.mu.Lock()
+		_, ok := stmtLRU.lru.Get(stmtLRU.keyFor(session.cfg.Keyspace, "SELECT id,mod FROM prepcachetest WHERE id = 0"))
 		if ok {
 			t.Errorf("expected first select to be purged but was in cache for host=%q", host)
 		}
 
-		_, ok = session.stmtsLRU.lru.Get(session.stmtsLRU.keyFor(host+":9042", session.cfg.Keyspace, "SELECT id,mod FROM prepcachetest WHERE id = 1"))
+		_, ok = stmtLRU.lru.Get(stmtLRU.keyFor(session.cfg.Keyspace, "SELECT id,mod FROM prepcachetest WHERE id = 1"))
 		if !ok {
 			t.Errorf("exepected second select to be in cache for host=%q", host)
 		}
 
-		_, ok = session.stmtsLRU.lru.Get(session.stmtsLRU.keyFor(host+":9042", session.cfg.Keyspace, "INSERT INTO prepcachetest (id,mod) VALUES (?, ?)"))
+		_, ok = stmtLRU.lru.Get(stmtLRU.keyFor(session.cfg.Keyspace, "INSERT INTO prepcachetest (id,mod) VALUES (?, ?)"))
 		if !ok {
 			t.Errorf("expected insert to be in cache for host=%q", host)
 		}
 
-		_, ok = session.stmtsLRU.lru.Get(session.stmtsLRU.keyFor(host+":9042", session.cfg.Keyspace, "UPDATE prepcachetest SET mod = ? WHERE id = ?"))
+		_, ok = stmtLRU.lru.Get(stmtLRU.keyFor(session.cfg.Keyspace, "UPDATE prepcachetest SET mod = ? WHERE id = ?"))
 		if !ok {
 			t.Errorf("expected update to be in cached for host=%q", host)
 		}
 
-		_, ok = session.stmtsLRU.lru.Get(session.stmtsLRU.keyFor(host+":9042", session.cfg.Keyspace, "DELETE FROM prepcachetest WHERE id = ?"))
+		_, ok = stmtLRU.lru.Get(stmtLRU.keyFor(session.cfg.Keyspace, "DELETE FROM prepcachetest WHERE id = ?"))
 		if !ok {
 			t.Errorf("expected delete to be cached for host=%q", host)
 		}
+		stmtLRU.mu.Unlock()
 	}
 }
 

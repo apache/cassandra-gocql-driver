@@ -42,7 +42,7 @@ type Session struct {
 	connectObserver     ConnectObserver
 	frameObserver       FrameHeaderObserver
 	hostSource          *ringDescriber
-	stmtsLRU            *preparedLRU
+	stmtsLRU            *preparedCache
 
 	connCfg *ConnConfig
 
@@ -118,7 +118,7 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 		prefetch:        0.25,
 		cfg:             cfg,
 		pageSize:        cfg.PageSize,
-		stmtsLRU:        &preparedLRU{lru: lru.New(cfg.MaxPreparedStmts)},
+		stmtsLRU:        &preparedCache{maxStmnts: cfg.MaxPreparedStmts},
 		quit:            make(chan struct{}),
 		connectObserver: cfg.ConnectObserver,
 	}

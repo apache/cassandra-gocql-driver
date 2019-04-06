@@ -183,6 +183,7 @@ func (s *Session) addNewNode(host *HostInfo) {
 		return
 	}
 
+	s.stmtsLRU.HostUp(host)
 	host.setState(NodeUp)
 	s.pool.addHost(host)
 	s.policy.AddHost(host)
@@ -241,6 +242,7 @@ func (s *Session) handleRemovedNode(ip net.IP, port int) {
 	s.policy.RemoveHost(host)
 	s.pool.removeHost(ip)
 	s.ring.removeHost(ip)
+	s.stmtsLRU.HostDown(host)
 
 	if !s.cfg.IgnorePeerAddr {
 		s.hostSource.refreshRing()

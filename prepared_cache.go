@@ -1,37 +1,101 @@
 package gocql
 
 import (
-	"github.com/gocql/gocql/internal/lru"
 	"sync"
+	"sync/atomic"
+
+	"github.com/gocql/gocql/internal/lru"
 )
 
 const defaultMaxPreparedStmts = 1000
+
+type preparedCache struct {
+	hosts     atomic.Value // map[string]*preparedLRU
+	mu        sync.Mutex
+	maxStmnts int
+}
+
+func (p *preparedCache) load() map[string]*preparedLRU {
+	v, _ := p.hosts.Load().(map[string]*preparedLRU)
+	return v
+}
+
+func (p *preparedCache) clear() {
+	p.mu.Lock()
+	p.hosts.Store(make(map[string]*preparedLRU))
+	p.mu.Unlock()
+}
+
+func (p *preparedCache) forHost(addr string) *preparedLRU {
+	m := p.load()
+	lru, ok := m[addr]
+	if !ok {
+		p.mu.Lock()
+		m := p.load()
+		lru, ok = m[addr]
+		if !ok {
+			lru = p.addHost(m, addr)
+		}
+		p.mu.Unlock()
+	}
+
+	return lru
+}
+
+func (p *preparedCache) addHost(current map[string]*preparedLRU, addr string) *preparedLRU {
+	cow := make(map[string]*preparedLRU, len(current)+1)
+	for k, v := range current {
+		cow[k] = v
+	}
+
+	lru := &preparedLRU{lru: lru.New(p.maxStmnts)}
+	cow[addr] = lru
+	p.hosts.Store(cow)
+	return lru
+}
+
+func (p *preparedCache) HostUp(host *HostInfo) {
+	addr := JoinHostPort(host.ConnectAddress().String(), host.Port())
+
+	v := p.load()
+	if _, ok := v[addr]; ok {
+		return
+	}
+
+	cow := make(map[string]*preparedLRU, len(v)+1)
+	for k, v := range v {
+		cow[k] = v
+	}
+
+	cow[addr] = &preparedLRU{lru: lru.New(p.maxStmnts)}
+	p.hosts.Store(cow)
+}
+
+func (p *preparedCache) HostDown(host *HostInfo) {
+	addr := JoinHostPort(host.ConnectAddress().String(), host.Port())
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	v := p.load()
+	if _, ok := v[addr]; !ok {
+		return
+	}
+
+	cow := make(map[string]*preparedLRU, len(v)-1)
+	for k, v := range v {
+		if k != addr {
+			cow[k] = v
+		}
+	}
+
+	p.hosts.Store(cow)
+}
 
 // preparedLRU is the prepared statement cache
 type preparedLRU struct {
 	mu  sync.Mutex
 	lru *lru.Cache
-}
-
-// Max adjusts the maximum size of the cache and cleans up the oldest records if
-// the new max is lower than the previous value. Not concurrency safe.
-func (p *preparedLRU) max(max int) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	for p.lru.Len() > max {
-		p.lru.RemoveOldest()
-	}
-	p.lru.MaxEntries = max
-}
-
-func (p *preparedLRU) clear() {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	for p.lru.Len() > 0 {
-		p.lru.RemoveOldest()
-	}
 }
 
 func (p *preparedLRU) add(key string, val *inflightPrepare) {
@@ -58,7 +122,7 @@ func (p *preparedLRU) execIfMissing(key string, fn func(lru *lru.Cache) *infligh
 	return fn(p.lru), false
 }
 
-func (p *preparedLRU) keyFor(addr, keyspace, statement string) string {
+func (p *preparedLRU) keyFor(keyspace, statement string) string {
 	// TODO: maybe use []byte for keys?
-	return addr + keyspace + statement
+	return keyspace + statement
 }
