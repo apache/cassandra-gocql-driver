@@ -453,16 +453,13 @@ func (s *Session) getConn() *Conn {
 
 // returns routing key indexes and type info
 func (s *Session) routingKeyInfo(ctx context.Context, stmt string) (*routingKeyInfo, error) {
-	s.routingKeyInfoCache.mu.Lock()
-
-	entry, cached := s.routingKeyInfoCache.lru.Get(stmt)
+	//entry, cached := s.routingKeyInfoCache.lru.Get(stmt)
+	inflight, cached := s.routingKeyInfoCache.execIfMissing(stmt, func() *inflightCachedEntry {
+		flight := new(inflightCachedEntry)
+		flight.wg.Add(1)
+		return flight
+	})
 	if cached {
-		// done accessing the cache
-		s.routingKeyInfoCache.mu.Unlock()
-		// the entry is an inflight struct similar to that used by
-		// Conn to prepare statements
-		inflight := entry.(*inflightCachedEntry)
-
 		// wait for any inflight work
 		inflight.wg.Wait()
 
@@ -471,16 +468,11 @@ func (s *Session) routingKeyInfo(ctx context.Context, stmt string) (*routingKeyI
 		}
 
 		key, _ := inflight.value.(*routingKeyInfo)
-
 		return key, nil
 	}
 
-	// create a new inflight entry while the data is created
-	inflight := new(inflightCachedEntry)
-	inflight.wg.Add(1)
 	defer inflight.wg.Done()
 	s.routingKeyInfoCache.lru.Add(stmt, inflight)
-	s.routingKeyInfoCache.mu.Unlock()
 
 	var (
 		info         *preparedStatment
@@ -1788,7 +1780,6 @@ func (c ColumnInfo) String() string {
 // routing key indexes LRU cache
 type routingKeyInfoLRU struct {
 	lru *lru.Cache
-	mu  sync.Mutex
 }
 
 type routingKeyInfo struct {
@@ -1801,20 +1792,26 @@ func (r *routingKeyInfo) String() string {
 }
 
 func (r *routingKeyInfoLRU) Remove(key string) {
-	r.mu.Lock()
 	r.lru.Remove(key)
-	r.mu.Unlock()
+}
+
+func (p *routingKeyInfoLRU) execIfMissing(key string, fn func() *inflightCachedEntry) (*inflightCachedEntry, bool) {
+	val, ok := p.lru.Get(key)
+	if ok {
+		return val.(*inflightCachedEntry), true
+	}
+
+	val, ok = p.lru.GetOrInsert(key, fn())
+	return val.(*inflightCachedEntry), ok
 }
 
 //Max adjusts the maximum size of the cache and cleans up the oldest records if
 //the new max is lower than the previous value. Not concurrency safe.
 func (r *routingKeyInfoLRU) Max(max int) {
-	r.mu.Lock()
 	for r.lru.Len() > max {
 		r.lru.RemoveOldest()
 	}
 	r.lru.MaxEntries = max
-	r.mu.Unlock()
 }
 
 type inflightCachedEntry struct {
