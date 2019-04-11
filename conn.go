@@ -895,9 +895,9 @@ func (c *Conn) exec(ctx context.Context, req frameWriter, tracer Tracer) (*frame
 		timeoutCh = call.timer.C
 	}
 
-	var ctxDone <-chan struct{}
-	if ctx != nil {
-		ctxDone = ctx.Done()
+	if ctx == nil {
+		// Done channel is nil for top level context.
+		ctx = context.Background()
 	}
 
 	select {
@@ -917,7 +917,7 @@ func (c *Conn) exec(ctx context.Context, req frameWriter, tracer Tracer) (*frame
 		close(call.timeout)
 		c.handleTimeout()
 		return nil, ErrTimeoutNoResponse
-	case <-ctxDone:
+	case <-ctx.Done():
 		close(call.timeout)
 		return nil, ctx.Err()
 	case <-c.quit:
