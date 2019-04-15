@@ -127,6 +127,7 @@ type HostInfo struct {
 	clusterName      string
 	version          cassVersion
 	state            nodeState
+	schemaVersion	 string
 	tokens           []string
 }
 
@@ -543,6 +544,12 @@ func (s *Session) hostInfoFromMap(row map[string]interface{}, port int) (*HostIn
 			if !ok {
 				return nil, fmt.Errorf(assertErrorMsg, "dse_version")
 			}
+		case "schema_version":
+			schemaVersion, ok := value.(UUID)
+			if !ok {
+				return nil, fmt.Errorf(assertErrorMsg, "schema_version")
+			}
+			host.schemaVersion = schemaVersion.String()
 		}
 		// TODO(thrawn01): Add 'port'? once CASSANDRA-7544 is complete
 		// Not sure what the port field will be called until the JIRA issue is complete
