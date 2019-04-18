@@ -1430,6 +1430,14 @@ func TestUnmarshalDate(t *testing.T) {
 		t.Errorf("marshalTest: expected %v, got %v", expectedDate, formattedDate)
 		return
 	}
+	var stringDate string
+	if err2 := unmarshalDate(NativeType{proto: 2, typ: TypeDate}, data, &stringDate); err2 != nil {
+		t.Fatal(err2)
+	}
+	if expectedDate != stringDate {
+		t.Errorf("marshalTest: expected %v, got %v", expectedDate, formattedDate)
+		return
+	}
 }
 
 func TestMarshalDate(t *testing.T) {
