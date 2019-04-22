@@ -34,20 +34,24 @@ func (f FrameOp) String() string {
 }
 
 // CQL frame header
-type FrameHeader frameHeader
+// type FrameHeader frameHeader
+type FrameHeader struct {
+	hdr      frameHeader
+	hdrBytes []byte
+}
 
 func (hdr *FrameHeader) String() string {
-	return ((*frameHeader)(hdr)).String()
+	return hdr.hdr.String()
 }
 
 // Returns the CQL frame operation code within the DQL frame header.
 func (hdr *FrameHeader) Op() FrameOp {
-	return FrameOp(((*frameHeader)(hdr)).op)
+	return FrameOp(hdr.hdr.op)
 }
 
 // Returns the stream ID within the CQL frame header.
 func (hdr *FrameHeader) Stream() int {
-	return ((*frameHeader)(hdr)).Header().stream
+	return (hdr.hdr.Header().stream)
 }
 
 type Frame frame
@@ -77,18 +81,17 @@ const (
 	ErrInvalid      int32 = errInvalid
 )
 
-// Strcuture for handling the mechanics of all Cassandra frames
-type CqlFramer struct {
+// Framer handles the mechanics of manipulating Cassandra frames.
+type Framer struct {
 	input        io.Reader
 	output       io.Writer
 	framer       *framer    // Framer for receiving and sending responses back to the client
 	compressor   Compressor // CQL protocol compressor used for the client connection
 	protoVersion byte
-	frame        frame
 }
 
-func NewCqlFramer(r io.Reader, w io.Writer) *CqlFramer {
-	return &CqlFramer{
+func NewFramer(r io.Reader, w io.Writer, version byte) *Framer {
+	return &Framer{
 		input:      r,
 		output:     w,
 		framer:     nil,
@@ -96,68 +99,71 @@ func NewCqlFramer(r io.Reader, w io.Writer) *CqlFramer {
 	}
 }
 
-// Sets the protocol features such as compression and version
-// based on the provided frame header information
-func (cframer *CqlFramer) SetProtocolFeatures(hdr *FrameHeader) {
-	if cframer.framer == nil {
-		cframer.protoVersion = byte(hdr.version)
-		cframer.framer = newFramer(cframer.input, cframer.output, cframer.compressor, cframer.protoVersion)
+// SetProtocolFeatures sets the protocol features such as compression and
+// version based on the provided frame header information
+func (framer *Framer) SetProtocolFeatures(hdr *FrameHeader) {
+	if framer.framer == nil {
+		framer.protoVersion = byte(hdr.hdr.version)
+		framer.framer = newFramer(framer.input, framer.output, framer.compressor, framer.protoVersion)
 	}
 }
 
 // ReadHeader reads and returns the frame header.
-func (cframer *CqlFramer) ReadHeader() (head FrameHeader, err error) {
-	hdr, err := readHeader(cframer.input, make([]byte, 9))
-	return FrameHeader(hdr), err
+func (framer *Framer) ReadHeader() (head FrameHeader, err error) {
+	head.hdrBytes = make([]byte, 9)
+	head.hdr, err = readHeader(framer.input, head.hdrBytes)
+	return head, err
 }
 
-// ReadFrame reads the body of the frame with head and returns the parsed frame.
-func (cframer *CqlFramer) ReadFrame(head *FrameHeader) (Frame, error) {
-	var hdr = ((*frameHeader)(head))
-	if cframer.framer == nil {
-		fmt.Errorf("Framer is not setup")
+// ReadFrame reads the body of the frame with head and returns the parsed frame
+// and the full frame, which includes the header, as a byte array.
+func (framer *Framer) ReadFrame(head *FrameHeader) (Frame, []byte, error) {
+	if framer.framer == nil {
+		return nil, nil, fmt.Errorf("Framer is not setup")
 	}
-	var f = cframer.framer
-	err := f.readFrame(hdr)
+	var f = framer.framer
+	err := f.readFrame(&head.hdr)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	frame, err := f.parseClientFrame()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return Frame(frame), err
+
+	frameBytes := framer.fullFrameBytes(head)
+	return Frame(frame), frameBytes, nil
 }
 
-func (cframer *CqlFramer) getFramer(w io.Writer) *framer {
+func (framer *Framer) getFramer(w io.Writer) *framer {
 	if w == nil {
-		return cframer.framer
+		return framer.framer
 	} else {
-		return newFramer(nil, w, cframer.compressor, cframer.protoVersion)
+		return newFramer(nil, w, framer.compressor, framer.protoVersion)
 	}
 }
 
 // WriteReadyFrame writes the READY frame with steam ID with the provided io.Writer.
-func (cframer *CqlFramer) WriteReadyFrame(stream int, w io.Writer) error {
-	return cframer.getFramer(w).writeReadyFrame(stream)
+func (framer *Framer) WriteReadyFrame(stream int, w io.Writer) error {
+	return framer.getFramer(w).writeReadyFrame(stream)
 }
 
 // WriteSupportedFrame writes the SUPPORTED frame with steam ID with the provided io.Writer.
-func (cframer *CqlFramer) WriteSupportedFrame(stream int, w io.Writer) error {
-	return cframer.getFramer(w).writeSupportedFrame(stream)
+func (framer *Framer) WriteSupportedFrame(stream int, w io.Writer) error {
+	return framer.getFramer(w).writeSupportedFrame(stream)
 }
 
 // WriteErrorFrame writes the ERROR frame with steam ID, error code, and message
 // with the provided io.Writer.
-func (cframer *CqlFramer) WriteErrorFrame(stream int, code int32, message string, w io.Writer) error {
+func (framer *Framer) WriteErrorFrame(stream int, code int32, message string, w io.Writer) error {
 	// Unauthorized: The logged user doesn't have the right to perform the query.
 	// Invalid: The query is syntactically correct but invalid.
-	return cframer.getFramer(w).writeErrorFrame(stream, code, message)
+	return framer.getFramer(w).writeErrorFrame(stream, code, message)
 }
 
 // WriteSetupFrame writes the SETUP rame with steam ID and version
 // with the provided io.Writer.
-func (cframer *CqlFramer) WriteSetupFrame(stream int, version uint8, w io.Writer) error {
+func (framer *Framer) WriteSetupFrame(stream int, version uint8, w io.Writer) error {
 	m := map[string]string{
 		"CQL_VERSION": "3.0.0", // the only version supported
 	}
@@ -165,24 +171,23 @@ func (cframer *CqlFramer) WriteSetupFrame(stream int, version uint8, w io.Writer
 	// Don't do any compression
 	// m["COMPRESSION"] = c.compressor.Name()
 
-	framer := newFramer(nil, w, nil, version)
+	f := newFramer(nil, w, nil, version)
 	req := &writeStartupFrame{opts: m}
 
-	return req.writeFrame(framer, stream)
+	return req.writeFrame(f, stream)
 }
 
 // WriteQueryFrame generates QUERY frame bytes with the provided head
 // and parsed frame.
-func (cframer *CqlFramer) WriteQueryFrame(head *FrameHeader, qf Frame) ([]byte, error) {
-	var hdr = ((*frameHeader)(head))
+func (framer *Framer) WriteQueryFrame(head *FrameHeader, qf Frame) ([]byte, error) {
 	var frame = frame(qf)
 	b := new(bytes.Buffer)
-	f := newFramer(nil, b, nil, cframer.protoVersion)
+	f := newFramer(nil, b, nil, framer.protoVersion)
 	qfw := &writeQueryFrame{
 		statement: frame.(*queryFrame).statement,
 		params:    frame.(*queryFrame).params,
 	}
-	if err := qfw.writeFrame(f, hdr.Header().stream); err != nil {
+	if err := qfw.writeFrame(f, head.hdr.Header().stream); err != nil {
 		return nil, err
 	}
 	return b.Bytes(), nil
@@ -190,17 +195,16 @@ func (cframer *CqlFramer) WriteQueryFrame(head *FrameHeader, qf Frame) ([]byte, 
 
 // WritePrepareFrame generates PREPARE frame bytes with the provided head
 // and parsed frame.
-func (cframer *CqlFramer) WritePrepareFrame(head *FrameHeader, qf Frame) ([]byte, error) {
-	var hdr = ((*frameHeader)(head))
+func (framer *Framer) WritePrepareFrame(head *FrameHeader, qf Frame) ([]byte, error) {
 	var frame = frame(qf)
 	b := new(bytes.Buffer)
-	f := newFramer(nil, b, nil, cframer.protoVersion)
+	f := newFramer(nil, b, nil, framer.protoVersion)
 	qfw := &writePrepareFrame{
 		statement:     frame.(*prepareFrame).statement,
 		keyspace:      frame.(*prepareFrame).keyspace,
 		customPayload: frame.(*prepareFrame).customPayload,
 	}
-	if err := qfw.writeFrame(f, hdr.Header().stream); err != nil {
+	if err := qfw.writeFrame(f, head.hdr.Header().stream); err != nil {
 		return nil, err
 	}
 	return b.Bytes(), nil
@@ -208,63 +212,53 @@ func (cframer *CqlFramer) WritePrepareFrame(head *FrameHeader, qf Frame) ([]byte
 
 // WriteExecuteFrame generates EXECUTE frame bytes with the provided head
 // and parsed frame.
-func (cframer *CqlFramer) WriteExecuteFrame(head *FrameHeader, qf Frame) ([]byte, error) {
-	var hdr = ((*frameHeader)(head))
+func (framer *Framer) WriteExecuteFrame(head *FrameHeader, qf Frame) ([]byte, error) {
 	var frame = frame(qf)
 	b := new(bytes.Buffer)
-	f := newFramer(nil, b, nil, cframer.protoVersion)
+	f := newFramer(nil, b, nil, framer.protoVersion)
 	qfw := &writeExecuteFrame{
 		preparedID:    frame.(*executeFrame).preparedID,
 		params:        frame.(*executeFrame).params,
 		customPayload: frame.(*executeFrame).customPayload,
 	}
-	if err := qfw.writeFrame(f, hdr.Header().stream); err != nil {
+	if err := qfw.writeFrame(f, head.hdr.Header().stream); err != nil {
 		return nil, err
 	}
 	return b.Bytes(), nil
 }
 
-// ReadFullFrameBytes reads the frame body for the given head and returns
+// ReadFrameBytes reads the frame body for the given head and returns
 // the full frame as a byte array.
-func (cframer *CqlFramer) ReadFullFrameBytes(head *FrameHeader) ([]byte, error) {
-	hdr := ((*frameHeader)(head))
+func (framer *Framer) ReadFrameBytes(head *FrameHeader) ([]byte, error) {
+	hdr := head.hdr
 
 	// Read additional data beyond the frame header, if any
 	if hdr.length < 0 {
 		return nil, fmt.Errorf("frame body length can not be less than 0: %d", hdr.length)
 	} else if hdr.length > maxFrameSize {
 		// need to free up the connection to be used again
-		_, err := io.CopyN(ioutil.Discard, cframer.input, int64(head.length))
+		_, err := io.CopyN(ioutil.Discard, framer.input, int64(hdr.length))
 		if err != nil {
 			return nil, fmt.Errorf("error whilst trying to discard frame with invalid length: %v", err)
 		}
 		return nil, ErrFrameTooBig
 	}
-	payload := make([]byte, hdr.length)
+
+	hlen := len(head.hdrBytes)
+	fullFrameBytes := make([]byte, hlen+hdr.length)
+	copy(fullFrameBytes, head.hdrBytes)
 
 	// assume the underlying reader takes care of timeouts and retries
-	n, err := io.ReadFull(cframer.input, payload)
+	n, err := io.ReadFull(framer.input, fullFrameBytes[hlen:])
 	if err != nil {
-		return nil, fmt.Errorf("unable to read frame body: read %d/%d bytes: %v", n, head.length, err)
+		return nil, fmt.Errorf("unable to read frame body: read %d/%d bytes: %v", n, hdr.length, err)
 	}
-
-	return cframer.writeFullFrameBytes(hdr, payload)
-}
-
-// GetPayloadFromFullFrameBytes extracts the bytes from the slide b corresponding
-// to the frame body.
-func (cframer *CqlFramer) GetPayloadFromFullFrameBytes(head *FrameHeader, b []byte) []byte {
-	hdr := ((*frameHeader)(head))
-	headSize := 8
-	if hdr.Header().version > protoVersion2 {
-		headSize = 9
-	}
-	return b[headSize:]
+	return fullFrameBytes, nil
 }
 
 // PullStatementFromFrame parses a frame containing CQL query statement(s) and
 // returns a string representing the query and a flag if it is a prepared statement.
-func (cframer *CqlFramer) PullStatementFromFrame(f Frame) (string, bool, error) {
+func (framer *Framer) PullStatementFromFrame(f Frame) (string, bool, error) {
 	var frame = frame(f)
 	if f, ok := frame.(*queryFrame); ok {
 		return f.statement, false, nil
@@ -279,7 +273,7 @@ func (cframer *CqlFramer) PullStatementFromFrame(f Frame) (string, bool, error) 
 }
 
 // PullFromExecuteFrame returns prepared ID and parameters from the EXECUTE frame.
-func (cframer *CqlFramer) PullFromExecuteFrame(f Frame) ([]byte, QueryParams, error) {
+func (framer *Framer) PullFromExecuteFrame(f Frame) ([]byte, QueryParams, error) {
 	var frame = frame(f)
 	if f, ok := frame.(*executeFrame); ok {
 
@@ -298,16 +292,16 @@ func (cframer *CqlFramer) PullFromExecuteFrame(f Frame) ([]byte, QueryParams, er
 
 // ReadResultFrame reads the frame body for the frame head from the associated
 // reader and returns the parsed result. It also returns the full frame bytes.
-func (cframer *CqlFramer) ReadResultFrame(head *FrameHeader, ci []ColumnInfo) (result interface{},
+func (framer *Framer) ReadResultFrame(head *FrameHeader, ci []ColumnInfo) (result interface{},
 	frameBytes []byte, err error) {
 
-	var hdr = ((*frameHeader)(head))
-	f := cframer.framer
+	hdr := head.hdr
+	f := framer.framer
 	if hdr.op != opResult {
 		err = errors.New("Expected Result Frame")
 		return
 	}
-	if err = f.readFrame(hdr); err != nil {
+	if err = f.readFrame(&hdr); err != nil {
 		return
 	}
 	parsedFrame, perr := f.parseResultFrame()
@@ -342,7 +336,7 @@ func (cframer *CqlFramer) ReadResultFrame(head *FrameHeader, ci []ColumnInfo) (r
 		iter := Iter{
 			meta:    meta,
 			numRows: frame.numRows,
-			framer:  cframer.framer,
+			framer:  framer.framer,
 		}
 		r := RowsResult{
 			Cols:             columns,
@@ -353,24 +347,21 @@ func (cframer *CqlFramer) ReadResultFrame(head *FrameHeader, ci []ColumnInfo) (r
 		}
 		result = r
 	}
-	// Write out the frame bytes, leverage the framer's buffer
-	frameBytes, err = cframer.writeFullFrameBytes(hdr, f.readBuffer)
+
+	frameBytes = framer.fullFrameBytes(head)
 
 	return
 }
 
-func (cframer *CqlFramer) writeFullFrameBytes(hdr *frameHeader, payload []byte) ([]byte, error) {
-	b := new(bytes.Buffer)
-	f := newFramer(nil, b, nil, byte(hdr.version))
-	f.writeHeader(hdr.flags, hdr.op, hdr.stream)
-	// Use this low-level method on the framer to write the payload as raw bytes.
-	// The existing f.writeBytes() method expands writes CQL protocol-encoded bytes.
-	f.wbuf = append(f.wbuf, payload...)
-
-	if err := f.finishWrite(); err != nil {
-		return nil, err
-	}
-	return b.Bytes(), nil
+// fullFrameBytes returns a new byte slice containing the frame head and body.
+// The body is extracted from the framer's internal buffers.
+func (framer *Framer) fullFrameBytes(head *FrameHeader) []byte {
+	hlen := len(head.hdrBytes)
+	payload := framer.framer.readBuffer
+	fullFrameBytes := make([]byte, hlen+head.hdr.length)
+	copy(fullFrameBytes, head.hdrBytes)
+	copy(fullFrameBytes[hlen:], payload)
+	return fullFrameBytes
 }
 
 /******************************************************************************
@@ -687,8 +678,8 @@ type PreparedResult struct {
 // CassandraType returns the type information for the Cassandra type string
 // representation such as the one returned when querying system tables.
 func CassandraType(name string) TypeInfo {
-	// OK to use a reasonably recent protocol version. We want consider
-	// a large set of possible types: protocols are backward compatible.
+	// OK to use a reasonably recent protocol version. We want to cover a large
+	// set of possible types returned; protocols are backward compatible.
 	p := byte(protoVersion4)
 	return NativeType{proto: p, typ: getCassandraBaseType(name)}
 }
