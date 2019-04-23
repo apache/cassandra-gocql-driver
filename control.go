@@ -389,7 +389,10 @@ func (c *controlConn) HandleError(conn *Conn, err error, closed bool) {
 	}
 
 	oldConn := c.getConn()
-	if oldConn.conn != conn {
+
+	// If connection has long gone, and not been attempted for awhile,
+	// it's possible to have oldConn as nil here (#1297).
+	if oldConn != nil && oldConn.conn != conn {
 		return
 	}
 
