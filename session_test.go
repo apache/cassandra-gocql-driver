@@ -9,11 +9,9 @@ import (
 )
 
 func TestSessionAPI(t *testing.T) {
-	cfg := &ClusterConfig{}
-
+	cfg := NewCluster()
 	s := &Session{
 		cfg:    *cfg,
-		cons:   Quorum,
 		policy: RoundRobinHostPolicy(),
 	}
 
@@ -22,29 +20,7 @@ func TestSessionAPI(t *testing.T) {
 		pool:   s.pool,
 		policy: s.policy,
 	}
-	defer s.Close()
-
-	s.SetConsistency(All)
-	if s.cons != All {
-		t.Fatalf("expected consistency 'All', got '%v'", s.cons)
-	}
-
-	s.SetPageSize(100)
-	if s.pageSize != 100 {
-		t.Fatalf("expected pageSize 100, got %v", s.pageSize)
-	}
-
-	s.SetPrefetch(0.75)
-	if s.prefetch != 0.75 {
-		t.Fatalf("expceted prefetch 0.75, got %v", s.prefetch)
-	}
-
-	trace := &traceWriter{}
-
-	s.SetTrace(trace)
-	if s.trace != trace {
-		t.Fatalf("expected traceWriter '%v',got '%v'", trace, s.trace)
-	}
+	defer s.pool.Close()
 
 	qry := s.Query("test", 1)
 	if v, ok := qry.values[0].(int); !ok {
@@ -177,16 +153,17 @@ func TestQueryShouldPrepare(t *testing.T) {
 }
 
 func TestBatchBasicAPI(t *testing.T) {
-
-	cfg := &ClusterConfig{RetryPolicy: &SimpleRetryPolicy{NumRetries: 2}}
+	cfg := ClusterConfig{
+		Consistency: Quorum,
+		RetryPolicy: &SimpleRetryPolicy{NumRetries: 2},
+	}
 
 	s := &Session{
-		cfg:  *cfg,
-		cons: Quorum,
+		cfg: cfg,
 	}
-	defer s.Close()
 
 	s.pool = cfg.PoolConfig.buildPool(s)
+	defer s.pool.Close()
 
 	// Test UnloggedBatch
 	b := s.NewBatch(UnloggedBatch)

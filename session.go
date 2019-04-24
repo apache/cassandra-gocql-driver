@@ -31,12 +31,8 @@ import (
 // and automatically sets a default consistency level on all operations
 // that do not have a consistency level set.
 type Session struct {
-	cons                Consistency
-	pageSize            int
-	prefetch            float64
 	routingKeyInfoCache routingKeyInfoLRU
 	schemaDescriber     *schemaDescriber
-	trace               Tracer
 	queryObserver       QueryObserver
 	batchObserver       BatchObserver
 	connectObserver     ConnectObserver
@@ -52,8 +48,6 @@ type Session struct {
 
 	ring     ring
 	metadata clusterMetadata
-
-	mu sync.RWMutex
 
 	control *controlConn
 
@@ -114,10 +108,7 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 	}
 
 	s := &Session{
-		cons:            cfg.Consistency,
-		prefetch:        0.25,
 		cfg:             cfg,
-		pageSize:        cfg.PageSize,
 		stmtsLRU:        &preparedLRU{lru: lru.New(cfg.MaxPreparedStmts)},
 		quit:            make(chan struct{}),
 		connectObserver: cfg.ConnectObserver,
@@ -287,41 +278,6 @@ func (s *Session) reconnectDownedHosts(intv time.Duration) {
 			return
 		}
 	}
-}
-
-// SetConsistency sets the default consistency level for this session. This
-// setting can also be changed on a per-query basis and the default value
-// is Quorum.
-func (s *Session) SetConsistency(cons Consistency) {
-	s.mu.Lock()
-	s.cons = cons
-	s.mu.Unlock()
-}
-
-// SetPageSize sets the default page size for this session. A value <= 0 will
-// disable paging. This setting can also be changed on a per-query basis.
-func (s *Session) SetPageSize(n int) {
-	s.mu.Lock()
-	s.pageSize = n
-	s.mu.Unlock()
-}
-
-// SetPrefetch sets the default threshold for pre-fetching new pages. If
-// there are only p*pageSize rows remaining, the next page will be requested
-// automatically. This value can also be changed on a per-query basis and
-// the default value is 0.25.
-func (s *Session) SetPrefetch(p float64) {
-	s.mu.Lock()
-	s.prefetch = p
-	s.mu.Unlock()
-}
-
-// SetTrace sets the default tracer for this session. This setting can also
-// be changed on a per-query basis.
-func (s *Session) SetTrace(trace Tracer) {
-	s.mu.Lock()
-	s.trace = trace
-	s.mu.Unlock()
 }
 
 // Query generates a new query object for interacting with the database.
@@ -697,12 +653,11 @@ type Query struct {
 func (q *Query) defaultsFromSession() {
 	s := q.session
 
-	s.mu.RLock()
-	q.cons = s.cons
-	q.pageSize = s.pageSize
-	q.trace = s.trace
+	q.cons = s.cfg.Consistency
+	q.pageSize = s.cfg.PageSize
+	q.trace = s.cfg.Tracer
 	q.observer = s.queryObserver
-	q.prefetch = s.prefetch
+	q.prefetch = s.cfg.NextPagePrefetch
 	q.rt = s.cfg.RetryPolicy
 	q.serialCons = s.cfg.SerialConsistency
 	q.defaultTimestamp = s.cfg.DefaultTimestamp
@@ -710,7 +665,6 @@ func (q *Query) defaultsFromSession() {
 	q.metrics = &queryMetrics{m: make(map[string]*hostMetrics)}
 
 	q.spec = &NonSpeculativeExecution{}
-	s.mu.RUnlock()
 }
 
 func (q *Query) getHostMetrics(host *HostInfo) *hostMetrics {
@@ -1497,21 +1451,18 @@ func NewBatch(typ BatchType) *Batch {
 
 // NewBatch creates a new batch operation using defaults defined in the cluster
 func (s *Session) NewBatch(typ BatchType) *Batch {
-	s.mu.RLock()
-	batch := &Batch{
+	// TODO: pass down tracer and other things like query does?
+	return &Batch{
 		Type:             typ,
 		rt:               s.cfg.RetryPolicy,
 		serialCons:       s.cfg.SerialConsistency,
 		observer:         s.batchObserver,
-		Cons:             s.cons,
+		Cons:             s.cfg.Consistency,
 		defaultTimestamp: s.cfg.DefaultTimestamp,
 		keyspace:         s.cfg.Keyspace,
 		metrics:          &queryMetrics{m: make(map[string]*hostMetrics)},
 		spec:             &NonSpeculativeExecution{},
 	}
-
-	s.mu.RUnlock()
-	return batch
 }
 
 func (b *Batch) getHostMetrics(host *HostInfo) *hostMetrics {
