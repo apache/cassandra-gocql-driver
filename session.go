@@ -1994,6 +1994,7 @@ type partitionedBatch struct {
 	statement        string
 }
 
+// PartitionedBatch helps to partition batches by host using tokenAwareHostPolicy
 type PartitionedBatch struct {
 	session     *Session
 	statement   string
