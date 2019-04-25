@@ -1987,20 +1987,13 @@ func NewErrProtocol(format string, args ...interface{}) error {
 // This limit is set by cassandra and could change in the future.
 const BatchSizeMaximum = 65535
 
-type partitionedBatch struct {
-	*Batch
-	routingKeyBuffer []byte
-	session          *Session
-	statement        string
-}
-
 // PartitionedBatch helps to partition batches by host using tokenAwareHostPolicy
 type PartitionedBatch struct {
 	session     *Session
 	statement   string
 	tokenRing   *tokenRing
 	batchTyp    BatchType
-	batches     map[string]*partitionedBatch
+	batches     map[string]*Batch
 	idempotent  bool
 	consistency Consistency
 }
@@ -2018,7 +2011,7 @@ func (s *Session) NewPartitionedBatch(statement string, typ BatchType, idempoten
 		statement:   statement,
 		tokenRing:   p.tokenRing.Load().(*tokenRing),
 		batchTyp:    typ,
-		batches:     make(map[string]*partitionedBatch),
+		batches:     make(map[string]*Batch),
 		idempotent:  idempotent,
 		consistency: consistency,
 	}, nil
@@ -2039,10 +2032,7 @@ func (b *PartitionedBatch) Query(args ...interface{}) error {
 
 	batch, ok := b.batches[hostID]
 	if !ok {
-		batch = &partitionedBatch{
-			Batch:   b.session.NewBatch(b.batchTyp),
-			session: b.session,
-		}
+		batch = b.session.NewBatch(b.batchTyp)
 		batch.routingKey = routingKey
 		batch.SetConsistency(b.consistency)
 		batch.IsIdempotent()
@@ -2059,7 +2049,7 @@ func (b *PartitionedBatch) Query(args ...interface{}) error {
 // Batches return batch object for future execution. You can execute it in parallel or consequentially
 func (b *PartitionedBatch) Batches() (batches []*Batch) {
 	for _, v := range b.batches {
-		batches = append(batches, v.Batch)
+		batches = append(batches, v)
 	}
 	return
 }
@@ -2107,8 +2097,4 @@ func (s *Session) getRoutingKey(ctx context.Context, stmt string, args ...interf
 	}
 	routingKey := buf.Bytes()
 	return routingKey, nil
-}
-
-func (b *partitionedBatch) GetRoutingKey() ([]byte, error) {
-	return b.routingKey, nil
 }
