@@ -3247,3 +3247,58 @@ func TestQuery_NamedValues(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestPartitionedBatch(t *testing.T) {
+	session := createSession(t, func(config *ClusterConfig) {
+		config.PoolConfig.HostSelectionPolicy = TokenAwareHostPolicy(RoundRobinHostPolicy())
+	})
+	defer session.Close()
+
+	if err := createTable(session, "CREATE TABLE gocql_test.partitioned_batch(id int, value text, PRIMARY KEY (id))"); err != nil {
+		t.Fatal(err)
+	}
+
+	stmt := "insert into gocql_test.partitioned_batch(id, value) values(?, ?)"
+	batch, err := session.NewPartitionedBatch(stmt, UnloggedBatch, true, One)
+	if err != nil {
+		t.Fatalf("can not create partioned batch: %s", err)
+	}
+	for i := 0; i < 5; i++ {
+		if err := batch.Query(i, fmt.Sprintf("value_%ds", i)); err != nil {
+			t.Fatalf("failed to Query PartitionedBatch: %s", err)
+		}
+	}
+
+	for hostID, b := range batch.batches {
+		if b.Cons != One {
+			t.Fatalf("Expected PartitionedBatch Insert constistency  '%s', got '%s'", One, b.Cons)
+		}
+		if b.Type != UnloggedBatch {
+			t.Fatalf("Expected PartitionedBatch type  '%d', got '%d'", UnloggedBatch, b.Type)
+		}
+
+		for _, e := range b.Entries {
+			if !e.Idempotent {
+				t.Fatal("batch entry should be idempotent")
+			}
+			if e.Stmt != stmt {
+				t.Fatalf("Expected PartitionedBatch Insert statement '%s', got '%s'", stmt, e.Stmt)
+			}
+
+			routingKey, err := session.getRoutingKey(context.Background(), e.Stmt, e.Args...)
+			if err != nil {
+				t.Fatalf("failed to get routing key: %s", err)
+			}
+			host, _ := batch.tokenRing.GetHostForPartitionKey(routingKey)
+
+			expectedHostID := "emptyHostID"
+			if host != nil {
+				expectedHostID = host.HostID()
+			}
+			if hostID != expectedHostID {
+				t.Fatalf("Expected hostID '%s', got '%s'", expectedHostID, hostID)
+			}
+		}
+	}
+
+}
