@@ -209,15 +209,12 @@ func (s *Session) dialWithoutObserver(host *HostInfo, cfg *ConnConfig, errorHand
 		dialer.KeepAlive = cfg.Keepalive
 	}
 
-	// TODO(zariel): handle ipv6 zone
-	addr := (&net.TCPAddr{IP: ip, Port: port}).String()
-
 	if cfg.tlsConfig != nil {
 		// the TLS config is safe to be reused by connections but it must not
 		// be modified after being used.
-		conn, err = tls.DialWithDialer(dialer, "tcp", addr, cfg.tlsConfig)
+		conn, err = tls.DialWithDialer(dialer, "tcp", host.HostnameAndPort(), cfg.tlsConfig)
 	} else {
-		conn, err = dialer.Dial("tcp", addr)
+		conn, err = dialer.Dial("tcp", host.HostnameAndPort())
 	}
 
 	if err != nil {
