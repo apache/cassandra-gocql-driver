@@ -673,7 +673,6 @@ type Query struct {
 	cons                  Consistency
 	pageSize              int
 	routingKey            []byte
-	routingKeyBuffer      []byte
 	pageState             []byte
 	prefetch              float64
 	trace                 Tracer
@@ -942,46 +941,7 @@ func (q *Query) GetRoutingKey() ([]byte, error) {
 		return nil, err
 	}
 
-	if routingKeyInfo == nil {
-		return nil, nil
-	}
-
-	if len(routingKeyInfo.indexes) == 1 {
-		// single column routing key
-		routingKey, err := Marshal(
-			routingKeyInfo.types[0],
-			q.values[routingKeyInfo.indexes[0]],
-		)
-		if err != nil {
-			return nil, err
-		}
-		return routingKey, nil
-	}
-
-	// We allocate that buffer only once, so that further re-bind/exec of the
-	// same query don't allocate more memory.
-	if q.routingKeyBuffer == nil {
-		q.routingKeyBuffer = make([]byte, 0, 256)
-	}
-
-	// composite routing key
-	buf := bytes.NewBuffer(q.routingKeyBuffer)
-	for i := range routingKeyInfo.indexes {
-		encoded, err := Marshal(
-			routingKeyInfo.types[i],
-			q.values[routingKeyInfo.indexes[i]],
-		)
-		if err != nil {
-			return nil, err
-		}
-		lenBuf := []byte{0x00, 0x00}
-		binary.BigEndian.PutUint16(lenBuf, uint16(len(encoded)))
-		buf.Write(lenBuf)
-		buf.Write(encoded)
-		buf.WriteByte(0x00)
-	}
-	routingKey := buf.Bytes()
-	return routingKey, nil
+	return createRoutingKey(routingKeyInfo, q.values)
 }
 
 func (q *Query) shouldPrepare() bool {
@@ -1471,10 +1431,13 @@ type Batch struct {
 	Type                  BatchType
 	Entries               []BatchEntry
 	Cons                  Consistency
+	routingKey            []byte
+	routingKeyBuffer      []byte
 	CustomPayload         map[string][]byte
 	rt                    RetryPolicy
 	spec                  SpeculativeExecutionPolicy
 	observer              BatchObserver
+	session               *Session
 	serialCons            SerialConsistency
 	defaultTimestamp      bool
 	defaultTimestampValue int64
@@ -1499,15 +1462,16 @@ func NewBatch(typ BatchType) *Batch {
 func (s *Session) NewBatch(typ BatchType) *Batch {
 	s.mu.RLock()
 	batch := &Batch{
-		Type:             typ,
-		rt:               s.cfg.RetryPolicy,
-		serialCons:       s.cfg.SerialConsistency,
-		observer:         s.batchObserver,
-		Cons:             s.cons,
-		defaultTimestamp: s.cfg.DefaultTimestamp,
-		keyspace:         s.cfg.Keyspace,
-		metrics:          &queryMetrics{m: make(map[string]*hostMetrics)},
-		spec:             &NonSpeculativeExecution{},
+		Type:              typ,
+		rt:                s.cfg.RetryPolicy,
+		serialCons:        s.cfg.SerialConsistency,
+		observer:          s.batchObserver,
+		session:           s,
+		Cons:              s.cons,
+		defaultTimestamp:  s.cfg.DefaultTimestamp,
+		keyspace:          s.cfg.Keyspace,
+		metrics:           &queryMetrics{m: make(map[string]*hostMetrics)},
+		spec:              &NonSpeculativeExecution{},
 	}
 
 	s.mu.RUnlock()
@@ -1729,8 +1693,63 @@ func (b *Batch) attempt(keyspace string, end, start time.Time, iter *Iter, host 
 }
 
 func (b *Batch) GetRoutingKey() ([]byte, error) {
-	// TODO: use the first statement in the batch as the routing key?
-	return nil, nil
+	if b.routingKey != nil {
+		return b.routingKey, nil
+	}
+
+	if len(b.Entries) == 0 {
+		return nil, nil
+	}
+
+	entry := b.Entries[0]
+	if entry.binding != nil {
+		// bindings do not have the values let's skip it like Query does.
+		return nil, nil
+	}
+	// try to determine the routing key
+	routingKeyInfo, err := b.session.routingKeyInfo(b.Context(), entry.Stmt)
+	if err != nil {
+		return nil, err
+	}
+
+	return createRoutingKey(routingKeyInfo, entry.Args)
+}
+
+func createRoutingKey(routingKeyInfo *routingKeyInfo, values []interface{}) ([]byte, error) {
+	if routingKeyInfo == nil {
+		return nil, nil
+	}
+
+	if len(routingKeyInfo.indexes) == 1 {
+		// single column routing key
+		routingKey, err := Marshal(
+			routingKeyInfo.types[0],
+			values[routingKeyInfo.indexes[0]],
+		)
+		if err != nil {
+			return nil, err
+		}
+		return routingKey, nil
+	}
+
+	// composite routing key
+	buf := bytes.NewBuffer(make([]byte, 0, 256))
+	for i := range routingKeyInfo.indexes {
+		encoded, err := Marshal(
+			routingKeyInfo.types[i],
+			values[routingKeyInfo.indexes[i]],
+		)
+		if err != nil {
+			return nil, err
+		}
+		lenBuf := []byte{0x00, 0x00}
+		binary.BigEndian.PutUint16(lenBuf, uint16(len(encoded)))
+		buf.Write(lenBuf)
+		buf.Write(encoded)
+		buf.WriteByte(0x00)
+	}
+	routingKey := buf.Bytes()
+	return routingKey, nil
 }
 
 type BatchType byte
