@@ -110,6 +110,7 @@ type HostInfo struct {
 	// TODO(zariel): reduce locking maybe, not all values will change, but to ensure
 	// that we are thread safe use a mutex to access all fields.
 	mu               sync.RWMutex
+	hostname 		 string
 	peer             net.IP
 	broadcastAddress net.IP
 	listenAddress    net.IP
@@ -411,15 +412,22 @@ func (h *HostInfo) IsUp() bool {
 	return h != nil && h.State() == NodeUp
 }
 
+func (h *HostInfo) HostnameAndPort() string {
+	if h.hostname == "" {
+		h.hostname = h.ConnectAddress().String()
+	}
+	return net.JoinHostPort(h.hostname, strconv.Itoa(h.port))
+}
+
 func (h *HostInfo) String() string {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 
 	connectAddr, source := h.connectAddressLocked()
-	return fmt.Sprintf("[HostInfo connectAddress=%q peer=%q rpc_address=%q broadcast_address=%q "+
+	return fmt.Sprintf("[HostInfo hostname=%q connectAddress=%q peer=%q rpc_address=%q broadcast_address=%q "+
 		"preferred_ip=%q connect_addr=%q connect_addr_source=%q "+
 		"port=%d data_centre=%q rack=%q host_id=%q version=%q state=%s num_tokens=%d]",
-		h.connectAddress, h.peer, h.rpcAddress, h.broadcastAddress, h.preferredIP,
+		h.hostname, h.connectAddress, h.peer, h.rpcAddress, h.broadcastAddress, h.preferredIP,
 		connectAddr, source,
 		h.port, h.dataCenter, h.rack, h.hostId, h.version, h.state, len(h.tokens))
 }
