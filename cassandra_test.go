@@ -3118,7 +3118,7 @@ func TestPartitionedBatch(t *testing.T) {
 				t.Fatalf("Expected PartitionedBatch Insert statement '%s', got '%s'", stmt, e.Stmt)
 			}
 
-			routingKey, err := session.getRoutingKey(context.Background(), e.Stmt, e.Args...)
+			routingKey, err := batch.getRoutingKey(context.Background(), e.Stmt, e.Args...)
 			if err != nil {
 				t.Fatalf("failed to get routing key: %s", err)
 			}
