@@ -2024,7 +2024,7 @@ func (s *Session) NewPartitionedBatch(statement string, typ BatchType, idempoten
 const emptyHostID = "emptyHostID"
 
 func (b *PartitionedBatch) Query(args ...interface{}) error {
-	routingKey, err := b.session.getRoutingKey(context.Background(), b.statement, args...)
+	routingKey, err := b.getRoutingKey(context.Background(), b.statement, args...)
 	if err != nil {
 		return err
 	}
@@ -2058,8 +2058,8 @@ func (b *PartitionedBatch) Batches() (batches []*Batch) {
 	return
 }
 
-func (s *Session) getRoutingKey(ctx context.Context, stmt string, args ...interface{}) ([]byte, error) {
-	routingKeyInfo, err := s.routingKeyInfo(ctx, stmt)
+func (b *PartitionedBatch) getRoutingKey(ctx context.Context, stmt string, args ...interface{}) ([]byte, error) {
+	routingKeyInfo, err := b.session.routingKeyInfo(ctx, stmt)
 	if err != nil {
 		return nil, err
 	}
