@@ -315,6 +315,20 @@ var marshalTests = []struct {
 		nil,
 	},
 	{
+		NativeType{proto: 4, typ: TypeTime},
+		[]byte("\x00\x00\x01\x40\x77\x16\xe1\xb8"),
+		time.Duration(int64(1376387523000)),
+		nil,
+		nil,
+	},
+	{
+		NativeType{proto: 4, typ: TypeTime},
+		[]byte("\x00\x00\x01\x40\x77\x16\xe1\xb8"),
+		int64(1376387523000),
+		nil,
+		nil,
+	},
+	{
 		NativeType{proto: 2, typ: TypeTimestamp},
 		[]byte("\x00\x00\x01\x40\x77\x16\xe1\xb8"),
 		time.Date(2013, time.August, 13, 9, 52, 3, 0, time.UTC),
@@ -1217,6 +1231,46 @@ func TestMarshalPointer(t *testing.T) {
 	}
 }
 
+func TestMarshalTime(t *testing.T) {
+	durationS := "1h10m10s"
+	duration, _ := time.ParseDuration(durationS)
+	expectedData := encBigInt(duration.Nanoseconds())
+	var marshalTimeTests = []struct {
+		Info  TypeInfo
+		Data  []byte
+		Value interface{}
+	}{
+		{
+			NativeType{proto: 4, typ: TypeTime},
+			expectedData,
+			duration.Nanoseconds(),
+		},
+		{
+			NativeType{proto: 4, typ: TypeTime},
+			expectedData,
+			duration,
+		},
+		{
+			NativeType{proto: 4, typ: TypeTime},
+			expectedData,
+			&duration,
+		},
+	}
+
+	for i, test := range marshalTimeTests {
+		t.Log(i, test)
+		data, err := Marshal(test.Info, test.Value)
+		if err != nil {
+			t.Errorf("marshalTest[%d]: %v", i, err)
+			continue
+		}
+		if !bytes.Equal(data, test.Data) {
+			t.Errorf("marshalTest[%d]: expected %x (%v), got %x (%v) for time %s", i,
+				test.Data, decInt(test.Data), data, decInt(data), test.Value)
+		}
+	}
+}
+
 func TestMarshalTimestamp(t *testing.T) {
 	var marshalTimestampTests = []struct {
 		Info  TypeInfo
@@ -1376,6 +1430,14 @@ func TestUnmarshalDate(t *testing.T) {
 		t.Errorf("marshalTest: expected %v, got %v", expectedDate, formattedDate)
 		return
 	}
+	var stringDate string
+	if err2 := unmarshalDate(NativeType{proto: 2, typ: TypeDate}, data, &stringDate); err2 != nil {
+		t.Fatal(err2)
+	}
+	if expectedDate != stringDate {
+		t.Errorf("marshalTest: expected %v, got %v", expectedDate, formattedDate)
+		return
+	}
 }
 
 func TestMarshalDate(t *testing.T) {
@@ -1478,5 +1540,90 @@ func TestMarshalDuration(t *testing.T) {
 			t.Errorf("marshalTest[%d]: expected %x (%v), got %x (%v) for time %s", i,
 				test.Data, decInt(test.Data), data, decInt(data), test.Value)
 		}
+	}
+}
+
+func TestReadCollectionSize(t *testing.T) {
+	listV2 := CollectionType{
+		NativeType: NativeType{proto: 2, typ: TypeList},
+		Elem:       NativeType{proto: 2, typ: TypeVarchar},
+	}
+	listV3 := CollectionType{
+		NativeType: NativeType{proto: 3, typ: TypeList},
+		Elem:       NativeType{proto: 3, typ: TypeVarchar},
+	}
+
+	tests := []struct {
+		name         string
+		info         CollectionType
+		data         []byte
+		isError      bool
+		expectedSize int
+	}{
+		{
+			name:    "short read 0 proto 2",
+			info:    listV2,
+			data:    []byte{},
+			isError: true,
+		},
+		{
+			name:    "short read 1 proto 2",
+			info:    listV2,
+			data:    []byte{0x01},
+			isError: true,
+		},
+		{
+			name:         "good read proto 2",
+			info:         listV2,
+			data:         []byte{0x01, 0x38},
+			expectedSize: 0x0138,
+		},
+		{
+			name:    "short read 0 proto 3",
+			info:    listV3,
+			data:    []byte{},
+			isError: true,
+		},
+		{
+			name:    "short read 1 proto 3",
+			info:    listV3,
+			data:    []byte{0x01},
+			isError: true,
+		},
+		{
+			name:    "short read 2 proto 3",
+			info:    listV3,
+			data:    []byte{0x01, 0x38},
+			isError: true,
+		},
+		{
+			name:    "short read 3 proto 3",
+			info:    listV3,
+			data:    []byte{0x01, 0x38, 0x42},
+			isError: true,
+		},
+		{
+			name:         "good read proto 3",
+			info:         listV3,
+			data:         []byte{0x01, 0x38, 0x42, 0x22},
+			expectedSize: 0x01384222,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			size, _, err := readCollectionSize(test.info, test.data)
+			if test.isError {
+				if err == nil {
+					t.Fatal("Expected error, but it was nil")
+				}
+			} else {
+				if err != nil {
+					t.Fatalf("Expected no error, got %v", err)
+				}
+				if size != test.expectedSize {
+					t.Fatalf("Expected size of %d, but got %d", test.expectedSize, size)
+				}
+			}
+		})
 	}
 }
