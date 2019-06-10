@@ -604,6 +604,7 @@ func (c *Conn) recv() error {
 			Length:  int32(head.length),
 			Start:   headStartTime,
 			End:     headEndTime,
+			Host:    c.host,
 		})
 	}
 
