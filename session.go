@@ -664,6 +664,18 @@ type hostMetrics struct {
 type queryMetrics struct {
 	l sync.RWMutex
 	m map[string]*hostMetrics
+	// totalAttempts is total number of attempts.
+	// Equal to sum of all hostMetrics' Attempts.
+	totalAttempts int
+}
+
+// preFilledQueryMetrics initializes new queryMetrics based on per-host supplied data.
+func preFilledQueryMetrics(m map[string]*hostMetrics) *queryMetrics {
+	qm := &queryMetrics{m: m}
+	for _, hm := range qm.m {
+		qm.totalAttempts += hm.Attempts
+	}
+	return qm
 }
 
 // hostMetricsLocked gets or creates host metrics for given host.
@@ -690,19 +702,20 @@ func (qm *queryMetrics) hostMetricsLocked(host *HostInfo) *hostMetrics {
 // attempts returns the number of times the query was executed.
 func (qm *queryMetrics) attempts() int {
 	qm.l.Lock()
-	var attempts int
-	for _, metric := range qm.m {
-		attempts += metric.Attempts
-	}
+	attempts := qm.totalAttempts
 	qm.l.Unlock()
 	return attempts
 }
 
-func (qm *queryMetrics) addAttempts(i int, host *HostInfo) {
+// addAttempts adds given number of attempts and returns previous total attempts.
+func (qm *queryMetrics) addAttempts(i int, host *HostInfo) int {
 	qm.l.Lock()
 	hostMetric := qm.hostMetricsLocked(host)
 	hostMetric.Attempts += i
+	attempts := qm.totalAttempts
+	qm.totalAttempts += i
 	qm.l.Unlock()
+	return attempts
 }
 
 func (qm *queryMetrics) latency() int64 {
@@ -915,7 +928,7 @@ func (q *Query) execute(ctx context.Context, conn *Conn) *Iter {
 }
 
 func (q *Query) attempt(keyspace string, end, start time.Time, iter *Iter, host *HostInfo) {
-	q.AddAttempts(1, host)
+	attempt := q.metrics.addAttempts(1, host)
 	q.AddLatency(end.Sub(start).Nanoseconds(), host)
 
 	if q.observer != nil {
@@ -928,6 +941,7 @@ func (q *Query) attempt(keyspace string, end, start time.Time, iter *Iter, host 
 			Host:      host,
 			Metrics:   q.metrics.hostMetrics(host),
 			Err:       iter.err,
+			Attempt:   attempt,
 		})
 	}
 }
@@ -1889,6 +1903,10 @@ type ObservedQuery struct {
 	// Err is the error in the query.
 	// It only tracks network errors or errors of bad cassandra syntax, in particular selects with no match return nil error
 	Err error
+
+	// Attempt is the index of attempt at executing this query.
+	// The first attempt is number zero and any retries have non-zero attempt number.
+	Attempt int
 }
 
 // QueryObserver is the interface implemented by query observers / stat collectors.
