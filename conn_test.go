@@ -418,7 +418,7 @@ func TestQueryMultinodeWithMetrics(t *testing.T) {
 
 	for i, ip := range addresses {
 		host := &HostInfo{connectAddress: net.ParseIP(ip)}
-		queryMetric := qry.getHostMetrics(host)
+		queryMetric := qry.metrics.hostMetrics(host)
 		observedMetrics := observer.GetMetrics(host)
 
 		requests := int(atomic.LoadInt64(&nodes[i].nKillReq))
