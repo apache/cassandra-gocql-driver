@@ -654,7 +654,7 @@ func (t *tokenAwareHostPolicy) Pick(qry ExecutableQuery) NextHost {
 
 				if h.IsUp() {
 					used[h] = true
-					return selectedHost{info: h}
+					return selectedHost{info: h, token: token}
 				}
 			}
 		}

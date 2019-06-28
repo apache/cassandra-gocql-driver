@@ -204,7 +204,7 @@ func TestTokenRing_Nil(t *testing.T) {
 	if host, endToken := ring.GetHostForToken(nil); host != nil || endToken != nil {
 		t.Error("Expected nil for nil token ring")
 	}
-	if host, token := ring.GetHostForPartitionKey(nil); host != nil || token != nil {
+	if host, token, endToken := ring.GetHostForPartitionKey(nil); host != nil || token != nil || endToken != nil {
 		t.Error("Expected nil for nil token ring")
 	}
 }

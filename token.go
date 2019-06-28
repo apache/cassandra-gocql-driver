@@ -195,14 +195,18 @@ func (t *tokenRing) String() string {
 	return string(buf.Bytes())
 }
 
-func (t *tokenRing) GetHostForPartitionKey(partitionKey []byte) (host *HostInfo, token token) {
+// GetHostForPartitionKey finds host information for given partition key.
+//
+// It returns two tokens. First is token that exactly corresponds to the partition key (and could be used to
+// determine shard, for example), second token is the endToken that corresponds to the host.
+func (t *tokenRing) GetHostForPartitionKey(partitionKey []byte) (host *HostInfo, token token, endToken token) {
 	if t == nil {
-		return nil, nil
+		return nil, nil, nil
 	}
 
 	token = t.partitioner.Hash(partitionKey)
-	host, _ = t.GetHostForToken(token)
-	return host, token
+	host, endToken = t.GetHostForToken(token)
+	return host, token, endToken
 }
 
 func (t *tokenRing) GetHostForToken(token token) (host *HostInfo, endToken token) {
