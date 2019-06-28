@@ -387,6 +387,18 @@ func ShuffleReplicas() func(*tokenAwareHostPolicy) {
 	}
 }
 
+// NonLocalReplicasFallback enables fallback to replicas that are not considered local.
+//
+// TokenAwareHostPolicy used with DCAwareHostPolicy fallback first selects replicas by partition key in local DC, then
+// falls back to other nodes in the local DC. Enabling NonLocalReplicasFallback causes TokenAwareHostPolicy
+// to first select replicas by partition key in local DC, then replicas by partition key in remote DCs and fall back
+// to other nodes in local DC.
+func NonLocalReplicasFallback() func(policy *tokenAwareHostPolicy) {
+	return func(t *tokenAwareHostPolicy) {
+		t.nonLocalReplicasFallback = true
+	}
+}
+
 // TokenAwareHostPolicy is a token aware host selection policy, where hosts are
 // selected based on the partition key, so queries are sent to the host which
 // owns the partition. Fallback is used when routing information is not available.
@@ -410,8 +422,11 @@ type clusterMeta struct {
 
 type tokenAwareHostPolicy struct {
 	fallback    HostSelectionPolicy
-	session     *Session
+	getKeyspaceMetadata func(keyspace string) (*KeyspaceMetadata, error)
+	getKeyspaceName func() string
+
 	shuffleReplicas          bool
+	nonLocalReplicasFallback bool
 
 	// mu protects writes to hosts, partitioner, metadata.
 	// reads can be unlocked as long as they are not used for updating state later.
@@ -422,7 +437,8 @@ type tokenAwareHostPolicy struct {
 }
 
 func (t *tokenAwareHostPolicy) Init(s *Session) {
-	t.session = s
+	t.getKeyspaceMetadata = s.KeyspaceMetadata
+	t.getKeyspaceName = func() string {return s.cfg.Keyspace}
 }
 
 func (t *tokenAwareHostPolicy) IsLocal(host *HostInfo) bool {
@@ -443,7 +459,7 @@ func (t *tokenAwareHostPolicy) KeyspaceChanged(update KeyspaceUpdateEvent) {
 func (t *tokenAwareHostPolicy) updateReplicas(meta *clusterMeta, keyspace string) {
 	newReplicas := make(map[string]map[token][]*HostInfo, len(meta.replicas))
 
-	ks, err := t.session.KeyspaceMetadata(keyspace)
+	ks, err := t.getKeyspaceMetadata(keyspace)
 	if err == nil {
 		strat := getStrategy(ks)
 		if strat != nil {
@@ -472,9 +488,7 @@ func (t *tokenAwareHostPolicy) SetPartitioner(partitioner string) {
 		t.partitioner = partitioner
 		meta := t.getMetadataForUpdate()
 		meta.resetTokenRing(t.partitioner, t.hosts.get())
-		if t.session != nil { // disable for unit tests
-			t.updateReplicas(meta, t.session.cfg.Keyspace)
-		}
+		t.updateReplicas(meta, t.getKeyspaceName())
 		t.metadata.Store(meta)
 	}
 }
@@ -484,9 +498,7 @@ func (t *tokenAwareHostPolicy) AddHost(host *HostInfo) {
 	if t.hosts.add(host) {
 		meta := t.getMetadataForUpdate()
 		meta.resetTokenRing(t.partitioner, t.hosts.get())
-		if t.session != nil { // disable for unit tests
-			t.updateReplicas(meta, t.session.cfg.Keyspace)
-		}
+		t.updateReplicas(meta, t.getKeyspaceName())
 		t.metadata.Store(meta)
 	}
 	t.mu.Unlock()
@@ -499,9 +511,7 @@ func (t *tokenAwareHostPolicy) RemoveHost(host *HostInfo) {
 	if t.hosts.remove(host.ConnectAddress()) {
 		meta := t.getMetadataForUpdate()
 		meta.resetTokenRing(t.partitioner, t.hosts.get())
-		if t.session != nil { // disable for unit tests
-			t.updateReplicas(meta, t.session.cfg.Keyspace)
-		}
+		t.updateReplicas(meta, t.getKeyspaceName())
 		t.metadata.Store(meta)
 	}
 	t.mu.Unlock()
@@ -597,6 +607,7 @@ func (t *tokenAwareHostPolicy) Pick(qry ExecutableQuery) NextHost {
 	var (
 		fallbackIter NextHost
 		i            int
+		j            int
 	)
 
 	used := make(map[*HostInfo]bool, len(replicas))
@@ -608,6 +619,18 @@ func (t *tokenAwareHostPolicy) Pick(qry ExecutableQuery) NextHost {
 			if h.IsUp() && t.fallback.IsLocal(h) {
 				used[h] = true
 				return (*selectedHost)(h)
+			}
+		}
+
+		if t.nonLocalReplicasFallback {
+			for j < len(replicas) {
+				h := replicas[j]
+				j++
+
+				if h.IsUp() && !t.fallback.IsLocal(h) {
+					used[h] = true
+					return (*selectedHost)(h)
+				}
 			}
 		}
 

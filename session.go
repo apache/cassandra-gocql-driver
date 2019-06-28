@@ -767,6 +767,9 @@ type Query struct {
 	metrics               *queryMetrics
 
 	disableAutoPage bool
+
+	// getKeyspace is field so that it can be overriden in tests
+	getKeyspace func() string
 }
 
 func (q *Query) defaultsFromSession() {
@@ -952,6 +955,9 @@ func (q *Query) retryPolicy() RetryPolicy {
 
 // Keyspace returns the keyspace the query will be executed against.
 func (q *Query) Keyspace() string {
+	if q.getKeyspace != nil {
+		return q.getKeyspace()
+	}
 	if q.session == nil {
 		return ""
 	}
