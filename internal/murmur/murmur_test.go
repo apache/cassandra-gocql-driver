@@ -127,8 +127,8 @@ func BenchmarkMurmur3H1(b *testing.B) {
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
 			h1 := Murmur3H1(data)
-			if h1 != 7627370222079200297 {
-				b.Fatalf("expected %d got %d", 7627370222079200297, h1)
+			if h1 != int64(7627370222079200297) {
+				b.Fatalf("expected %d got %d", int64(7627370222079200297), h1)
 			}
 		}
 	})
