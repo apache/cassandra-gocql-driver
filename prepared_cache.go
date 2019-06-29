@@ -30,19 +30,20 @@ func (p *preparedCache) forHost(addr string) *preparedLRU {
 	m := p.load()
 	lru, ok := m[addr]
 	if !ok {
-		p.mu.Lock()
-		m := p.load()
-		lru, ok = m[addr]
-		if !ok {
-			lru = p.addHost(m, addr)
-		}
-		p.mu.Unlock()
+		lru = p.addHost(m, addr)
 	}
 
 	return lru
 }
 
 func (p *preparedCache) addHost(current map[string]*preparedLRU, addr string) *preparedLRU {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if lru, ok := current[addr]; ok {
+		return lru
+	}
+
 	cow := make(map[string]*preparedLRU, len(current)+1)
 	for k, v := range current {
 		cow[k] = v
@@ -58,17 +59,7 @@ func (p *preparedCache) HostUp(host *HostInfo) {
 	addr := JoinHostPort(host.ConnectAddress().String(), host.Port())
 
 	v := p.load()
-	if _, ok := v[addr]; ok {
-		return
-	}
-
-	cow := make(map[string]*preparedLRU, len(v)+1)
-	for k, v := range v {
-		cow[k] = v
-	}
-
-	cow[addr] = &preparedLRU{lru: lru.New(p.maxStmnts)}
-	p.hosts.Store(cow)
+	p.addHost(v, addr)
 }
 
 func (p *preparedCache) HostDown(host *HostInfo) {
