@@ -29,6 +29,7 @@ var (
 		"com.instaclustr.cassandra.auth.SharedSecretAuthenticator",
 		"com.datastax.bdp.cassandra.auth.DseAuthenticator",
 		"io.aiven.cassandra.auth.AivenAuthenticator",
+		"com.ericsson.bss.cassandra.ecaudit.auth.AuditPasswordAuthenticator",
 	}
 )
 
