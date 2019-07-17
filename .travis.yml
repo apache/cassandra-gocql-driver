@@ -19,6 +19,8 @@ env:
   global:
     - GOMAXPROCS=2
   matrix:
+    - CASS=2.1.21
+      AUTH=true
     - CASS=2.2.13
       AUTH=true
     - CASS=2.2.13
