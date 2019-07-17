@@ -29,8 +29,8 @@ env:
       AUTH=false
 
 go:
-  - "1.11"
-  - "1.12"
+  - 1.11.x
+  - 1.12.x
 
 install:
   - ./install_test_deps.sh $TRAVIS_REPO_SLUG
