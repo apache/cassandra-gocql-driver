@@ -816,28 +816,61 @@ func (d *dcAwareRR) HostUp(host *HostInfo)   { d.AddHost(host) }
 func (d *dcAwareRR) HostDown(host *HostInfo) { d.RemoveHost(host) }
 
 func (d *dcAwareRR) Pick(q ExecutableQuery) NextHost {
-	var i int
+	localHosts := d.localHosts.get()
+
+	// Set the remote hosts, unless the query explicitly requests local only.
+	var remoteHosts []*HostInfo
+	var consistency Consistency
+	if q != nil {
+		consistency = q.GetConsistency()
+	}
+	if !(consistency == LocalQuorum || consistency == LocalOne) {
+		remoteHosts = d.remoteHosts.get()
+	}
+
+	var startIdx int
+	if len(localHosts) != 0 {
+		// always increment pos to evenly distribute traffic in case of
+		// failures
+		startIdx = int((atomic.AddUint32(&d.pos, 1) - 1) % uint32(len(localHosts)))
+	}
+
+	state := struct {
+		localHosts, remoteHosts []*HostInfo
+		remote                  bool
+		idx, remaining          int // index & remaining count within hosts
+	}{localHosts, remoteHosts, false, startIdx, len(localHosts)}
+
 	return func() SelectedHost {
-		var hosts []*HostInfo
-		localHosts := d.localHosts.get()
-		remoteHosts := d.remoteHosts.get()
-		if len(localHosts) != 0 {
-			hosts = localHosts
-		} else {
-			hosts = remoteHosts
+		// If using local hosts and none remaining, switch to returning remote.
+		if !state.remote && state.remaining < 1 {
+			state.remote = true
+
+			// re-select idx using the global pos, so load is evenly distributed
+			// over all the remoteHosts (otherwise the host at
+			// remoteHosts[len(localHosts)] would get lots of traffic).
+			var startIdx int
+			if len(state.remoteHosts) != 0 {
+				startIdx = int((atomic.AddUint32(&d.pos, 1) - 1) % uint32(len(state.remoteHosts)))
+			}
+			state.idx = startIdx
+			state.remaining = len(state.remoteHosts)
 		}
-		if len(hosts) == 0 {
+		// If still no hosts remaining, give up
+		if state.remaining < 1 {
 			return nil
 		}
 
-		// always increment pos to evenly distribute traffic in case of
-		// failures
-		pos := atomic.AddUint32(&d.pos, 1) - 1
-		if i >= len(localHosts)+len(remoteHosts) {
-			return nil
+		var hosts []*HostInfo
+		if state.remote {
+			hosts = state.remoteHosts
+		} else {
+			hosts = state.localHosts
 		}
-		host := hosts[(pos)%uint32(len(hosts))]
-		i++
+		idx := state.idx
+		state.remaining--
+		state.idx = (state.idx + 1) % len(hosts)
+		host := hosts[idx]
 		return (*selectedHost)(host)
 	}
 }

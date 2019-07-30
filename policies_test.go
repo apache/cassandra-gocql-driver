@@ -397,7 +397,7 @@ func TestHostPolicy_DCAwareRR(t *testing.T) {
 		p.AddHost(host)
 	}
 
-	// interleaved iteration should always increment the host
+	// interleaved iteration should always increment the host, try order ABBA
 	iterA := p.Pick(nil)
 	if actual := iterA(); actual.Info() != hosts[0] {
 		t.Errorf("Expected hosts[0] but was hosts[%s]", actual.Info().HostID())
@@ -412,6 +412,23 @@ func TestHostPolicy_DCAwareRR(t *testing.T) {
 	if actual := iterA(); actual.Info() != hosts[1] {
 		t.Errorf("Expected hosts[1] but was hosts[%s]", actual.Info().HostID())
 	}
+	// now the remote nodes should be returned, try order ABAB
+	if actual := iterA(); actual.Info() != hosts[2] {
+		t.Errorf("Expected hosts[2] but was hosts[%s]", actual.Info().HostID())
+	}
+	if actual := iterB(); actual.Info() != hosts[3] {
+		t.Errorf("Expected hosts[3] but was hosts[%s]", actual.Info().HostID())
+	}
+	if actual := iterA(); actual.Info() != hosts[3] {
+		t.Errorf("Expected hosts[3] but was hosts[%s]", actual.Info().HostID())
+	}
+	if actual := iterB(); actual.Info() != hosts[2] {
+		t.Errorf("Expected hosts[2] but was hosts[%s]", actual.Info().HostID())
+	}
+	if actual := iterA(); actual != nil {
+		t.Errorf("Expected nil but was hosts[%s]", actual.Info().HostID())
+	}
+
 	iterC := p.Pick(nil)
 	if actual := iterC(); actual.Info() != hosts[0] {
 		t.Errorf("Expected hosts[0] but was hosts[%s]", actual.Info().HostID())
@@ -420,6 +437,11 @@ func TestHostPolicy_DCAwareRR(t *testing.T) {
 	if actual := iterC(); actual.Info() != hosts[1] {
 		t.Errorf("Expected hosts[1] but was hosts[%s]", actual.Info().HostID())
 	}
+	if actual := iterC(); actual.Info() != hosts[3] {
+		t.Errorf("Expected hosts[3] but was hosts[%s]", actual.Info().HostID())
+	}
+
+	// test with no local hosts
 	p.RemoveHost(hosts[1])
 	iterD := p.Pick(nil)
 	if actual := iterD(); actual.Info() != hosts[2] {
@@ -429,4 +451,19 @@ func TestHostPolicy_DCAwareRR(t *testing.T) {
 		t.Errorf("Expected hosts[3] but was hosts[%s]", actual.Info().HostID())
 	}
 
+	// test with no remote hosts
+	p.AddHost(hosts[0])
+	p.AddHost(hosts[1])
+	p.RemoveHost(hosts[2])
+	p.RemoveHost(hosts[3])
+	iterE := p.Pick(nil)
+	if actual := iterE(); actual.Info() != hosts[1] {
+		t.Errorf("Expected hosts[1] but was hosts[%s]", actual.Info().HostID())
+	}
+	if actual := iterE(); actual.Info() != hosts[0] {
+		t.Errorf("Expected hosts[0] but was hosts[%s]", actual.Info().HostID())
+	}
+	if actual := iterE(); actual != nil {
+		t.Errorf("Expected nil but was hosts[%s]", actual.Info().HostID())
+	}
 }
