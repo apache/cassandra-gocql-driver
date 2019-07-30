@@ -344,23 +344,28 @@ func (r *roundRobinHostPolicy) SetPartitioner(partitioner string)   {}
 func (r *roundRobinHostPolicy) Init(*Session)                       {}
 
 func (r *roundRobinHostPolicy) Pick(qry ExecutableQuery) NextHost {
-	// i is used to limit the number of attempts to find a host
-	// to the number of hosts known to this policy
-	var i int
-	return func() SelectedHost {
-		hosts := r.hosts.get()
-		if len(hosts) == 0 {
-			return nil
-		}
-
+	hosts := r.hosts.get()
+	var startIdx int
+	if len(hosts) != 0 {
 		// always increment pos to evenly distribute traffic in case of
 		// failures
-		pos := atomic.AddUint32(&r.pos, 1) - 1
-		if i >= len(hosts) {
+		startIdx = int((atomic.AddUint32(&r.pos, 1) - 1) % uint32(len(hosts)))
+	}
+
+	state := struct {
+		hosts          []*HostInfo
+		idx, remaining int
+	}{hosts, startIdx, len(hosts)}
+
+	return func() SelectedHost {
+		if state.remaining < 1 {
 			return nil
 		}
-		host := hosts[(pos)%uint32(len(hosts))]
-		i++
+		hosts := state.hosts
+		idx := state.idx
+		state.remaining--
+		state.idx = (state.idx + 1) % len(hosts)
+		host := hosts[idx]
 		return (*selectedHost)(host)
 	}
 }
@@ -404,14 +409,14 @@ func TokenAwareHostPolicy(fallback HostSelectionPolicy, opts ...func(*tokenAware
 // and the pointer in clusterMeta updated to point to the new value.
 type clusterMeta struct {
 	// replicas is map[keyspace]map[token]hosts
-	replicas map[string]map[token][]*HostInfo
+	replicas  map[string]map[token][]*HostInfo
 	tokenRing *tokenRing
 }
 
 type tokenAwareHostPolicy struct {
-	fallback    HostSelectionPolicy
-	session     *Session
-	shuffleReplicas          bool
+	fallback        HostSelectionPolicy
+	session         *Session
+	shuffleReplicas bool
 
 	// mu protects writes to hosts, partitioner, metadata.
 	// reads can be unlocked as long as they are not used for updating state later.

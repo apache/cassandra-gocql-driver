@@ -26,7 +26,9 @@ func TestHostPolicy_RoundRobin(t *testing.T) {
 		policy.AddHost(host)
 	}
 
-	// interleaved iteration should always increment the host
+	// interleaved iteration should always increment the host, first test
+	// (order ABBA).  In both this order and the one below, we have two calls
+	// to A and two calls to B, and A and B should both return both hosts.
 	iterA := policy.Pick(nil)
 	if actual := iterA(); actual.Info() != hosts[0] {
 		t.Errorf("Expected hosts[0] but was hosts[%s]", actual.Info().HostID())
@@ -40,6 +42,26 @@ func TestHostPolicy_RoundRobin(t *testing.T) {
 	}
 	if actual := iterA(); actual.Info() != hosts[1] {
 		t.Errorf("Expected hosts[1] but was hosts[%s]", actual.Info().HostID())
+	}
+	if actual := iterA(); actual != nil {
+		t.Errorf("Expected nil but was hosts[%s]", actual.Info().HostID())
+	}
+
+	// interleaved iteration should always increment the host, second test
+	// (order ABAB).
+	iterA2 := policy.Pick(nil)
+	if actual := iterA2(); actual.Info() != hosts[0] {
+		t.Errorf("Expected hosts[0] but was hosts[%s]", actual.Info().HostID())
+	}
+	iterB2 := policy.Pick(nil)
+	if actual := iterB2(); actual.Info() != hosts[1] {
+		t.Errorf("Expected hosts[1] but was hosts[%s]", actual.Info().HostID())
+	}
+	if actual := iterA2(); actual.Info() != hosts[1] {
+		t.Errorf("Expected hosts[1] but was hosts[%s]", actual.Info().HostID())
+	}
+	if actual := iterB2(); actual.Info() != hosts[0] {
+		t.Errorf("Expected hosts[0] but was hosts[%s]", actual.Info().HostID())
 	}
 
 	iterC := policy.Pick(nil)
