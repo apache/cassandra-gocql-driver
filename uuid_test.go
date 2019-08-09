@@ -240,3 +240,46 @@ func TestMarshalText(t *testing.T) {
 		t.Fatalf("uuids not equal after marshalling: before=%s after=%s", u, u2)
 	}
 }
+
+func TestMinTimeUUID(t *testing.T) {
+	aTime := time.Now()
+	minTimeUUID := MinTimeUUID(aTime)
+
+	ts := aTime.Unix()
+	tsFromUUID := minTimeUUID.Time().Unix()
+	if ts != tsFromUUID {
+		t.Errorf("timestamps are not equal: expected %d, got %d", ts, tsFromUUID)
+	}
+
+	clockFromUUID := minTimeUUID.Clock()
+	// clear two most significant bits, as they are used for IETF variant
+	if minClock&0x3FFF != clockFromUUID {
+		t.Errorf("clocks are not equal: expected %08b, got %08b", minClock&0x3FFF, clockFromUUID)
+	}
+
+	nodeFromUUID := minTimeUUID.Node()
+	if !bytes.Equal(minNode, nodeFromUUID) {
+		t.Errorf("nodes are not equal: expected %08b, got %08b", minNode, nodeFromUUID)
+	}
+}
+
+func TestMaxTimeUUID(t *testing.T) {
+	aTime := time.Now()
+	maxTimeUUID := MaxTimeUUID(aTime)
+
+	ts := aTime.Unix()
+	tsFromUUID := maxTimeUUID.Time().Unix()
+	if ts != tsFromUUID {
+		t.Errorf("timestamps are not equal: expected %d, got %d", ts, tsFromUUID)
+	}
+
+	clockFromUUID := maxTimeUUID.Clock()
+	if maxClock&0x3FFF != clockFromUUID {
+		t.Errorf("clocks are not equal: expected %08b, got %08b", maxClock&0x3FFF, clockFromUUID)
+	}
+
+	nodeFromUUID := maxTimeUUID.Node()
+	if !bytes.Equal(maxNode, nodeFromUUID) {
+		t.Errorf("nodes are not equal:  expected %08b, got %08b", maxNode, nodeFromUUID)
+	}
+}
