@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -228,6 +229,12 @@ func assertTrue(t *testing.T, description string, value bool) {
 
 func assertEqual(t *testing.T, description string, expected, actual interface{}) {
 	if expected != actual {
+		t.Errorf("expected %s to be (%+v) but was (%+v) instead", description, expected, actual)
+	}
+}
+
+func assertDeepEqual(t *testing.T, description string, expected, actual interface{}) {
+	if !reflect.DeepEqual(expected, actual) {
 		t.Errorf("expected %s to be (%+v) but was (%+v) instead", description, expected, actual)
 	}
 }
