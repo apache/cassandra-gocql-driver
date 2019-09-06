@@ -6,6 +6,7 @@ import (
 	"log"
 	"net"
 	"reflect"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -32,7 +33,9 @@ var (
 func init() {
 	flag.Var(&flagCassVersion, "gocql.cversion", "the cassandra version being tested against")
 
-	flag.Parse()
+	if !strings.HasPrefix(runtime.Version(), "go1.13") {
+		flag.Parse()
+	}
 	clusterHosts = strings.Split(*flagCluster, ",")
 	log.SetFlags(log.Lshortfile | log.LstdFlags)
 }
