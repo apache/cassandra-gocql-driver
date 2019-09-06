@@ -13,7 +13,7 @@ matrix:
 
 branches:
   only:
-  - master
+    - master
 
 env:
   global:
@@ -33,6 +33,7 @@ env:
 go:
   - 1.11.x
   - 1.12.x
+  - 1.13.x
 
 install:
   - ./install_test_deps.sh $TRAVIS_REPO_SLUG
@@ -46,4 +47,4 @@ script:
   - go vet .
 
 notifications:
-  - email: false
+  email: false
