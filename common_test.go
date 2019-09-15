@@ -26,15 +26,16 @@ var (
 	flagTimeout      = flag.Duration("gocql.timeout", 5*time.Second, "sets the connection `timeout` for all operations")
 
 	flagCassVersion cassVersion
-	clusterHosts    []string
 )
 
 func init() {
 	flag.Var(&flagCassVersion, "gocql.cversion", "the cassandra version being tested against")
 
-	flag.Parse()
-	clusterHosts = strings.Split(*flagCluster, ",")
 	log.SetFlags(log.Lshortfile | log.LstdFlags)
+}
+
+func getClusterHosts() []string {
+	return strings.Split(*flagCluster, ",")
 }
 
 func addSslOptions(cluster *ClusterConfig) *ClusterConfig {
@@ -72,6 +73,7 @@ func createTable(s *Session, table string) error {
 }
 
 func createCluster(opts ...func(*ClusterConfig)) *ClusterConfig {
+	clusterHosts := getClusterHosts()
 	cluster := NewCluster(clusterHosts...)
 	cluster.ProtoVersion = *flagProto
 	cluster.CQLVersion = *flagCQL

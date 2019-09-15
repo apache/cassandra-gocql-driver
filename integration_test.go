@@ -37,6 +37,7 @@ func TestAuthentication(t *testing.T) {
 }
 
 func TestGetHosts(t *testing.T) {
+	clusterHosts := getClusterHosts()
 	cluster := createCluster()
 	session := createSessionFromCluster(cluster, t)
 
@@ -49,6 +50,7 @@ func TestGetHosts(t *testing.T) {
 
 //TestRingDiscovery makes sure that you can autodiscover other cluster members when you seed a cluster config with just one node
 func TestRingDiscovery(t *testing.T) {
+	clusterHosts := getClusterHosts()
 	cluster := createCluster()
 	cluster.Hosts = clusterHosts[:1]
 
