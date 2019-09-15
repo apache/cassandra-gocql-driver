@@ -312,16 +312,24 @@ type HostSelectionPolicy interface {
 // selection policy.
 type SelectedHost interface {
 	Info() *HostInfo
+	Token() token
 	Mark(error)
 }
 
-type selectedHost HostInfo
-
-func (host *selectedHost) Info() *HostInfo {
-	return (*HostInfo)(host)
+type selectedHost struct {
+	info  *HostInfo
+	token token
 }
 
-func (host *selectedHost) Mark(err error) {}
+func (host selectedHost) Info() *HostInfo {
+	return host.info
+}
+
+func (host selectedHost) Token() token {
+	return host.token
+}
+
+func (host selectedHost) Mark(err error) {}
 
 // NextHost is an iteration function over picked hosts
 type NextHost func() SelectedHost
@@ -361,7 +369,7 @@ func (r *roundRobinHostPolicy) Pick(qry ExecutableQuery) NextHost {
 		}
 		host := hosts[(pos)%uint32(len(hosts))]
 		i++
-		return (*selectedHost)(host)
+		return selectedHost{info: host}
 	}
 }
 
@@ -618,7 +626,7 @@ func (t *tokenAwareHostPolicy) Pick(qry ExecutableQuery) NextHost {
 
 			if h.IsUp() && t.fallback.IsLocal(h) {
 				used[h] = true
-				return (*selectedHost)(h)
+				return selectedHost{info: h, token: token}
 			}
 		}
 
@@ -777,6 +785,10 @@ func (host selectedHostPoolHost) Info() *HostInfo {
 	return host.info
 }
 
+func (host selectedHostPoolHost) Token() token {
+	return nil
+}
+
 func (host selectedHostPoolHost) Mark(err error) {
 	ip := host.info.ConnectAddress().String()
 
@@ -856,7 +868,7 @@ func (d *dcAwareRR) Pick(q ExecutableQuery) NextHost {
 		}
 		host := hosts[(pos)%uint32(len(hosts))]
 		i++
-		return (*selectedHost)(host)
+		return selectedHost{info: host}
 	}
 }
 
