@@ -501,24 +501,37 @@ func (s *Session) routingKeyInfo(ctx context.Context, stmt string) (*routingKeyI
 	s.routingKeyInfoCache.lru.Add(stmt, inflight)
 	s.routingKeyInfoCache.mu.Unlock()
 
+	routingKeyInfo, err, shouldCache := s.routingKeyInfoImpl(ctx, stmt)
+
+	inflight.value = routingKeyInfo
+	inflight.err = err
+
+	if !shouldCache {
+		s.routingKeyInfoCache.Remove(stmt)
+	}
+
+	return routingKeyInfo, nil
+}
+
+// routingKeyInfoImpl finds the routing key info and returns a possible error and a flag indicating whether
+// the result should be cached or not.
+func (s *Session) routingKeyInfoImpl(ctx context.Context, stmt string) (*routingKeyInfo, error, bool) {
 	var (
 		info         *preparedStatment
 		partitionKey []*ColumnMetadata
+		err			 error
 	)
 
 	conn := s.getConn()
 	if conn == nil {
 		// TODO: better error?
-		inflight.err = errors.New("gocql: unable to fetch prepared info: no connection available")
-		return nil, inflight.err
+		return nil, errors.New("gocql: unable to fetch prepared info: no connection available"), true
 	}
 
 	// get the query info for the statement
-	info, inflight.err = conn.prepareStatement(ctx, stmt, nil)
-	if inflight.err != nil {
-		// don't cache this error
-		s.routingKeyInfoCache.Remove(stmt)
-		return nil, inflight.err
+	info, err = conn.prepareStatement(ctx, stmt, nil)
+	if err != nil {
+		return nil, err, false
 	}
 
 	// TODO: it would be nice to mark hosts here but as we are not using the policies
@@ -526,7 +539,7 @@ func (s *Session) routingKeyInfo(ctx context.Context, stmt string) (*routingKeyI
 
 	if info.request.colCount == 0 {
 		// no arguments, no routing key, and no error
-		return nil, nil
+		return nil, nil, true
 	}
 
 	if len(info.request.pkeyColumns) > 0 {
@@ -541,19 +554,17 @@ func (s *Session) routingKeyInfo(ctx context.Context, stmt string) (*routingKeyI
 			types:   types,
 		}
 
-		inflight.value = routingKeyInfo
-		return routingKeyInfo, nil
+		return routingKeyInfo, nil, true
 	}
 
 	// get the table metadata
 	table := info.request.columns[0].Table
 
 	var keyspaceMetadata *KeyspaceMetadata
-	keyspaceMetadata, inflight.err = s.KeyspaceMetadata(info.request.columns[0].Keyspace)
-	if inflight.err != nil {
+	keyspaceMetadata, err = s.KeyspaceMetadata(info.request.columns[0].Keyspace)
+	if err != nil {
 		// don't cache this error
-		s.routingKeyInfoCache.Remove(stmt)
-		return nil, inflight.err
+		return nil, err, false
 	}
 
 	tableMetadata, found := keyspaceMetadata.Tables[table]
@@ -561,10 +572,8 @@ func (s *Session) routingKeyInfo(ctx context.Context, stmt string) (*routingKeyI
 		// unlikely that the statement could be prepared and the metadata for
 		// the table couldn't be found, but this may indicate either a bug
 		// in the metadata code, or that the table was just dropped.
-		inflight.err = ErrNoMetadata
 		// don't cache this error
-		s.routingKeyInfoCache.Remove(stmt)
-		return nil, inflight.err
+		return nil, ErrNoMetadata, false
 	}
 
 	partitionKey = tableMetadata.PartitionKey
@@ -592,14 +601,11 @@ func (s *Session) routingKeyInfo(ctx context.Context, stmt string) (*routingKeyI
 		if routingKeyInfo.indexes[keyIndex] == -1 {
 			// missing a routing key column mapping
 			// no routing key, and no error
-			return nil, nil
+			return nil, nil, true
 		}
 	}
 
-	// cache this result
-	inflight.value = routingKeyInfo
-
-	return routingKeyInfo, nil
+	return routingKeyInfo, nil, true
 }
 
 func (b *Batch) execute(ctx context.Context, conn *Conn) *Iter {
