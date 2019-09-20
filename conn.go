@@ -19,7 +19,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/gocql/gocql/internal/lru"
 	"github.com/gocql/gocql/internal/streams"
 )
 
@@ -944,39 +943,21 @@ type preparedStatment struct {
 	response resultMetadata
 }
 
-type inflightPrepare struct {
-	wg  sync.WaitGroup
-	err error
-
-	preparedStatment *preparedStatment
-}
-
 func (c *Conn) prepareStatement(ctx context.Context, stmt string, tracer Tracer) (*preparedStatment, error) {
 	stmtCacheKey := c.session.stmtsLRU.keyFor(c.addr, c.currentKeyspace, stmt)
 
-	flight, ok := c.session.stmtsLRU.execIfMissing(stmtCacheKey, func(lru *lru.Cache) *inflightPrepare {
-		flight := new(inflightPrepare)
-		flight.wg.Add(1)
-		lru.Add(stmtCacheKey, flight)
-		return flight
+	flight := c.session.stmtsLRU.enterFlight(stmtCacheKey, func(flightCtx context.Context) (*preparedStatment, error) {
+		// flightCtx will be canceled when nobody waits for the flight anymore or when it completes.
+		return c.execPrepareStatement(flightCtx, stmt, tracer)
 	})
+	defer c.session.stmtsLRU.leaveFlight(stmtCacheKey, flight)
 
-	if ok {
-		flight.wg.Wait()
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case <-flight.done:
 		return flight.preparedStatment, flight.err
 	}
-
-	prepared, err := c.execPrepareStatement(ctx, stmt, tracer)
-	flight.preparedStatment = prepared
-	flight.err = err
-
-	flight.wg.Done()
-
-	if err != nil {
-		c.session.stmtsLRU.remove(stmtCacheKey)
-	}
-
-	return prepared, err
 }
 
 func (c *Conn) execPrepareStatement(ctx context.Context, stmt string, tracer Tracer) (*preparedStatment, error) {

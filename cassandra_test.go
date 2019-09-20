@@ -1374,6 +1374,9 @@ func injectInvalidPreparedStatement(t *testing.T, session *Session, table string
 	key := session.stmtsLRU.keyFor(conn.addr, "", stmt)
 	session.stmtsLRU.add(key, flight)
 
+	flight.isDone = true
+	flight.done = make(chan struct{})
+	close(flight.done)
 	flight.preparedStatment = &preparedStatment{
 		id: []byte{'f', 'o', 'o', 'b', 'a', 'r'},
 		request: preparedMetadata{
