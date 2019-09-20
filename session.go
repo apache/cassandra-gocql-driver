@@ -34,7 +34,7 @@ type Session struct {
 	cons                Consistency
 	pageSize            int
 	prefetch            float64
-	routingKeyInfoCache routingKeyInfoLRU
+	routingKeyInfoCache *routingKeyInfoLRU
 	schemaDescriber     *schemaDescriber
 	trace               Tracer
 	queryObserver       QueryObserver
@@ -128,7 +128,7 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 	s.nodeEvents = newEventDebouncer("NodeEvents", s.handleNodeEvent)
 	s.schemaEvents = newEventDebouncer("SchemaEvents", s.handleSchemaEvent)
 
-	s.routingKeyInfoCache.lru = lru.New(cfg.MaxRoutingKeyInfo)
+	s.routingKeyInfoCache = newRoutingKeyInfoLRU(cfg.MaxRoutingKeyInfo)
 
 	s.hostSource = &ringDescriber{session: s}
 
@@ -474,43 +474,67 @@ func (s *Session) getConn() *Conn {
 func (s *Session) routingKeyInfo(ctx context.Context, stmt string) (*routingKeyInfo, error) {
 	s.routingKeyInfoCache.mu.Lock()
 
+	var inflight *inflightCachedEntry
 	entry, cached := s.routingKeyInfoCache.lru.Get(stmt)
 	if cached {
-		// done accessing the cache
-		s.routingKeyInfoCache.mu.Unlock()
 		// the entry is an inflight struct similar to that used by
 		// Conn to prepare statements
-		inflight := entry.(*inflightCachedEntry)
+		inflight = entry.(*inflightCachedEntry)
+	} else {
+		// create a new inflight entry while the data is created
+		inflight = new(inflightCachedEntry)
+		inflight.done = make(chan struct{})
+		inflight.waiterCount = 1
+		inflightCtx, cancel := context.WithCancel(context.Background())
+		inflight.cancel = cancel
+		s.routingKeyInfoCache.lru.Add(stmt, inflight)
 
-		// wait for any inflight work
-		inflight.wg.Wait()
+		go func() {
+			routingKeyInfo, err, shouldCache := s.routingKeyInfoImpl(inflightCtx, stmt)
 
+			s.routingKeyInfoCache.mu.Lock()
+			defer s.routingKeyInfoCache.mu.Unlock()
+
+			inflight.value = routingKeyInfo
+			inflight.err = err
+
+			if !shouldCache && !inflight.removed {
+				s.routingKeyInfoCache.lru.Remove(stmt)
+			}
+			inflight.cancel()
+			inflight.isDone = true
+			close(inflight.done)
+		}()
+	}
+	s.routingKeyInfoCache.mu.Unlock()
+
+	defer func() {
+		s.routingKeyInfoCache.mu.Lock()
+		defer s.routingKeyInfoCache.mu.Unlock()
+
+		inflight.waiterCount--
+
+		if !inflight.isDone && inflight.waiterCount == 0 {
+			// nobody wants to wait for unfinished flight, let's cancel it.
+			if !inflight.removed {
+				s.routingKeyInfoCache.lru.Remove(stmt)
+			}
+			inflight.cancel()
+		}
+	}()
+
+	// wait for any inflight work
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case <-inflight.done:
 		if inflight.err != nil {
 			return nil, inflight.err
 		}
 
 		key, _ := inflight.value.(*routingKeyInfo)
-
 		return key, nil
 	}
-
-	// create a new inflight entry while the data is created
-	inflight := new(inflightCachedEntry)
-	inflight.wg.Add(1)
-	defer inflight.wg.Done()
-	s.routingKeyInfoCache.lru.Add(stmt, inflight)
-	s.routingKeyInfoCache.mu.Unlock()
-
-	routingKeyInfo, err, shouldCache := s.routingKeyInfoImpl(ctx, stmt)
-
-	inflight.value = routingKeyInfo
-	inflight.err = err
-
-	if !shouldCache {
-		s.routingKeyInfoCache.Remove(stmt)
-	}
-
-	return routingKeyInfo, nil
 }
 
 // routingKeyInfoImpl finds the routing key info and returns a possible error and a flag indicating whether
@@ -1817,6 +1841,15 @@ type routingKeyInfoLRU struct {
 	mu  sync.Mutex
 }
 
+func newRoutingKeyInfoLRU(maxEntries int) *routingKeyInfoLRU{
+	lru := lru.New(maxEntries)
+	lru.OnEvicted = func(key string, value interface{}) {
+		value.(*inflightCachedEntry).removed = true
+	}
+	return &routingKeyInfoLRU{lru: lru}
+}
+
+
 type routingKeyInfo struct {
 	indexes []int
 	types   []TypeInfo
@@ -1844,9 +1877,21 @@ func (r *routingKeyInfoLRU) Max(max int) {
 }
 
 type inflightCachedEntry struct {
-	wg    sync.WaitGroup
+	// done is closed after the work for this flight is done and err and value have been set.
+	done  chan struct{}
+	// isDone indicates whether the work for this flight is done (i.e. if the done channel was closed)
+	isDone bool
+
+	// preparedStatement and value are the result returned from the work function
 	err   error
 	value interface{}
+
+	// waiterCount is used to keep track of how many goroutines wait for the result of this flight.
+	waiterCount int64
+	// removed is true iff the flight has been removed from the cache
+	removed bool
+	// cancel is cancellation function of the context used to call work function.
+	cancel context.CancelFunc
 }
 
 // Tracer is the interface implemented by query tracers. Tracers have the
