@@ -1554,58 +1554,58 @@ func TestReadCollectionSize(t *testing.T) {
 	}
 
 	tests := []struct {
-		name string
-		info CollectionType
-		data []byte
-		isError bool
+		name         string
+		info         CollectionType
+		data         []byte
+		isError      bool
 		expectedSize int
 	}{
 		{
-			name: "short read 0 proto 2",
-			info: listV2,
-			data: []byte{},
+			name:    "short read 0 proto 2",
+			info:    listV2,
+			data:    []byte{},
 			isError: true,
 		},
 		{
-			name: "short read 1 proto 2",
-			info: listV2,
-			data: []byte{0x01},
+			name:    "short read 1 proto 2",
+			info:    listV2,
+			data:    []byte{0x01},
 			isError: true,
 		},
 		{
-			name: "good read proto 2",
-			info: listV2,
-			data: []byte{0x01, 0x38},
+			name:         "good read proto 2",
+			info:         listV2,
+			data:         []byte{0x01, 0x38},
 			expectedSize: 0x0138,
 		},
 		{
-			name: "short read 0 proto 3",
-			info: listV3,
-			data: []byte{},
+			name:    "short read 0 proto 3",
+			info:    listV3,
+			data:    []byte{},
 			isError: true,
 		},
 		{
-			name: "short read 1 proto 3",
-			info: listV3,
-			data: []byte{0x01},
+			name:    "short read 1 proto 3",
+			info:    listV3,
+			data:    []byte{0x01},
 			isError: true,
 		},
 		{
-			name: "short read 2 proto 3",
-			info: listV3,
-			data: []byte{0x01, 0x38},
+			name:    "short read 2 proto 3",
+			info:    listV3,
+			data:    []byte{0x01, 0x38},
 			isError: true,
 		},
 		{
-			name: "short read 3 proto 3",
-			info: listV3,
-			data: []byte{0x01, 0x38, 0x42},
+			name:    "short read 3 proto 3",
+			info:    listV3,
+			data:    []byte{0x01, 0x38, 0x42},
 			isError: true,
 		},
 		{
-			name: "good read proto 3",
-			info: listV3,
-			data: []byte{0x01, 0x38, 0x42, 0x22},
+			name:         "good read proto 3",
+			info:         listV3,
+			data:         []byte{0x01, 0x38, 0x42, 0x22},
 			expectedSize: 0x01384222,
 		},
 	}

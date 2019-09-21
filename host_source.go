@@ -110,7 +110,7 @@ type HostInfo struct {
 	// TODO(zariel): reduce locking maybe, not all values will change, but to ensure
 	// that we are thread safe use a mutex to access all fields.
 	mu               sync.RWMutex
-	hostname 		 string
+	hostname         string
 	peer             net.IP
 	broadcastAddress net.IP
 	listenAddress    net.IP
@@ -128,7 +128,7 @@ type HostInfo struct {
 	clusterName      string
 	version          cassVersion
 	state            nodeState
-	schemaVersion	 string
+	schemaVersion    string
 	tokens           []string
 }
 

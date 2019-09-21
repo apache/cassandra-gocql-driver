@@ -149,14 +149,14 @@ func hostInfo(addr string, defaultPort int) ([]*HostInfo, error) {
 }
 
 func shuffleHosts(hosts []*HostInfo) []*HostInfo {
-	mutRandr.Lock()
-	perm := randr.Perm(len(hosts))
-	mutRandr.Unlock()
 	shuffled := make([]*HostInfo, len(hosts))
+	copy(shuffled, hosts)
 
-	for i, host := range hosts {
-		shuffled[perm[i]] = host
-	}
+	mutRandr.Lock()
+	randr.Shuffle(len(hosts), func(i, j int) {
+		shuffled[i], shuffled[j] = shuffled[j], shuffled[i]
+	})
+	mutRandr.Unlock()
 
 	return shuffled
 }

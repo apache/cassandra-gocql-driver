@@ -722,7 +722,7 @@ func (qm *queryMetrics) latency() int64 {
 	qm.l.Lock()
 	var (
 		attempts int
-		latency int64
+		latency  int64
 	)
 	for _, metric := range qm.m {
 		attempts += metric.Attempts
@@ -1509,16 +1509,16 @@ func NewBatch(typ BatchType) *Batch {
 func (s *Session) NewBatch(typ BatchType) *Batch {
 	s.mu.RLock()
 	batch := &Batch{
-		Type:              typ,
-		rt:                s.cfg.RetryPolicy,
-		serialCons:        s.cfg.SerialConsistency,
-		observer:          s.batchObserver,
-		session:           s,
-		Cons:              s.cons,
-		defaultTimestamp:  s.cfg.DefaultTimestamp,
-		keyspace:          s.cfg.Keyspace,
-		metrics:           &queryMetrics{m: make(map[string]*hostMetrics)},
-		spec:              &NonSpeculativeExecution{},
+		Type:             typ,
+		rt:               s.cfg.RetryPolicy,
+		serialCons:       s.cfg.SerialConsistency,
+		observer:         s.batchObserver,
+		session:          s,
+		Cons:             s.cons,
+		defaultTimestamp: s.cfg.DefaultTimestamp,
+		keyspace:         s.cfg.Keyspace,
+		metrics:          &queryMetrics{m: make(map[string]*hostMetrics)},
+		spec:             &NonSpeculativeExecution{},
 	}
 
 	s.mu.RUnlock()
