@@ -55,15 +55,16 @@ func TestHostPolicy_RoundRobin(t *testing.T) {
 // Tests of the token-aware host selection policy implementation with a
 // round-robin host selection policy fallback.
 func TestHostPolicy_TokenAware(t *testing.T) {
+	const keyspace = "myKeyspace"
 	policy := TokenAwareHostPolicy(RoundRobinHostPolicy())
 	policyInternal := policy.(*tokenAwareHostPolicy)
-	policyInternal.getKeyspaceName = func() string {return "myKeyspace"}
+	policyInternal.getKeyspaceName = func() string { return keyspace }
 	policyInternal.getKeyspaceMetadata = func(ks string) (*KeyspaceMetadata, error) {
 		return nil, errors.New("not initalized")
 	}
 
 	query := &Query{}
-	query.getKeyspace = func() string{return "myKeyspace"}
+	query.getKeyspace = func() string { return keyspace }
 
 	iter := policy.Pick(nil)
 	if iter == nil {
@@ -99,28 +100,28 @@ func TestHostPolicy_TokenAware(t *testing.T) {
 	policy.SetPartitioner("OrderedPartitioner")
 
 	policyInternal.getKeyspaceMetadata = func(keyspaceName string) (*KeyspaceMetadata, error) {
-		if keyspaceName != "myKeyspace" {
+		if keyspaceName != keyspace {
 			return nil, fmt.Errorf("unknown keyspace: %s", keyspaceName)
 		}
 		return &KeyspaceMetadata{
-			Name: "myKeyspace",
+			Name:          keyspace,
 			StrategyClass: "SimpleStrategy",
-			StrategyOptions: map[string]interface{} {
-				"class": "SimpleStrategy",
+			StrategyOptions: map[string]interface{}{
+				"class":              "SimpleStrategy",
 				"replication_factor": 2,
 			},
 		}, nil
 	}
-	policy.KeyspaceChanged(KeyspaceUpdateEvent{Keyspace: "myKeyspace"})
+	policy.KeyspaceChanged(KeyspaceUpdateEvent{Keyspace: keyspace})
 
 	// The SimpleStrategy above should generate the following replicas.
 	// It's handy to have as reference here.
-	assertDeepEqual(t, "replicas", map[string]map[token][]*HostInfo{
+	assertDeepEqual(t, "replicas", map[string]tokenRingReplicas{
 		"myKeyspace": {
-			orderedToken("00"): {hosts[0], hosts[1]},
-			orderedToken("25"): {hosts[1], hosts[2]},
-			orderedToken("50"): {hosts[2], hosts[3]},
-			orderedToken("75"): {hosts[3], hosts[0]},
+			{orderedToken("00"), []*HostInfo{hosts[0], hosts[1]}},
+			{orderedToken("25"), []*HostInfo{hosts[1], hosts[2]}},
+			{orderedToken("50"), []*HostInfo{hosts[2], hosts[3]}},
+			{orderedToken("75"), []*HostInfo{hosts[3], hosts[0]}},
 		},
 	}, policyInternal.getMetadataReadOnly().replicas)
 
@@ -211,7 +212,7 @@ func TestHostPolicy_RoundRobin_NilHostInfo(t *testing.T) {
 func TestHostPolicy_TokenAware_NilHostInfo(t *testing.T) {
 	policy := TokenAwareHostPolicy(RoundRobinHostPolicy())
 	policyInternal := policy.(*tokenAwareHostPolicy)
-	policyInternal.getKeyspaceName = func() string {return "myKeyspace"}
+	policyInternal.getKeyspaceName = func() string { return "myKeyspace" }
 	policyInternal.getKeyspaceMetadata = func(ks string) (*KeyspaceMetadata, error) {
 		return nil, errors.New("not initialized")
 	}
@@ -228,7 +229,7 @@ func TestHostPolicy_TokenAware_NilHostInfo(t *testing.T) {
 	policy.SetPartitioner("OrderedPartitioner")
 
 	query := &Query{}
-	query.getKeyspace = func() string {return "myKeyspace"}
+	query.getKeyspace = func() string { return "myKeyspace" }
 	query.RoutingKey([]byte("20"))
 
 	iter := policy.Pick(query)
@@ -400,6 +401,18 @@ func TestDowngradingConsistencyRetryPolicy(t *testing.T) {
 	}
 }
 
+func iterCheck(t *testing.T, iter NextHost, hostID string) {
+	t.Helper()
+
+	host := iter()
+	if host == nil || host.Info() == nil {
+		t.Fatalf("expected hostID %s got nil", hostID)
+	}
+	if host.Info().HostID() != hostID {
+		t.Fatalf("Expected peer %s but was %s", hostID, host.Info().HostID())
+	}
+}
+
 func TestHostPolicy_DCAwareRR(t *testing.T) {
 	p := DCAwareRoundRobinPolicy("local")
 
@@ -448,20 +461,20 @@ func TestHostPolicy_DCAwareRR(t *testing.T) {
 
 }
 
-
 // Tests of the token-aware host selection policy implementation with a
 // DC aware round-robin host selection policy fallback
 // with {"class": "NetworkTopologyStrategy", "a": 1, "b": 1, "c": 1} replication.
 func TestHostPolicy_TokenAware_DCAwareRR(t *testing.T) {
+	const keyspace = "myKeyspace"
 	policy := TokenAwareHostPolicy(DCAwareRoundRobinPolicy("local"))
 	policyInternal := policy.(*tokenAwareHostPolicy)
-	policyInternal.getKeyspaceName = func() string {return "myKeyspace"}
+	policyInternal.getKeyspaceName = func() string { return keyspace }
 	policyInternal.getKeyspaceMetadata = func(ks string) (*KeyspaceMetadata, error) {
 		return nil, errors.New("not initialized")
 	}
 
 	query := &Query{}
-	query.getKeyspace = func() string {return "myKeyspace"}
+	query.getKeyspace = func() string { return keyspace }
 
 	iter := policy.Pick(nil)
 	if iter == nil {
@@ -494,27 +507,26 @@ func TestHostPolicy_TokenAware_DCAwareRR(t *testing.T) {
 	// the token ring is not setup without the partitioner, but the fallback
 	// should work
 	if actual := policy.Pick(nil)(); actual.Info().HostID() != "1" {
-		t.Errorf("Expected host 1 but was %s", actual.Info().HostID())
+		t.Fatalf("Expected host 1 but was %s", actual.Info().HostID())
 	}
 
 	query.RoutingKey([]byte("30"))
 	if actual := policy.Pick(query)(); actual.Info().HostID() != "4" {
-		t.Errorf("Expected peer 4 but was %s", actual.Info().HostID())
+		t.Fatalf("Expected peer 4 but was %s", actual.Info().HostID())
 	}
 
 	policy.SetPartitioner("OrderedPartitioner")
 
-
 	policyInternal.getKeyspaceMetadata = func(keyspaceName string) (*KeyspaceMetadata, error) {
-		if keyspaceName != "myKeyspace" {
+		if keyspaceName != keyspace {
 			return nil, fmt.Errorf("unknown keyspace: %s", keyspaceName)
 		}
 		return &KeyspaceMetadata{
-			Name: "myKeyspace",
+			Name:          keyspace,
 			StrategyClass: "NetworkTopologyStrategy",
-			StrategyOptions: map[string]interface{} {
-				"class": "NetworkTopologyStrategy",
-				"local": 1,
+			StrategyOptions: map[string]interface{}{
+				"class":   "NetworkTopologyStrategy",
+				"local":   1,
 				"remote1": 1,
 				"remote2": 1,
 			},
@@ -524,20 +536,20 @@ func TestHostPolicy_TokenAware_DCAwareRR(t *testing.T) {
 
 	// The NetworkTopologyStrategy above should generate the following replicas.
 	// It's handy to have as reference here.
-	assertDeepEqual(t, "replicas", map[string]map[token][]*HostInfo{
+	assertDeepEqual(t, "replicas", map[string]tokenRingReplicas{
 		"myKeyspace": {
-			orderedToken("05"): {hosts[0], hosts[1], hosts[2]},
-			orderedToken("10"): {hosts[1], hosts[2], hosts[3]},
-			orderedToken("15"): {hosts[2], hosts[3], hosts[4]},
-			orderedToken("20"): {hosts[3], hosts[4], hosts[5]},
-			orderedToken("25"): {hosts[4], hosts[5], hosts[6]},
-			orderedToken("30"): {hosts[5], hosts[6], hosts[7]},
-			orderedToken("35"): {hosts[6], hosts[7], hosts[8]},
-			orderedToken("40"): {hosts[7], hosts[8], hosts[9]},
-			orderedToken("45"): {hosts[8], hosts[9], hosts[10]},
-			orderedToken("50"): {hosts[9], hosts[10], hosts[11]},
-			orderedToken("55"): {hosts[10], hosts[11], hosts[0]},
-			orderedToken("60"): {hosts[11], hosts[0], hosts[1]},
+			{orderedToken("05"), []*HostInfo{hosts[0], hosts[1], hosts[2]}},
+			{orderedToken("10"), []*HostInfo{hosts[1], hosts[2], hosts[3]}},
+			{orderedToken("15"), []*HostInfo{hosts[2], hosts[3], hosts[4]}},
+			{orderedToken("20"), []*HostInfo{hosts[3], hosts[4], hosts[5]}},
+			{orderedToken("25"), []*HostInfo{hosts[4], hosts[5], hosts[6]}},
+			{orderedToken("30"), []*HostInfo{hosts[5], hosts[6], hosts[7]}},
+			{orderedToken("35"), []*HostInfo{hosts[6], hosts[7], hosts[8]}},
+			{orderedToken("40"), []*HostInfo{hosts[7], hosts[8], hosts[9]}},
+			{orderedToken("45"), []*HostInfo{hosts[8], hosts[9], hosts[10]}},
+			{orderedToken("50"), []*HostInfo{hosts[9], hosts[10], hosts[11]}},
+			{orderedToken("55"), []*HostInfo{hosts[10], hosts[11], hosts[0]}},
+			{orderedToken("60"), []*HostInfo{hosts[11], hosts[0], hosts[1]}},
 		},
 	}, policyInternal.getMetadataReadOnly().replicas)
 
@@ -545,29 +557,11 @@ func TestHostPolicy_TokenAware_DCAwareRR(t *testing.T) {
 	query.RoutingKey([]byte("23"))
 	iter = policy.Pick(query)
 	// first should be host with matching token from the local DC
-	if actual := iter(); actual.Info().HostID() != "4" {
-		t.Errorf("Expected peer 4 but was %s", actual.Info().HostID())
-	}
+	iterCheck(t, iter, "4")
 	// rest are according DCAwareRR from local DC only, starting with 7 as the fallback was used twice above
-	if actual := iter(); actual.Info().HostID() != "7" {
-		t.Errorf("Expected peer 7 but was %s", actual.Info().HostID())
-	}
-	if actual := iter(); actual.Info().HostID() != "10" {
-		t.Errorf("Expected peer 10 but was %s", actual.Info().HostID())
-	}
-	if actual := iter(); actual.Info().HostID() != "1" {
-		t.Errorf("Expected peer 1 but was %s", actual.Info().HostID())
-	}
-	// and it starts to repeat now without host 4...
-	if actual := iter(); actual.Info().HostID() != "7" {
-		t.Errorf("Expected peer 7 but was %s", actual.Info().HostID())
-	}
-	if actual := iter(); actual.Info().HostID() != "10" {
-		t.Errorf("Expected peer 10 but was %s", actual.Info().HostID())
-	}
-	if actual := iter(); actual.Info().HostID() != "1" {
-		t.Errorf("Expected peer 1 but was %s", actual.Info().HostID())
-	}
+	iterCheck(t, iter, "7")
+	iterCheck(t, iter, "10")
+	iterCheck(t, iter, "1")
 }
 
 // Tests of the token-aware host selection policy implementation with a
@@ -576,13 +570,13 @@ func TestHostPolicy_TokenAware_DCAwareRR(t *testing.T) {
 func TestHostPolicy_TokenAware_DCAwareRR2(t *testing.T) {
 	policy := TokenAwareHostPolicy(DCAwareRoundRobinPolicy("local"))
 	policyInternal := policy.(*tokenAwareHostPolicy)
-	policyInternal.getKeyspaceName = func() string {return "myKeyspace"}
+	policyInternal.getKeyspaceName = func() string { return "myKeyspace" }
 	policyInternal.getKeyspaceMetadata = func(ks string) (*KeyspaceMetadata, error) {
 		return nil, errors.New("not initialized")
 	}
 
 	query := &Query{}
-	query.getKeyspace = func() string {return "myKeyspace"}
+	query.getKeyspace = func() string { return "myKeyspace" }
 
 	iter := policy.Pick(nil)
 	if iter == nil {
@@ -634,11 +628,11 @@ func TestHostPolicy_TokenAware_DCAwareRR2(t *testing.T) {
 			return nil, fmt.Errorf("unknown keyspace: %s", keyspaceName)
 		}
 		return &KeyspaceMetadata{
-			Name: "myKeyspace",
+			Name:          "myKeyspace",
 			StrategyClass: "NetworkTopologyStrategy",
-			StrategyOptions: map[string]interface{} {
-				"class": "NetworkTopologyStrategy",
-				"local": 2,
+			StrategyOptions: map[string]interface{}{
+				"class":   "NetworkTopologyStrategy",
+				"local":   2,
 				"remote1": 2,
 				"remote2": 2,
 			},
@@ -648,20 +642,20 @@ func TestHostPolicy_TokenAware_DCAwareRR2(t *testing.T) {
 
 	// The NetworkTopologyStrategy above should generate the following replicas.
 	// It's handy to have as reference here.
-	assertDeepEqual(t, "replicas", map[string]map[token][]*HostInfo{
+	assertDeepEqual(t, "replicas", map[string]tokenRingReplicas{
 		"myKeyspace": {
-			orderedToken("05"): {hosts[0], hosts[1], hosts[2], hosts[3], hosts[4], hosts[5]},
-			orderedToken("10"): {hosts[1], hosts[2], hosts[3], hosts[4], hosts[5], hosts[6]},
-			orderedToken("15"): {hosts[2], hosts[3], hosts[4], hosts[5], hosts[6], hosts[7]},
-			orderedToken("20"): {hosts[3], hosts[4], hosts[5], hosts[6], hosts[7], hosts[8]},
-			orderedToken("25"): {hosts[4], hosts[5], hosts[6], hosts[7], hosts[8], hosts[9]},
-			orderedToken("30"): {hosts[5], hosts[6], hosts[7], hosts[8], hosts[9], hosts[10]},
-			orderedToken("35"): {hosts[6], hosts[7], hosts[8], hosts[9], hosts[10], hosts[11]},
-			orderedToken("40"): {hosts[7], hosts[8], hosts[9], hosts[10], hosts[11], hosts[0]},
-			orderedToken("45"): {hosts[8], hosts[9], hosts[10], hosts[11], hosts[0], hosts[1]},
-			orderedToken("50"): {hosts[9], hosts[10], hosts[11], hosts[0], hosts[1], hosts[2]},
-			orderedToken("55"): {hosts[10], hosts[11], hosts[0], hosts[1], hosts[2], hosts[3]},
-			orderedToken("60"): {hosts[11], hosts[0], hosts[1], hosts[2], hosts[3], hosts[4]},
+			{orderedToken("05"), []*HostInfo{hosts[0], hosts[1], hosts[2], hosts[3], hosts[4], hosts[5]}},
+			{orderedToken("10"), []*HostInfo{hosts[1], hosts[2], hosts[3], hosts[4], hosts[5], hosts[6]}},
+			{orderedToken("15"), []*HostInfo{hosts[2], hosts[3], hosts[4], hosts[5], hosts[6], hosts[7]}},
+			{orderedToken("20"), []*HostInfo{hosts[3], hosts[4], hosts[5], hosts[6], hosts[7], hosts[8]}},
+			{orderedToken("25"), []*HostInfo{hosts[4], hosts[5], hosts[6], hosts[7], hosts[8], hosts[9]}},
+			{orderedToken("30"), []*HostInfo{hosts[5], hosts[6], hosts[7], hosts[8], hosts[9], hosts[10]}},
+			{orderedToken("35"), []*HostInfo{hosts[6], hosts[7], hosts[8], hosts[9], hosts[10], hosts[11]}},
+			{orderedToken("40"), []*HostInfo{hosts[7], hosts[8], hosts[9], hosts[10], hosts[11], hosts[0]}},
+			{orderedToken("45"), []*HostInfo{hosts[8], hosts[9], hosts[10], hosts[11], hosts[0], hosts[1]}},
+			{orderedToken("50"), []*HostInfo{hosts[9], hosts[10], hosts[11], hosts[0], hosts[1], hosts[2]}},
+			{orderedToken("55"), []*HostInfo{hosts[10], hosts[11], hosts[0], hosts[1], hosts[2], hosts[3]}},
+			{orderedToken("60"), []*HostInfo{hosts[11], hosts[0], hosts[1], hosts[2], hosts[3], hosts[4]}},
 		},
 	}, policyInternal.getMetadataReadOnly().replicas)
 
@@ -669,40 +663,29 @@ func TestHostPolicy_TokenAware_DCAwareRR2(t *testing.T) {
 	query.RoutingKey([]byte("23"))
 	iter = policy.Pick(query)
 	// first should be hosts with matching token from the local DC
-	if actual := iter(); actual.Info().HostID() != "4" {
-		t.Errorf("Expected peer 4 but was %s", actual.Info().HostID())
-	}
-	if actual := iter(); actual.Info().HostID() != "7" {
-		t.Errorf("Expected peer 7 but was %s", actual.Info().HostID())
-	}
+	iterCheck(t, iter, "4")
+	iterCheck(t, iter, "7")
 	// rest are according DCAwareRR from local DC only, starting with 7 as the fallback was used twice above
-	if actual := iter(); actual.Info().HostID() != "1" {
-		t.Errorf("Expected peer 1 but was %s", actual.Info().HostID())
-	}
-	if actual := iter(); actual.Info().HostID() != "10" {
-		t.Errorf("Expected peer 10 but was %s", actual.Info().HostID())
-	}
-	// and it starts to repeat now without host 4 and 7...
-	if actual := iter(); actual.Info().HostID() != "1" {
-		t.Errorf("Expected peer 1 but was %s", actual.Info().HostID())
-	}
-	if actual := iter(); actual.Info().HostID() != "10" {
-		t.Errorf("Expected peer 10 but was %s", actual.Info().HostID())
-	}
+	iterCheck(t, iter, "1")
+	iterCheck(t, iter, "10")
 }
 
 // Tests of the token-aware host selection policy implementation with a
 // DC aware round-robin host selection policy fallback with NonLocalReplicasFallback option enabled.
 func TestHostPolicy_TokenAware_DCAwareRR_NonLocalFallback(t *testing.T) {
-	policy := TokenAwareHostPolicy(DCAwareRoundRobinPolicy("local"), NonLocalReplicasFallback())
+	const (
+		keyspace = "myKeyspace"
+		localDC  = "local"
+	)
+	policy := TokenAwareHostPolicy(DCAwareRoundRobinPolicy(localDC), NonLocalReplicasFallback())
 	policyInternal := policy.(*tokenAwareHostPolicy)
-	policyInternal.getKeyspaceName = func() string {return "myKeyspace"}
+	policyInternal.getKeyspaceName = func() string { return keyspace }
 	policyInternal.getKeyspaceMetadata = func(ks string) (*KeyspaceMetadata, error) {
 		return nil, errors.New("not initialized")
 	}
 
 	query := &Query{}
-	query.getKeyspace = func() string {return "myKeyspace"}
+	query.getKeyspace = func() string { return keyspace }
 
 	iter := policy.Pick(nil)
 	if iter == nil {
@@ -716,16 +699,16 @@ func TestHostPolicy_TokenAware_DCAwareRR_NonLocalFallback(t *testing.T) {
 	// set the hosts
 	hosts := [...]*HostInfo{
 		{hostId: "0", connectAddress: net.IPv4(10, 0, 0, 1), tokens: []string{"05"}, dataCenter: "remote1"},
-		{hostId: "1", connectAddress: net.IPv4(10, 0, 0, 2), tokens: []string{"10"}, dataCenter: "local"},
-		{hostId: "2", connectAddress: net.IPv4(10, 0, 0, 3), tokens: []string{"15"}, dataCenter: "remote2"},
-		{hostId: "3", connectAddress: net.IPv4(10, 0, 0, 4), tokens: []string{"20"}, dataCenter: "remote1"},
-		{hostId: "4", connectAddress: net.IPv4(10, 0, 0, 5), tokens: []string{"25"}, dataCenter: "local"},
+		{hostId: "1", connectAddress: net.IPv4(10, 0, 0, 2), tokens: []string{"10"}, dataCenter: localDC},
+		{hostId: "2", connectAddress: net.IPv4(10, 0, 0, 3), tokens: []string{"15"}, dataCenter: "remote2"}, // 1
+		{hostId: "3", connectAddress: net.IPv4(10, 0, 0, 4), tokens: []string{"20"}, dataCenter: "remote1"}, // 2
+		{hostId: "4", connectAddress: net.IPv4(10, 0, 0, 5), tokens: []string{"25"}, dataCenter: localDC},   // 3
 		{hostId: "5", connectAddress: net.IPv4(10, 0, 0, 6), tokens: []string{"30"}, dataCenter: "remote2"},
 		{hostId: "6", connectAddress: net.IPv4(10, 0, 0, 7), tokens: []string{"35"}, dataCenter: "remote1"},
-		{hostId: "7", connectAddress: net.IPv4(10, 0, 0, 8), tokens: []string{"40"}, dataCenter: "local"},
+		{hostId: "7", connectAddress: net.IPv4(10, 0, 0, 8), tokens: []string{"40"}, dataCenter: localDC},
 		{hostId: "8", connectAddress: net.IPv4(10, 0, 0, 9), tokens: []string{"45"}, dataCenter: "remote2"},
 		{hostId: "9", connectAddress: net.IPv4(10, 0, 0, 10), tokens: []string{"50"}, dataCenter: "remote1"},
-		{hostId: "10", connectAddress: net.IPv4(10, 0, 0, 11), tokens: []string{"55"}, dataCenter: "local"},
+		{hostId: "10", connectAddress: net.IPv4(10, 0, 0, 11), tokens: []string{"55"}, dataCenter: localDC},
 		{hostId: "11", connectAddress: net.IPv4(10, 0, 0, 12), tokens: []string{"60"}, dataCenter: "remote2"},
 	}
 	for _, host := range hosts {
@@ -734,50 +717,46 @@ func TestHostPolicy_TokenAware_DCAwareRR_NonLocalFallback(t *testing.T) {
 
 	// the token ring is not setup without the partitioner, but the fallback
 	// should work
-	if actual := policy.Pick(nil)(); actual.Info().HostID() != "1" {
-		t.Errorf("Expected host 1 but was %s", actual.Info().HostID())
-	}
+	iterCheck(t, policy.Pick(nil), "1")
 
 	query.RoutingKey([]byte("30"))
-	if actual := policy.Pick(query)(); actual.Info().HostID() != "4" {
-		t.Errorf("Expected peer 4 but was %s", actual.Info().HostID())
-	}
+	iterCheck(t, policy.Pick(query), "4")
 
 	policy.SetPartitioner("OrderedPartitioner")
 
 	policyInternal.getKeyspaceMetadata = func(keyspaceName string) (*KeyspaceMetadata, error) {
-		if keyspaceName != "myKeyspace" {
+		if keyspaceName != keyspace {
 			return nil, fmt.Errorf("unknown keyspace: %s", keyspaceName)
 		}
 		return &KeyspaceMetadata{
-			Name: "myKeyspace",
+			Name:          keyspace,
 			StrategyClass: "NetworkTopologyStrategy",
-			StrategyOptions: map[string]interface{} {
-				"class": "NetworkTopologyStrategy",
-				"local": 1,
+			StrategyOptions: map[string]interface{}{
+				"class":   "NetworkTopologyStrategy",
+				localDC:   1,
 				"remote1": 1,
 				"remote2": 1,
 			},
 		}, nil
 	}
-	policy.KeyspaceChanged(KeyspaceUpdateEvent{Keyspace: "myKeyspace"})
+	policy.KeyspaceChanged(KeyspaceUpdateEvent{Keyspace: keyspace})
 
 	// The NetworkTopologyStrategy above should generate the following replicas.
 	// It's handy to have as reference here.
-	assertDeepEqual(t, "replicas", map[string]map[token][]*HostInfo{
-		"myKeyspace": {
-			orderedToken("05"): {hosts[0], hosts[1], hosts[2]},
-			orderedToken("10"): {hosts[1], hosts[2], hosts[3]},
-			orderedToken("15"): {hosts[2], hosts[3], hosts[4]},
-			orderedToken("20"): {hosts[3], hosts[4], hosts[5]},
-			orderedToken("25"): {hosts[4], hosts[5], hosts[6]},
-			orderedToken("30"): {hosts[5], hosts[6], hosts[7]},
-			orderedToken("35"): {hosts[6], hosts[7], hosts[8]},
-			orderedToken("40"): {hosts[7], hosts[8], hosts[9]},
-			orderedToken("45"): {hosts[8], hosts[9], hosts[10]},
-			orderedToken("50"): {hosts[9], hosts[10], hosts[11]},
-			orderedToken("55"): {hosts[10], hosts[11], hosts[0]},
-			orderedToken("60"): {hosts[11], hosts[0], hosts[1]},
+	assertDeepEqual(t, "replicas", map[string]tokenRingReplicas{
+		keyspace: {
+			{orderedToken("05"), []*HostInfo{hosts[0], hosts[1], hosts[2]}},
+			{orderedToken("10"), []*HostInfo{hosts[1], hosts[2], hosts[3]}},
+			{orderedToken("15"), []*HostInfo{hosts[2], hosts[3], hosts[4]}},
+			{orderedToken("20"), []*HostInfo{hosts[3], hosts[4], hosts[5]}},
+			{orderedToken("25"), []*HostInfo{hosts[4], hosts[5], hosts[6]}},
+			{orderedToken("30"), []*HostInfo{hosts[5], hosts[6], hosts[7]}},
+			{orderedToken("35"), []*HostInfo{hosts[6], hosts[7], hosts[8]}},
+			{orderedToken("40"), []*HostInfo{hosts[7], hosts[8], hosts[9]}},
+			{orderedToken("45"), []*HostInfo{hosts[8], hosts[9], hosts[10]}},
+			{orderedToken("50"), []*HostInfo{hosts[9], hosts[10], hosts[11]}},
+			{orderedToken("55"), []*HostInfo{hosts[10], hosts[11], hosts[0]}},
+			{orderedToken("60"), []*HostInfo{hosts[11], hosts[0], hosts[1]}},
 		},
 	}, policyInternal.getMetadataReadOnly().replicas)
 
@@ -785,34 +764,12 @@ func TestHostPolicy_TokenAware_DCAwareRR_NonLocalFallback(t *testing.T) {
 	query.RoutingKey([]byte("18"))
 	iter = policy.Pick(query)
 	// first should be host with matching token from the local DC
-	if actual := iter(); actual.Info().HostID() != "4" {
-		t.Errorf("Expected peer 4 but was %s", actual.Info().HostID())
-	}
+	iterCheck(t, iter, "4")
 	// rest should be hosts with matching token from remote DCs
-	if actual := iter(); actual.Info().HostID() != "3" {
-		t.Errorf("Expected peer 3 but was %s", actual.Info().HostID())
-	}
-	if actual := iter(); actual.Info().HostID() != "5" {
-		t.Errorf("Expected peer 5 but was %s", actual.Info().HostID())
-	}
+	iterCheck(t, iter, "3")
+	iterCheck(t, iter, "5")
 	// rest are according DCAwareRR from local DC only, starting with 7 as the fallback was used twice above
-	if actual := iter(); actual.Info().HostID() != "7" {
-		t.Errorf("Expected peer 7 but was %s", actual.Info().HostID())
-	}
-	if actual := iter(); actual.Info().HostID() != "10" {
-		t.Errorf("Expected peer 10 but was %s", actual.Info().HostID())
-	}
-	if actual := iter(); actual.Info().HostID() != "1" {
-		t.Errorf("Expected peer 1 but was %s", actual.Info().HostID())
-	}
-	// and it starts to repeat now without host 4...
-	if actual := iter(); actual.Info().HostID() != "7" {
-		t.Errorf("Expected peer 7 but was %s", actual.Info().HostID())
-	}
-	if actual := iter(); actual.Info().HostID() != "10" {
-		t.Errorf("Expected peer 10 but was %s", actual.Info().HostID())
-	}
-	if actual := iter(); actual.Info().HostID() != "1" {
-		t.Errorf("Expected peer 1 but was %s", actual.Info().HostID())
-	}
+	iterCheck(t, iter, "7")
+	iterCheck(t, iter, "10")
+	iterCheck(t, iter, "1")
 }

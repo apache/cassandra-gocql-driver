@@ -416,14 +416,14 @@ func TokenAwareHostPolicy(fallback HostSelectionPolicy, opts ...func(*tokenAware
 // and the pointer in clusterMeta updated to point to the new value.
 type clusterMeta struct {
 	// replicas is map[keyspace]map[token]hosts
-	replicas map[string]map[token][]*HostInfo
+	replicas  map[string]tokenRingReplicas
 	tokenRing *tokenRing
 }
 
 type tokenAwareHostPolicy struct {
-	fallback    HostSelectionPolicy
+	fallback            HostSelectionPolicy
 	getKeyspaceMetadata func(keyspace string) (*KeyspaceMetadata, error)
-	getKeyspaceName func() string
+	getKeyspaceName     func() string
 
 	shuffleReplicas          bool
 	nonLocalReplicasFallback bool
@@ -438,7 +438,7 @@ type tokenAwareHostPolicy struct {
 
 func (t *tokenAwareHostPolicy) Init(s *Session) {
 	t.getKeyspaceMetadata = s.KeyspaceMetadata
-	t.getKeyspaceName = func() string {return s.cfg.Keyspace}
+	t.getKeyspaceName = func() string { return s.cfg.Keyspace }
 }
 
 func (t *tokenAwareHostPolicy) IsLocal(host *HostInfo) bool {
@@ -457,15 +457,14 @@ func (t *tokenAwareHostPolicy) KeyspaceChanged(update KeyspaceUpdateEvent) {
 // It must be called with t.mu mutex locked.
 // meta must not be nil and it's replicas field will be updated.
 func (t *tokenAwareHostPolicy) updateReplicas(meta *clusterMeta, keyspace string) {
-	newReplicas := make(map[string]map[token][]*HostInfo, len(meta.replicas))
+	newReplicas := make(map[string]tokenRingReplicas, len(meta.replicas))
 
 	ks, err := t.getKeyspaceMetadata(keyspace)
 	if err == nil {
 		strat := getStrategy(ks)
 		if strat != nil {
 			if meta != nil && meta.tokenRing != nil {
-				hosts := t.hosts.get()
-				newReplicas[keyspace] = strat.replicaMap(hosts, meta.tokenRing.tokens)
+				newReplicas[keyspace] = strat.replicaMap(meta.tokenRing)
 			}
 		}
 	}
@@ -567,14 +566,6 @@ func (m *clusterMeta) resetTokenRing(partitioner string, hosts []*HostInfo) {
 	m.tokenRing = tokenRing
 }
 
-func (m *clusterMeta) getReplicas(keyspace string, token token) ([]*HostInfo, bool) {
-	if m.replicas == nil {
-		return nil, false
-	}
-	replicas, ok := m.replicas[keyspace][token]
-	return replicas, ok
-}
-
 func (t *tokenAwareHostPolicy) Pick(qry ExecutableQuery) NextHost {
 	if qry == nil {
 		return t.fallback.Pick(qry)
@@ -592,22 +583,23 @@ func (t *tokenAwareHostPolicy) Pick(qry ExecutableQuery) NextHost {
 		return t.fallback.Pick(qry)
 	}
 
-	primaryEndpoint, token := meta.tokenRing.GetHostForPartitionKey(routingKey)
-	if primaryEndpoint == nil || token == nil {
-		return t.fallback.Pick(qry)
-	}
+	token := meta.tokenRing.partitioner.Hash(routingKey)
+	ht := meta.replicas[qry.Keyspace()].replicasFor(token)
+	var replicas []*HostInfo
 
-	replicas, ok := meta.getReplicas(qry.Keyspace(), token)
-	if !ok {
-		replicas = []*HostInfo{primaryEndpoint}
+	if ht == nil {
+		host, _ := meta.tokenRing.GetHostForToken(token)
+		replicas = []*HostInfo{host}
 	} else if t.shuffleReplicas {
 		replicas = shuffleHosts(replicas)
+	} else {
+		replicas = ht.hosts
 	}
 
 	var (
 		fallbackIter NextHost
-		i            int
-		j            int
+		i, j         int
+		remote       []*HostInfo
 	)
 
 	used := make(map[*HostInfo]bool, len(replicas))
@@ -616,18 +608,23 @@ func (t *tokenAwareHostPolicy) Pick(qry ExecutableQuery) NextHost {
 			h := replicas[i]
 			i++
 
-			if h.IsUp() && t.fallback.IsLocal(h) {
+			if !t.fallback.IsLocal(h) {
+				remote = append(remote, h)
+				continue
+			}
+
+			if h.IsUp() {
 				used[h] = true
 				return (*selectedHost)(h)
 			}
 		}
 
 		if t.nonLocalReplicasFallback {
-			for j < len(replicas) {
-				h := replicas[j]
+			for j < len(remote) {
+				h := remote[j]
 				j++
 
-				if h.IsUp() && !t.fallback.IsLocal(h) {
+				if h.IsUp() {
 					used[h] = true
 					return (*selectedHost)(h)
 				}
@@ -642,9 +639,11 @@ func (t *tokenAwareHostPolicy) Pick(qry ExecutableQuery) NextHost {
 		// filter the token aware selected hosts from the fallback hosts
 		for fallbackHost := fallbackIter(); fallbackHost != nil; fallbackHost = fallbackIter() {
 			if !used[fallbackHost.Info()] {
+				used[fallbackHost.Info()] = true
 				return fallbackHost
 			}
 		}
+
 		return nil
 	}
 }
