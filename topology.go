@@ -26,9 +26,20 @@ func (h tokenRingReplicas) replicasFor(t token) *hostTokens {
 	p := sort.Search(len(h), func(i int) bool {
 		return !h[i].token.Less(t)
 	})
+
+	// TODO: simplify this
+	if p < len(h) && h[p].token == t {
+		return &h[p]
+	}
+
+	p--
+
 	if p >= len(h) {
 		// rollover
 		p = 0
+	} else if p < 0 {
+		// rollunder
+		p = len(h) - 1
 	}
 
 	return &h[p]
@@ -100,7 +111,6 @@ func (s *simpleStrategy) replicaMap(tokenRing *tokenRing) tokenRingReplicas {
 		seen := make(map[*HostInfo]bool)
 
 		for j := 0; j < len(tokens) && len(replicas) < s.rf; j++ {
-			// TODO: need to ensure we dont add the same hosts twice
 			h := tokens[(i+j)%len(tokens)]
 			if !seen[h.host] {
 				replicas = append(replicas, h.host)

@@ -6,6 +6,8 @@ package gocql
 
 import (
 	"context"
+	crand "crypto/rand"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"math"
@@ -334,8 +336,6 @@ func RoundRobinHostPolicy() HostSelectionPolicy {
 
 type roundRobinHostPolicy struct {
 	hosts cowHostList
-	pos   uint32
-	mu    sync.RWMutex
 }
 
 func (r *roundRobinHostPolicy) IsLocal(*HostInfo) bool              { return true }
@@ -344,25 +344,16 @@ func (r *roundRobinHostPolicy) SetPartitioner(partitioner string)   {}
 func (r *roundRobinHostPolicy) Init(*Session)                       {}
 
 func (r *roundRobinHostPolicy) Pick(qry ExecutableQuery) NextHost {
-	// i is used to limit the number of attempts to find a host
-	// to the number of hosts known to this policy
-	var i int
-	return func() SelectedHost {
-		hosts := r.hosts.get()
-		if len(hosts) == 0 {
-			return nil
-		}
+	src := r.hosts.get()
+	hosts := make([]*HostInfo, len(src))
+	copy(hosts, src)
 
-		// always increment pos to evenly distribute traffic in case of
-		// failures
-		pos := atomic.AddUint32(&r.pos, 1) - 1
-		if i >= len(hosts) {
-			return nil
-		}
-		host := hosts[(pos)%uint32(len(hosts))]
-		i++
-		return (*selectedHost)(host)
-	}
+	rand := rand.New(randSource())
+	rand.Shuffle(len(hosts), func(i, j int) {
+		hosts[i], hosts[j] = hosts[j], hosts[i]
+	})
+
+	return roundRobbin(hosts)
 }
 
 func (r *roundRobinHostPolicy) AddHost(host *HostInfo) {
@@ -585,8 +576,8 @@ func (t *tokenAwareHostPolicy) Pick(qry ExecutableQuery) NextHost {
 
 	token := meta.tokenRing.partitioner.Hash(routingKey)
 	ht := meta.replicas[qry.Keyspace()].replicasFor(token)
-	var replicas []*HostInfo
 
+	var replicas []*HostInfo
 	if ht == nil {
 		host, _ := meta.tokenRing.GetHostForToken(token)
 		replicas = []*HostInfo{host}
@@ -792,8 +783,6 @@ func (host selectedHostPoolHost) Mark(err error) {
 
 type dcAwareRR struct {
 	local       string
-	pos         uint32
-	mu          sync.RWMutex
 	localHosts  cowHostList
 	remoteHosts cowHostList
 }
@@ -814,7 +803,7 @@ func (d *dcAwareRR) IsLocal(host *HostInfo) bool {
 }
 
 func (d *dcAwareRR) AddHost(host *HostInfo) {
-	if host.DataCenter() == d.local {
+	if d.IsLocal(host) {
 		d.localHosts.add(host)
 	} else {
 		d.remoteHosts.add(host)
@@ -822,7 +811,7 @@ func (d *dcAwareRR) AddHost(host *HostInfo) {
 }
 
 func (d *dcAwareRR) RemoveHost(host *HostInfo) {
-	if host.DataCenter() == d.local {
+	if d.IsLocal(host) {
 		d.localHosts.remove(host.ConnectAddress())
 	} else {
 		d.remoteHosts.remove(host.ConnectAddress())
@@ -832,31 +821,53 @@ func (d *dcAwareRR) RemoveHost(host *HostInfo) {
 func (d *dcAwareRR) HostUp(host *HostInfo)   { d.AddHost(host) }
 func (d *dcAwareRR) HostDown(host *HostInfo) { d.RemoveHost(host) }
 
-func (d *dcAwareRR) Pick(q ExecutableQuery) NextHost {
+var randSeed int64
+
+func init() {
+	p := make([]byte, 8)
+	if _, err := crand.Read(p); err != nil {
+		panic(err)
+	}
+	randSeed = int64(binary.BigEndian.Uint64(p))
+}
+
+func randSource() rand.Source {
+	return rand.NewSource(atomic.AddInt64(&randSeed, 1))
+}
+
+func roundRobbin(hosts []*HostInfo) NextHost {
 	var i int
 	return func() SelectedHost {
-		var hosts []*HostInfo
-		localHosts := d.localHosts.get()
-		remoteHosts := d.remoteHosts.get()
-		if len(localHosts) != 0 {
-			hosts = localHosts
-		} else {
-			hosts = remoteHosts
-		}
-		if len(hosts) == 0 {
-			return nil
+		for i < len(hosts) {
+			h := hosts[i]
+			i++
+
+			if h.IsUp() {
+				return (*selectedHost)(h)
+			}
 		}
 
-		// always increment pos to evenly distribute traffic in case of
-		// failures
-		pos := atomic.AddUint32(&d.pos, 1) - 1
-		if i >= len(localHosts)+len(remoteHosts) {
-			return nil
-		}
-		host := hosts[(pos)%uint32(len(hosts))]
-		i++
-		return (*selectedHost)(host)
+		return nil
 	}
+}
+
+func (d *dcAwareRR) Pick(q ExecutableQuery) NextHost {
+	local := d.localHosts.get()
+	remote := d.remoteHosts.get()
+	hosts := make([]*HostInfo, len(local)+len(remote))
+	n := copy(hosts, local)
+	copy(hosts[n:], remote)
+
+	// TODO: use random chose-2 but that will require plumbing information
+	// about connection/host load to here
+	r := rand.New(randSource())
+	for _, l := range [][]*HostInfo{local, remote} {
+		r.Shuffle(len(l), func(i, j int) {
+			l[i], l[j] = l[j], l[i]
+		})
+	}
+
+	return roundRobbin(hosts)
 }
 
 // ConvictionPolicy interface is used by gocql to determine if a host should be
