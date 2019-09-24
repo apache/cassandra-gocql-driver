@@ -28,6 +28,7 @@ var (
 
 var (
 	ErrorUDTUnavailable = errors.New("UDT are not available on protocols less than 3, please update config")
+	ErrorNullColumn     = errors.New("Null value was returned as column value")
 )
 
 // Marshaler is the interface implemented by objects that can marshal
@@ -119,6 +120,10 @@ func Marshal(info TypeInfo, value interface{}) ([]byte, error) {
 // describes the Cassandra internal data type and stores the result in the
 // value pointed by value.
 func Unmarshal(info TypeInfo, data []byte, value interface{}) error {
+	if data == nil {
+		return ErrorNullColumn
+	}
+
 	if v, ok := value.(Unmarshaler); ok {
 		return v.UnmarshalCQL(info, data)
 	}

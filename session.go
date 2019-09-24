@@ -1287,6 +1287,10 @@ func scanColumn(p []byte, col ColumnInfo, dest []interface{}) (int, error) {
 		return count, nil
 	} else {
 		if err := Unmarshal(col.TypeInfo, p, dest[0]); err != nil {
+			if err == ErrorNullColumn {
+				dest[0] = nil
+				return 1, nil
+			}
 			return 0, err
 		}
 		return 1, nil
