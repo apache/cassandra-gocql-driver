@@ -107,6 +107,9 @@ func TestPlacementStrategy_NetworkStrategy(t *testing.T) {
 	if len(tokenReplicas) != len(tokens) {
 		t.Fatalf("expected replica map to have %d items but has %d", len(tokens), len(tokenReplicas))
 	}
+	if !sort.IsSorted(tokenReplicas) {
+		t.Fatal("replica map was not sorted by token")
+	}
 
 	for token, replicas := range tokenReplicas {
 		if len(replicas.hosts) != expReplicas {
