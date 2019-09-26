@@ -496,6 +496,25 @@ func (t *tokenAwareHostPolicy) AddHost(host *HostInfo) {
 	t.fallback.AddHost(host)
 }
 
+func (t *tokenAwareHostPolicy) AddHosts(hosts []*HostInfo) {
+	t.mu.Lock()
+
+	for _, host := range hosts {
+		t.hosts.add(host)
+	}
+
+	meta := t.getMetadataForUpdate()
+	meta.resetTokenRing(t.partitioner, t.hosts.get())
+	t.updateReplicas(meta, t.getKeyspaceName())
+	t.metadata.Store(meta)
+
+	t.mu.Unlock()
+
+	for _, host := range hosts {
+		t.fallback.AddHost(host)
+	}
+}
+
 func (t *tokenAwareHostPolicy) RemoveHost(host *HostInfo) {
 	t.mu.Lock()
 	if t.hosts.remove(host.ConnectAddress()) {

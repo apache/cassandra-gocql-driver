@@ -221,9 +221,28 @@ func (s *Session) init() error {
 		hostMap[host.ConnectAddress().String()] = host
 	}
 
+	hosts = hosts[:0]
 	for _, host := range hostMap {
 		host = s.ring.addOrUpdate(host)
-		s.addNewNode(host)
+		if s.cfg.filterHost(host) {
+			continue
+		}
+
+		host.setState(NodeUp)
+		s.pool.addHost(host)
+
+		hosts = append(hosts, host)
+	}
+
+	type bulkAddHosts interface {
+		AddHosts([]*HostInfo)
+	}
+	if v, ok := s.policy.(bulkAddHosts); ok {
+		v.AddHosts(hosts)
+	} else {
+		for _, host := range hosts {
+			s.policy.AddHost(host)
+		}
 	}
 
 	// TODO(zariel): we probably dont need this any more as we verify that we
