@@ -59,7 +59,7 @@ func createTable(s *Session, table string) error {
 		return err
 	}
 
-	if err := s.Query(table).RetryPolicy(nil).Exec(); err != nil {
+	if err := s.Query(table).RetryPolicy(&SimpleRetryPolicy{}).Exec(); err != nil {
 		log.Printf("error creating table table=%q err=%v\n", table, err)
 		return err
 	}
