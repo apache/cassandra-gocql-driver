@@ -650,7 +650,7 @@ func (r *ringDescriber) getHostInfo(ip net.IP, port int) (*HostInfo, error) {
 		}
 
 		for _, row := range rows {
-			h, err := r.session.hostInfoFromMap(row, &HostInfo{connectAddress: ip, port: port})
+			h, err := r.session.hostInfoFromMap(row, &HostInfo{port: port})
 			if err != nil {
 				return nil, err
 			}
