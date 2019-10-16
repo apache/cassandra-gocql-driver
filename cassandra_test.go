@@ -313,6 +313,50 @@ func TestPaging(t *testing.T) {
 	}
 }
 
+func TestPagingWithBind(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+
+	if session.cfg.ProtoVersion == 1 {
+		t.Skip("Paging not supported. Please use Cassandra >= 2.0")
+	}
+
+	if err := createTable(session, "CREATE TABLE gocql_test.paging_bind (id int, val int, primary key(id,val))"); err != nil {
+		t.Fatal("create table:", err)
+	}
+	for i := 0; i < 100; i++ {
+		if err := session.Query("INSERT INTO paging_bind (id,val) VALUES (?,?)", 1,i).Exec(); err != nil {
+			t.Fatal("insert:", err)
+		}
+	}
+
+	q := session.Query("SELECT val FROM paging_bind WHERE id = ? AND val < ?",1, 50).PageSize(10)
+	iter := q.Iter()
+	var id int
+	count := 0
+	for iter.Scan(&id) {
+		count++
+	}
+	if err := iter.Close(); err != nil {
+		t.Fatal("close:", err)
+	}
+	if count != 50 {
+		t.Fatalf("expected %d, got %d", 50, count)
+	}
+
+	iter = q.Bind(1, 20).Iter()
+	count = 0
+	for iter.Scan(&id) {
+		count++
+	}
+	if count != 20 {
+		t.Fatalf("expected %d, got %d", 20, count)
+	}
+	if err := iter.Close(); err != nil {
+		t.Fatal("close:", err)
+	}
+}
+
 func TestCAS(t *testing.T) {
 	cluster := createCluster()
 	cluster.SerialConsistency = LocalSerial
