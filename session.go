@@ -1072,6 +1072,7 @@ func (q *Query) Idempotent(value bool) *Query {
 // to an existing query instance.
 func (q *Query) Bind(v ...interface{}) *Query {
 	q.values = v
+	q.pageState = nil
 	return q
 }
 
