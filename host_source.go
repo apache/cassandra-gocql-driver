@@ -640,7 +640,7 @@ func (r *ringDescriber) refreshRing() error {
 
 	// TODO: move this to session
 	for _, h := range hosts {
-		if filter := r.session.cfg.HostFilter; filter != nil && !filter.Accept(h) {
+		if r.session.cfg.filterHost(h) {
 			continue
 		}
 

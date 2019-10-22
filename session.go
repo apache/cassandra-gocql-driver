@@ -226,26 +226,44 @@ func (s *Session) init() error {
 	}
 
 	hosts = hosts[:0]
-
-	var wg sync.WaitGroup
+	// each host will increment left and decrement it after connecting and once
+	// there's none left, we'll close hostCh
+	var left int64
+	// we will receive up to len(hostMap) of messages so create a buffer so we
+	// don't end up stuck in a goroutine if we stopped listening
+	connectedCh := make(chan struct{}, len(hostMap))
+	// we add one here because we don't want to end up closing hostCh until we're
+	// done looping and the decerement code might be reached before we've looped
+	// again
+	atomic.AddInt64(&left, 1)
 	for _, host := range hostMap {
 		host := s.ring.addOrUpdate(host)
 		if s.cfg.filterHost(host) {
 			continue
 		}
 
-		host.setState(NodeUp)
-		hosts = append(hosts, host)
-
-		wg.Add(1)
+		atomic.AddInt64(&left, 1)
 		go func() {
-			defer wg.Done()
 			s.pool.addHost(host)
+			connectedCh <- struct{}{}
+
+			// if there are no hosts left, then close the hostCh to unblock the loop
+			// below if its still waiting
+			if atomic.AddInt64(&left, -1) == 0 {
+				close(connectedCh)
+			}
 		}()
+
+		hosts = append(hosts, host)
+	}
+	// once we're done looping we subtract the one we initially added and check
+	// to see if we should close
+	if atomic.AddInt64(&left, -1) == 0 {
+		close(connectedCh)
 	}
 
-	wg.Wait()
-
+	// before waiting for them to connect, add them all to the policy so we can
+	// utilize efficiencies by calling AddHosts if the policy supports it
 	type bulkAddHosts interface {
 		AddHosts([]*HostInfo)
 	}
@@ -254,6 +272,15 @@ func (s *Session) init() error {
 	} else {
 		for _, host := range hosts {
 			s.policy.AddHost(host)
+		}
+	}
+
+	readyPolicy, _ := s.policy.(ReadyPolicy)
+	// now loop over connectedCh until it's closed (meaning we've connected to all)
+	// or until the policy says we're ready
+	for range connectedCh {
+		if readyPolicy != nil && readyPolicy.Ready() {
+			break
 		}
 	}
 
@@ -327,7 +354,8 @@ func (s *Session) reconnectDownedHosts(intv time.Duration) {
 				if h.IsUp() {
 					continue
 				}
-				s.handleNodeUp(h.ConnectAddress(), h.Port(), true)
+				// we let the pool call handleNodeUp to change the host state
+				s.pool.addHost(h)
 			}
 		case <-s.ctx.Done():
 			return
@@ -813,6 +841,7 @@ type Query struct {
 	trace                 Tracer
 	observer              QueryObserver
 	session               *Session
+	conn                  *Conn
 	rt                    RetryPolicy
 	spec                  SpeculativeExecutionPolicy
 	binding               func(q *QueryInfo) ([]interface{}, error)
@@ -1175,6 +1204,11 @@ func isUseStatement(stmt string) bool {
 func (q *Query) Iter() *Iter {
 	if isUseStatement(q.stmt) {
 		return &Iter{err: ErrUseStmt}
+	}
+	// if the query was specifically run on a connection then re-use that
+	// connection when fetching the next results
+	if q.conn != nil {
+		return q.conn.executeQuery(q.Context(), q)
 	}
 	return q.session.executeQuery(q)
 }
@@ -1551,7 +1585,13 @@ func (n *nextIter) fetchAsync() {
 
 func (n *nextIter) fetch() *Iter {
 	n.once.Do(func() {
-		n.next = n.qry.session.executeQuery(n.qry)
+		// if the query was specifically run on a connection then re-use that
+		// connection when fetching the next results
+		if n.qry.conn != nil {
+			n.next = n.qry.conn.executeQuery(n.qry.Context(), n.qry)
+		} else {
+			n.next = n.qry.session.executeQuery(n.qry)
+		}
 	})
 	return n.next
 }
