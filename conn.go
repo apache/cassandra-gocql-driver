@@ -945,8 +945,8 @@ type preparedStatment struct {
 }
 
 type inflightPrepare struct {
-	wg  sync.WaitGroup
-	err error
+	done chan struct{}
+	err  error
 
 	preparedStatment *preparedStatment
 }
@@ -954,69 +954,76 @@ type inflightPrepare struct {
 func (c *Conn) prepareStatement(ctx context.Context, stmt string, tracer Tracer) (*preparedStatment, error) {
 	stmtCacheKey := c.session.stmtsLRU.keyFor(c.addr, c.currentKeyspace, stmt)
 	flight, ok := c.session.stmtsLRU.execIfMissing(stmtCacheKey, func(lru *lru.Cache) *inflightPrepare {
-		flight := new(inflightPrepare)
-		flight.wg.Add(1)
+		flight := &inflightPrepare{
+			done: make(chan struct{}),
+		}
 		lru.Add(stmtCacheKey, flight)
 		return flight
 	})
 
-	if ok {
-		flight.wg.Wait()
+	if !ok {
+		go func() {
+			defer close(flight.done)
+
+			prep := &writePrepareFrame{
+				statement: stmt,
+			}
+			if c.version > protoVersion4 {
+				prep.keyspace = c.currentKeyspace
+			}
+
+			// we won the race to do the load, if our context is canceled we shouldnt
+			// stop the load as other callers are waiting for it but this caller should get
+			// their context cancelled error.
+			framer, err := c.exec(context.Background(), prep, tracer)
+			if err != nil {
+				flight.err = err
+				c.session.stmtsLRU.remove(stmtCacheKey)
+				return
+			}
+
+			frame, err := framer.parseFrame()
+			if err != nil {
+				flight.err = err
+				c.session.stmtsLRU.remove(stmtCacheKey)
+				return
+			}
+
+			// TODO(zariel): tidy this up, simplify handling of frame parsing so its not duplicated
+			// everytime we need to parse a frame.
+			if len(framer.traceID) > 0 && tracer != nil {
+				tracer.Trace(framer.traceID)
+			}
+
+			switch x := frame.(type) {
+			case *resultPreparedFrame:
+				flight.preparedStatment = &preparedStatment{
+					// defensively copy as we will recycle the underlying buffer after we
+					// return.
+					id: copyBytes(x.preparedID),
+					// the type info's should _not_ have a reference to the framers read buffer,
+					// therefore we can just copy them directly.
+					request:  x.reqMeta,
+					response: x.respMeta,
+				}
+			case error:
+				flight.err = x
+			default:
+				flight.err = NewErrProtocol("Unknown type in response to prepare frame: %s", x)
+			}
+
+			if flight.err != nil {
+				c.session.stmtsLRU.remove(stmtCacheKey)
+			}
+		}()
+	}
+
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case <-flight.done:
 		return flight.preparedStatment, flight.err
 	}
-
-	prep := &writePrepareFrame{
-		statement: stmt,
-	}
-	if c.version > protoVersion4 {
-		prep.keyspace = c.currentKeyspace
-	}
-
-	framer, err := c.exec(ctx, prep, tracer)
-	if err != nil {
-		flight.err = err
-		flight.wg.Done()
-		c.session.stmtsLRU.remove(stmtCacheKey)
-		return nil, err
-	}
-
-	frame, err := framer.parseFrame()
-	if err != nil {
-		flight.err = err
-		flight.wg.Done()
-		c.session.stmtsLRU.remove(stmtCacheKey)
-		return nil, err
-	}
-
-	// TODO(zariel): tidy this up, simplify handling of frame parsing so its not duplicated
-	// everytime we need to parse a frame.
-	if len(framer.traceID) > 0 && tracer != nil {
-		tracer.Trace(framer.traceID)
-	}
-
-	switch x := frame.(type) {
-	case *resultPreparedFrame:
-		flight.preparedStatment = &preparedStatment{
-			// defensively copy as we will recycle the underlying buffer after we
-			// return.
-			id: copyBytes(x.preparedID),
-			// the type info's should _not_ have a reference to the framers read buffer,
-			// therefore we can just copy them directly.
-			request:  x.reqMeta,
-			response: x.respMeta,
-		}
-	case error:
-		flight.err = x
-	default:
-		flight.err = NewErrProtocol("Unknown type in response to prepare frame: %s", x)
-	}
-	flight.wg.Done()
-
-	if flight.err != nil {
-		c.session.stmtsLRU.remove(stmtCacheKey)
-	}
-
-	return flight.preparedStatment, flight.err
 }
 
 func marshalQueryValue(typ TypeInfo, value interface{}, dst *queryValues) error {
