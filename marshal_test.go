@@ -16,6 +16,11 @@ import (
 )
 
 type AliasInt int
+type AliasUint uint
+type AliasUint8 uint8
+type AliasUint16 uint16
+type AliasUint32 uint32
+type AliasUint64 uint64
 
 var marshalTests = []struct {
 	Info           TypeInfo
@@ -804,8 +809,64 @@ var marshalTests = []struct {
 	},
 	{
 		NativeType{proto: 2, typ: TypeSmallInt},
+		[]byte("\x00\xff"),
+		uint8(255),
+		nil,
+		nil,
+	},
+	{
+		NativeType{proto: 2, typ: TypeSmallInt},
 		[]byte("\xff\xff"),
 		uint16(65535),
+		nil,
+		nil,
+	},
+	{
+		NativeType{proto: 2, typ: TypeSmallInt},
+		[]byte("\xff\xff"),
+		uint32(65535),
+		nil,
+		nil,
+	},
+	{
+		NativeType{proto: 2, typ: TypeSmallInt},
+		[]byte("\xff\xff"),
+		uint64(65535),
+		nil,
+		nil,
+	},
+	{
+		NativeType{proto: 2, typ: TypeSmallInt},
+		[]byte("\x00\xff"),
+		AliasUint8(255),
+		nil,
+		nil,
+	},
+	{
+		NativeType{proto: 2, typ: TypeSmallInt},
+		[]byte("\xff\xff"),
+		AliasUint16(65535),
+		nil,
+		nil,
+	},
+	{
+		NativeType{proto: 2, typ: TypeSmallInt},
+		[]byte("\xff\xff"),
+		AliasUint32(65535),
+		nil,
+		nil,
+	},
+	{
+		NativeType{proto: 2, typ: TypeSmallInt},
+		[]byte("\xff\xff"),
+		AliasUint64(65535),
+		nil,
+		nil,
+	},
+	{
+		NativeType{proto: 2, typ: TypeSmallInt},
+		[]byte("\xff\xff"),
+		AliasUint(65535),
 		nil,
 		nil,
 	},
@@ -873,6 +934,62 @@ var marshalTests = []struct {
 		nil,
 	},
 	{
+		NativeType{proto: 2, typ: TypeTinyInt},
+		[]byte("\xff"),
+		AliasUint8(255),
+		nil,
+		nil,
+	},
+	{
+		NativeType{proto: 2, typ: TypeTinyInt},
+		[]byte("\xff"),
+		AliasUint64(255),
+		nil,
+		nil,
+	},
+	{
+		NativeType{proto: 2, typ: TypeTinyInt},
+		[]byte("\xff"),
+		AliasUint32(255),
+		nil,
+		nil,
+	},
+	{
+		NativeType{proto: 2, typ: TypeTinyInt},
+		[]byte("\xff"),
+		AliasUint16(255),
+		nil,
+		nil,
+	},
+	{
+		NativeType{proto: 2, typ: TypeTinyInt},
+		[]byte("\xff"),
+		AliasUint(255),
+		nil,
+		nil,
+	},
+	{
+		NativeType{proto: 2, typ: TypeBigInt},
+		[]byte("\x00\x00\x00\x00\x00\x00\x00\xff"),
+		uint8(math.MaxUint8),
+		nil,
+		nil,
+	},
+	{
+		NativeType{proto: 2, typ: TypeBigInt},
+		[]byte("\x00\x00\x00\x00\x00\x00\xff\xff"),
+		uint64(math.MaxUint16),
+		nil,
+		nil,
+	},
+	{
+		NativeType{proto: 2, typ: TypeBigInt},
+		[]byte("\x00\x00\x00\x00\xff\xff\xff\xff"),
+		uint64(math.MaxUint32),
+		nil,
+		nil,
+	},
+	{
 		NativeType{proto: 2, typ: TypeBigInt},
 		[]byte("\xff\xff\xff\xff\xff\xff\xff\xff"),
 		uint64(math.MaxUint64),
@@ -883,6 +1000,13 @@ var marshalTests = []struct {
 		NativeType{proto: 2, typ: TypeInt},
 		[]byte("\xff\xff\xff\xff"),
 		uint32(math.MaxUint32),
+		nil,
+		nil,
+	},
+	{
+		NativeType{proto: 2, typ: TypeInt},
+		[]byte("\xff\xff\xff\xff"),
+		uint64(math.MaxUint32),
 		nil,
 		nil,
 	},
@@ -909,6 +1033,182 @@ var marshalTests = []struct {
 		time.Duration(1000),
 		nil,
 		nil,
+	},
+}
+
+var unmarshalTests = []struct {
+	Info           TypeInfo
+	Data           []byte
+	Value          interface{}
+	UnmarshalError error
+}{
+	{
+		NativeType{proto: 2, typ: TypeSmallInt},
+		[]byte("\xff\xff"),
+		uint8(0),
+		UnmarshalError("unmarshal int: value -1 out of range for uint8"),
+	},
+	{
+		NativeType{proto: 2, typ: TypeSmallInt},
+		[]byte("\x01\x00"),
+		uint8(0),
+		UnmarshalError("unmarshal int: value 256 out of range for uint8"),
+	},
+	{
+		NativeType{proto: 2, typ: TypeInt},
+		[]byte("\xff\xff\xff\xff"),
+		uint8(0),
+		UnmarshalError("unmarshal int: value -1 out of range for uint8"),
+	},
+	{
+		NativeType{proto: 2, typ: TypeInt},
+		[]byte("\x00\x00\x01\x00"),
+		uint8(0),
+		UnmarshalError("unmarshal int: value 256 out of range for uint8"),
+	},
+	{
+		NativeType{proto: 2, typ: TypeInt},
+		[]byte("\xff\xff\xff\xff"),
+		uint16(0),
+		UnmarshalError("unmarshal int: value -1 out of range for uint16"),
+	},
+	{
+		NativeType{proto: 2, typ: TypeInt},
+		[]byte("\x00\x01\x00\x00"),
+		uint16(0),
+		UnmarshalError("unmarshal int: value 65536 out of range for uint16"),
+	},
+	{
+		NativeType{proto: 2, typ: TypeBigInt},
+		[]byte("\xff\xff\xff\xff\xff\xff\xff\xff"),
+		uint8(0),
+		UnmarshalError("unmarshal int: value -1 out of range for uint8"),
+	},
+	{
+		NativeType{proto: 2, typ: TypeBigInt},
+		[]byte("\x00\x00\x00\x00\x00\x00\x01\x00"),
+		uint8(0),
+		UnmarshalError("unmarshal int: value 256 out of range for uint8"),
+	},
+	{
+		NativeType{proto: 2, typ: TypeBigInt},
+		[]byte("\xff\xff\xff\xff\xff\xff\xff\xff"),
+		uint8(0),
+		UnmarshalError("unmarshal int: value -1 out of range for uint8"),
+	},
+	{
+		NativeType{proto: 2, typ: TypeBigInt},
+		[]byte("\x00\x00\x00\x00\x00\x00\x01\x00"),
+		uint8(0),
+		UnmarshalError("unmarshal int: value 256 out of range for uint8"),
+	},
+	{
+		NativeType{proto: 2, typ: TypeBigInt},
+		[]byte("\xff\xff\xff\xff\xff\xff\xff\xff"),
+		uint16(0),
+		UnmarshalError("unmarshal int: value -1 out of range for uint16"),
+	},
+	{
+		NativeType{proto: 2, typ: TypeBigInt},
+		[]byte("\x00\x00\x00\x00\x00\x01\x00\x00"),
+		uint16(0),
+		UnmarshalError("unmarshal int: value 65536 out of range for uint16"),
+	},
+	{
+		NativeType{proto: 2, typ: TypeBigInt},
+		[]byte("\xff\xff\xff\xff\xff\xff\xff\xff"),
+		uint32(0),
+		UnmarshalError("unmarshal int: value -1 out of range for uint32"),
+	},
+	{
+		NativeType{proto: 2, typ: TypeBigInt},
+		[]byte("\x00\x00\x00\x01\x00\x00\x00\x00"),
+		uint32(0),
+		UnmarshalError("unmarshal int: value 4294967296 out of range for uint32"),
+	},
+	{
+		NativeType{proto: 2, typ: TypeSmallInt},
+		[]byte("\xff\xff"),
+		AliasUint8(0),
+		UnmarshalError("unmarshal int: value -1 out of range for gocql.AliasUint8"),
+	},
+	{
+		NativeType{proto: 2, typ: TypeSmallInt},
+		[]byte("\x01\x00"),
+		AliasUint8(0),
+		UnmarshalError("unmarshal int: value 256 out of range for gocql.AliasUint8"),
+	},
+	{
+		NativeType{proto: 2, typ: TypeInt},
+		[]byte("\xff\xff\xff\xff"),
+		AliasUint8(0),
+		UnmarshalError("unmarshal int: value -1 out of range for gocql.AliasUint8"),
+	},
+	{
+		NativeType{proto: 2, typ: TypeInt},
+		[]byte("\x00\x00\x01\x00"),
+		AliasUint8(0),
+		UnmarshalError("unmarshal int: value 256 out of range for gocql.AliasUint8"),
+	},
+	{
+		NativeType{proto: 2, typ: TypeInt},
+		[]byte("\xff\xff\xff\xff"),
+		AliasUint16(0),
+		UnmarshalError("unmarshal int: value -1 out of range for gocql.AliasUint16"),
+	},
+	{
+		NativeType{proto: 2, typ: TypeInt},
+		[]byte("\x00\x01\x00\x00"),
+		AliasUint16(0),
+		UnmarshalError("unmarshal int: value 65536 out of range for gocql.AliasUint16"),
+	},
+	{
+		NativeType{proto: 2, typ: TypeBigInt},
+		[]byte("\xff\xff\xff\xff\xff\xff\xff\xff"),
+		AliasUint8(0),
+		UnmarshalError("unmarshal int: value -1 out of range for gocql.AliasUint8"),
+	},
+	{
+		NativeType{proto: 2, typ: TypeBigInt},
+		[]byte("\x00\x00\x00\x00\x00\x00\x01\x00"),
+		AliasUint8(0),
+		UnmarshalError("unmarshal int: value 256 out of range for gocql.AliasUint8"),
+	},
+	{
+		NativeType{proto: 2, typ: TypeBigInt},
+		[]byte("\xff\xff\xff\xff\xff\xff\xff\xff"),
+		AliasUint8(0),
+		UnmarshalError("unmarshal int: value -1 out of range for gocql.AliasUint8"),
+	},
+	{
+		NativeType{proto: 2, typ: TypeBigInt},
+		[]byte("\x00\x00\x00\x00\x00\x00\x01\x00"),
+		AliasUint8(0),
+		UnmarshalError("unmarshal int: value 256 out of range for gocql.AliasUint8"),
+	},
+	{
+		NativeType{proto: 2, typ: TypeBigInt},
+		[]byte("\xff\xff\xff\xff\xff\xff\xff\xff"),
+		AliasUint16(0),
+		UnmarshalError("unmarshal int: value -1 out of range for gocql.AliasUint16"),
+	},
+	{
+		NativeType{proto: 2, typ: TypeBigInt},
+		[]byte("\x00\x00\x00\x00\x00\x01\x00\x00"),
+		AliasUint16(0),
+		UnmarshalError("unmarshal int: value 65536 out of range for gocql.AliasUint16"),
+	},
+	{
+		NativeType{proto: 2, typ: TypeBigInt},
+		[]byte("\xff\xff\xff\xff\xff\xff\xff\xff"),
+		AliasUint32(0),
+		UnmarshalError("unmarshal int: value -1 out of range for gocql.AliasUint32"),
+	},
+	{
+		NativeType{proto: 2, typ: TypeBigInt},
+		[]byte("\x00\x00\x00\x01\x00\x00\x00\x00"),
+		AliasUint32(0),
+		UnmarshalError("unmarshal int: value 4294967296 out of range for gocql.AliasUint32"),
 	},
 }
 
@@ -955,7 +1255,24 @@ func TestMarshal_Decode(t *testing.T) {
 			}
 		} else {
 			if err := Unmarshal(test.Info, test.Data, test.Value); err != test.UnmarshalError {
-				t.Errorf("unmarshalTest[%d] (%v=>%t): %#v returned error %#v, want %#v.", i, test.Info, test.Value, test.Value, err, test.UnmarshalError)
+				t.Errorf("unmarshalTest[%d] (%v=>%T): %#v returned error %#v, want %#v.", i, test.Info, test.Value, test.Value, err, test.UnmarshalError)
+			}
+		}
+	}
+	for i, test := range unmarshalTests {
+		v := reflect.New(reflect.TypeOf(test.Value))
+		if test.UnmarshalError == nil {
+			err := Unmarshal(test.Info, test.Data, v.Interface())
+			if err != nil {
+				t.Errorf("unmarshalTest[%d] (%v=>%T): %v", i, test.Info, test.Value, err)
+				continue
+			}
+			if !reflect.DeepEqual(v.Elem().Interface(), test.Value) {
+				t.Errorf("unmarshalTest[%d] (%v=>%T): expected %#v, got %#v.", i, test.Info, test.Value, test.Value, v.Elem().Interface())
+			}
+		} else {
+			if err := Unmarshal(test.Info, test.Data, v.Interface()); err != test.UnmarshalError {
+				t.Errorf("unmarshalTest[%d] (%v=>%T): %#v returned error %#v, want %#v.", i, test.Info, test.Value, test.Value, err, test.UnmarshalError)
 			}
 		}
 	}
