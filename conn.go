@@ -19,7 +19,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/gocql/gocql/internal/lru"
 	"github.com/gocql/gocql/internal/streams"
 )
 
@@ -944,27 +943,24 @@ type preparedStatment struct {
 	response resultMetadata
 }
 
-type inflightPrepare struct {
-	wg  sync.WaitGroup
-	err error
-
-	preparedStatment *preparedStatment
-}
-
 func (c *Conn) prepareStatement(ctx context.Context, stmt string, tracer Tracer) (*preparedStatment, error) {
 	stmtCacheKey := c.session.stmtsLRU.keyFor(c.addr, c.currentKeyspace, stmt)
-	flight, ok := c.session.stmtsLRU.execIfMissing(stmtCacheKey, func(lru *lru.Cache) *inflightPrepare {
-		flight := new(inflightPrepare)
-		flight.wg.Add(1)
-		lru.Add(stmtCacheKey, flight)
-		return flight
-	})
 
-	if ok {
-		flight.wg.Wait()
+	flight := c.session.stmtsLRU.enterFlight(stmtCacheKey, func(flightCtx context.Context) (*preparedStatment, error) {
+		// flightCtx will be canceled when nobody waits for the flight anymore or when it completes.
+		return c.execPrepareStatement(flightCtx, stmt, tracer)
+	})
+	defer c.session.stmtsLRU.leaveFlight(stmtCacheKey, flight)
+
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case <-flight.done:
 		return flight.preparedStatment, flight.err
 	}
+}
 
+func (c *Conn) execPrepareStatement(ctx context.Context, stmt string, tracer Tracer) (*preparedStatment, error) {
 	prep := &writePrepareFrame{
 		statement: stmt,
 	}
@@ -974,17 +970,11 @@ func (c *Conn) prepareStatement(ctx context.Context, stmt string, tracer Tracer)
 
 	framer, err := c.exec(ctx, prep, tracer)
 	if err != nil {
-		flight.err = err
-		flight.wg.Done()
-		c.session.stmtsLRU.remove(stmtCacheKey)
 		return nil, err
 	}
 
 	frame, err := framer.parseFrame()
 	if err != nil {
-		flight.err = err
-		flight.wg.Done()
-		c.session.stmtsLRU.remove(stmtCacheKey)
 		return nil, err
 	}
 
@@ -996,7 +986,7 @@ func (c *Conn) prepareStatement(ctx context.Context, stmt string, tracer Tracer)
 
 	switch x := frame.(type) {
 	case *resultPreparedFrame:
-		flight.preparedStatment = &preparedStatment{
+		prepared := &preparedStatment{
 			// defensively copy as we will recycle the underlying buffer after we
 			// return.
 			id: copyBytes(x.preparedID),
@@ -1005,18 +995,12 @@ func (c *Conn) prepareStatement(ctx context.Context, stmt string, tracer Tracer)
 			request:  x.reqMeta,
 			response: x.respMeta,
 		}
+		return prepared, nil
 	case error:
-		flight.err = x
+		return nil, x
 	default:
-		flight.err = NewErrProtocol("Unknown type in response to prepare frame: %s", x)
+		return nil, NewErrProtocol("Unknown type in response to prepare frame: %s", x)
 	}
-	flight.wg.Done()
-
-	if flight.err != nil {
-		c.session.stmtsLRU.remove(stmtCacheKey)
-	}
-
-	return flight.preparedStatment, flight.err
 }
 
 func marshalQueryValue(typ TypeInfo, value interface{}, dst *queryValues) error {
