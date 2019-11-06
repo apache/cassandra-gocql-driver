@@ -773,7 +773,7 @@ func TestStream0(t *testing.T) {
 		streams: streams.New(protoVersion4),
 	}
 
-	err := conn.recv()
+	err := conn.recv(context.Background())
 	if err == nil {
 		t.Fatal("expected to get an error on stream 0")
 	} else if !strings.HasPrefix(err.Error(), expErr) {
