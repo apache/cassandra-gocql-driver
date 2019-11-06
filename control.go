@@ -172,7 +172,7 @@ func (c *controlConn) shuffleDial(endpoints []*HostInfo) (*Conn, error) {
 	var err error
 	for _, host := range shuffled {
 		var conn *Conn
-		conn, err = c.session.dial(host, &cfg, c)
+		conn, err = c.session.dial(c.session.ctx, host, &cfg, c)
 		if err == nil {
 			return conn, nil
 		}
@@ -221,7 +221,7 @@ func (c *controlConn) discoverProtocol(hosts []*HostInfo) (int, error) {
 	var err error
 	for _, host := range hosts {
 		var conn *Conn
-		conn, err = c.session.dial(host, &connCfg, handler)
+		conn, err = c.session.dial(c.session.ctx, host, &connCfg, handler)
 		if conn != nil {
 			conn.Close()
 		}
@@ -343,7 +343,7 @@ func (c *controlConn) reconnect(refreshring bool) {
 	var newConn *Conn
 	if host != nil {
 		// try to connect to the old host
-		conn, err := c.session.connect(host, c)
+		conn, err := c.session.connect(c.session.ctx, host, c)
 		if err != nil {
 			// host is dead
 			// TODO: this is replicated in a few places
@@ -365,7 +365,7 @@ func (c *controlConn) reconnect(refreshring bool) {
 		}
 
 		var err error
-		newConn, err = c.session.connect(host, c)
+		newConn, err = c.session.connect(c.session.ctx, host, c)
 		if err != nil {
 			// TODO: add log handler for things like this
 			return
