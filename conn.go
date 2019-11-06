@@ -228,7 +228,7 @@ func (s *Session) dialWithoutObserver(host *HostInfo, cfg *ConnConfig, errorHand
 		cfg:           cfg,
 		calls:         make(map[int]*callReq),
 		version:       uint8(cfg.ProtoVersion),
-		addr:          conn.RemoteAddr().String(),
+		addr:          addr,
 		errorHandler:  errorHandler,
 		compressor:    cfg.Compressor,
 		quit:          make(chan struct{}),
@@ -952,8 +952,9 @@ type inflightPrepare struct {
 }
 
 func (c *Conn) prepareStatement(ctx context.Context, stmt string, tracer Tracer) (*preparedStatment, error) {
-	stmtCacheKey := c.session.stmtsLRU.keyFor(c.addr, c.currentKeyspace, stmt)
-	flight, ok := c.session.stmtsLRU.execIfMissing(stmtCacheKey, func(lru *lru.Cache) *inflightPrepare {
+	stmtsLRU := c.session.stmtsLRU.forHost(c.addr)
+	stmtCacheKey := stmtsLRU.keyFor(c.currentKeyspace, stmt)
+	flight, ok := stmtsLRU.execIfMissing(stmtCacheKey, func(lru *lru.Cache) *inflightPrepare {
 		flight := new(inflightPrepare)
 		flight.wg.Add(1)
 		lru.Add(stmtCacheKey, flight)
@@ -976,7 +977,7 @@ func (c *Conn) prepareStatement(ctx context.Context, stmt string, tracer Tracer)
 	if err != nil {
 		flight.err = err
 		flight.wg.Done()
-		c.session.stmtsLRU.remove(stmtCacheKey)
+		stmtsLRU.remove(stmtCacheKey)
 		return nil, err
 	}
 
@@ -984,7 +985,7 @@ func (c *Conn) prepareStatement(ctx context.Context, stmt string, tracer Tracer)
 	if err != nil {
 		flight.err = err
 		flight.wg.Done()
-		c.session.stmtsLRU.remove(stmtCacheKey)
+		stmtsLRU.remove(stmtCacheKey)
 		return nil, err
 	}
 
@@ -1013,7 +1014,7 @@ func (c *Conn) prepareStatement(ctx context.Context, stmt string, tracer Tracer)
 	flight.wg.Done()
 
 	if flight.err != nil {
-		c.session.stmtsLRU.remove(stmtCacheKey)
+		stmtsLRU.remove(stmtCacheKey)
 	}
 
 	return flight.preparedStatment, flight.err
@@ -1179,8 +1180,9 @@ func (c *Conn) executeQuery(ctx context.Context, qry *Query) *Iter {
 		// is not consistent with regards to its schema.
 		return iter
 	case *RequestErrUnprepared:
-		stmtCacheKey := c.session.stmtsLRU.keyFor(c.addr, c.currentKeyspace, qry.stmt)
-		if c.session.stmtsLRU.remove(stmtCacheKey) {
+		stmtsLRU := c.session.stmtsLRU.forHost(c.addr)
+		stmtCacheKey := stmtsLRU.keyFor(c.currentKeyspace, qry.stmt)
+		if stmtsLRU.remove(stmtCacheKey) {
 			return c.executeQuery(ctx, qry)
 		}
 
@@ -1321,17 +1323,15 @@ func (c *Conn) executeBatch(ctx context.Context, batch *Batch) *Iter {
 	case *resultVoidFrame:
 		return &Iter{}
 	case *RequestErrUnprepared:
-		stmt, found := stmts[string(x.StatementId)]
-		if found {
-			key := c.session.stmtsLRU.keyFor(c.addr, c.currentKeyspace, stmt)
-			c.session.stmtsLRU.remove(key)
+		stmt, ok := stmts[string(x.StatementId)]
+		if ok {
+			stmtsLRU := c.session.stmtsLRU.forHost(c.addr)
+			stmtCacheKey := stmtsLRU.keyFor(c.currentKeyspace, stmt)
+			stmtsLRU.remove(stmtCacheKey)
+			return c.executeBatch(ctx, batch)
 		}
 
-		if found {
-			return c.executeBatch(ctx, batch)
-		} else {
-			return &Iter{err: x, framer: framer}
-		}
+		return &Iter{err: x, framer: framer}
 	case *resultRowsFrame:
 		iter := &Iter{
 			meta:    x.meta,
