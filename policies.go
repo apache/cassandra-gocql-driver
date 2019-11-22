@@ -945,7 +945,7 @@ type ExponentialReconnectionPolicy struct {
 }
 
 func (e *ExponentialReconnectionPolicy) GetInterval(currentRetry int) time.Duration {
-	return getExponentialTime(e.InitialInterval, math.MaxInt16*time.Second, e.GetMaxRetries())
+	return getExponentialTime(e.InitialInterval, math.MaxInt16*time.Second, currentRetry)
 }
 
 func (e *ExponentialReconnectionPolicy) GetMaxRetries() int {
