@@ -144,6 +144,9 @@ type ClusterConfig struct {
 	// (default: 200 microseconds)
 	WriteCoalesceWaitTime time.Duration
 
+	// Dialer
+	Dialer *net.Dialer
+
 	// internal config for testing
 	disableControlConn bool
 }
