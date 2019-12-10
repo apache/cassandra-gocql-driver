@@ -36,6 +36,7 @@ func TestApprove(t *testing.T) {
 		approve("com.instaclustr.cassandra.auth.SharedSecretAuthenticator"): true,
 		approve("com.datastax.bdp.cassandra.auth.DseAuthenticator"):         true,
 		approve("io.aiven.cassandra.auth.AivenAuthenticator"):               true,
+		approve("com.amazon.helenus.auth.HelenusAuthenticator"):             true,
 		approve("com.apache.cassandra.auth.FakeAuthenticator"):              false,
 	}
 	for k, v := range tests {
