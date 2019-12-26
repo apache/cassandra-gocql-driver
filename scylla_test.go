@@ -1,6 +1,7 @@
 package gocql
 
 import (
+	"math"
 	"runtime"
 	"sync"
 	"testing"
@@ -135,4 +136,51 @@ func TestScyllaConnPickerShardOf(t *testing.T) {
 			t.Errorf("wrong scylla shard calculated for token %d, expected %d, got %d", test.token, test.shard, shard)
 		}
 	}
+}
+
+func TestScyllaRandomConnPIcker(t *testing.T) {
+	t.Parallel()
+
+	t.Run("max iterations", func(t *testing.T) {
+		s := &scyllaConnPicker{
+			nrShards:  4,
+			msbIgnore: 12,
+			pos: math.MaxUint64,
+			conns: []*Conn{nil, mockConn("1")},
+		}
+
+		if s.Pick(token(nil)) == nil {
+			t.Fatal("expected connection")
+		}
+	})
+
+	t.Run("async access of max iterations", func(t *testing.T) {
+		s := &scyllaConnPicker{
+			nrShards:  4,
+			msbIgnore: 12,
+			pos: math.MaxUint64,
+			conns: []*Conn{nil, mockConn("1")},
+		}
+
+		var wg sync.WaitGroup
+		for i := 0; i < 3; i++ {
+			wg.Add(1)
+			go pickLoop(t, s, 3, &wg)
+		}
+		wg.Wait()
+
+		if s.pos != 8 {
+			t.Fatalf("expected position to be 8 | actual %d", s.pos)
+		}
+	})
+}
+
+func pickLoop(t *testing.T, s *scyllaConnPicker, c int, wg *sync.WaitGroup) {
+	t.Helper()
+	for i := 0; i < c; i++ {
+		if s.Pick(token(nil)) == nil {
+			t.Fatal("expected connection")
+		}
+	}
+	wg.Done()
 }

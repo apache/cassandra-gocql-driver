@@ -90,7 +90,7 @@ type scyllaConnPicker struct {
 	nrConns     int
 	nrShards    int
 	msbIgnore   uint64
-	pos         int32
+	pos         uint64
 }
 
 func newScyllaConnPicker(conn *Conn) *scyllaConnPicker {
@@ -231,7 +231,7 @@ func (p *scyllaConnPicker) closeExcessConns() {
 }
 
 func (p *scyllaConnPicker) randomConn() *Conn {
-	idx := int(atomic.AddInt32(&p.pos, 1))
+	idx := int(atomic.AddUint64(&p.pos, 1))
 	for i := 0; i < len(p.conns); i++ {
 		if conn := p.conns[(idx+i)%len(p.conns)]; conn != nil {
 			return conn
