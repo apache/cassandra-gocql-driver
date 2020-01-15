@@ -144,7 +144,8 @@ type ClusterConfig struct {
 	// (default: 200 microseconds)
 	WriteCoalesceWaitTime time.Duration
 
-	// Dialer
+	// Dialer will be used to establish all connections created for this Cluster.
+	// If not provided, a default dialer configured with ConnectTimeout will be used.
 	Dialer *net.Dialer
 
 	// internal config for testing
