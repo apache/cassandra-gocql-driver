@@ -99,7 +99,7 @@ type ConnConfig struct {
 	CQLVersion     string
 	Timeout        time.Duration
 	ConnectTimeout time.Duration
-	Dialer         *net.Dialer
+	Dialer         func(ctx context.Context, network, addr string) (net.Conn, error)
 	Compressor     Compressor
 	Authenticator  Authenticator
 	AuthProvider   func(h *HostInfo) (Authenticator, error)
@@ -203,16 +203,17 @@ func (s *Session) dialWithoutObserver(ctx context.Context, host *HostInfo, cfg *
 
 	dialer := cfg.Dialer
 	if dialer == nil {
-		dialer = &net.Dialer{
+		der := &net.Dialer{
 			Timeout: cfg.ConnectTimeout,
 		}
+		if cfg.Keepalive > 0 {
+			der.KeepAlive = cfg.Keepalive
+		}
+		dialer = der.DialContext
 	}
 
-	if cfg.Keepalive > 0 {
-		dialer.KeepAlive = cfg.Keepalive
-	}
 
-	conn, err := dialer.DialContext(ctx, "tcp", host.HostnameAndPort())
+	conn, err := dialer(ctx, "tcp", host.HostnameAndPort())
 	if err != nil {
 		return nil, err
 	}
