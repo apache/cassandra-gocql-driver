@@ -600,10 +600,11 @@ func (t *tokenAwareHostPolicy) Pick(qry ExecutableQuery) NextHost {
 	if ht == nil {
 		host, _ := meta.tokenRing.GetHostForToken(token)
 		replicas = []*HostInfo{host}
-	} else if t.shuffleReplicas {
-		replicas = shuffleHosts(replicas)
 	} else {
 		replicas = ht.hosts
+		if t.shuffleReplicas {
+			replicas = shuffleHosts(replicas)
+		}
 	}
 
 	var (
