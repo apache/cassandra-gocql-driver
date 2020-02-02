@@ -6,8 +6,6 @@ package gocql
 
 import (
 	"context"
-	crand "crypto/rand"
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"math"
@@ -837,20 +835,6 @@ func (d *dcAwareRR) RemoveHost(host *HostInfo) {
 
 func (d *dcAwareRR) HostUp(host *HostInfo)   { d.AddHost(host) }
 func (d *dcAwareRR) HostDown(host *HostInfo) { d.RemoveHost(host) }
-
-var randSeed int64
-
-func init() {
-	p := make([]byte, 8)
-	if _, err := crand.Read(p); err != nil {
-		panic(err)
-	}
-	randSeed = int64(binary.BigEndian.Uint64(p))
-}
-
-func randSource() rand.Source {
-	return rand.NewSource(atomic.AddInt64(&randSeed, 1))
-}
 
 func roundRobbin(hosts []*HostInfo, startOffset int) NextHost {
 	return func() SelectedHost {
