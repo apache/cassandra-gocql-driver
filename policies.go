@@ -343,12 +343,8 @@ func (r *roundRobinHostPolicy) SetPartitioner(partitioner string)   {}
 func (r *roundRobinHostPolicy) Init(*Session)                       {}
 
 func (r *roundRobinHostPolicy) Pick(qry ExecutableQuery) NextHost {
-	src := r.hosts.get()
-	hosts := make([]*HostInfo, len(src))
-	copy(hosts, src)
-
-	nextIdx := atomic.AddUint64(&r.lastUsedHostIdx, 1)
-	return roundRobbin(hosts, int(nextIdx))
+	nextStartOffset := atomic.AddUint64(&r.lastUsedHostIdx, 1)
+	return roundRobbin(int(nextStartOffset), r.hosts.get())
 }
 
 func (r *roundRobinHostPolicy) AddHost(host *HostInfo) {
@@ -836,16 +832,43 @@ func (d *dcAwareRR) RemoveHost(host *HostInfo) {
 func (d *dcAwareRR) HostUp(host *HostInfo)   { d.AddHost(host) }
 func (d *dcAwareRR) HostDown(host *HostInfo) { d.RemoveHost(host) }
 
-func roundRobbin(hosts []*HostInfo, startOffset int) NextHost {
-	return func() SelectedHost {
-		hostCount := len(hosts)
-		for i := 0; i < len(hosts); i++ {
-			hostIdx := (i + startOffset) % hostCount
-			h := hosts[hostIdx]
-			i++
+// This function is supposed to be called in a fashion
+// roundRobbin(offset, hostsPriority1, hostsPriority2, hostsPriority3 ... )
+//
+// E.g. for DC-naive strategy:
+// roundRobbin(offset, allHosts)
+//
+// For tiered and DC-aware strategy:
+// roundRobbin(offset, localHosts, remoteHosts)
+func roundRobbin(shift int, hosts ...[]*HostInfo) NextHost {
+	currentLayer := 0
+	currentlyObserved := 0
 
-			if h.IsUp() {
-				return (*selectedHost)(h)
+	return func() SelectedHost {
+
+		// iterate over layers
+		for {
+			if currentLayer == len(hosts) {
+				return nil
+			}
+
+			currentLayerSize := len(hosts[currentLayer])
+
+			// iterate over hosts within a layer
+			for {
+				currentlyObserved++
+				if currentlyObserved > currentLayerSize {
+					currentLayer++
+					currentlyObserved = 0
+					break
+				}
+
+				h := hosts[currentLayer][(shift+currentlyObserved)%currentLayerSize]
+
+				if h.IsUp() {
+					return (*selectedHost)(h)
+				}
+
 			}
 		}
 
@@ -854,15 +877,8 @@ func roundRobbin(hosts []*HostInfo, startOffset int) NextHost {
 }
 
 func (d *dcAwareRR) Pick(q ExecutableQuery) NextHost {
-	local := d.localHosts.get()
-	remote := d.remoteHosts.get()
-
-	hosts := make([]*HostInfo, len(local)+len(remote))
-	n := copy(hosts, local)
-	copy(hosts[n:], remote)
-
 	nextStartOffset := atomic.AddUint64(&d.lastUsedHostIdx, 1)
-	return roundRobbin(hosts, int(nextStartOffset))
+	return roundRobbin(int(nextStartOffset), d.localHosts.get(), d.remoteHosts.get())
 }
 
 // ConvictionPolicy interface is used by gocql to determine if a host should be
