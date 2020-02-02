@@ -871,8 +871,6 @@ func roundRobbin(shift int, hosts ...[]*HostInfo) NextHost {
 
 			}
 		}
-
-		return nil
 	}
 }
 
