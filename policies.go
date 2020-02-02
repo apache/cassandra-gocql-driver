@@ -335,7 +335,8 @@ func RoundRobinHostPolicy() HostSelectionPolicy {
 }
 
 type roundRobinHostPolicy struct {
-	hosts cowHostList
+	hosts           cowHostList
+	lastUsedHostIdx uint64
 }
 
 func (r *roundRobinHostPolicy) IsLocal(*HostInfo) bool              { return true }
@@ -348,12 +349,8 @@ func (r *roundRobinHostPolicy) Pick(qry ExecutableQuery) NextHost {
 	hosts := make([]*HostInfo, len(src))
 	copy(hosts, src)
 
-	rand := rand.New(randSource())
-	rand.Shuffle(len(hosts), func(i, j int) {
-		hosts[i], hosts[j] = hosts[j], hosts[i]
-	})
-
-	return roundRobbin(hosts)
+	nextIdx := atomic.AddUint64(&r.lastUsedHostIdx, 1)
+	return roundRobbin(hosts, int(nextIdx))
 }
 
 func (r *roundRobinHostPolicy) AddHost(host *HostInfo) {
@@ -801,9 +798,10 @@ func (host selectedHostPoolHost) Mark(err error) {
 }
 
 type dcAwareRR struct {
-	local       string
-	localHosts  cowHostList
-	remoteHosts cowHostList
+	local           string
+	localHosts      cowHostList
+	remoteHosts     cowHostList
+	lastUsedHostIdx uint64
 }
 
 // DCAwareRoundRobinPolicy is a host selection policies which will prioritize and
@@ -854,11 +852,12 @@ func randSource() rand.Source {
 	return rand.NewSource(atomic.AddInt64(&randSeed, 1))
 }
 
-func roundRobbin(hosts []*HostInfo) NextHost {
-	var i int
+func roundRobbin(hosts []*HostInfo, startOffset int) NextHost {
 	return func() SelectedHost {
-		for i < len(hosts) {
-			h := hosts[i]
+		hostCount := len(hosts)
+		for i := 0; i < len(hosts); i++ {
+			hostIdx := (i + startOffset) % hostCount
+			h := hosts[hostIdx]
 			i++
 
 			if h.IsUp() {
@@ -878,16 +877,8 @@ func (d *dcAwareRR) Pick(q ExecutableQuery) NextHost {
 	n := copy(hosts, local)
 	copy(hosts[n:], remote)
 
-	// TODO: use random chose-2 but that will require plumbing information
-	// about connection/host load to here
-	r := rand.New(randSource())
-	for _, l := range [][]*HostInfo{hosts[:len(local)], hosts[len(local):]} {
-		r.Shuffle(len(l), func(i, j int) {
-			l[i], l[j] = l[j], l[i]
-		})
-	}
-
-	return roundRobbin(hosts)
+	nextStartOffset := atomic.AddUint64(&d.lastUsedHostIdx, 1)
+	return roundRobbin(hosts, int(nextStartOffset))
 }
 
 // ConvictionPolicy interface is used by gocql to determine if a host should be
