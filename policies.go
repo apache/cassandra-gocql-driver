@@ -343,12 +343,21 @@ func (r *roundRobinHostPolicy) KeyspaceChanged(KeyspaceUpdateEvent) {}
 func (r *roundRobinHostPolicy) SetPartitioner(partitioner string)   {}
 func (r *roundRobinHostPolicy) Init(*Session)                       {}
 
+var (
+	randPool = sync.Pool{
+		New: func() interface{} {
+			return rand.New(randSource())
+		},
+	}
+)
+
 func (r *roundRobinHostPolicy) Pick(qry ExecutableQuery) NextHost {
 	src := r.hosts.get()
 	hosts := make([]*HostInfo, len(src))
 	copy(hosts, src)
 
-	rand := rand.New(randSource())
+	rand := randPool.Get().(*rand.Rand)
+	defer randPool.Put(rand)
 	rand.Shuffle(len(hosts), func(i, j int) {
 		hosts[i], hosts[j] = hosts[j], hosts[i]
 	})
@@ -881,7 +890,8 @@ func (d *dcAwareRR) Pick(q ExecutableQuery) NextHost {
 
 	// TODO: use random chose-2 but that will require plumbing information
 	// about connection/host load to here
-	r := rand.New(randSource())
+	r := randPool.Get().(*rand.Rand)
+	defer randPool.Put(r)
 	for _, l := range [][]*HostInfo{hosts[:len(local)], hosts[len(local):]} {
 		r.Shuffle(len(l), func(i, j int) {
 			l[i], l[j] = l[j], l[i]
