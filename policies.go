@@ -342,6 +342,14 @@ func (r *roundRobinHostPolicy) KeyspaceChanged(KeyspaceUpdateEvent) {}
 func (r *roundRobinHostPolicy) SetPartitioner(partitioner string)   {}
 func (r *roundRobinHostPolicy) Init(*Session)                       {}
 
+var (
+	randPool = sync.Pool{
+		New: func() interface{} {
+			return rand.New(randSource())
+		},
+	}
+)
+
 func (r *roundRobinHostPolicy) Pick(qry ExecutableQuery) NextHost {
 	nextStartOffset := atomic.AddUint64(&r.lastUsedHostIdx, 1)
 	return roundRobbin(int(nextStartOffset), r.hosts.get())
@@ -591,10 +599,11 @@ func (t *tokenAwareHostPolicy) Pick(qry ExecutableQuery) NextHost {
 	if ht == nil {
 		host, _ := meta.tokenRing.GetHostForToken(token)
 		replicas = []*HostInfo{host}
-	} else if t.shuffleReplicas {
-		replicas = shuffleHosts(replicas)
 	} else {
 		replicas = ht.hosts
+		if t.shuffleReplicas {
+			replicas = shuffleHosts(replicas)
+		}
 	}
 
 	var (
