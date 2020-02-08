@@ -342,14 +342,6 @@ func (r *roundRobinHostPolicy) KeyspaceChanged(KeyspaceUpdateEvent) {}
 func (r *roundRobinHostPolicy) SetPartitioner(partitioner string)   {}
 func (r *roundRobinHostPolicy) Init(*Session)                       {}
 
-var (
-	randPool = sync.Pool{
-		New: func() interface{} {
-			return rand.New(randSource())
-		},
-	}
-)
-
 func (r *roundRobinHostPolicy) Pick(qry ExecutableQuery) NextHost {
 	nextStartOffset := atomic.AddUint64(&r.lastUsedHostIdx, 1)
 	return roundRobbin(int(nextStartOffset), r.hosts.get())
