@@ -8,10 +8,16 @@ import (
 )
 
 type hostTokens struct {
+	// token is end (inclusive) of token range these hosts belong to
 	token token
 	hosts []*HostInfo
 }
 
+// tokenRingReplicas maps token ranges to list of replicas.
+// The elements in tokenRingReplicas are sorted by token ascending.
+// The range for a given item in tokenRingReplicas starts after preceding range and ends with the token specified in
+// token. The end token is part of the range.
+// The lowest (i.e. index 0) range wraps around the ring (its preceding range is the one with largest index).
 type tokenRingReplicas []hostTokens
 
 func (h tokenRingReplicas) Less(i, j int) bool { return h[i].token.Less(h[j].token) }
