@@ -953,10 +953,15 @@ func (c *ConstantReconnectionPolicy) GetMaxRetries() int {
 type ExponentialReconnectionPolicy struct {
 	MaxRetries      int
 	InitialInterval time.Duration
+	MaxInterval     time.Duration
 }
 
 func (e *ExponentialReconnectionPolicy) GetInterval(currentRetry int) time.Duration {
-	return getExponentialTime(e.InitialInterval, math.MaxInt16*time.Second, currentRetry)
+	max := e.MaxInterval
+	if max < e.InitialInterval {
+		max = math.MaxInt16 * time.Second
+	}
+	return getExponentialTime(e.InitialInterval, max, currentRetry)
 }
 
 func (e *ExponentialReconnectionPolicy) GetMaxRetries() int {
