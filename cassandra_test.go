@@ -325,12 +325,12 @@ func TestPagingWithBind(t *testing.T) {
 		t.Fatal("create table:", err)
 	}
 	for i := 0; i < 100; i++ {
-		if err := session.Query("INSERT INTO paging_bind (id,val) VALUES (?,?)", 1,i).Exec(); err != nil {
+		if err := session.Query("INSERT INTO paging_bind (id,val) VALUES (?,?)", 1, i).Exec(); err != nil {
 			t.Fatal("insert:", err)
 		}
 	}
 
-	q := session.Query("SELECT val FROM paging_bind WHERE id = ? AND val < ?",1, 50).PageSize(10)
+	q := session.Query("SELECT val FROM paging_bind WHERE id = ? AND val < ?", 1, 50).PageSize(10)
 	iter := q.Iter()
 	var id int
 	count := 0
@@ -599,6 +599,35 @@ func TestBatch(t *testing.T) {
 		t.Fatal("select count:", err)
 	} else if count != 100 {
 		t.Fatalf("count: expected %d, got %d\n", 100, count)
+	}
+}
+
+func TestBatchMemAlloc(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+
+	batch := session.NewBatch(LoggedBatch).AddSizeHint(10)
+	if len(batch.Entries) != 0 {
+		t.Fatalf("batch entries size want %d, got %d", 0, len(batch.Entries))
+	}
+
+	for i := 0; i < 100; i++ {
+		batch.Query(`INSERT INTO batch_table (id) VALUES (?)`, i)
+	}
+	if len(batch.Entries) != 100 {
+		t.Fatalf("batch entries size want %d, got %d", 100, len(batch.Entries))
+	}
+
+	batch.AddSizeHint(10)
+	if len(batch.Entries) != 100 {
+		t.Fatalf("batch entries size want %d, got %d", 100, len(batch.Entries))
+	}
+
+	for i := 0; i < 100; i++ {
+		batch.Query(`INSERT INTO batch_table (id) VALUES (?)`, i)
+	}
+	if len(batch.Entries) != 200 {
+		t.Fatalf("batch entries size want %d, got %d", 100, len(batch.Entries))
 	}
 }
 

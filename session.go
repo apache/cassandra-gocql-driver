@@ -1565,6 +1565,18 @@ func (s *Session) NewBatch(typ BatchType) *Batch {
 	return batch
 }
 
+// AddSizeHint set a hint about how many entry this batch will execute.
+// use this hint gocql can pre alloc memory.
+func (b *Batch) AddSizeHint(size int) *Batch {
+	if cap(b.Entries) > size+len(b.Entries) {
+		return b
+	}
+	var e = make([]BatchEntry, len(b.Entries), len(b.Entries)+size)
+	copy(e, b.Entries)
+	b.Entries = e
+	return b
+}
+
 // Observer enables batch-level observer on this batch.
 // The provided observer will be called every time this batched query is executed.
 func (b *Batch) Observer(observer BatchObserver) *Batch {
