@@ -606,7 +606,7 @@ func TestBatchMemAlloc(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 
-	batch := session.NewBatch(LoggedBatch).AddSizeHint(10)
+	batch := session.NewBatch(LoggedBatch).SizeHint(10)
 	if len(batch.Entries) != 0 {
 		t.Fatalf("batch entries size want %d, got %d", 0, len(batch.Entries))
 	}
@@ -618,7 +618,7 @@ func TestBatchMemAlloc(t *testing.T) {
 		t.Fatalf("batch entries size want %d, got %d", 100, len(batch.Entries))
 	}
 
-	batch.AddSizeHint(10)
+	batch.SizeHint(10)
 	if len(batch.Entries) != 100 {
 		t.Fatalf("batch entries size want %d, got %d", 100, len(batch.Entries))
 	}

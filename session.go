@@ -1565,9 +1565,9 @@ func (s *Session) NewBatch(typ BatchType) *Batch {
 	return batch
 }
 
-// AddSizeHint set a hint about how many entry this batch will execute.
+// SizeHint set a hint about how many entries will be added to in next loop
 // use this hint gocql can pre alloc memory.
-func (b *Batch) AddSizeHint(size int) *Batch {
+func (b *Batch) SizeHint(size int) *Batch {
 	if cap(b.Entries) > size+len(b.Entries) {
 		return b
 	}
