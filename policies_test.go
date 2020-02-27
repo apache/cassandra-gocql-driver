@@ -106,8 +106,8 @@ func TestHostPolicy_TokenAware_SimpleStrategy(t *testing.T) {
 	// now the token ring is configured
 	query.RoutingKey([]byte("20"))
 	iter = policy.Pick(query)
-	iterCheck(t, iter, "0")
 	iterCheck(t, iter, "1")
+	iterCheck(t, iter, "2")
 }
 
 // Tests of the host pool host selection policy implementation
@@ -608,7 +608,7 @@ func TestHostPolicy_TokenAware_NetworkStrategy(t *testing.T) {
 	}, policyInternal.getMetadataReadOnly().replicas)
 
 	// now the token ring is configured
-	query.RoutingKey([]byte("23"))
+	query.RoutingKey([]byte("18"))
 	iter = policy.Pick(query)
 	// first should be hosts with matching token from the local DC
 	iterCheck(t, iter, "4")
