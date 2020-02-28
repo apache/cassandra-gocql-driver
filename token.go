@@ -202,14 +202,6 @@ func (t *tokenRing) String() string {
 	return string(buf.Bytes())
 }
 
-func (t *tokenRing) GetHostForPartitionKey(partitionKey []byte) (host *HostInfo, endToken token) {
-	if t == nil {
-		return nil, nil
-	}
-
-	return t.GetHostForToken(t.partitioner.Hash(partitionKey))
-}
-
 func (t *tokenRing) GetHostForToken(token token) (host *HostInfo, endToken token) {
 	if t == nil || len(t.tokens) == 0 {
 		return nil, nil

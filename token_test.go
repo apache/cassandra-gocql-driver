@@ -204,9 +204,6 @@ func TestTokenRing_Nil(t *testing.T) {
 	if host, endToken := ring.GetHostForToken(nil); host != nil || endToken != nil {
 		t.Error("Expected nil for nil token ring")
 	}
-	if host, endToken := ring.GetHostForPartitionKey(nil); host != nil || endToken != nil {
-		t.Error("Expected nil for nil token ring")
-	}
 }
 
 // Test of the recognition of the partitioner class
