@@ -1086,7 +1086,7 @@ func (c *Conn) executeQuery(ctx context.Context, qry *Query) *Iter {
 		info  *preparedStatment
 	)
 
-	if qry.shouldPrepare() {
+	if !qry.skipPrepare && qry.shouldPrepare() {
 		// Prepare all DML queries. Other queries can not be prepared.
 		var err error
 		info, err = c.prepareStatement(ctx, qry.stmt, qry.trace)
@@ -1361,6 +1361,8 @@ func (c *Conn) executeBatch(ctx context.Context, batch *Batch) *Iter {
 func (c *Conn) query(ctx context.Context, statement string, values ...interface{}) (iter *Iter) {
 	q := c.session.Query(statement, values...).Consistency(One)
 	q.trace = nil
+	q.skipPrepare = true
+	q.disableSkipMetadata = true
 	return c.executeQuery(ctx, q)
 }
 
