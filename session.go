@@ -809,6 +809,10 @@ type Query struct {
 
 	// getKeyspace is field so that it can be overriden in tests
 	getKeyspace func() string
+
+	// used by control conn queries to prevent triggering a write to systems
+	// tables in AWS MCS see
+	skipPrepare bool
 }
 
 func (q *Query) defaultsFromSession() {
