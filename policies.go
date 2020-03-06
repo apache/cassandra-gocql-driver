@@ -329,7 +329,9 @@ type NextHost func() SelectedHost
 // RoundRobinHostPolicy is a round-robin load balancing policy, where each host
 // is tried sequentially for each query.
 func RoundRobinHostPolicy() HostSelectionPolicy {
-	return &roundRobinHostPolicy{}
+	return &roundRobinHostPolicy{
+		lastUsedHostIdx: rand.Uint64(),
+	}
 }
 
 type roundRobinHostPolicy struct {
