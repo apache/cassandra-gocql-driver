@@ -346,7 +346,7 @@ func (r *roundRobinHostPolicy) Init(*Session)                       {}
 
 func (r *roundRobinHostPolicy) Pick(qry ExecutableQuery) NextHost {
 	nextStartOffset := atomic.AddUint64(&r.lastUsedHostIdx, 1)
-	return roundRobbin(int(nextStartOffset), r.hosts.get())
+	return roundRobbin(nextStartOffset, r.hosts.get())
 }
 
 func (r *roundRobinHostPolicy) AddHost(host *HostInfo) {
@@ -846,30 +846,30 @@ func (d *dcAwareRR) HostDown(host *HostInfo) { d.RemoveHost(host) }
 //
 // For tiered and DC-aware strategy:
 // roundRobbin(offset, localHosts, remoteHosts)
-func roundRobbin(shift int, hosts ...[]*HostInfo) NextHost {
-	currentLayerIdx := 0
-	currentlyObserved := 0
+func roundRobbin(shift uint64, hosts ...[]*HostInfo) NextHost {
+	var currentlyObserved, currentLayerIdx uint64
 
 	return func() SelectedHost {
 
 		// iterate over layers
 		for {
-			if currentLayerIdx == len(hosts) {
+			if currentLayerIdx == uint64(len(hosts)) {
 				return nil
 			}
 
 			currentLayer := hosts[currentLayerIdx]
+			currentLayerSize := uint64(len(hosts[currentLayerIdx]))
 			// iterate over hosts within a layer
 		layerLoop:
 			for {
 				currentlyObserved++
-				if currentlyObserved > len(hosts[currentLayerIdx]) {
+				if currentlyObserved > currentLayerSize {
 					currentLayerIdx++
 					currentlyObserved = 0
 					break layerLoop
 				}
 
-				h := currentLayer[(shift+currentlyObserved)%len(hosts[currentLayerIdx])]
+				h := currentLayer[(shift+currentlyObserved)%currentLayerSize]
 
 				if h.IsUp() {
 					return (*selectedHost)(h)
@@ -881,7 +881,7 @@ func roundRobbin(shift int, hosts ...[]*HostInfo) NextHost {
 
 func (d *dcAwareRR) Pick(q ExecutableQuery) NextHost {
 	nextStartOffset := atomic.AddUint64(&d.lastUsedHostIdx, 1)
-	return roundRobbin(int(nextStartOffset), d.localHosts.get(), d.remoteHosts.get())
+	return roundRobbin(nextStartOffset, d.localHosts.get(), d.remoteHosts.get())
 }
 
 // ConvictionPolicy interface is used by gocql to determine if a host should be
