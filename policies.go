@@ -869,7 +869,8 @@ func roundRobbin(shift int, hosts ...[]*HostInfo) NextHost {
 					break
 				}
 
-				h := hosts[currentLayer][(shift+currentlyObserved)%currentLayerSize]
+				layer := hosts[currentLayer]
+				h := layer[(shift+currentlyObserved)%currentLayerSize]
 
 				if h.IsUp() {
 					return (*selectedHost)(h)
