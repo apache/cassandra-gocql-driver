@@ -847,35 +847,34 @@ func (d *dcAwareRR) HostDown(host *HostInfo) { d.RemoveHost(host) }
 // For tiered and DC-aware strategy:
 // roundRobbin(offset, localHosts, remoteHosts)
 func roundRobbin(shift int, hosts ...[]*HostInfo) NextHost {
-	currentLayer := 0
+	currentLayerIdx := 0
 	currentlyObserved := 0
 
 	return func() SelectedHost {
 
 		// iterate over layers
 		for {
-			if currentLayer == len(hosts) {
+			if currentLayerIdx == len(hosts) {
 				return nil
 			}
 
-			currentLayerSize := len(hosts[currentLayer])
-
+			currentLayer := hosts[currentLayerIdx]
+			currentLayerSize := len(hosts[currentLayerIdx])
 			// iterate over hosts within a layer
+		layerLoop:
 			for {
 				currentlyObserved++
 				if currentlyObserved > currentLayerSize {
-					currentLayer++
+					currentLayerIdx++
 					currentlyObserved = 0
-					break
+					break layerLoop
 				}
 
-				layer := hosts[currentLayer]
-				h := layer[(shift+currentlyObserved)%currentLayerSize]
+				h := currentLayer[(shift+currentlyObserved)%currentLayerSize]
 
 				if h.IsUp() {
 					return (*selectedHost)(h)
 				}
-
 			}
 		}
 	}
