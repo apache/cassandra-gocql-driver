@@ -805,7 +805,10 @@ type dcAwareRR struct {
 // return hosts which are in the local datacentre before returning hosts in all
 // other datercentres
 func DCAwareRoundRobinPolicy(localDC string) HostSelectionPolicy {
-	return &dcAwareRR{local: localDC}
+	return &dcAwareRR{
+		local:           localDC,
+		lastUsedHostIdx: rand.Uint64(),
+	}
 }
 
 func (d *dcAwareRR) Init(*Session)                       {}
