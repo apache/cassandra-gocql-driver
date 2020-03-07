@@ -859,18 +859,17 @@ func roundRobbin(shift int, hosts ...[]*HostInfo) NextHost {
 			}
 
 			currentLayer := hosts[currentLayerIdx]
-			currentLayerSize := len(hosts[currentLayerIdx])
 			// iterate over hosts within a layer
 		layerLoop:
 			for {
 				currentlyObserved++
-				if currentlyObserved > currentLayerSize {
+				if currentlyObserved > len(hosts[currentLayerIdx]) {
 					currentLayerIdx++
 					currentlyObserved = 0
 					break layerLoop
 				}
 
-				h := currentLayer[(shift+currentlyObserved)%currentLayerSize]
+				h := currentLayer[(shift+currentlyObserved)%len(hosts[currentLayerIdx])]
 
 				if h.IsUp() {
 					return (*selectedHost)(h)
