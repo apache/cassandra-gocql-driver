@@ -5,6 +5,7 @@
 package gocql
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -12,7 +13,6 @@ import (
 	"io/ioutil"
 	"net"
 	"runtime"
-	"strings"
 	"time"
 )
 
@@ -214,7 +214,7 @@ func (c Consistency) MarshalText() (text []byte, err error) {
 }
 
 func (c *Consistency) UnmarshalText(text []byte) error {
-	switch string(text) {
+	switch string(bytes.ToUpper(text)) {
 	case "ANY":
 		*c = Any
 	case "ONE":
@@ -242,7 +242,7 @@ func (c *Consistency) UnmarshalText(text []byte) error {
 
 func ParseConsistency(s string) Consistency {
 	var c Consistency
-	if err := c.UnmarshalText([]byte(strings.ToUpper(s))); err != nil {
+	if err := c.UnmarshalText([]byte(s)); err != nil {
 		panic(err)
 	}
 	return c
@@ -251,7 +251,7 @@ func ParseConsistency(s string) Consistency {
 // ParseConsistencyWrapper wraps gocql.ParseConsistency to provide an err
 // return instead of a panic
 func ParseConsistencyWrapper(s string) (consistency Consistency, err error) {
-	err = consistency.UnmarshalText([]byte(strings.ToUpper(s)))
+	err = consistency.UnmarshalText([]byte(s))
 	return
 }
 
