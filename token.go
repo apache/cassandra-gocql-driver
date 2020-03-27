@@ -152,6 +152,8 @@ func newTokenRing(partitioner string, hosts []*HostInfo) (*tokenRing, error) {
 		tokenRing.partitioner = orderedPartitioner{}
 	} else if strings.HasSuffix(partitioner, "RandomPartitioner") {
 		tokenRing.partitioner = randomPartitioner{}
+	} else if strings.HasSuffix(partitioner, "DefaultPartitioner") {
+		tokenRing.partitioner = orderedPartitioner{}
 	} else {
 		return nil, fmt.Errorf("Unsupported partitioner '%s'", partitioner)
 	}
