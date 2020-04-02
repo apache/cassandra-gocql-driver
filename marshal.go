@@ -1914,8 +1914,9 @@ func unmarshalTuple(info TypeInfo, data []byte, value interface{}) error {
 		for i, elem := range tuple.Elems {
 			// each element inside data is a [bytes]
 			var p []byte
-			p, data = readBytes(data)
-
+			if len(data) > 4 {
+				p, data = readBytes(data)
+			}
 			err := Unmarshal(elem, p, v[i])
 			if err != nil {
 				return err
