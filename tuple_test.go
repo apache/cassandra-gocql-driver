@@ -107,7 +107,11 @@ func TestTuple_TupleNotSet(t *testing.T) {
 
 	const id = 1
 
-	err = session.Query("INSERT INTO tuple_not_set_test(id) VALUES(?)", id).Exec()
+	err = session.Query("INSERT INTO tuple_not_set_test(id,coord) VALUES(?, (?,?))", id, 1, 2).Exec()
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = session.Query("INSERT INTO tuple_not_set_test(id) VALUES(?)", id+1).Exec()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -115,17 +119,27 @@ func TestTuple_TupleNotSet(t *testing.T) {
 	x := new(int)
 	y := new(int)
 	iter := session.Query("SELECT coord FROM tuple_not_set_test WHERE id=?", id)
-	if err := iter.Scan(&x, &y); err != nil {
+	if err := iter.Scan(x, y); err != nil {
 		t.Fatal(err)
 	}
-
-	if x != nil {
-		t.Fatalf("x should be nil got %+#v, value=%d", x, *x)
+	if x == nil || *x != 1 {
+		t.Fatalf("x should be %d got %+#v, value=%d", 1, x, *x)
 	}
-	if y != nil {
-		t.Fatalf("y should be nil got %+#v, value=%d", y, *y)
+	if y == nil || *y != 2 {
+		t.Fatalf("y should be %d got %+#v, value=%d", 2, y, *y)
 	}
 
+	// Check if the supplied targets are reset to nil
+	iter = session.Query("SELECT coord FROM tuple_not_set_test WHERE id=?", id+1)
+	if err := iter.Scan(x, y); err != nil {
+		t.Fatal(err)
+	}
+	if x == nil || *x != 0 {
+		t.Fatalf("x should be %d got %+#v, value=%d", 0, x, *x)
+	}
+	if y == nil || *y != 0 {
+		t.Fatalf("y should be %d got %+#v, value=%d", 0, y, *y)
+	}
 }
 
 func TestTupleMapScan(t *testing.T) {
