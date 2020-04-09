@@ -20,7 +20,7 @@ import (
 
 // cowHostList implements a copy on write host list, its equivalent type is []*HostInfo
 type cowHostList struct {
-	list atomic.Value
+	list atomic.Value // We store the pointer to the slice (*[]*HostInfo) to avoid slice copy.
 	mu   sync.Mutex
 }
 
@@ -28,8 +28,8 @@ func (c *cowHostList) String() string {
 	return fmt.Sprintf("%+v", c.get())
 }
 
+// We always return a copy of the *HostInfo slice to eliminate the data race in slice.
 func (c *cowHostList) get() []*HostInfo {
-	// TODO(zariel): should we replace this with []*HostInfo?
 	l, ok := c.list.Load().(*[]*HostInfo)
 	if !ok {
 		return nil

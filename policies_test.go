@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"sync"
 	"testing"
 	"time"
 
@@ -249,6 +250,33 @@ func TestCOWList_Add(t *testing.T) {
 			t.Errorf("addr was not in the host list: %q", addr)
 		}
 	}
+}
+
+func TestCOWList_Get(t *testing.T) {
+	var cow cowHostList
+
+	toAdd := [...]net.IP{net.IPv4(10, 0, 0, 1), net.IPv4(10, 0, 0, 2), net.IPv4(10, 0, 0, 3)}
+
+	for _, addr := range toAdd {
+		if !cow.add(&HostInfo{connectAddress: addr}) {
+			t.Fatal("did not add peer which was not in the set")
+		}
+	}
+
+	parallelCount := 3
+	wg := sync.WaitGroup{}
+	wg.Add(parallelCount)
+	for i := 0; i < parallelCount; i++ {
+		go func(i int) {
+			defer wg.Done()
+			hosts := cow.get()
+			if len(hosts) != len(toAdd) {
+				t.Errorf("expected to have %d hosts got %d", len(toAdd), len(hosts))
+			}
+			hosts = hosts[i%len(hosts):]
+		}(i)
+	}
+	wg.Wait()
 }
 
 // TestSimpleRetryPolicy makes sure that we only allow 1 + numRetries attempts
