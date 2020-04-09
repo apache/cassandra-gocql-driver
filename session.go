@@ -165,10 +165,11 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 
 	if err := s.init(); err != nil {
 		s.Close()
-		if err == ErrNoConnectionsStarted {
-			//This error used to be generated inside NewSession & returned directly
+
+		if err == ErrNoConnectionsStarted || err == ErrKeyspaceCheckFailed {
+			//ErrNoConnectionsStarted error used to be generated inside NewSession & returned directly
 			//Forward it on up to be backwards compatible
-			return nil, ErrNoConnectionsStarted
+			return nil, err
 		} else {
 			// TODO(zariel): dont wrap this error in fmt.Errorf, return a typed error
 			return nil, fmt.Errorf("gocql: unable to create session: %v", err)
@@ -273,6 +274,25 @@ func (s *Session) init() error {
 	if s.pool.Size() == 0 {
 		return ErrNoConnectionsStarted
 	}
+
+	// Key space check can faile due to invalid keyspace or no workable connection found.
+	if len(s.cfg.Keyspace) != 0 {
+		for _, p := range s.pool.hostConnPools {
+			if p.Size() > 0 {
+				if err = p.conns[0].UseKeyspace(s.cfg.Keyspace); err == nil {
+					break
+				}
+			}
+		}
+
+		if err != nil {
+			if gocqlDebug {
+				Logger.Println("keyspace check failed.", err.Error())
+			}
+			return ErrKeyspaceCheckFailed
+		}
+	}
+
 
 	// Invoke KeyspaceChanged to let the policy cache the session keyspace
 	// parameters. This is used by tokenAwareHostPolicy to discover replicas.

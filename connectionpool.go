@@ -529,14 +529,6 @@ func (pool *hostConnPool) connect() (err error) {
 		return err
 	}
 
-	if pool.keyspace != "" {
-		// set the keyspace
-		if err = conn.UseKeyspace(pool.keyspace); err != nil {
-			conn.Close()
-			return err
-		}
-	}
-
 	// add the Conn to the pool
 	pool.mu.Lock()
 	defer pool.mu.Unlock()

@@ -217,4 +217,5 @@ var (
 	ErrNoHosts              = errors.New("no hosts provided")
 	ErrNoConnectionsStarted = errors.New("no connections were made when creating the session")
 	ErrHostQueryFailed      = errors.New("unable to populate Hosts")
+	ErrKeyspaceCheckFailed  = errors.New("invalid keyspace or no workable connection")
 )
