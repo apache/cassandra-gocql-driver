@@ -89,6 +89,59 @@ func TestTuple_NullTuple(t *testing.T) {
 
 }
 
+func TestTuple_TupleNotSet(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+	if session.cfg.ProtoVersion < protoVersion3 {
+		t.Skip("tuple types are only available of proto>=3")
+	}
+
+	err := createTable(session, `CREATE TABLE gocql_test.tuple_not_set_test(
+		id int,
+		coord frozen<tuple<int, int>>,
+
+		primary key(id))`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	const id = 1
+
+	err = session.Query("INSERT INTO tuple_not_set_test(id,coord) VALUES(?, (?,?))", id, 1, 2).Exec()
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = session.Query("INSERT INTO tuple_not_set_test(id) VALUES(?)", id+1).Exec()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	x := new(int)
+	y := new(int)
+	iter := session.Query("SELECT coord FROM tuple_not_set_test WHERE id=?", id)
+	if err := iter.Scan(x, y); err != nil {
+		t.Fatal(err)
+	}
+	if x == nil || *x != 1 {
+		t.Fatalf("x should be %d got %+#v, value=%d", 1, x, *x)
+	}
+	if y == nil || *y != 2 {
+		t.Fatalf("y should be %d got %+#v, value=%d", 2, y, *y)
+	}
+
+	// Check if the supplied targets are reset to nil
+	iter = session.Query("SELECT coord FROM tuple_not_set_test WHERE id=?", id+1)
+	if err := iter.Scan(x, y); err != nil {
+		t.Fatal(err)
+	}
+	if x == nil || *x != 0 {
+		t.Fatalf("x should be %d got %+#v, value=%d", 0, x, *x)
+	}
+	if y == nil || *y != 0 {
+		t.Fatalf("y should be %d got %+#v, value=%d", 0, y, *y)
+	}
+}
+
 func TestTupleMapScan(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
@@ -113,6 +166,74 @@ func TestTupleMapScan(t *testing.T) {
 	err = session.Query(`SELECT * FROM tuple_map_scan`).MapScan(m)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if m["val[0]"] != 1 {
+		t.Fatalf("expacted val[0] to be %d but was %d", 1, m["val[0]"])
+	}
+	if m["val[1]"] != 2 {
+		t.Fatalf("expacted val[1] to be %d but was %d", 2, m["val[1]"])
+	}
+}
+
+func TestTupleMapScanNil(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+	if session.cfg.ProtoVersion < protoVersion3 {
+		t.Skip("tuple types are only available of proto>=3")
+	}
+	err := createTable(session, `CREATE TABLE gocql_test.tuple_map_scan_nil(
+			id int,
+			val frozen<tuple<int, int>>,
+
+			primary key(id))`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := session.Query(`INSERT INTO tuple_map_scan_nil (id, val) VALUES (?,(?,?));`, 1, nil, nil).Exec(); err != nil {
+		t.Fatal(err)
+	}
+
+	m := make(map[string]interface{})
+	err = session.Query(`SELECT * FROM tuple_map_scan_nil`).MapScan(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m["val[0]"] != 0 {
+		t.Fatalf("expacted val[0] to be %d but was %d", 0, m["val[0]"])
+	}
+	if m["val[1]"] != 0 {
+		t.Fatalf("expacted val[1] to be %d but was %d", 0, m["val[1]"])
+	}
+}
+
+func TestTupleMapScanNotSet(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+	if session.cfg.ProtoVersion < protoVersion3 {
+		t.Skip("tuple types are only available of proto>=3")
+	}
+	err := createTable(session, `CREATE TABLE gocql_test.tuple_map_scan_not_set(
+			id int,
+			val frozen<tuple<int, int>>,
+
+			primary key(id))`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := session.Query(`INSERT INTO tuple_map_scan_not_set (id) VALUES (?);`, 1).Exec(); err != nil {
+		t.Fatal(err)
+	}
+
+	m := make(map[string]interface{})
+	err = session.Query(`SELECT * FROM tuple_map_scan_not_set`).MapScan(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m["val[0]"] != 0 {
+		t.Fatalf("expacted val[0] to be %d but was %d", 0, m["val[0]"])
+	}
+	if m["val[1]"] != 0 {
+		t.Fatalf("expacted val[1] to be %d but was %d", 0, m["val[1]"])
 	}
 }
 
