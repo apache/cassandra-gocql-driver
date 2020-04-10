@@ -226,6 +226,8 @@ func (s *Session) init() error {
 		hostMap[host.ConnectAddress().String()] = host
 	}
 
+	hostAdded := make(chan interface{}, len(hostMap))
+
 	hosts = hosts[:0]
 	for _, host := range hostMap {
 		host = s.ring.addOrUpdate(host)
@@ -234,9 +236,16 @@ func (s *Session) init() error {
 		}
 
 		host.setState(NodeUp)
-		s.pool.addHost(host)
+		go func(host *HostInfo) {
+			s.pool.addHost(host)
+			hostAdded <- struct{}{}
+		}(host)
 
 		hosts = append(hosts, host)
+	}
+
+	if err := s.waitForConnAvailable(hostAdded); err != nil {
+		return err
 	}
 
 	type bulkAddHosts interface {
@@ -270,10 +279,6 @@ func (s *Session) init() error {
 		s.hasAggregatesAndFunctions = version.AtLeast(2, 2, 0)
 	}
 
-	if s.pool.Size() == 0 {
-		return ErrNoConnectionsStarted
-	}
-
 	// Invoke KeyspaceChanged to let the policy cache the session keyspace
 	// parameters. This is used by tokenAwareHostPolicy to discover replicas.
 	if !s.cfg.disableControlConn && s.cfg.Keyspace != "" {
@@ -281,6 +286,36 @@ func (s *Session) init() error {
 	}
 
 	return nil
+}
+
+func (s *Session) waitForConnAvailable(hostAdded chan interface{}) (err error) {
+	totalHosts := cap(hostAdded)
+	ch := make(chan error)
+	go func() {
+		addedHosts := 0
+		for range hostAdded {
+			addedHosts++
+
+			poolSize := s.pool.Size()
+			if poolSize > 0 {
+				ch <-nil
+			}
+			if addedHosts == totalHosts {
+				if poolSize == 0 {
+					ch <-ErrNoConnectionsStarted
+				}
+				return
+			}
+		}
+	}()
+
+	select {
+	case err = <-ch:
+	case <-s.ctx.Done():
+		err = s.ctx.Err()
+	}
+
+	return err
 }
 
 // AwaitSchemaAgreement will wait until schema versions across all nodes in the

@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"strconv"
 	"testing"
 )
 
@@ -312,5 +313,89 @@ func TestIsUseStatement(t *testing.T) {
 		if v != tc.exp {
 			t.Fatalf("expected %v but got %v for statement %q", tc.exp, v, tc.input)
 		}
+	}
+}
+
+func Test_waitForConnAvailable_NoError(t *testing.T) {
+	totalHosts := 2
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	s := &Session{}
+	s.ctx = ctx
+	s.pool = &policyConnPool{}
+	s.pool.hostConnPools = make(map[string]*hostConnPool)
+	for i := 0; i < totalHosts; i++ {
+		s.pool.hostConnPools[strconv.Itoa(i)] = &hostConnPool{}
+	}
+
+	hostAdded := make(chan interface{}, totalHosts)
+	for i := 0; i < totalHosts; i++ {
+		go func(i int) {
+			// simulate s.pool.addHost(host)
+			s.pool.hostConnPools[strconv.Itoa(i)].conns = []*Conn{&Conn{},}
+			hostAdded <- struct{}{}
+		}(i)
+	}
+
+	err := s.waitForConnAvailable(hostAdded)
+	if err != nil  {
+		t.Fatalf("Unexpected err: %s.", err.Error())
+	}
+}
+
+func Test_waitForConnAvailable_ErrNoConnectionsStarted(t *testing.T) {
+	totalHosts := 2
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	s := &Session{}
+	s.ctx = ctx
+	s.pool = &policyConnPool{}
+	s.pool.hostConnPools = make(map[string]*hostConnPool)
+	for i := 0; i < totalHosts; i++ {
+		s.pool.hostConnPools[strconv.Itoa(i)] = &hostConnPool{}
+	}
+
+	hostAdded := make(chan interface{}, totalHosts)
+	for i := 0; i < totalHosts; i++ {
+		go func(i int) {
+			// simulate s.pool.addHost(host)
+			//s.pool.hostConnPools[strconv.Itoa(i)].conns = []*Conn{&Conn{},}
+			hostAdded <- struct{}{}
+		}(i)
+	}
+
+	err := s.waitForConnAvailable(hostAdded)
+	if err != ErrNoConnectionsStarted {
+		t.Fatalf("expected ErrNoConnectionsStarted, but the returned error was: %s.", err)
+	}
+}
+
+func Test_waitForConnAvailable_Canceled(t *testing.T) {
+	totalHosts := 2
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	s := &Session{}
+	s.ctx = ctx
+	s.pool = &policyConnPool{}
+	s.pool.hostConnPools = make(map[string]*hostConnPool)
+	for i := 0; i < totalHosts; i++ {
+		s.pool.hostConnPools[strconv.Itoa(i)] = &hostConnPool{}
+	}
+
+	hostAdded := make(chan interface{}, totalHosts)
+	for i := 0; i < totalHosts; i++ {
+		go func(i int) {
+			// simulate s.pool.addHost(host)
+			//s.pool.hostConnPools[strconv.Itoa(i)].conns = []*Conn{&Conn{},}
+			//hostAdded <- struct{}{}
+		}(i)
+	}
+	go cancel()
+	err := s.waitForConnAvailable(hostAdded)
+	if err != context.Canceled {
+		t.Fatalf("expected context.Canceled, but the returned error was: %s.", err)
 	}
 }
