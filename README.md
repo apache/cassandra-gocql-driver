@@ -266,6 +266,14 @@ There are various ways to bind application level data structures to CQL statemen
 * [gocassa](https://github.com/hailocab/gocassa) is an external project that layers on top of gocql to provide convenient query building and data binding.
 * [gocqltable](https://github.com/kristoiv/gocqltable) provides an ORM-style convenience layer to make CRUD operations with gocql easier.
 
+More Examples and Resources
+--------
+
+The course [Using Scylla Drivers](https://university.scylladb.com/courses/using-scylla-drivers/) in Scylla University explains how to use drivers in different languages to interact with a Scylla cluster.
+The lesson, [Golang and Scylla Part 1](https://university.scylladb.com/courses/using-scylla-drivers/lessons/golang-and-scylla-part-1/) includes a sample application that, using the GoCQL driver, interacts with a three-node Scylla cluster. 
+It connects to a Scylla cluster, displays the contents of a  table, inserts and deletes data, and shows the contents of the table after each action.
+
+
 Ecosystem
 ---------
 
