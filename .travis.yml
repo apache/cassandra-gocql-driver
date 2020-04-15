@@ -3,10 +3,19 @@ language: go
 sudo: required
 dist: trusty
 
+services:
+  - docker
+
 cache:
   directories:
     - $HOME/.ccm/repository
     - $HOME/.local/lib/python2.7
+
+before_install:
+  - sudo rm /usr/local/bin/docker-compose
+  - curl -L https://github.com/docker/compose/releases/download/${DOCKER_COMPOSE_VERSION}/docker-compose-`uname -s`-`uname -m` > docker-compose
+  - chmod +x docker-compose
+  - sudo mv docker-compose /usr/local/bin
 
 matrix:
   fast_finish: true
@@ -18,6 +27,7 @@ branches:
 env:
   global:
     - GOMAXPROCS=2
+    - DOCKER_COMPOSE_VERSION=1.25.5
   matrix:
     - CASS=2.1.21
       AUTH=true
@@ -29,16 +39,17 @@ env:
       AUTH=false
     - CASS=3.11.4
       AUTH=false
+    - CASS=scylladb/scylla:3.3.0
+      AUTH=false
 
 go:
-  - 1.12.x
-  - 1.13.x
+  - 1.14.x
 
 install:
   - ./install_test_deps.sh $TRAVIS_REPO_SLUG
   - cd ../..
   - cd gocql/gocql
-  - go get .
+  - go mod download
 
 script:
   - set -e
