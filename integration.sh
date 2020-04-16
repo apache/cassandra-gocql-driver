@@ -130,10 +130,7 @@ function run_scylla_tests() {
   local cversion="3.11.4"
   startup_scylla "${version}"
   local proto=4
-  echo "SCYLLA_LIVESET"
-  echo "${scylla_liveset}"
-  echo "SCYLLA_LIVESET"
-	#go test -v -tags unit -race
+	go test -v -tags unit -race
 
   if [ "$auth" = true ]
 	then

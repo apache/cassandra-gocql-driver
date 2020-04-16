@@ -39,7 +39,7 @@ env:
       AUTH=false
     - CASS=3.11.4
       AUTH=false
-    - CASS=scylladb/scylla:3.3.0
+    - CASS=scylladb/scylla:4.0.rc1
       AUTH=false
 
 go:
