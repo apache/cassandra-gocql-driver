@@ -171,6 +171,20 @@ func TestGetCassandraType(t *testing.T) {
 				Elem: NativeType{typ: TypeInt},
 			},
 		},
+		{
+			"set<smallint>", CollectionType{
+				NativeType: NativeType{typ: TypeSet},
+				Elem:       NativeType{typ: TypeSmallInt},
+			},
+		},
+		{
+			"list<tinyint>", CollectionType{
+				NativeType: NativeType{typ: TypeList},
+				Elem:       NativeType{typ: TypeTinyInt},
+			},
+		},
+		{"smallint", NativeType{typ: TypeSmallInt}},
+		{"tinyint", NativeType{typ: TypeTinyInt}},
 	}
 
 	for _, test := range tests {

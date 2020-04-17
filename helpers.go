@@ -93,6 +93,8 @@ func getCassandraBaseType(name string) Type {
 		return TypeFloat
 	case "int":
 		return TypeInt
+	case "smallint":
+		return TypeSmallInt
 	case "tinyint":
 		return TypeTinyInt
 	case "time":
