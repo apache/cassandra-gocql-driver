@@ -1,4 +1,4 @@
-// +build all cassandra
+// +build all cassandra scylla
 
 package gocql
 

@@ -119,7 +119,7 @@ function startup_scylla {
     until docker-compose logs "${name}"| grep "Starting listening for CQL clients" > /dev/null; do sleep 2; done
   done
 
-  scylla_liveset=$(join_by ' ' "${node_ips[@]}")
+  scylla_liveset=$(join_by ',' "${node_ips[@]}")
 }
 
 function run_scylla_tests() {
@@ -141,18 +141,13 @@ function run_scylla_tests() {
 		sleep 1s
 	  local args="-gocql.timeout=60s -proto=$proto -rf=3 -clusterSize=$clusterSize -autowait=2000ms -compressor=snappy -gocql.cversion=$cversion -cluster=${scylla_liveset} ./..."
 		go test -tags "cassandra scylla gocql_debug" -timeout=5m -race $args
-
-		#ccm clear
-		#ccm start --wait-for-binary-proto
-		#sleep 1s
-
-		#go test -tags "integration gocql_debug" -timeout=5m -race $args
-
-		#ccm clear
-		#ccm start --wait-for-binary-proto
-		#sleep 1s
-
-		#go test -tags "ccm gocql_debug" -timeout=5m -race $args
+		cleanup_scylla
+		startup_scylla "${version}"
+		go test -tags "integration scylla gocql_debug" -timeout=5m -race $args
+		cleanup_scylla
+		startup_scylla "${version}"
+		go test -tags "ccm gocql_debug" -timeout=5m -race $args
+		cleanup_scylla
 	fi
 }
 
@@ -163,7 +158,6 @@ function cleanup_scylla {
 
 if [[ $1 =~ "scylla" ]]
 then
-  trap cleanup_scylla EXIT
   run_scylla_tests $1 $2
 else
   run_tests $1 $2
