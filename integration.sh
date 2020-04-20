@@ -92,4 +92,73 @@ function run_tests() {
 	ccm remove
 }
 
-run_tests $1 $2
+function join_by {
+  local IFS="$1";
+  shift;
+  echo "$*";
+}
+
+scylla_liveset="unset"
+
+function startup_scylla {
+  local version=$1
+  #service_names+=(node_1 node_2 node_3)
+  service_names+=(node_1 node_2)
+  #container_names+=(gocql_node_1_1 gocql_node_2_1 gocql_node_3_1)
+  container_names+=(gocql_node_1_1 gocql_node_2_1)
+  SCYLLA_IMAGE=$version docker-compose --log-level WARNING up -d
+
+  for name in "${container_names[@]}"
+  do
+    node_ips+=( `docker inspect --format='{{ .NetworkSettings.Networks.gocql_public.IPAddress }}' $name` )
+  done
+
+  # Wait for instance to start
+  for name in "${service_names[@]}"
+  do
+    until docker-compose logs "${name}"| grep "Starting listening for CQL clients" > /dev/null; do sleep 2; done
+  done
+
+  scylla_liveset=$(join_by ',' "${node_ips[@]}")
+}
+
+function run_scylla_tests() {
+  local version=$1
+  local auth=$2
+  echo "Running integration tests on ${version}"
+  local clusterSize=2
+  local cversion="3.11.4"
+  startup_scylla "${version}"
+  local proto=4
+	go test -v -tags unit -race
+
+  if [ "$auth" = true ]
+	then
+	  :
+		#sleep 30s
+		#go test -run=TestAuthentication -tags "integration gocql_debug" -timeout=15s -runauth $args
+	else
+		sleep 1s
+	  local args="-gocql.timeout=60s -proto=$proto -rf=3 -clusterSize=$clusterSize -autowait=2000ms -compressor=snappy -gocql.cversion=$cversion -cluster=${scylla_liveset} ./..."
+		go test -tags "cassandra scylla gocql_debug" -timeout=5m -race $args
+		cleanup_scylla
+		startup_scylla "${version}"
+		go test -tags "integration scylla gocql_debug" -timeout=5m -race $args
+		cleanup_scylla
+		startup_scylla "${version}"
+		go test -tags "ccm gocql_debug" -timeout=5m -race $args
+		cleanup_scylla
+	fi
+}
+
+function cleanup_scylla {
+  echo "Removing scylla"
+  docker-compose down
+}
+
+if [[ $1 =~ "scylla" ]]
+then
+  run_scylla_tests $1 $2
+else
+  run_tests $1 $2
+fi

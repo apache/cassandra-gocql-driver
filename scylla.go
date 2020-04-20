@@ -64,7 +64,7 @@ func parseSupported(supported map[string][]string) scyllaSupported {
 
 	if partitioner != "org.apache.cassandra.dht.Murmur3Partitioner" || algorithm != "biased-token-round-robin" || si.nrShards == 0 || si.msbIgnore == 0 {
 		if gocqlDebug {
-			Logger.Printf("scylla: unsupported sharding configuration")
+			Logger.Printf("scylla: unsupported sharding configuration, partitioner=%s, algorithm=%s, no_shards=%d, msb_ignore=%d", partitioner, algorithm, si.nrShards, si.msbIgnore)
 		}
 		return scyllaSupported{}
 	}
