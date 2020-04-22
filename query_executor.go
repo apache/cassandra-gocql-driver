@@ -13,6 +13,7 @@ type ExecutableQuery interface {
 	GetRoutingKey() ([]byte, error)
 	Keyspace() string
 	IsIdempotent() bool
+	IsLWT() bool
 
 	withContext(context.Context) ExecutableQuery
 

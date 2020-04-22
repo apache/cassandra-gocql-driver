@@ -373,6 +373,7 @@ func (s *Session) Query(stmt string, values ...interface{}) *Query {
 	qry.stmt = stmt
 	qry.values = values
 	qry.defaultsFromSession()
+	qry.lwt = false
 	return qry
 }
 
@@ -395,6 +396,7 @@ func (s *Session) Bind(stmt string, b func(q *QueryInfo) ([]interface{}, error))
 	qry.stmt = stmt
 	qry.binding = b
 	qry.defaultsFromSession()
+	qry.lwt = false
 	return qry
 }
 
@@ -559,6 +561,7 @@ func (s *Session) routingKeyInfo(ctx context.Context, stmt string) (*routingKeyI
 		routingKeyInfo := &routingKeyInfo{
 			indexes: info.request.pkeyColumns,
 			types:   types,
+			lwt:     info.request.lwt,
 		}
 
 		inflight.value = routingKeyInfo
@@ -593,6 +596,7 @@ func (s *Session) routingKeyInfo(ctx context.Context, stmt string) (*routingKeyI
 	routingKeyInfo := &routingKeyInfo{
 		indexes: make([]int, size),
 		types:   make([]TypeInfo, size),
+		lwt:     info.request.lwt,
 	}
 
 	for keyIndex, keyColumn := range partitionKey {
@@ -826,6 +830,11 @@ type Query struct {
 	// used by control conn queries to prevent triggering a write to systems
 	// tables in AWS MCS see
 	skipPrepare bool
+
+	// "lwt" denotes the query being an LWT operation
+	// In effect if the query is of the form "INSERT/UPDATE/DELETE ... IF ..."
+	// For more details see https://docs.scylladb.com/using-scylla/lwt/
+	lwt bool
 }
 
 func (q *Query) defaultsFromSession() {
@@ -1043,7 +1052,9 @@ func (q *Query) GetRoutingKey() ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-
+	if routingKeyInfo != nil {
+		q.lwt = routingKeyInfo.lwt
+	}
 	return createRoutingKey(routingKeyInfo, q.values)
 }
 
@@ -1096,6 +1107,10 @@ func (q *Query) speculativeExecutionPolicy() SpeculativeExecutionPolicy {
 
 func (q *Query) IsIdempotent() bool {
 	return q.idempotent
+}
+
+func (q *Query) IsLWT() bool {
+	return q.lwt
 }
 
 // Idempotent marks the query as being idempotent or not depending on
@@ -1549,6 +1564,13 @@ type Batch struct {
 	cancelBatch           func()
 	keyspace              string
 	metrics               *queryMetrics
+
+	// "lwt" denotes the query being an LWT operation
+	// In effect if the query is of the form "INSERT/UPDATE/DELETE ... IF ..."
+	// For more details see https://docs.scylladb.com/using-scylla/lwt/
+	// It is sufficient that one batch entry is a conditional query for the
+	// whole batch to be considered for LWT optimization.
+	lwt bool
 }
 
 // NewBatch creates a new batch operation without defaults from the cluster
@@ -1637,6 +1659,10 @@ func (b *Batch) IsIdempotent() bool {
 		}
 	}
 	return true
+}
+
+func (b *Batch) IsLWT() bool {
+	return b.lwt
 }
 
 func (b *Batch) speculativeExecutionPolicy() SpeculativeExecutionPolicy {
@@ -1775,6 +1801,9 @@ func (b *Batch) GetRoutingKey() ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	if routingKeyInfo != nil {
+		b.lwt = routingKeyInfo.lwt
+	}
 
 	return createRoutingKey(routingKeyInfo, entry.Args)
 }
@@ -1851,6 +1880,7 @@ type routingKeyInfoLRU struct {
 type routingKeyInfo struct {
 	indexes []int
 	types   []TypeInfo
+	lwt     bool
 }
 
 func (r *routingKeyInfo) String() string {

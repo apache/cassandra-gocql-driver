@@ -761,7 +761,7 @@ func TestStream0(t *testing.T) {
 	const expErr = "gocql: received unexpected frame on stream 0"
 
 	var buf bytes.Buffer
-	f := newFramer(nil, &buf, nil, protoVersion4)
+	f := newFramer(nil, &buf, nil, protoVersion4, nil)
 	f.writeHeader(0, opResult, 0)
 	f.writeInt(resultKindVoid)
 	f.wbuf[0] |= 0x80
@@ -1285,7 +1285,7 @@ func (srv *TestServer) readFrame(conn net.Conn) (*framer, error) {
 	if err != nil {
 		return nil, err
 	}
-	framer := newFramer(conn, conn, nil, srv.protocol)
+	framer := newFramer(conn, conn, nil, srv.protocol, nil)
 
 	err = framer.readFrame(&head)
 	if err != nil {

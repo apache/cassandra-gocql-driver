@@ -402,9 +402,11 @@ type framer struct {
 	wbuf []byte
 
 	customPayload map[string][]byte
+
+	flagLWT int
 }
 
-func newFramer(r io.Reader, w io.Writer, compressor Compressor, version byte) *framer {
+func newFramer(r io.Reader, w io.Writer, compressor Compressor, version byte, cqlProtoExts []cqlProtocolExtension) *framer {
 	f := &framer{
 		wbuf:       make([]byte, defaultBufSize),
 		readBuffer: make([]byte, defaultBufSize),
@@ -437,6 +439,10 @@ func newFramer(r io.Reader, w io.Writer, compressor Compressor, version byte) *f
 
 	f.header = nil
 	f.traceID = nil
+
+	if lwtExt := findCQLProtoExtByName(cqlProtoExts, lwtAddMetadataMarkKey); lwtExt != nil {
+		f.flagLWT = (*lwtExt).(lwtAddMetadataMarkExt).lwtOptMetaBitMask
+	}
 
 	return f
 }
@@ -934,12 +940,16 @@ func (f *framer) readTypeInfo() TypeInfo {
 type preparedMetadata struct {
 	resultMetadata
 
+	// LWT query detected
+	lwt bool
+
 	// proto v4+
 	pkeyColumns []int
 }
 
 func (r preparedMetadata) String() string {
-	return fmt.Sprintf("[prepared flags=0x%x pkey=%v paging_state=% X columns=%v col_count=%d actual_col_count=%d]", r.flags, r.pkeyColumns, r.pagingState, r.columns, r.colCount, r.actualColCount)
+	return fmt.Sprintf("[prepared flags=0x%x pkey=%v paging_state=% X columns=%v col_count=%d actual_col_count=%d lwt=%t]",
+		r.flags, r.pkeyColumns, r.pagingState, r.columns, r.colCount, r.actualColCount, r.lwt)
 }
 
 func (f *framer) parsePreparedMetadata() preparedMetadata {
@@ -961,6 +971,8 @@ func (f *framer) parsePreparedMetadata() preparedMetadata {
 		}
 		meta.pkeyColumns = pkeys
 	}
+
+	meta.lwt = meta.flags&f.flagLWT == f.flagLWT
 
 	if meta.flags&flagHasMorePages == flagHasMorePages {
 		meta.pagingState = copyBytes(f.readBytes())

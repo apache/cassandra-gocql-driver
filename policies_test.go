@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/hailocab/go-hostpool"
 )
 
@@ -108,6 +109,114 @@ func TestHostPolicy_TokenAware_SimpleStrategy(t *testing.T) {
 	iter = policy.Pick(query)
 	iterCheck(t, iter, "1")
 	iterCheck(t, iter, "2")
+}
+
+func TestHostPolicy_TokenAware_LWT_DisablesHostShuffling(t *testing.T) {
+	tests := map[string]struct {
+		hosts      []*HostInfo
+		routingKey string
+		lwt        bool
+		shuffle    bool
+		want       []string
+	}{
+		"token 08 shuffling configured": {hosts: []*HostInfo{
+			{hostId: "0", connectAddress: net.IPv4(10, 0, 0, 1), tokens: []string{"00", "10", "20"}},
+			{hostId: "1", connectAddress: net.IPv4(10, 0, 0, 3), tokens: []string{"25", "35", "45"}},
+			{hostId: "2", connectAddress: net.IPv4(10, 0, 0, 2), tokens: []string{"00", "10", "20"}},
+			{hostId: "3", connectAddress: net.IPv4(10, 0, 0, 4), tokens: []string{"25", "35", "45"}},
+			{hostId: "4", connectAddress: net.IPv4(10, 0, 0, 3), tokens: []string{"50", "60", "70"}},
+			{hostId: "5", connectAddress: net.IPv4(10, 0, 0, 4), tokens: []string{"50", "60", "70"}},
+		}, routingKey: "8", lwt: true, shuffle: true, want: []string{"0", "2", "3", "1"}},
+		"token 08 shuffling not configured": {hosts: []*HostInfo{
+			{hostId: "0", connectAddress: net.IPv4(10, 0, 0, 1), tokens: []string{"00", "10", "20"}},
+			{hostId: "1", connectAddress: net.IPv4(10, 0, 0, 3), tokens: []string{"25", "35", "45"}},
+			{hostId: "2", connectAddress: net.IPv4(10, 0, 0, 2), tokens: []string{"00", "10", "20"}},
+			{hostId: "3", connectAddress: net.IPv4(10, 0, 0, 4), tokens: []string{"25", "35", "45"}},
+			{hostId: "4", connectAddress: net.IPv4(10, 0, 0, 3), tokens: []string{"50", "60", "70"}},
+			{hostId: "5", connectAddress: net.IPv4(10, 0, 0, 4), tokens: []string{"50", "60", "70"}},
+		}, routingKey: "8", lwt: true, shuffle: false, want: []string{"0", "2", "3", "1"}},
+		"token 30 shuffling configured": {hosts: []*HostInfo{
+			{hostId: "0", connectAddress: net.IPv4(10, 0, 0, 1), tokens: []string{"00", "10", "20"}},
+			{hostId: "1", connectAddress: net.IPv4(10, 0, 0, 3), tokens: []string{"25", "35", "45"}},
+			{hostId: "2", connectAddress: net.IPv4(10, 0, 0, 2), tokens: []string{"00", "10", "20"}},
+			{hostId: "3", connectAddress: net.IPv4(10, 0, 0, 4), tokens: []string{"25", "35", "45"}},
+			{hostId: "4", connectAddress: net.IPv4(10, 0, 0, 3), tokens: []string{"50", "60", "70"}},
+			{hostId: "5", connectAddress: net.IPv4(10, 0, 0, 4), tokens: []string{"50", "60", "70"}},
+		}, routingKey: "30", lwt: true, shuffle: true, want: []string{"1", "3", "2", "0"}},
+		"token 30 shuffling not configured": {hosts: []*HostInfo{
+			{hostId: "0", connectAddress: net.IPv4(10, 0, 0, 1), tokens: []string{"00", "10", "20"}},
+			{hostId: "1", connectAddress: net.IPv4(10, 0, 0, 3), tokens: []string{"25", "35", "45"}},
+			{hostId: "2", connectAddress: net.IPv4(10, 0, 0, 2), tokens: []string{"00", "10", "20"}},
+			{hostId: "3", connectAddress: net.IPv4(10, 0, 0, 4), tokens: []string{"25", "35", "45"}},
+			{hostId: "4", connectAddress: net.IPv4(10, 0, 0, 3), tokens: []string{"50", "60", "70"}},
+			{hostId: "5", connectAddress: net.IPv4(10, 0, 0, 4), tokens: []string{"50", "60", "70"}},
+		}, routingKey: "30", lwt: true, shuffle: false, want: []string{"1", "3", "2", "0"}},
+		"token 55 shuffling configured": {hosts: []*HostInfo{
+			{hostId: "0", connectAddress: net.IPv4(10, 0, 0, 1), tokens: []string{"00", "10", "20"}},
+			{hostId: "1", connectAddress: net.IPv4(10, 0, 0, 3), tokens: []string{"25", "35", "45"}},
+			{hostId: "2", connectAddress: net.IPv4(10, 0, 0, 2), tokens: []string{"00", "10", "20"}},
+			{hostId: "3", connectAddress: net.IPv4(10, 0, 0, 4), tokens: []string{"25", "35", "45"}},
+			{hostId: "4", connectAddress: net.IPv4(10, 0, 0, 3), tokens: []string{"50", "60", "70"}},
+			{hostId: "5", connectAddress: net.IPv4(10, 0, 0, 4), tokens: []string{"50", "60", "70"}},
+		}, routingKey: "55", lwt: true, shuffle: true, want: []string{"0", "2", "3", "1"}},
+		"token 55 shuffling not configured": {hosts: []*HostInfo{
+			{hostId: "0", connectAddress: net.IPv4(10, 0, 0, 1), tokens: []string{"00", "10", "20"}},
+			{hostId: "1", connectAddress: net.IPv4(10, 0, 0, 3), tokens: []string{"25", "35", "45"}},
+			{hostId: "2", connectAddress: net.IPv4(10, 0, 0, 2), tokens: []string{"00", "10", "20"}},
+			{hostId: "3", connectAddress: net.IPv4(10, 0, 0, 4), tokens: []string{"25", "35", "45"}},
+			{hostId: "4", connectAddress: net.IPv4(10, 0, 0, 3), tokens: []string{"50", "60", "70"}},
+			{hostId: "5", connectAddress: net.IPv4(10, 0, 0, 4), tokens: []string{"50", "60", "70"}},
+		}, routingKey: "55", lwt: true, shuffle: false, want: []string{"0", "2", "3", "1"}},
+	}
+	const keyspace = "myKeyspace"
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			policy := createPolicy(keyspace, tc.shuffle)
+			for _, host := range tc.hosts {
+				policy.AddHost(host)
+			}
+			query := &Query{
+				lwt:        tc.lwt,
+				routingKey: []byte(tc.routingKey),
+			}
+			query.getKeyspace = func() string { return keyspace }
+			iter := policy.Pick(query)
+			var hostIds []string
+			for host := iter(); host != nil; host = iter() {
+				hostIds = append(hostIds, host.Info().hostId)
+			}
+			if diff := cmp.Diff(hostIds, tc.want); diff != "" {
+				t.Errorf("expected %s, got %s, diff %s", tc.want, hostIds, diff)
+			}
+		})
+	}
+}
+
+func createPolicy(keyspace string, shuffle bool) HostSelectionPolicy {
+	policy := TokenAwareHostPolicy(RoundRobinHostPolicy())
+	policyInternal := policy.(*tokenAwareHostPolicy)
+	policyInternal.getKeyspaceName = func() string { return keyspace }
+	policyInternal.getKeyspaceMetadata = func(ks string) (*KeyspaceMetadata, error) {
+		return nil, errors.New("not initalized")
+	}
+	policy.SetPartitioner("OrderedPartitioner")
+
+	policyInternal.getKeyspaceMetadata = func(keyspaceName string) (*KeyspaceMetadata, error) {
+		if keyspaceName != keyspace {
+			return nil, fmt.Errorf("unknown keyspace: %s", keyspaceName)
+		}
+		return &KeyspaceMetadata{
+			Name:          keyspace,
+			StrategyClass: "SimpleStrategy",
+			StrategyOptions: map[string]interface{}{
+				"class":              "SimpleStrategy",
+				"replication_factor": 2,
+			},
+		}, nil
+	}
+	policyInternal.shuffleReplicas = shuffle
+	policy.KeyspaceChanged(KeyspaceUpdateEvent{Keyspace: keyspace})
+	return policy
 }
 
 // Tests of the host pool host selection policy implementation

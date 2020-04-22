@@ -4,17 +4,100 @@ import (
 	"fmt"
 	"math"
 	"strconv"
+	"strings"
 	"sync/atomic"
 )
 
 // scyllaSupported represents Scylla connection options as sent in SUPPORTED
 // frame.
+// FIXME: Should also follow `cqlProtocolExtension` interface.
 type scyllaSupported struct {
 	shard             int
 	nrShards          int
 	msbIgnore         uint64
 	partitioner       string
 	shardingAlgorithm string
+	lwtFlagMask       int
+}
+
+// CQL Protocol extension interface for Scylla.
+// Each extension is identified by a name and defines a way to serialize itself
+// in STARTUP message payload.
+type cqlProtocolExtension interface {
+	name() string
+	serialize() map[string]string
+}
+
+func findCQLProtoExtByName(exts []cqlProtocolExtension, name string) *cqlProtocolExtension {
+	for i := range exts {
+		if exts[i].name() == name {
+			return &exts[i]
+		}
+	}
+	return nil
+}
+
+// Top-level keys used for serialization/deserialization of CQL protocol
+// extensions in SUPPORTED/STARTUP messages.
+// Each key identifies a single extension.
+const (
+	lwtAddMetadataMarkKey = "SCYLLA_LWT_ADD_METADATA_MARK"
+)
+
+// "LWT prepared statements metadata mark" CQL Protocol Extension.
+// This extension, if enabled (properly negotiated), allows Scylla server
+// to set a special bit in prepared statements metadata, which would indicate
+// whether the statement at hand is LWT statement or not.
+//
+// This is further used to consistently choose primary replicas in a predefined
+// order for these queries, which can reduce contention over hot keys and thus
+// increase LWT performance.
+//
+// Implements cqlProtocolExtension interface.
+type lwtAddMetadataMarkExt struct {
+	lwtOptMetaBitMask int
+}
+
+// Factory function to deserialize and create an `lwtAddMetadataMarkExt` instance
+// from SUPPORTED message payload.
+func newLwtAddMetaMarkExt(supported map[string][]string) *lwtAddMetadataMarkExt {
+	const lwtOptMetaBitMaskKey = "LWT_OPTIMIZATION_META_BIT_MASK"
+	var (
+		v     []string
+		found bool
+	)
+
+	if v, found = supported[lwtAddMetadataMarkKey]; found {
+		for i := range v {
+			splitVal := strings.Split(v[i], "=")
+			if splitVal[0] == lwtOptMetaBitMaskKey {
+				var (
+					err     error
+					bitMask int
+				)
+				if bitMask, err = strconv.Atoi(splitVal[1]); err != nil {
+					if gocqlDebug {
+						Logger.Printf("scylla: failed to parse %s value %v: %s", lwtOptMetaBitMaskKey, splitVal[1], err)
+						return nil
+					}
+				}
+				return &lwtAddMetadataMarkExt{
+					lwtOptMetaBitMask: bitMask,
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func (ext lwtAddMetadataMarkExt) serialize() map[string]string {
+	return map[string]string{
+		lwtAddMetadataMarkKey: fmt.Sprintf("LWT_OPTIMIZATION_META_BIT_MASK=%d", ext.lwtOptMetaBitMask),
+	}
+}
+
+func (ext lwtAddMetadataMarkExt) name() string {
+	return lwtAddMetadataMarkKey
 }
 
 func parseSupported(supported map[string][]string) scyllaSupported {
@@ -69,6 +152,17 @@ func parseSupported(supported map[string][]string) scyllaSupported {
 	}
 
 	return si
+}
+
+func parseCQLProtocolExtensions(supported map[string][]string) []cqlProtocolExtension {
+	exts := []cqlProtocolExtension{}
+
+	lwtExt := newLwtAddMetaMarkExt(supported)
+	if lwtExt != nil {
+		exts = append(exts, *lwtExt)
+	}
+
+	return exts
 }
 
 // isScyllaConn checks if conn is suitable for scyllaConnPicker.

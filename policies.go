@@ -601,7 +601,7 @@ func (t *tokenAwareHostPolicy) Pick(qry ExecutableQuery) NextHost {
 		replicas = []*HostInfo{host}
 	} else {
 		replicas = ht.hosts
-		if t.shuffleReplicas {
+		if t.shuffleReplicas && !qry.IsLWT() {
 			replicas = shuffleHosts(replicas)
 		}
 	}

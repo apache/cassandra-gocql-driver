@@ -155,6 +155,7 @@ type Conn struct {
 	host            *HostInfo
 	supported       map[string][]string
 	scyllaSupported scyllaSupported
+	cqlProtoExts    []cqlProtocolExtension
 
 	session *Session
 
@@ -399,6 +400,7 @@ func (s *startupCoordinator) options(ctx context.Context) error {
 	// Keep raw supported multimap for debug purposes
 	s.conn.supported = v.supported
 	s.conn.scyllaSupported = parseSupported(s.conn.supported)
+	s.conn.cqlProtoExts = parseCQLProtocolExtensions(s.conn.supported)
 
 	return s.startup(ctx)
 }
@@ -420,6 +422,13 @@ func (s *startupCoordinator) startup(ctx context.Context) error {
 
 		if _, ok := m["COMPRESSION"]; !ok {
 			s.conn.compressor = nil
+		}
+	}
+
+	for _, ext := range s.conn.cqlProtoExts {
+		var serialized = ext.serialize()
+		for k, v := range serialized {
+			m[k] = v
 		}
 	}
 
@@ -636,7 +645,7 @@ func (c *Conn) recv(ctx context.Context) error {
 		return fmt.Errorf("gocql: frame header stream is beyond call expected bounds: %d", head.stream)
 	} else if head.stream == -1 {
 		// TODO: handle cassandra event frames, we shouldnt get any currently
-		framer := newFramer(c, c, c.compressor, c.version)
+		framer := newFramer(c, c, c.compressor, c.version, c.cqlProtoExts)
 		if err := framer.readFrame(&head); err != nil {
 			return err
 		}
@@ -645,7 +654,7 @@ func (c *Conn) recv(ctx context.Context) error {
 	} else if head.stream <= 0 {
 		// reserved stream that we dont use, probably due to a protocol error
 		// or a bug in Cassandra, this should be an error, parse it and return.
-		framer := newFramer(c, c, c.compressor, c.version)
+		framer := newFramer(c, c, c.compressor, c.version, c.cqlProtoExts)
 		if err := framer.readFrame(&head); err != nil {
 			return err
 		}
@@ -860,7 +869,7 @@ func (c *Conn) exec(ctx context.Context, req frameWriter, tracer Tracer) (*frame
 	}
 
 	// resp is basically a waiting semaphore protecting the framer
-	framer := newFramer(c, c, c.compressor, c.version)
+	framer := newFramer(c, c, c.compressor, c.version, c.cqlProtoExts)
 
 	call := &callReq{
 		framer:   framer,
@@ -1137,6 +1146,9 @@ func (c *Conn) executeQuery(ctx context.Context, qry *Query) *Iter {
 			params:        params,
 			customPayload: qry.customPayload,
 		}
+
+		// Set "lwt" property in the query if it is present in preparedMetadata
+		qry.lwt = info.request.lwt
 	} else {
 		frame = &writeQueryFrame{
 			statement:     qry.stmt,
@@ -1283,6 +1295,8 @@ func (c *Conn) executeBatch(ctx context.Context, batch *Batch) *Iter {
 
 	stmts := make(map[string]string, len(batch.Entries))
 
+	hasLwtEntries := false
+
 	for i := 0; i < n; i++ {
 		entry := &batch.Entries[i]
 		b := &req.statements[i]
@@ -1325,10 +1339,18 @@ func (c *Conn) executeBatch(ctx context.Context, batch *Batch) *Iter {
 					return &Iter{err: err}
 				}
 			}
+
+			if !hasLwtEntries && info.request.lwt {
+				hasLwtEntries = true
+			}
 		} else {
 			b.statement = entry.Stmt
 		}
 	}
+
+	// The batch is considered to be conditional if even one of the
+	// statements is conditional.
+	batch.lwt = hasLwtEntries
 
 	// TODO: should batch support tracing?
 	framer, err := c.exec(batch.Context(), req, nil)
