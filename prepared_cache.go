@@ -2,8 +2,9 @@ package gocql
 
 import (
 	"bytes"
-	"github.com/gocql/gocql/internal/lru"
 	"sync"
+
+	"github.com/gocql/gocql/internal/lru"
 )
 
 const defaultMaxPreparedStmts = 1000
