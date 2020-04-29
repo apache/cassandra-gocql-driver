@@ -84,10 +84,27 @@ type AggregateMetadata struct {
 
 // ViewMetadata holds the metadata for views.
 type ViewMetadata struct {
-	Keyspace   string
-	Name       string
-	FieldNames []string
-	FieldTypes []TypeInfo
+	Keyspace                string
+	Name                    string
+	BaseTableId             UUID
+	BaseTableName           string
+	BloomFilterFpChance     float64
+	Caching                 map[string]string
+	Comment                 string
+	Compaction              map[string]string
+	Compression             map[string]string
+	CrcCheckChance          float64
+	DcLocalReadRepairChance float64
+	DefaultTimeToLive       int
+	Extensions              map[string]string
+	GcGraceSeconds          int
+	Id                      UUID
+	IncludeAllColumns       bool
+	MaxIndexInterval        int
+	MemtableFlushPeriodInMs int
+	MinIndexInterval        int
+	ReadRepairChance        float64
+	SpeculativeRetry        string
 }
 
 // the ordering of the column with regard to its comparator
@@ -868,20 +885,32 @@ func getTypeInfo(t string) TypeInfo {
 }
 
 func getViewsMetadata(session *Session, keyspaceName string) ([]ViewMetadata, error) {
-	if session.cfg.ProtoVersion == protoVersion1 {
+	if !session.useSystemSchema {
 		return nil, nil
 	}
-	var tableName string
-	if session.useSystemSchema {
-		tableName = "system_schema.types"
-	} else {
-		tableName = "system.schema_usertypes"
-	}
+	var tableName = "system_schema.views"
 	stmt := fmt.Sprintf(`
 		SELECT
-			type_name,
-			field_names,
-			field_types
+			view_name,
+			base_table_id,
+			base_table_name,
+			bloom_filter_fp_chance,
+			caching,
+			comment,
+			compaction,
+			compression,
+			crc_check_chance,
+			dclocal_read_repair_chance,
+			default_time_to_live,
+			extensions,
+			gc_grace_seconds,
+			id,
+			include_all_columns,
+			max_index_interval,
+			memtable_flush_period_in_ms,
+			min_index_interval,
+			read_repair_chance,
+			speculative_retry
 		FROM %s
 		WHERE keyspace_name = ?`, tableName)
 
@@ -890,17 +919,29 @@ func getViewsMetadata(session *Session, keyspaceName string) ([]ViewMetadata, er
 	rows := session.control.query(stmt, keyspaceName).Scanner()
 	for rows.Next() {
 		view := ViewMetadata{Keyspace: keyspaceName}
-		var argumentTypes []string
 		err := rows.Scan(&view.Name,
-			&view.FieldNames,
-			&argumentTypes,
+			&view.BaseTableId,
+			&view.BaseTableName,
+			&view.BloomFilterFpChance,
+			&view.Caching,
+			&view.Comment,
+			&view.Compaction,
+			&view.Compression,
+			&view.CrcCheckChance,
+			&view.DcLocalReadRepairChance,
+			&view.DefaultTimeToLive,
+			&view.Extensions,
+			&view.GcGraceSeconds,
+			&view.Id,
+			&view.IncludeAllColumns,
+			&view.MaxIndexInterval,
+			&view.MemtableFlushPeriodInMs,
+			&view.MinIndexInterval,
+			&view.ReadRepairChance,
+			&view.SpeculativeRetry,
 		)
 		if err != nil {
 			return nil, err
-		}
-		view.FieldTypes = make([]TypeInfo, len(argumentTypes))
-		for i, argumentType := range argumentTypes {
-			view.FieldTypes[i] = getTypeInfo(argumentType)
 		}
 		views = append(views, view)
 	}

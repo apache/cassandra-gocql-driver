@@ -325,12 +325,12 @@ func TestPagingWithBind(t *testing.T) {
 		t.Fatal("create table:", err)
 	}
 	for i := 0; i < 100; i++ {
-		if err := session.Query("INSERT INTO paging_bind (id,val) VALUES (?,?)", 1,i).Exec(); err != nil {
+		if err := session.Query("INSERT INTO paging_bind (id,val) VALUES (?,?)", 1, i).Exec(); err != nil {
 			t.Fatal("insert:", err)
 		}
 	}
 
-	q := session.Query("SELECT val FROM paging_bind WHERE id = ? AND val < ?",1, 50).PageSize(10)
+	q := session.Query("SELECT val FROM paging_bind WHERE id = ? AND val < ?", 1, 50).PageSize(10)
 	iter := q.Iter()
 	var id int
 	count := 0
@@ -2195,6 +2195,9 @@ func TestGetColumnMetadata(t *testing.T) {
 }
 
 func TestViewMetadata(t *testing.T) {
+	if flagCassVersion.Before(3, 0, 0) {
+		return
+	}
 	session := createSession(t)
 	defer session.Close()
 	createViews(t, session)
@@ -2211,22 +2214,26 @@ func TestViewMetadata(t *testing.T) {
 		t.Fatal("expected one view")
 	}
 
-	textType := TypeText
-	if flagCassVersion.Before(3, 0, 0) {
-		textType = TypeVarchar
+	expectedView := ViewMetadata{
+		Keyspace:                "gocql_test",
+		Name:                    "view_view",
+		BaseTableName:           "view_table",
+		BloomFilterFpChance:     0.01,
+		Caching:                 map[string]string{"keys": "ALL", "rows_per_partition": "NONE"},
+		Comment:                 "",
+		Compaction:              map[string]string{"class": "org.apache.cassandra.db.compaction.SizeTieredCompactionStrategy", "max_threshold": "32", "min_threshold": "4"},
+		Compression:             map[string]string{"chunk_length_in_kb": "64", "class": "org.apache.cassandra.io.compress.LZ4Compressor"},
+		CrcCheckChance:          1,
+		DcLocalReadRepairChance: 0.1,
+		DefaultTimeToLive:       0,
+		Extensions:              map[string]string{},
+		GcGraceSeconds:          864000,
+		IncludeAllColumns:       false, MaxIndexInterval: 2048, MemtableFlushPeriodInMs: 0, MinIndexInterval: 128, ReadRepairChance: 0,
+		SpeculativeRetry: "99PERCENTILE",
 	}
 
-	expectedView := ViewMetadata{
-		Keyspace:   "gocql_test",
-		Name:       "basicview",
-		FieldNames: []string{"birthday", "nationality", "weight", "height"},
-		FieldTypes: []TypeInfo{
-			NativeType{typ: TypeTimestamp},
-			NativeType{typ: textType},
-			NativeType{typ: textType},
-			NativeType{typ: textType},
-		},
-	}
+	expectedView.BaseTableId = views[0].BaseTableId
+	expectedView.Id = views[0].Id
 
 	if !reflect.DeepEqual(views[0], expectedView) {
 		t.Fatalf("view is %+v, but expected %+v", views[0], expectedView)
@@ -2428,10 +2435,11 @@ func TestKeyspaceMetadata(t *testing.T) {
 	if aggregate.StateFunc.Name != "avgstate" {
 		t.Fatalf("expected state function %s, but got %s", "avgstate", aggregate.StateFunc.Name)
 	}
-
-	_, found = keyspaceMetadata.Views["basicview"]
-	if !found {
-		t.Fatal("failed to find the view in metadata")
+	if flagCassVersion.Major >= 3 {
+		_, found = keyspaceMetadata.Views["view_view"]
+		if !found {
+			t.Fatal("failed to find the view in metadata")
+		}
 	}
 }
 
