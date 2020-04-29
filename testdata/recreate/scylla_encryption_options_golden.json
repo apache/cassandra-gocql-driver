@@ -1,0 +1,1 @@
+{"cipher_algorithm":"AES/ECB/PKCS5Padding","secret_key_strength":128,"key_provider":"LocalFileSystemKeyProviderFactory","secret_key_file":"/etc/scylla/encryption_keys/data_encryption_keys"}
