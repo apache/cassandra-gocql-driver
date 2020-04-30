@@ -620,17 +620,16 @@ func TestHostPolicy_TokenAware_NetworkStrategy(t *testing.T) {
 	iterCheck(t, iter, "8")
 }
 
-
 func TestHostPolicy_TokenAware_Issue1274(t *testing.T) {
 	policy := TokenAwareHostPolicy(DCAwareRoundRobinPolicy("local"))
 	policyInternal := policy.(*tokenAwareHostPolicy)
-	policyInternal.getKeyspaceName = func() string {return "myKeyspace"}
+	policyInternal.getKeyspaceName = func() string { return "myKeyspace" }
 	policyInternal.getKeyspaceMetadata = func(ks string) (*KeyspaceMetadata, error) {
 		return nil, errors.New("not initialized")
 	}
 
 	query := &Query{}
-	query.getKeyspace = func() string {return "myKeyspace"}
+	query.getKeyspace = func() string { return "myKeyspace" }
 
 	iter := policy.Pick(nil)
 	if iter == nil {
@@ -664,11 +663,11 @@ func TestHostPolicy_TokenAware_Issue1274(t *testing.T) {
 			return nil, fmt.Errorf("unknown keyspace: %s", keyspaceName)
 		}
 		return &KeyspaceMetadata{
-			Name: "myKeyspace",
+			Name:          "myKeyspace",
 			StrategyClass: "NetworkTopologyStrategy",
-			StrategyOptions: map[string]interface{} {
-				"class": "NetworkTopologyStrategy",
-				"local": 1,
+			StrategyOptions: map[string]interface{}{
+				"class":   "NetworkTopologyStrategy",
+				"local":   1,
 				"remote1": 1,
 				"remote2": 1,
 			},
