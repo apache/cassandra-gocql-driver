@@ -432,6 +432,19 @@ var marshalTests = []struct {
 	},
 	{
 		CollectionType{
+			NativeType: NativeType{proto: 2, typ: TypeMap},
+			Key:        NativeType{proto: 2, typ: TypeVarchar},
+			Elem:       NativeType{proto: 2, typ: TypeBlob},
+		},
+		[]byte("\x00\x01\x00\x03foo\x00\x05\x01\x02\x03\x04\x05"),
+		map[string]interface{}{
+			"foo": []byte{0x01, 0x02, 0x03, 0x04, 0x05},
+		},
+		nil,
+		nil,
+	},
+	{
+		CollectionType{
 			NativeType: NativeType{proto: 2, typ: TypeList},
 			Elem:       NativeType{proto: 2, typ: TypeVarchar},
 		},
