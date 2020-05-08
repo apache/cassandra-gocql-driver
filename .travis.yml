@@ -29,16 +29,6 @@ env:
     - GOMAXPROCS=2
     - DOCKER_COMPOSE_VERSION=1.25.5
   matrix:
-    - CASS=2.1.21
-      AUTH=true
-    - CASS=2.2.14
-      AUTH=true
-    - CASS=2.2.14
-      AUTH=false
-    - CASS=3.0.18
-      AUTH=false
-    - CASS=3.11.4
-      AUTH=false
     - CASS=scylladb/scylla:4.0.rc1
       AUTH=false
 
