@@ -729,6 +729,19 @@ var marshalTests = []struct {
 	},
 	{
 		CollectionType{
+			NativeType: NativeType{proto: 3, typ: TypeList},
+			Elem:       NativeType{proto: 3, typ: TypeInt},
+		},
+		[]byte("\x00\x00\x00\x02\x00\x00\x00\x04\x00\x00\x00\x01\x00\x00\x00\x04\x00\x00\x00\x02"),
+		func() *[]int {
+			l := []int{1, 2}
+			return &l
+		}(),
+		nil,
+		nil,
+	},
+	{
+		CollectionType{
 			NativeType: NativeType{proto: 2, typ: TypeList},
 			Elem:       NativeType{proto: 2, typ: TypeInt},
 		},
@@ -1209,6 +1222,38 @@ var unmarshalTests = []struct {
 		[]byte("\x00\x00\x00\x01\x00\x00\x00\x00"),
 		AliasUint32(0),
 		UnmarshalError("unmarshal int: value 4294967296 out of range for gocql.AliasUint32"),
+	},
+	{
+		CollectionType{
+			NativeType: NativeType{proto: 3, typ: TypeList},
+			Elem:       NativeType{proto: 3, typ: TypeInt},
+		},
+		[]byte("\x00\x00\x00\x02\x00\x00\x00\x04\x00\x00"), // truncated data
+		func() *[]int {
+			l := []int{1, 2}
+			return &l
+		}(),
+		UnmarshalError("unmarshal list: unexpected eof"),
+	},
+	{
+		CollectionType{
+			NativeType: NativeType{proto: 2, typ: TypeMap},
+			Key:        NativeType{proto: 2, typ: TypeVarchar},
+			Elem:       NativeType{proto: 2, typ: TypeInt},
+		},
+		[]byte("\x00\x01\x00\x03fo"),
+		map[string]int{"foo": 1},
+		UnmarshalError("unmarshal map: unexpected eof"),
+	},
+	{
+		CollectionType{
+			NativeType: NativeType{proto: 2, typ: TypeMap},
+			Key:        NativeType{proto: 2, typ: TypeVarchar},
+			Elem:       NativeType{proto: 2, typ: TypeInt},
+		},
+		[]byte("\x00\x01\x00\x03foo\x00\x04\x00\x00"),
+		map[string]int{"foo": 1},
+		UnmarshalError("unmarshal map: unexpected eof"),
 	},
 }
 

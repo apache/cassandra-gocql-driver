@@ -1559,6 +1559,9 @@ func unmarshalList(info TypeInfo, data []byte, value interface{}) error {
 				return err
 			}
 			data = data[p:]
+			if len(data) < m {
+				return unmarshalErrorf("unmarshal list: unexpected eof")
+			}
 			if err := Unmarshal(listInfo.Elem, data[:m], rv.Index(i).Addr().Interface()); err != nil {
 				return err
 			}
@@ -1653,6 +1656,9 @@ func unmarshalMap(info TypeInfo, data []byte, value interface{}) error {
 			return err
 		}
 		data = data[p:]
+		if len(data) < m {
+			return unmarshalErrorf("unmarshal map: unexpected eof")
+		}
 		key := reflect.New(t.Key())
 		if err := Unmarshal(mapInfo.Key, data[:m], key.Interface()); err != nil {
 			return err
@@ -1664,6 +1670,9 @@ func unmarshalMap(info TypeInfo, data []byte, value interface{}) error {
 			return err
 		}
 		data = data[p:]
+		if len(data) < m {
+			return unmarshalErrorf("unmarshal map: unexpected eof")
+		}
 		val := reflect.New(t.Elem())
 		if err := Unmarshal(mapInfo.Elem, data[:m], val.Interface()); err != nil {
 			return err
