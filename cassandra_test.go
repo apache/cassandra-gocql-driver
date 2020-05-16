@@ -2195,9 +2195,6 @@ func TestGetColumnMetadata(t *testing.T) {
 }
 
 func TestViewMetadata(t *testing.T) {
-	if flagCassVersion.Before(3, 0, 0) {
-		return
-	}
 	session := createSession(t)
 	defer session.Close()
 	createViews(t, session)
@@ -2214,10 +2211,50 @@ func TestViewMetadata(t *testing.T) {
 		t.Fatal("expected one view")
 	}
 
+	textType := TypeText
+	if flagCassVersion.Before(3, 0, 0) {
+		textType = TypeVarchar
+	}
+
 	expectedView := ViewMetadata{
+		Keyspace:   "gocql_test",
+		Name:       "basicview",
+		FieldNames: []string{"birthday", "nationality", "weight", "height"},
+		FieldTypes: []TypeInfo{
+			NativeType{typ: TypeTimestamp},
+			NativeType{typ: textType},
+			NativeType{typ: textType},
+			NativeType{typ: textType},
+		},
+	}
+
+	if !reflect.DeepEqual(views[0], expectedView) {
+		t.Fatalf("view is %+v, but expected %+v", views[0], expectedView)
+	}
+}
+
+func TestMaterializedViewMetadata(t *testing.T) {
+	if flagCassVersion.Before(3, 0, 0) {
+		return
+	}
+	session := createSession(t)
+	defer session.Close()
+	createMaterializedViews(t, session)
+
+	materializedViews, err := getMaterializedViewsMetadata(session, "gocql_test")
+	if err != nil {
+		t.Fatalf("failed to query view metadata with err: %v", err)
+	}
+	if materializedViews == nil {
+		t.Fatal("failed to query view metadata, nil returned")
+	}
+	if len(materializedViews) != 1 {
+		t.Fatal("expected one view")
+	}
+	expectedView := MaterializedViewMetadata{
 		Keyspace:                "gocql_test",
 		Name:                    "view_view",
-		BaseTableName:           "view_table",
+		baseTableName:           "view_table",
 		BloomFilterFpChance:     0.01,
 		Caching:                 map[string]string{"keys": "ALL", "rows_per_partition": "NONE"},
 		Comment:                 "",
@@ -2232,11 +2269,11 @@ func TestViewMetadata(t *testing.T) {
 		SpeculativeRetry: "99PERCENTILE",
 	}
 
-	expectedView.BaseTableId = views[0].BaseTableId
-	expectedView.Id = views[0].Id
+	expectedView.BaseTableId = materializedViews[0].BaseTableId
+	expectedView.Id = materializedViews[0].Id
 
-	if !reflect.DeepEqual(views[0], expectedView) {
-		t.Fatalf("view is %+v, but expected %+v", views[0], expectedView)
+	if !reflect.DeepEqual(materializedViews[0], expectedView) {
+		t.Fatalf("materialized view is %+v, but expected %+v", materializedViews[0], expectedView)
 	}
 }
 
@@ -2370,6 +2407,7 @@ func TestKeyspaceMetadata(t *testing.T) {
 	}
 	createAggregate(t, session)
 	createViews(t, session)
+	createMaterializedViews(t, session)
 
 	if err := session.Query("CREATE INDEX index_metadata ON test_metadata ( third_id )").Exec(); err != nil {
 		t.Fatalf("failed to create index with err: %v", err)
@@ -2435,10 +2473,18 @@ func TestKeyspaceMetadata(t *testing.T) {
 	if aggregate.StateFunc.Name != "avgstate" {
 		t.Fatalf("expected state function %s, but got %s", "avgstate", aggregate.StateFunc.Name)
 	}
+
+	_, found = keyspaceMetadata.Views["basicview"]
+	if !found {
+		t.Fatal("failed to find the view in metadata")
+	}
 	if flagCassVersion.Major >= 3 {
-		_, found = keyspaceMetadata.Views["view_view"]
+		materializedView, found := keyspaceMetadata.MaterializedViews["view_view"]
 		if !found {
-			t.Fatal("failed to find the view in metadata")
+			t.Fatal("failed to find the materialized view in metadata")
+		}
+		if materializedView.BaseTable.Name != "view_table" {
+			t.Fatalf("expected name: %s, materialized view base table name: %s", "view_table", materializedView.BaseTable.Name)
 		}
 	}
 }

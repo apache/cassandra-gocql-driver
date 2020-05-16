@@ -174,6 +174,17 @@ func createTestSession() *Session {
 }
 
 func createViews(t *testing.T, session *Session) {
+	if err := session.Query(`
+		CREATE TYPE IF NOT EXISTS gocql_test.basicView (
+		birthday timestamp,
+		nationality text,
+		weight text,
+		height text);	`).Exec(); err != nil {
+		t.Fatalf("failed to create view with err: %v", err)
+	}
+}
+
+func createMaterializedViews(t *testing.T, session *Session) {
 	if flagCassVersion.Before(3, 0, 0) {
 		return
 	}
@@ -182,14 +193,14 @@ func createViews(t *testing.T, session *Session) {
 		    year int,
 		    month int,
     		    PRIMARY KEY (userid));`).Exec(); err != nil {
-		t.Fatalf("failed to create view with err: %v", err)
+		t.Fatalf("failed to create materialized view with err: %v", err)
 	}
 	if err := session.Query(`CREATE MATERIALIZED VIEW IF NOT EXISTS gocql_test.view_view AS
 		   SELECT year, month, userid
 		   FROM gocql_test.view_table
 		   WHERE year IS NOT NULL AND month IS NOT NULL AND userid IS NOT NULL
 		   PRIMARY KEY (userid, year);`).Exec(); err != nil {
-		t.Fatalf("failed to create view with err: %v", err)
+		t.Fatalf("failed to create materialized view with err: %v", err)
 	}
 }
 
