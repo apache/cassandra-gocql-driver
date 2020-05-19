@@ -325,12 +325,12 @@ func TestPagingWithBind(t *testing.T) {
 		t.Fatal("create table:", err)
 	}
 	for i := 0; i < 100; i++ {
-		if err := session.Query("INSERT INTO paging_bind (id,val) VALUES (?,?)", 1,i).Exec(); err != nil {
+		if err := session.Query("INSERT INTO paging_bind (id,val) VALUES (?,?)", 1, i).Exec(); err != nil {
 			t.Fatal("insert:", err)
 		}
 	}
 
-	q := session.Query("SELECT val FROM paging_bind WHERE id = ? AND val < ?",1, 50).PageSize(10)
+	q := session.Query("SELECT val FROM paging_bind WHERE id = ? AND val < ?", 1, 50).PageSize(10)
 	iter := q.Iter()
 	var id int
 	count := 0
@@ -2233,6 +2233,50 @@ func TestViewMetadata(t *testing.T) {
 	}
 }
 
+func TestMaterializedViewMetadata(t *testing.T) {
+	if flagCassVersion.Before(3, 0, 0) {
+		return
+	}
+	session := createSession(t)
+	defer session.Close()
+	createMaterializedViews(t, session)
+
+	materializedViews, err := getMaterializedViewsMetadata(session, "gocql_test")
+	if err != nil {
+		t.Fatalf("failed to query view metadata with err: %v", err)
+	}
+	if materializedViews == nil {
+		t.Fatal("failed to query view metadata, nil returned")
+	}
+	if len(materializedViews) != 1 {
+		t.Fatal("expected one view")
+	}
+	expectedView := MaterializedViewMetadata{
+		Keyspace:                "gocql_test",
+		Name:                    "view_view",
+		baseTableName:           "view_table",
+		BloomFilterFpChance:     0.01,
+		Caching:                 map[string]string{"keys": "ALL", "rows_per_partition": "NONE"},
+		Comment:                 "",
+		Compaction:              map[string]string{"class": "org.apache.cassandra.db.compaction.SizeTieredCompactionStrategy", "max_threshold": "32", "min_threshold": "4"},
+		Compression:             map[string]string{"chunk_length_in_kb": "64", "class": "org.apache.cassandra.io.compress.LZ4Compressor"},
+		CrcCheckChance:          1,
+		DcLocalReadRepairChance: 0.1,
+		DefaultTimeToLive:       0,
+		Extensions:              map[string]string{},
+		GcGraceSeconds:          864000,
+		IncludeAllColumns:       false, MaxIndexInterval: 2048, MemtableFlushPeriodInMs: 0, MinIndexInterval: 128, ReadRepairChance: 0,
+		SpeculativeRetry: "99PERCENTILE",
+	}
+
+	expectedView.BaseTableId = materializedViews[0].BaseTableId
+	expectedView.Id = materializedViews[0].Id
+
+	if !reflect.DeepEqual(materializedViews[0], expectedView) {
+		t.Fatalf("materialized view is %+v, but expected %+v", materializedViews[0], expectedView)
+	}
+}
+
 func TestAggregateMetadata(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
@@ -2363,6 +2407,7 @@ func TestKeyspaceMetadata(t *testing.T) {
 	}
 	createAggregate(t, session)
 	createViews(t, session)
+	createMaterializedViews(t, session)
 
 	if err := session.Query("CREATE INDEX index_metadata ON test_metadata ( third_id )").Exec(); err != nil {
 		t.Fatalf("failed to create index with err: %v", err)
@@ -2432,6 +2477,15 @@ func TestKeyspaceMetadata(t *testing.T) {
 	_, found = keyspaceMetadata.Views["basicview"]
 	if !found {
 		t.Fatal("failed to find the view in metadata")
+	}
+	if flagCassVersion.Major >= 3 {
+		materializedView, found := keyspaceMetadata.MaterializedViews["view_view"]
+		if !found {
+			t.Fatal("failed to find the materialized view in metadata")
+		}
+		if materializedView.BaseTable.Name != "view_table" {
+			t.Fatalf("expected name: %s, materialized view base table name: %s", "view_table", materializedView.BaseTable.Name)
+		}
 	}
 }
 
