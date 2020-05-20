@@ -88,7 +88,7 @@ var tableCQLTemplate = template.Must(template.New("table").
 	}).
 	Parse(`
 CREATE TABLE {{ .KeyspaceName }}.{{ .Tm.Name }} (
-  {{ tableColumnToCQL .Tm }}
+    {{ tableColumnToCQL .Tm }}
 ) WITH {{ tablePropertiesToCQL .Tm.ClusteringColumns .Tm.Options .Tm.Flags .Tm.Extensions }};
 `))
 
@@ -110,14 +110,15 @@ var functionTemplate = template.Must(template.New("functions").
 	}).
 	Parse(`
 CREATE FUNCTION {{ escape .keyspaceName }}.{{ escape .fm.Name }} ( 
-  {{- range $i, $args := zip .fm.ArgumentNames .fm.ArgumentTypes }}
-  {{- if ne $i 0 }}, {{ end }}
-  {{- escape (index $args 0) }} {{ stripFrozen (index $args 1) }}
-  {{- end -}})
-  {{ if .fm.CalledOnNullInput }}CALLED{{ else }}RETURNS NULL{{ end }} ON NULL INPUT
-  RETURNS {{ .fm.ReturnType }}
-  LANGUAGE {{ .fm.Language }}
-  AS $${{ .fm.Body }}$$;
+    {{- range $i, $args := zip .fm.ArgumentNames .fm.ArgumentTypes }}
+    {{- if ne $i 0 }}, {{ end }}
+    {{- escape (index $args 0) }}
+    {{ stripFrozen (index $args 1) }}
+    {{- end -}})
+    {{ if .fm.CalledOnNullInput }}CALLED{{ else }}RETURNS NULL{{ end }} ON NULL INPUT
+    RETURNS {{ .fm.ReturnType }}
+    LANGUAGE {{ .fm.Language }}
+    AS $${{ .fm.Body }}$$;
 `))
 
 func (km *KeyspaceMetadata) functionToCQL(w io.Writer, keyspaceName string, fm *FunctionMetadata) error {
@@ -138,16 +139,16 @@ var viewTemplate = template.Must(template.New("views").
 	}).
 	Parse(`
 CREATE MATERIALIZED VIEW {{ .vm.KeyspaceName }}.{{ .vm.ViewName }} AS
-SELECT {{ if .vm.IncludeAllColumns }}*{{ else }}
-{{- range $i, $col := .vm.OrderedColumns }}
-{{- if ne $i 0 }}, {{ end }}
-{{- $col }}
-{{- end }}
-{{- end }}
-FROM {{ .vm.KeyspaceName }}.{{ .vm.BaseTableName }}
-WHERE {{ .vm.WhereClause }}
-PRIMARY KEY ({{ partitionKeyString .vm.PartitionKey .vm.ClusteringColumns }})
-WITH {{ tablePropertiesToCQL .vm.ClusteringColumns .vm.Options .flags .vm.Extensions }};
+    SELECT {{ if .vm.IncludeAllColumns }}*{{ else }}
+    {{- range $i, $col := .vm.OrderedColumns }}
+    {{- if ne $i 0 }}, {{ end }}
+    {{ $col }}
+    {{- end }}
+    {{- end }}
+    FROM {{ .vm.KeyspaceName }}.{{ .vm.BaseTableName }}
+    WHERE {{ .vm.WhereClause }}
+    PRIMARY KEY ({{ partitionKeyString .vm.PartitionKey .vm.ClusteringColumns }})
+    WITH {{ tablePropertiesToCQL .vm.ClusteringColumns .vm.Options .flags .vm.Extensions }};
 `))
 
 func (km *KeyspaceMetadata) viewToCQL(w io.Writer, vm *ViewMetadata) error {
@@ -166,18 +167,18 @@ var aggregatesTemplate = template.Must(template.New("aggregate").
 	}).
 	Parse(`
 CREATE AGGREGATE {{ .Keyspace }}.{{ .Name }}( 
-  {{- range $arg, $i := .ArgumentTypes }}
-  {{- if ne $i 0 }}, {{ end }}
-  {{- stripFrozen $arg }}
-  {{- end -}})
-  SFUNC {{ .StateFunc.Name }}
-  STYPE {{ stripFrozen .State }}
-  {{- if ne .FinalFunc.Name "" }}
-  FINALFUNC {{ .FinalFunc.Name }}
-  {{- end -}}
-  {{- if ne .InitCond "" }}
-  INITCOND {{ .InitCond }}
-  {{- end -}}
+    {{- range $arg, $i := .ArgumentTypes }}
+    {{- if ne $i 0 }}, {{ end }}
+    {{ stripFrozen $arg }}
+    {{- end -}})
+    SFUNC {{ .StateFunc.Name }}
+    STYPE {{ stripFrozen .State }}
+    {{- if ne .FinalFunc.Name "" }}
+    FINALFUNC {{ .FinalFunc.Name }}
+    {{- end -}}
+    {{- if ne .InitCond "" }}
+    INITCOND {{ .InitCond }}
+    {{- end -}}
 );
 `))
 
@@ -195,7 +196,7 @@ var typeCQLTemplate = template.Must(template.New("types").
 	Parse(`
 CREATE TYPE {{ .Keyspace }}.{{ .Name }} ( 
   {{- range $i, $fields := zip .FieldNames .FieldTypes }} {{- if ne $i 0 }},{{ end }}
-  {{ index $fields 0 }} {{ index $fields 1 }}
+    {{ index $fields 0 }} {{ index $fields 1 }}
   {{- end }}
 );
 `))
@@ -247,12 +248,11 @@ var keyspaceCQLTemplate = template.Must(template.New("keyspace").
 		"escape":      cqlHelpers.escape,
 		"fixStrategy": cqlHelpers.fixStrategy,
 	}).
-	Parse(`
-CREATE KEYSPACE {{ .Name }} WITH replication = {
-  'class': {{ escape ( fixStrategy .StrategyClass) }}
-  {{- range $key, $value := .StrategyOptions }},
-  {{ escape $key }}: {{ escape $value }}
-  {{- end }}
+	Parse(`CREATE KEYSPACE {{ .Name }} WITH replication = {
+    'class': {{ escape ( fixStrategy .StrategyClass) }}
+    {{- range $key, $value := .StrategyOptions }},
+    {{ escape $key }}: {{ escape $value }}
+    {{- end }}
 }{{ if not .DurableWrites }} AND durable_writes = 'false'{{ end }};
 `))
 
@@ -445,10 +445,10 @@ func (h toCQLHelpers) tableColumnToCQL(tm *TableMetadata) string {
 		columns[0] += " PRIMARY KEY"
 	}
 
-	sb.WriteString(strings.Join(columns, ",\n  "))
+	sb.WriteString(strings.Join(columns, ",\n    "))
 
 	if len(tm.PartitionKey) > 1 || len(tm.ClusteringColumns) > 0 {
-		sb.WriteString(",\n  PRIMARY KEY (")
+		sb.WriteString(",\n    PRIMARY KEY (")
 		sb.WriteString(h.partitionKeyString(tm.PartitionKey, tm.ClusteringColumns))
 		sb.WriteRune(')')
 	}

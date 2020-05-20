@@ -1,13 +1,13 @@
 CREATE KEYSPACE gocqlx_mv WITH replication = {
-  'class': 'SimpleStrategy',
-  'replication_factor': '1'
+    'class': 'SimpleStrategy',
+    'replication_factor': '1'
 };
 
 CREATE TABLE gocqlx_mv.mv_buildings (
-  name text PRIMARY KEY,
-  built int,
-  city text,
-  meters int
+    name text PRIMARY KEY,
+    built int,
+    city text,
+    meters int
 ) WITH bloom_filter_fp_chance = 0.01
     AND caching = {'keys':'ALL','rows_per_partition':'ALL'}
     AND comment = ''
@@ -24,11 +24,11 @@ CREATE TABLE gocqlx_mv.mv_buildings (
     AND speculative_retry = '99.0PERCENTILE';
 
 CREATE MATERIALIZED VIEW gocqlx_mv.mv_building_by_city AS
-SELECT *
-FROM gocqlx_mv.mv_buildings
-WHERE city IS NOT null
-PRIMARY KEY (city, name)
-WITH CLUSTERING ORDER BY (name ASC)
+    SELECT *
+    FROM gocqlx_mv.mv_buildings
+    WHERE city IS NOT null
+    PRIMARY KEY (city, name)
+    WITH CLUSTERING ORDER BY (name ASC)
     AND bloom_filter_fp_chance = 0.01
     AND caching = {'keys':'ALL','rows_per_partition':'ALL'}
     AND comment = ''
@@ -45,11 +45,14 @@ WITH CLUSTERING ORDER BY (name ASC)
     AND speculative_retry = '99.0PERCENTILE';
 
 CREATE MATERIALIZED VIEW gocqlx_mv.mv_building_by_city2 AS
-SELECT city, name, meters
-FROM gocqlx_mv.mv_buildings
-WHERE city IS NOT null
-PRIMARY KEY (city, name)
-WITH CLUSTERING ORDER BY (name ASC)
+    SELECT 
+    city, 
+    name, 
+    meters
+    FROM gocqlx_mv.mv_buildings
+    WHERE city IS NOT null
+    PRIMARY KEY (city, name)
+    WITH CLUSTERING ORDER BY (name ASC)
     AND bloom_filter_fp_chance = 0.01
     AND caching = {'keys':'ALL','rows_per_partition':'ALL'}
     AND comment = ''

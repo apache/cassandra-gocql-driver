@@ -1,14 +1,14 @@
 CREATE KEYSPACE gocqlx_table WITH replication = {
-  'class': 'SimpleStrategy',
-  'replication_factor': '1'
+    'class': 'SimpleStrategy',
+    'replication_factor': '1'
 };
 
 CREATE TABLE gocqlx_table.loads (
-  machine inet,
-  cpu int,
-  mtime timeuuid,
-  load float,
-  PRIMARY KEY ((machine, cpu), mtime)
+    machine inet,
+    cpu int,
+    mtime timeuuid,
+    load float,
+    PRIMARY KEY ((machine, cpu), mtime)
 ) WITH CLUSTERING ORDER BY (mtime DESC)
     AND bloom_filter_fp_chance = 0.01
     AND caching = {'keys':'ALL','rows_per_partition':'ALL'}
@@ -26,10 +26,10 @@ CREATE TABLE gocqlx_table.loads (
     AND speculative_retry = '99.0PERCENTILE';
 
 CREATE TABLE gocqlx_table.monkeyspecies (
-  species text PRIMARY KEY,
-  average_size int,
-  common_name text,
-  population varint
+    species text PRIMARY KEY,
+    average_size int,
+    common_name text,
+    population varint
 ) WITH bloom_filter_fp_chance = 0.01
     AND caching = {'keys':'ALL','rows_per_partition':'ALL'}
     AND comment = 'Important biological records'
@@ -46,12 +46,12 @@ CREATE TABLE gocqlx_table.monkeyspecies (
     AND speculative_retry = '99.0PERCENTILE';
 
 CREATE TABLE gocqlx_table.timeline (
-  userid uuid,
-  posted_month int,
-  posted_time uuid,
-  body text,
-  posted_by text,
-  PRIMARY KEY (userid, posted_month, posted_time)
+    userid uuid,
+    posted_month int,
+    posted_time uuid,
+    body text,
+    posted_by text,
+    PRIMARY KEY (userid, posted_month, posted_time)
 ) WITH CLUSTERING ORDER BY (posted_month ASC, posted_time ASC)
     AND bloom_filter_fp_chance = 0.01
     AND caching = {'keys':'ALL','rows_per_partition':'ALL'}
@@ -69,11 +69,11 @@ CREATE TABLE gocqlx_table.timeline (
     AND speculative_retry = '99.0PERCENTILE';
 
 CREATE TABLE gocqlx_table.users_picture (
-  userid uuid,
-  pictureid uuid,
-  posted_by text,
-  body text static,
-  PRIMARY KEY (userid, pictureid, posted_by)
+    userid uuid,
+    pictureid uuid,
+    posted_by text,
+    body text static,
+    PRIMARY KEY (userid, pictureid, posted_by)
 ) WITH CLUSTERING ORDER BY (pictureid ASC, posted_by ASC)
     AND bloom_filter_fp_chance = 0.01
     AND caching = {'keys':'ALL','rows_per_partition':'ALL'}

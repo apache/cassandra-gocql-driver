@@ -1,14 +1,14 @@
 CREATE KEYSPACE gocqlx_idx WITH replication = {
-  'class': 'SimpleStrategy',
-  'replication_factor': '1'
+    'class': 'SimpleStrategy',
+    'replication_factor': '1'
 };
 
 CREATE TABLE gocqlx_idx.menus (
-  location text,
-  name text,
-  dish_type text,
-  price float,
-  PRIMARY KEY (location, name)
+    location text,
+    name text,
+    dish_type text,
+    price float,
+    PRIMARY KEY (location, name)
 ) WITH CLUSTERING ORDER BY (name ASC)
     AND bloom_filter_fp_chance = 0.01
     AND caching = {'keys':'ALL','rows_per_partition':'ALL'}
