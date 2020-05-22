@@ -22,7 +22,7 @@ type KeyspaceMetadata struct {
 	Tables          map[string]*TableMetadata
 	Functions       map[string]*FunctionMetadata
 	Aggregates      map[string]*AggregateMetadata
-	// Deprecated: use the MaterializedViews field instead.
+	// Deprecated: use the MaterializedViews field for views and UserTypes field for udts instead.
 	Views             map[string]*ViewMetadata
 	MaterializedViews map[string]*MaterializedViewMetadata
 	Types             map[string]*TypeMetadata
