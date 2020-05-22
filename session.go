@@ -977,11 +977,6 @@ func (q *Query) WithContext(ctx context.Context) *Query {
 	return &q2
 }
 
-// Deprecate: does nothing, cancel the context passed to WithContext
-func (q *Query) Cancel() {
-	// TODO: delete
-}
-
 func (q *Query) execute(ctx context.Context, conn *Conn) *Iter {
 	return conn.executeQuery(ctx, q)
 }
@@ -1551,17 +1546,6 @@ type Batch struct {
 	metrics               *queryMetrics
 }
 
-// NewBatch creates a new batch operation without defaults from the cluster
-//
-// Deprecated: use session.NewBatch instead
-func NewBatch(typ BatchType) *Batch {
-	return &Batch{
-		Type:    typ,
-		metrics: &queryMetrics{m: make(map[string]*hostMetrics)},
-		spec:    &NonSpeculativeExecution{},
-	}
-}
-
 // NewBatch creates a new batch operation using defaults defined in the cluster
 func (s *Session) NewBatch(typ BatchType) *Batch {
 	s.mu.RLock()
@@ -1684,11 +1668,6 @@ func (b *Batch) WithContext(ctx context.Context) *Batch {
 	b2 := *b
 	b2.context = ctx
 	return &b2
-}
-
-// Deprecate: does nothing, cancel the context passed to WithContext
-func (*Batch) Cancel() {
-	// TODO: delete
 }
 
 // Size returns the number of batch statements to be executed by the batch operation.
