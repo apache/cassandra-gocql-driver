@@ -4,6 +4,6 @@
 
 // Package gocql implements a fast and robust Cassandra driver for the
 // Go programming language.
-package gocql // import "github.com/gocql/gocql"
+package gocql // import "github.com/gocql/gocql/v2"
 
 // TODO(tux21b): write more docs.

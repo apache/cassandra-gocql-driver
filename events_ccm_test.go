@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gocql/gocql/internal/ccm"
+	"github.com/gocql/gocql/v2/internal/ccm"
 )
 
 func TestEventDiscovery(t *testing.T) {

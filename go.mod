@@ -1,4 +1,6 @@
-module github.com/gocql/gocql
+module github.com/gocql/gocql/v2
+
+go 1.14
 
 require (
 	github.com/bitly/go-hostpool v0.0.0-20171023180738-a3a6125de932 // indirect
@@ -10,4 +12,3 @@ require (
 	gopkg.in/inf.v0 v0.9.1
 )
 
-go 1.13
