@@ -25,7 +25,7 @@ type KeyspaceMetadata struct {
 	// Deprecated: use the MaterializedViews field for views and UserTypes field for udts instead.
 	Views             map[string]*ViewMetadata
 	MaterializedViews map[string]*MaterializedViewMetadata
-	Types             map[string]*TypeMetadata
+	UserTypes         map[string]*UserTypeMetadata
 }
 
 // schema metadata for a table (a.k.a. column family)
@@ -121,7 +121,7 @@ type MaterializedViewMetadata struct {
 	baseTableName string
 }
 
-type TypeMetadata struct {
+type UserTypeMetadata struct {
 	Keyspace   string
 	Name       string
 	FieldNames []string
@@ -335,16 +335,16 @@ func compileMetadata(
 	}
 	// Views currently holds the types and hasn't been deleted for backward compatibility issues.
 	// That's why it's ok to copy Views into Types in this case. For the real Views use MaterializedViews.
-	types := make([]TypeMetadata, len(views))
+	types := make([]UserTypeMetadata, len(views))
 	for i := range views {
 		types[i].Keyspace = views[i].Keyspace
 		types[i].Name = views[i].Name
 		types[i].FieldNames = views[i].FieldNames
 		types[i].FieldTypes = views[i].FieldTypes
 	}
-	keyspace.Types = make(map[string]*TypeMetadata, len(views))
+	keyspace.UserTypes = make(map[string]*UserTypeMetadata, len(views))
 	for i := range types {
-		keyspace.Types[types[i].Name] = &types[i]
+		keyspace.UserTypes[types[i].Name] = &types[i]
 	}
 	keyspace.MaterializedViews = make(map[string]*MaterializedViewMetadata, len(materializedViews))
 	for _, materializedView := range materializedViews {

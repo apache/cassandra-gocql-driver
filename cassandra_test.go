@@ -2478,7 +2478,7 @@ func TestKeyspaceMetadata(t *testing.T) {
 	if !found {
 		t.Fatal("failed to find the view in metadata")
 	}
-	_, found = keyspaceMetadata.Types["basicview"]
+	_, found = keyspaceMetadata.UserTypes["basicview"]
 	if !found {
 		t.Fatal("failed to find the types in metadata")
 	}
@@ -2486,7 +2486,7 @@ func TestKeyspaceMetadata(t *testing.T) {
 	if flagCassVersion.Before(3, 0, 0) {
 		textType = TypeVarchar
 	}
-	expectedType := TypeMetadata{
+	expectedType := UserTypeMetadata{
 		Keyspace:   "gocql_test",
 		Name:       "basicview",
 		FieldNames: []string{"birthday", "nationality", "weight", "height"},
@@ -2497,8 +2497,8 @@ func TestKeyspaceMetadata(t *testing.T) {
 			NativeType{typ: textType},
 		},
 	}
-	if !reflect.DeepEqual(*keyspaceMetadata.Types["basicview"], expectedType) {
-		t.Fatalf("type is %+v, but expected %+v", keyspaceMetadata.Types["basicview"], expectedType)
+	if !reflect.DeepEqual(*keyspaceMetadata.UserTypes["basicview"], expectedType) {
+		t.Fatalf("type is %+v, but expected %+v", keyspaceMetadata.UserTypes["basicview"], expectedType)
 	}
 	if flagCassVersion.Major >= 3 {
 		materializedView, found := keyspaceMetadata.MaterializedViews["view_view"]
