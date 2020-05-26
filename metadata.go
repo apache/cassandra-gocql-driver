@@ -22,9 +22,10 @@ type KeyspaceMetadata struct {
 	Tables          map[string]*TableMetadata
 	Functions       map[string]*FunctionMetadata
 	Aggregates      map[string]*AggregateMetadata
-	// Deprecated: use the MaterializedViews field instead.
+	// Deprecated: use the MaterializedViews field for views and UserTypes field for udts instead.
 	Views             map[string]*ViewMetadata
 	MaterializedViews map[string]*MaterializedViewMetadata
+	UserTypes         map[string]*UserTypeMetadata
 }
 
 // schema metadata for a table (a.k.a. column family)
@@ -118,6 +119,13 @@ type MaterializedViewMetadata struct {
 	SpeculativeRetry        string
 
 	baseTableName string
+}
+
+type UserTypeMetadata struct {
+	Keyspace   string
+	Name       string
+	FieldNames []string
+	FieldTypes []TypeInfo
 }
 
 // the ordering of the column with regard to its comparator
@@ -324,6 +332,19 @@ func compileMetadata(
 	keyspace.Views = make(map[string]*ViewMetadata, len(views))
 	for i := range views {
 		keyspace.Views[views[i].Name] = &views[i]
+	}
+	// Views currently holds the types and hasn't been deleted for backward compatibility issues.
+	// That's why it's ok to copy Views into Types in this case. For the real Views use MaterializedViews.
+	types := make([]UserTypeMetadata, len(views))
+	for i := range views {
+		types[i].Keyspace = views[i].Keyspace
+		types[i].Name = views[i].Name
+		types[i].FieldNames = views[i].FieldNames
+		types[i].FieldTypes = views[i].FieldTypes
+	}
+	keyspace.UserTypes = make(map[string]*UserTypeMetadata, len(views))
+	for i := range types {
+		keyspace.UserTypes[types[i].Name] = &types[i]
 	}
 	keyspace.MaterializedViews = make(map[string]*MaterializedViewMetadata, len(materializedViews))
 	for _, materializedView := range materializedViews {
