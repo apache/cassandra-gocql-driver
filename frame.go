@@ -720,6 +720,10 @@ func (f *framer) readErrorMap() (errMap ErrorMap) {
 }
 
 func (f *framer) writeHeader(flags byte, op frameOp, stream int) {
+	if op == 0 {
+		panic("opcode not set")
+	}
+
 	f.wbuf = f.wbuf[:0]
 	f.wbuf = append(f.wbuf,
 		f.proto,
@@ -764,6 +768,14 @@ func (f *framer) finishWrite() error {
 		// huge app frame, lets remove it so it doesn't bloat the heap
 		f.wbuf = make([]byte, defaultBufSize)
 		return ErrFrameTooBig
+	}
+
+	p := 4
+	if f.proto < protoVersion3 {
+		p = 3
+	}
+	if f.wbuf[p] == 0 {
+		panic("finishWrite called without setting op")
 	}
 
 	if f.wbuf[1]&flagCompress == flagCompress {
