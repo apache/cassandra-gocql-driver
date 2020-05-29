@@ -1736,6 +1736,81 @@ func TestMarshalTuple(t *testing.T) {
 	}
 }
 
+func TestUnmarshalTuple(t *testing.T) {
+	info := TupleTypeInfo{
+		NativeType: NativeType{proto: 3, typ: TypeTuple},
+		Elems: []TypeInfo{
+			NativeType{proto: 3, typ: TypeVarchar},
+			NativeType{proto: 3, typ: TypeVarchar},
+		},
+	}
+
+	// As per the CQL spec, a tuple is a sequence of "bytes" values.
+	// Here we encode a null value (length -1) and the "foo" string (length 3)
+
+	data := []byte("\xff\xff\xff\xff\x00\x00\x00\x03foo")
+
+	t.Run("struct-ptr", func(t *testing.T) {
+		var tmp struct {
+			A *string
+			B *string
+		}
+
+		err := Unmarshal(info, data, &tmp)
+		if err != nil {
+			t.Errorf("unmarshalTest: %v", err)
+			return
+		}
+
+		if *tmp.A != "" || *tmp.B != "foo" {
+			t.Errorf("unmarshalTest: expected [nil, foo], got [%v, %v]", *tmp.A, *tmp.B)
+		}
+	})
+	t.Run("struct-nonptr", func(t *testing.T) {
+		var tmp struct {
+			A string
+			B string
+		}
+
+		err := Unmarshal(info, data, &tmp)
+		if err != nil {
+			t.Errorf("unmarshalTest: %v", err)
+			return
+		}
+
+		if tmp.A != "" || tmp.B != "foo" {
+			t.Errorf("unmarshalTest: expected [nil, foo], got [%v, %v]", tmp.A, tmp.B)
+		}
+	})
+
+	t.Run("array", func(t *testing.T) {
+		var tmp [2]*string
+
+		err := Unmarshal(info, data, &tmp)
+		if err != nil {
+			t.Errorf("unmarshalTest: %v", err)
+			return
+		}
+
+		if *tmp[0] != "" || *tmp[1] != "foo" {
+			t.Errorf("unmarshalTest: expected [nil, foo], got [%v, %v]", *tmp[0], *tmp[1])
+		}
+	})
+	t.Run("array-nonptr", func(t *testing.T) {
+		var tmp [2]string
+
+		err := Unmarshal(info, data, &tmp)
+		if err != nil {
+			t.Errorf("unmarshalTest: %v", err)
+			return
+		}
+
+		if tmp[0] != "" || tmp[1] != "foo" {
+			t.Errorf("unmarshalTest: expected [nil, foo], got [%v, %v]", tmp[0], tmp[1])
+		}
+	})
+}
+
 func TestMarshalNil(t *testing.T) {
 	types := []Type{
 		TypeAscii,
