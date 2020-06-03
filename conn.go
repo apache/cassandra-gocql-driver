@@ -21,6 +21,7 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
+
 	"github.com/gocql/gocql/internal/lru"
 	"github.com/gocql/gocql/internal/streams"
 )
@@ -216,7 +217,6 @@ func (s *Session) dialWithoutObserver(ctx context.Context, logger log.Logger, ho
 		}
 		dialer = d
 	}
-
 
 	conn, err := dialer.DialContext(ctx, "tcp", host.HostnameAndPort())
 	if err != nil {

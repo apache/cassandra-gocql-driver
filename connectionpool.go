@@ -167,7 +167,7 @@ func (p *policyConnPool) SetHosts(hosts []*HostInfo) {
 			// create a connection pool for the host
 			pools <- newHostConnPool(
 				p.logger,
-				prometheus.WrapRegistererWith(prometheus.Labels{"host": host.hostname}, p.registerer),
+				p.registerer,
 				p.session,
 				host,
 				p.port,
@@ -231,7 +231,7 @@ func (p *policyConnPool) addHost(host *HostInfo) {
 	if !ok {
 		pool = newHostConnPool(
 			p.logger,
-			prometheus.WrapRegistererWith(prometheus.Labels{"host": host.hostname}, p.registerer),
+			p.registerer,
 			p.session,
 			host,
 			host.Port(), // TODO: if port == 0 use pool.port?
@@ -276,8 +276,7 @@ func (p *policyConnPool) hostDown(ip net.IP) {
 // hostConnPool is a connection pool for a single host.
 // Connection selection is based on a provided ConnSelectionPolicy
 type hostConnPool struct {
-	logger     log.Logger
-	registerer prometheus.Registerer
+	logger log.Logger
 
 	session  *Session
 	host     *HostInfo
@@ -309,18 +308,19 @@ func newHostConnPool(logger log.Logger, registerer prometheus.Registerer, sessio
 	keyspace string) *hostConnPool {
 
 	pool := &hostConnPool{
-		logger:     logger,
-		registerer: registerer,
-		session:    session,
-		host:       host,
-		port:       port,
-		addr:       (&net.TCPAddr{IP: host.ConnectAddress(), Port: host.Port()}).String(),
-		size:       size,
-		keyspace:   keyspace,
-		conns:      make([]*Conn, 0, size),
-		filling:    false,
-		closed:     false,
+		logger:   logger,
+		session:  session,
+		host:     host,
+		port:     port,
+		addr:     (&net.TCPAddr{IP: host.ConnectAddress(), Port: host.Port()}).String(),
+		size:     size,
+		keyspace: keyspace,
+		conns:    make([]*Conn, 0, size),
+		filling:  false,
+		closed:   false,
 	}
+
+	registerer = prometheus.WrapRegistererWith(prometheus.Labels{"host": host.hostname}, registerer)
 
 	promauto.With(registerer).NewGaugeFunc(prometheus.GaugeOpts{
 		Name: "gocql_connection_pool_connections",
