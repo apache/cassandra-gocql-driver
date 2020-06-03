@@ -189,6 +189,7 @@ func (p *policyConnPool) SetHosts(hosts []*HostInfo) {
 
 	for addr := range toRemove {
 		pool := p.hostConnPools[addr]
+		pool.deregisterMetrics()
 		delete(p.hostConnPools, addr)
 		go pool.Close()
 	}
@@ -255,6 +256,7 @@ func (p *policyConnPool) removeHost(ip net.IP) {
 		return
 	}
 
+	pool.deregisterMetrics()
 	delete(p.hostConnPools, k)
 	p.mu.Unlock()
 
@@ -276,7 +278,8 @@ func (p *policyConnPool) hostDown(ip net.IP) {
 // hostConnPool is a connection pool for a single host.
 // Connection selection is based on a provided ConnSelectionPolicy
 type hostConnPool struct {
-	logger log.Logger
+	logger     log.Logger
+	registerer prometheus.Registerer
 
 	session  *Session
 	host     *HostInfo
@@ -292,6 +295,7 @@ type hostConnPool struct {
 
 	pos uint32
 
+	connections        prometheus.GaugeFunc
 	connectionAttempts prometheus.Counter
 	connectionFailures prometheus.Counter
 	connectionDrops    prometheus.Counter
@@ -308,42 +312,47 @@ func newHostConnPool(logger log.Logger, registerer prometheus.Registerer, sessio
 	keyspace string) *hostConnPool {
 
 	pool := &hostConnPool{
-		logger:   logger,
-		session:  session,
-		host:     host,
-		port:     port,
-		addr:     (&net.TCPAddr{IP: host.ConnectAddress(), Port: host.Port()}).String(),
-		size:     size,
-		keyspace: keyspace,
-		conns:    make([]*Conn, 0, size),
-		filling:  false,
-		closed:   false,
+		logger:     logger,
+		registerer: prometheus.WrapRegistererWith(prometheus.Labels{"host": host.ConnectAddress().String()}, registerer),
+		session:    session,
+		host:       host,
+		port:       port,
+		addr:       (&net.TCPAddr{IP: host.ConnectAddress(), Port: host.Port()}).String(),
+		size:       size,
+		keyspace:   keyspace,
+		conns:      make([]*Conn, 0, size),
+		filling:    false,
+		closed:     false,
 	}
 
-	registerer = prometheus.WrapRegistererWith(prometheus.Labels{"host": host.hostname}, registerer)
-
-	promauto.With(registerer).NewGaugeFunc(prometheus.GaugeOpts{
+	pool.connections = promauto.With(pool.registerer).NewGaugeFunc(prometheus.GaugeOpts{
 		Name: "gocql_connection_pool_connections",
 		Help: "Number of TCP connections in the pool for given host",
 	}, func() float64 {
 		return float64(pool.Size())
 	})
-
-	pool.connectionAttempts = promauto.With(registerer).NewCounter(prometheus.CounterOpts{
+	pool.connectionAttempts = promauto.With(pool.registerer).NewCounter(prometheus.CounterOpts{
 		Name: "gocql_connection_pool_connection_attempts_total",
 		Help: "Number of TCP connection attempts for given host",
 	})
-	pool.connectionFailures = promauto.With(registerer).NewCounter(prometheus.CounterOpts{
+	pool.connectionFailures = promauto.With(pool.registerer).NewCounter(prometheus.CounterOpts{
 		Name: "gocql_connection_pool_connection_failures_total",
 		Help: "Number of TCP connection failures for given host",
 	})
-	pool.connectionDrops = promauto.With(registerer).NewCounter(prometheus.CounterOpts{
+	pool.connectionDrops = promauto.With(pool.registerer).NewCounter(prometheus.CounterOpts{
 		Name: "gocql_connection_pool_connection_drops_total",
 		Help: "Number of TCP connection drops for given host",
 	})
 
 	// the pool is not filled or connected
 	return pool
+}
+
+func (pool *hostConnPool) deregisterMetrics() {
+	pool.registerer.Unregister(pool.connections)
+	pool.registerer.Unregister(pool.connectionAttempts)
+	pool.registerer.Unregister(pool.connectionFailures)
+	pool.registerer.Unregister(pool.connectionDrops)
 }
 
 // Pick a connection from this connection pool for the given query.
