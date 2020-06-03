@@ -158,6 +158,10 @@ type ClusterConfig struct {
 	// Logger to use throughout the codebase.
 	Logger log.Logger
 
+	// Registerer for the client to add metrics to.
+	// Nil means no metrics will be expose.  Feel free to set to prometheus.DefaultRegisterer.
+	// NB if you have multiple clients per process, you will need to give them distinct labels
+	// ie use prometheus.WrapRegistererWith(prometheus.Labels{"client": name}, prometheus.DefaultRegisterer)
 	Registerer prometheus.Registerer
 }
 
