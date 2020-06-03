@@ -10,6 +10,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	logkit "github.com/go-kit/kit/log"
 )
 
 var (
@@ -169,7 +171,7 @@ func createTestSession() *Session {
 		},
 		policy: config.PoolConfig.HostSelectionPolicy,
 	}
-	session.pool = config.PoolConfig.buildPool(session)
+	session.pool = config.PoolConfig.buildPool(logkit.NewNopLogger(), nil, session)
 	return session
 }
 

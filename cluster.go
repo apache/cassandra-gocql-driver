@@ -9,6 +9,9 @@ import (
 	"errors"
 	"net"
 	"time"
+
+	"github.com/go-kit/kit/log"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 // PoolConfig configures the connection pool used by the driver, it defaults to
@@ -20,8 +23,8 @@ type PoolConfig struct {
 	HostSelectionPolicy HostSelectionPolicy
 }
 
-func (p PoolConfig) buildPool(session *Session) *policyConnPool {
-	return newPolicyConnPool(session)
+func (p PoolConfig) buildPool(logger log.Logger, registerer prometheus.Registerer, session *Session) *policyConnPool {
+	return newPolicyConnPool(logger, registerer, session)
 }
 
 // ClusterConfig is a struct to configure the default cluster implementation
@@ -151,6 +154,11 @@ type ClusterConfig struct {
 
 	// internal config for testing
 	disableControlConn bool
+
+	// Logger to use throughout the codebase.
+	Logger log.Logger
+
+	Registerer prometheus.Registerer
 }
 
 type Dialer interface {

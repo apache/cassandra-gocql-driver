@@ -18,7 +18,9 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/go-kit/kit/log"
 	"github.com/gocql/gocql/internal/lru"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 // Session is the interface used by users to interact with the database.
@@ -31,6 +33,9 @@ import (
 // and automatically sets a default consistency level on all operations
 // that do not have a consistency level set.
 type Session struct {
+	logger     log.Logger
+	registerer prometheus.Registerer
+
 	cons                Consistency
 	pageSize            int
 	prefetch            float64
@@ -117,7 +122,15 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 	// TODO: we should take a context in here at some point
 	ctx, cancel := context.WithCancel(context.TODO())
 
+	logger := cfg.Logger
+	if logger == nil {
+		logger = log.NewNopLogger()
+	}
+
 	s := &Session{
+		logger:     logger,
+		registerer: cfg.Registerer,
+
 		cons:            cfg.Consistency,
 		prefetch:        0.25,
 		cfg:             cfg,
@@ -140,7 +153,7 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 	if cfg.PoolConfig.HostSelectionPolicy == nil {
 		cfg.PoolConfig.HostSelectionPolicy = RoundRobinHostPolicy()
 	}
-	s.pool = cfg.PoolConfig.buildPool(s)
+	s.pool = cfg.PoolConfig.buildPool(s.logger, s.registerer, s)
 
 	s.policy = cfg.PoolConfig.HostSelectionPolicy
 	s.policy.Init(s)
@@ -186,7 +199,7 @@ func (s *Session) init() error {
 	s.ring.endpoints = hosts
 
 	if !s.cfg.disableControlConn {
-		s.control = createControlConn(s)
+		s.control = createControlConn(s.logger, s)
 		if s.cfg.ProtoVersion == 0 {
 			proto, err := s.control.discoverProtocol(hosts)
 			if err != nil {
