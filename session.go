@@ -655,7 +655,7 @@ func (s *Session) ExecuteBatch(batch *Batch) error {
 }
 
 // ExecuteBatchCAS executes a batch operation and returns true if successful and
-// an iterator (to scan aditional rows if more than one conditional statement)
+// an iterator (to scan additional rows if more than one conditional statement)
 // was sent.
 // Further scans on the interator must also remember to include
 // the applied boolean as the first argument to *Iter.Scan
