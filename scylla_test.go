@@ -94,9 +94,9 @@ func TestScyllaConnPickerRemove(t *testing.T) {
 		msbIgnore: 12,
 	}
 
-	conn := mockConn("0")
+	conn := mockConn(0)
 	s.Put(conn)
-	s.Put(mockConn("1"))
+	s.Put(mockConn(1))
 
 	if s.nrConns != 2 {
 		t.Error("added 2 connections, expected connection count to be 2")
@@ -112,14 +112,14 @@ func TestScyllaConnPickerRemove(t *testing.T) {
 	}
 }
 
-func mockConn(shard string) *Conn {
+func mockConn(shard int) *Conn {
 	return &Conn{
-		supported: map[string][]string{
-			"SCYLLA_SHARD":               {shard},
-			"SCYLLA_NR_SHARDS":           {"4"},
-			"SCYLLA_SHARDING_IGNORE_MSB": {"12"},
-			"SCYLLA_PARTITIONER":         {"org.apache.cassandra.dht.Murmur3Partitioner"},
-			"SCYLLA_SHARDING_ALGORITHM":  {"biased-token-round-robin"},
+		scyllaSupported: scyllaSupported{
+			shard:             shard,
+			nrShards:          4,
+			msbIgnore:         12,
+			partitioner:       "org.apache.cassandra.dht.Murmur3Partitioner",
+			shardingAlgorithm: "biased-token-round-robin",
 		},
 	}
 }
@@ -145,8 +145,8 @@ func TestScyllaRandomConnPIcker(t *testing.T) {
 		s := &scyllaConnPicker{
 			nrShards:  4,
 			msbIgnore: 12,
-			pos: math.MaxUint64,
-			conns: []*Conn{nil, mockConn("1")},
+			pos:       math.MaxUint64,
+			conns:     []*Conn{nil, mockConn(1)},
 		}
 
 		if s.Pick(token(nil)) == nil {
@@ -158,8 +158,8 @@ func TestScyllaRandomConnPIcker(t *testing.T) {
 		s := &scyllaConnPicker{
 			nrShards:  4,
 			msbIgnore: 12,
-			pos: math.MaxUint64,
-			conns: []*Conn{nil, mockConn("1")},
+			pos:       math.MaxUint64,
+			conns:     []*Conn{nil, mockConn(1)},
 		}
 
 		var wg sync.WaitGroup

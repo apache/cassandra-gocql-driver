@@ -154,6 +154,7 @@ type Conn struct {
 	currentKeyspace string
 	host            *HostInfo
 	supported       map[string][]string
+	scyllaSupported scyllaSupported
 
 	session *Session
 
@@ -395,7 +396,9 @@ func (s *startupCoordinator) options(ctx context.Context) error {
 	if !ok {
 		return NewErrProtocol("Unknown type of response to startup frame: %T", frame)
 	}
+	// Keep raw supported multimap for debug purposes
 	s.conn.supported = v.supported
+	s.conn.scyllaSupported = parseSupported(s.conn.supported)
 
 	return s.startup(ctx)
 }

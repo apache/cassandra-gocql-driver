@@ -10,9 +10,11 @@ import (
 // scyllaSupported represents Scylla connection options as sent in SUPPORTED
 // frame.
 type scyllaSupported struct {
-	shard     int
-	nrShards  int
-	msbIgnore uint64
+	shard             int
+	nrShards          int
+	msbIgnore         uint64
+	partitioner       string
+	shardingAlgorithm string
 }
 
 func parseSupported(supported map[string][]string) scyllaSupported {
@@ -51,20 +53,17 @@ func parseSupported(supported map[string][]string) scyllaSupported {
 		}
 	}
 
-	var (
-		partitioner string
-		algorithm   string
-	)
 	if s, ok := supported[scyllaPartitioner]; ok {
-		partitioner = s[0]
+		si.partitioner = s[0]
 	}
 	if s, ok := supported[scyllaShardingAlgorithm]; ok {
-		algorithm = s[0]
+		si.shardingAlgorithm = s[0]
 	}
 
-	if partitioner != "org.apache.cassandra.dht.Murmur3Partitioner" || algorithm != "biased-token-round-robin" || si.nrShards == 0 || si.msbIgnore == 0 {
+	if si.partitioner != "org.apache.cassandra.dht.Murmur3Partitioner" || si.shardingAlgorithm != "biased-token-round-robin" || si.nrShards == 0 || si.msbIgnore == 0 {
 		if gocqlDebug {
-			Logger.Printf("scylla: unsupported sharding configuration, partitioner=%s, algorithm=%s, no_shards=%d, msb_ignore=%d", partitioner, algorithm, si.nrShards, si.msbIgnore)
+			Logger.Printf("scylla: unsupported sharding configuration, partitioner=%s, algorithm=%s, no_shards=%d, msb_ignore=%d",
+				si.partitioner, si.shardingAlgorithm, si.nrShards, si.msbIgnore)
 		}
 		return scyllaSupported{}
 	}
@@ -74,8 +73,7 @@ func parseSupported(supported map[string][]string) scyllaSupported {
 
 // isScyllaConn checks if conn is suitable for scyllaConnPicker.
 func isScyllaConn(conn *Conn) bool {
-	s := parseSupported(conn.supported)
-	return s.nrShards != 0
+	return conn.scyllaSupported.nrShards != 0
 }
 
 // scyllaConnPicker is a specialised ConnPicker that selects connections based
@@ -94,24 +92,24 @@ type scyllaConnPicker struct {
 }
 
 func newScyllaConnPicker(conn *Conn) *scyllaConnPicker {
-	s := parseSupported(conn.supported)
-	if s.nrShards == 0 {
+	if conn.scyllaSupported.nrShards == 0 {
 		panic(fmt.Sprintf("scylla: %s not a sharded connection", conn.Address()))
 	}
 
 	if gocqlDebug {
-		Logger.Printf("scylla: %s sharding options %+v", conn.Address(), s)
+		Logger.Printf("scylla: %s sharding options %+v", conn.Address(), conn.scyllaSupported)
 	}
 
 	return &scyllaConnPicker{
-		nrShards:  s.nrShards,
-		msbIgnore: s.msbIgnore,
+		nrShards:  conn.scyllaSupported.nrShards,
+		msbIgnore: conn.scyllaSupported.msbIgnore,
 	}
 }
 
 func (p *scyllaConnPicker) Remove(conn *Conn) {
-	s := parseSupported(conn.supported)
-	if s.nrShards == 0 {
+	shard := conn.scyllaSupported.shard
+
+	if conn.scyllaSupported.nrShards == 0 {
 		// It is possible for Remove to be called before the connection is added to the pool.
 		// Ignoring these connections here is safe.
 		if gocqlDebug {
@@ -120,11 +118,11 @@ func (p *scyllaConnPicker) Remove(conn *Conn) {
 		return
 	}
 	if gocqlDebug {
-		Logger.Printf("scylla: %s remove shard %d connection", conn.Address(), s.shard)
+		Logger.Printf("scylla: %s remove shard %d connection", conn.Address(), shard)
 	}
 
-	if p.conns[s.shard] != nil {
-		p.conns[s.shard] = nil
+	if p.conns[shard] != nil {
+		p.conns[shard] = nil
 		p.nrConns--
 	}
 }
@@ -181,20 +179,22 @@ func (p *scyllaConnPicker) shardOf(token murmur3Token) int {
 func (p *scyllaConnPicker) Put(conn *Conn) {
 	const maxExcessConnsFactor = 10
 
-	s := parseSupported(conn.supported)
-	if s.nrShards == 0 {
+	nrShards := conn.scyllaSupported.nrShards
+	shard := conn.scyllaSupported.shard
+
+	if nrShards == 0 {
 		panic(fmt.Sprintf("scylla: %s not a sharded connection", conn.Address()))
 	}
 
-	if s.nrShards != len(p.conns) {
-		if s.nrShards != p.nrShards {
+	if nrShards != len(p.conns) {
+		if nrShards != p.nrShards {
 			panic(fmt.Sprintf("scylla: %s invalid number of shards", conn.Address()))
 		}
 		conns := p.conns
-		p.conns = make([]*Conn, s.nrShards, s.nrShards)
+		p.conns = make([]*Conn, nrShards, nrShards)
 		copy(p.conns, conns)
 	}
-	if c := p.conns[s.shard]; c != nil {
+	if c := p.conns[shard]; c != nil {
 		p.excessConns = append(p.excessConns, conn)
 		if len(p.excessConns) > maxExcessConnsFactor*p.nrShards {
 			if gocqlDebug {
@@ -204,7 +204,7 @@ func (p *scyllaConnPicker) Put(conn *Conn) {
 		}
 		return
 	}
-	p.conns[s.shard] = conn
+	p.conns[shard] = conn
 	p.nrConns++
 	if p.nrConns >= p.nrShards {
 		// We have reached one connection to each shard and
@@ -212,7 +212,7 @@ func (p *scyllaConnPicker) Put(conn *Conn) {
 		p.closeExcessConns()
 	}
 	if gocqlDebug {
-		Logger.Printf("scylla: %s put shard %d connection total: %d missing: %d", conn.Address(), s.shard, p.nrConns, p.nrShards-p.nrConns)
+		Logger.Printf("scylla: %s put shard %d connection total: %d missing: %d", conn.Address(), shard, p.nrConns, p.nrShards-p.nrConns)
 	}
 }
 
