@@ -1839,6 +1839,11 @@ func marshalTuple(info TypeInfo, value interface{}) ([]byte, error) {
 
 		var buf []byte
 		for i, elem := range v {
+			if elem == nil {
+				buf = appendInt(buf, int32(-1))
+				continue
+			}
+
 			data, err := Marshal(tuple.Elems[i], elem)
 			if err != nil {
 				return nil, err
@@ -1864,7 +1869,14 @@ func marshalTuple(info TypeInfo, value interface{}) ([]byte, error) {
 
 		var buf []byte
 		for i, elem := range tuple.Elems {
-			data, err := Marshal(elem, rv.Field(i).Interface())
+			field := rv.Field(i)
+
+			if field.Kind() == reflect.Ptr && field.IsNil() {
+				buf = appendInt(buf, int32(-1))
+				continue
+			}
+
+			data, err := Marshal(elem, field.Interface())
 			if err != nil {
 				return nil, err
 			}
@@ -1883,7 +1895,14 @@ func marshalTuple(info TypeInfo, value interface{}) ([]byte, error) {
 
 		var buf []byte
 		for i, elem := range tuple.Elems {
-			data, err := Marshal(elem, rv.Index(i).Interface())
+			item := rv.Index(i)
+
+			if item.Kind() == reflect.Ptr && item.IsNil() {
+				buf = appendInt(buf, int32(-1))
+				continue
+			}
+
+			data, err := Marshal(elem, item.Interface())
 			if err != nil {
 				return nil, err
 			}
