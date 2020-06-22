@@ -62,12 +62,8 @@ type lwtAddMetadataMarkExt struct {
 // from SUPPORTED message payload.
 func newLwtAddMetaMarkExt(supported map[string][]string) *lwtAddMetadataMarkExt {
 	const lwtOptMetaBitMaskKey = "LWT_OPTIMIZATION_META_BIT_MASK"
-	var (
-		v     []string
-		found bool
-	)
 
-	if v, found = supported[lwtAddMetadataMarkKey]; found {
+	if v, found := supported[lwtAddMetadataMarkKey]; found {
 		for i := range v {
 			splitVal := strings.Split(v[i], "=")
 			if splitVal[0] == lwtOptMetaBitMaskKey {
