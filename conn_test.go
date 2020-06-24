@@ -11,6 +11,7 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -242,7 +243,7 @@ func TestStartupTimeout(t *testing.T) {
 		t.Fatal("ConnectTimeout is not respected")
 	}
 
-	if !strings.Contains(err.Error(), "no connections were made when creating the session") {
+	if !errors.Is(err, ErrNoConnectionsStarted) {
 		t.Fatalf("Expected to receive no connections error - got '%s'", err)
 	}
 
