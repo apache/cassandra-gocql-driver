@@ -24,24 +24,19 @@ import (
 )
 
 var (
-	approvedAuthenticators = [...]string{
-		"org.apache.cassandra.auth.PasswordAuthenticator",
-		"com.instaclustr.cassandra.auth.SharedSecretAuthenticator",
-		"com.datastax.bdp.cassandra.auth.DseAuthenticator",
-		"io.aiven.cassandra.auth.AivenAuthenticator",
-		"com.ericsson.bss.cassandra.ecaudit.auth.AuditPasswordAuthenticator",
-		"com.amazon.helenus.auth.HelenusAuthenticator",
-		"com.ericsson.bss.cassandra.ecaudit.auth.AuditAuthenticator",
+	approvedAuthenticators = map[string]bool{
+		"org.apache.cassandra.auth.PasswordAuthenticator":                    true,
+		"com.instaclustr.cassandra.auth.SharedSecretAuthenticator":           true,
+		"com.datastax.bdp.cassandra.auth.DseAuthenticator":                   true,
+		"io.aiven.cassandra.auth.AivenAuthenticator":                         true,
+		"com.ericsson.bss.cassandra.ecaudit.auth.AuditPasswordAuthenticator": true,
+		"com.amazon.helenus.auth.HelenusAuthenticator":                       true,
+		"com.ericsson.bss.cassandra.ecaudit.auth.AuditAuthenticator":         true,
 	}
 )
 
 func approve(authenticator string) bool {
-	for _, s := range approvedAuthenticators {
-		if authenticator == s {
-			return true
-		}
-	}
-	return false
+	return approvedAuthenticators[authenticator]
 }
 
 //JoinHostPort is a utility to return a address string that can be used
@@ -202,59 +197,36 @@ func (s *Session) dialWithoutObserver(ctx context.Context, host *HostInfo, cfg *
 		panic(fmt.Sprintf("host missing port: %v", port))
 	}
 
-	dialer := cfg.Dialer
-	if dialer == nil {
-		d := &net.Dialer{
-			Timeout: cfg.ConnectTimeout,
-		}
-		if cfg.Keepalive > 0 {
-			d.KeepAlive = cfg.Keepalive
-		}
-		dialer = d
-	}
-
-	conn, err := dialer.DialContext(ctx, "tcp", host.HostnameAndPort())
-	if err != nil {
-		return nil, err
-	}
-	if cfg.tlsConfig != nil {
-		// the TLS config is safe to be reused by connections but it must not
-		// be modified after being used.
-		tconn := tls.Client(conn, cfg.tlsConfig)
-		if err := tconn.Handshake(); err != nil {
-			conn.Close()
-			return nil, err
-		}
-		conn = tconn
-	}
-
 	ctx, cancel := context.WithCancel(ctx)
 	c := &Conn{
-		conn:          conn,
-		r:             bufio.NewReader(conn),
 		cfg:           cfg,
 		calls:         make(map[int]*callReq),
 		version:       uint8(cfg.ProtoVersion),
-		addr:          conn.RemoteAddr().String(),
 		errorHandler:  errorHandler,
 		compressor:    cfg.Compressor,
 		session:       s,
 		streams:       streams.New(cfg.ProtoVersion),
 		host:          host,
 		frameObserver: s.frameObserver,
-		w: &deadlineWriter{
-			w:       conn,
-			timeout: cfg.Timeout,
-		},
-		ctx:    ctx,
-		cancel: cancel,
+		ctx:           ctx,
+		cancel:        cancel,
 	}
 
 	if err := c.init(ctx); err != nil {
 		cancel()
-		c.Close()
+		if c.conn != nil {
+			c.Close()
+		}
 		return nil, err
 	}
+
+	// dont coalesce startup frames
+	if c.session.cfg.WriteCoalesceWaitTime > 0 && !c.cfg.disableCoalesce {
+		c.w = newWriteCoalescer(c.conn, c.timeout, c.session.cfg.WriteCoalesceWaitTime, ctx.Done())
+	}
+
+	go c.serve(ctx)
+	go c.heartBeat(ctx)
 
 	return c, nil
 }
@@ -270,31 +242,65 @@ func (c *Conn) init(ctx context.Context) error {
 		c.auth = c.cfg.Authenticator
 	}
 
+	timeout := c.cfg.ConnectTimeout
+
+	var cancel context.CancelFunc
+	if timeout > 0 {
+		ctx, cancel = context.WithTimeout(ctx, timeout)
+	} else {
+		ctx, cancel = context.WithCancel(ctx)
+	}
+	defer cancel()
+
+	dialer := c.cfg.Dialer
+	if dialer == nil {
+		d := &net.Dialer{
+			Timeout: c.cfg.ConnectTimeout,
+		}
+		if c.cfg.Keepalive > 0 {
+			d.KeepAlive = c.cfg.Keepalive
+		}
+		dialer = d
+	}
+
+	conn, err := dialer.DialContext(ctx, "tcp", c.host.HostnameAndPort())
+	if err != nil {
+		return err
+	} else if c.cfg.tlsConfig != nil {
+		// the TLS config is safe to be reused by connections but it must not
+		// be modified after being used.
+		tconn := tls.Client(conn, c.cfg.tlsConfig)
+		if err := tconn.Handshake(); err != nil {
+			conn.Close()
+			return err
+		}
+		conn = tconn
+	}
+
 	startup := &startupCoordinator{
 		frameTicker: make(chan struct{}),
 		conn:        c,
 	}
 
-	c.timeout = c.cfg.ConnectTimeout
-	if err := startup.setupConn(ctx); err != nil {
-		return err
-	}
-
+	c.conn = conn
 	c.timeout = c.cfg.Timeout
-
-	// dont coalesce startup frames
-	if c.session.cfg.WriteCoalesceWaitTime > 0 && !c.cfg.disableCoalesce {
-		c.w = newWriteCoalescer(c.conn, c.timeout, c.session.cfg.WriteCoalesceWaitTime, ctx.Done())
+	c.conn = conn
+	c.r = bufio.NewReader(conn)
+	c.w = &deadlineWriter{
+		w:       conn,
+		timeout: c.cfg.Timeout,
 	}
 
-	go c.serve(ctx)
-	go c.heartBeat(ctx)
-
-	return nil
+	return startup.setupConn(ctx)
 }
 
 func (c *Conn) Write(p []byte) (n int, err error) {
 	return c.w.Write(p)
+}
+
+func isTemporary(err error) bool {
+	var v interface{ Temporary() bool }
+	return errors.As(err, &v) && v.Temporary()
 }
 
 func (c *Conn) Read(p []byte) (n int, err error) {
@@ -312,7 +318,7 @@ func (c *Conn) Read(p []byte) (n int, err error) {
 			break
 		}
 
-		if verr, ok := err.(net.Error); !ok || !verr.Temporary() {
+		if !isTemporary(err) {
 			break
 		}
 	}
@@ -326,25 +332,21 @@ type startupCoordinator struct {
 }
 
 func (s *startupCoordinator) setupConn(ctx context.Context) error {
-	var cancel context.CancelFunc
-	if s.conn.timeout > 0 {
-		ctx, cancel = context.WithTimeout(ctx, s.conn.timeout)
-	} else {
-		ctx, cancel = context.WithCancel(ctx)
-	}
-	defer cancel()
-
 	startupErr := make(chan error)
 	go func() {
 		for range s.frameTicker {
 			err := s.conn.recv(ctx)
+			var resp chan error
 			if err != nil {
-				select {
-				case startupErr <- err:
-				case <-ctx.Done():
-				}
+				resp = startupErr
+			}
 
+			select {
+			case <-ctx.Done():
 				return
+			case resp <- err:
+				return
+			default:
 			}
 		}
 	}()
@@ -364,7 +366,7 @@ func (s *startupCoordinator) setupConn(ctx context.Context) error {
 			return err
 		}
 	case <-ctx.Done():
-		return errors.New("gocql: no response to connection startup within timeout")
+		return ErrNoConnectionsStarted
 	}
 
 	return nil
@@ -599,7 +601,9 @@ func (c *Conn) recv(ctx context.Context) error {
 
 	// read a full header, ignore timeouts, as this is being ran in a loop
 	// TODO: TCP level deadlines? or just query level deadlines?
-	if c.timeout > 0 {
+	if t, ok := ctx.Deadline(); ok {
+		c.conn.SetReadDeadline(t)
+	} else if c.timeout > 0 {
 		c.conn.SetReadDeadline(time.Time{})
 	}
 
@@ -657,7 +661,7 @@ func (c *Conn) recv(ctx context.Context) error {
 	delete(c.calls, head.stream)
 	c.mu.Unlock()
 	if call == nil || call.framer == nil || !ok {
-		Logger.Printf("gocql: received response for stream which has no handler: header=%v\n", head)
+		c.session.cfg.Logger.Printf("gocql: received response for stream which has no handler: header=%v\n", head)
 		return c.discardFrame(head)
 	} else if head.stream != call.streamID {
 		panic(fmt.Sprintf("call has incorrect streamID: got %d expected %d", call.streamID, head.stream))
@@ -1191,7 +1195,7 @@ func (c *Conn) executeQuery(ctx context.Context, qry *Query) *Iter {
 		iter := &Iter{framer: framer}
 		if err := c.awaitSchemaAgreement(ctx); err != nil {
 			// TODO: should have this behind a flag
-			Logger.Println(err)
+			c.session.cfg.Logger.Println(err)
 		}
 		// dont return an error from this, might be a good idea to give a warning
 		// though. The impact of this returning an error would be that the cluster
@@ -1392,7 +1396,7 @@ func (c *Conn) awaitSchemaAgreement(ctx context.Context) (err error) {
 				goto cont
 			}
 			if !isValidPeer(host) || host.schemaVersion == "" {
-				Logger.Printf("invalid peer or peer with empty schema_version: peer=%q", host)
+				c.session.cfg.Logger.Printf("invalid peer or peer with empty schema_version: peer=%q", host)
 				continue
 			}
 

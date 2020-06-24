@@ -246,11 +246,6 @@ func (d *DowngradingConsistencyRetryPolicy) Attempt(q RetryableQuery) bool {
 		return false
 	} else if currentAttempt > 0 {
 		q.SetConsistency(d.ConsistencyLevelsToTry[currentAttempt-1])
-		if gocqlDebug {
-			Logger.Printf("%T: set consistency to %q\n",
-				d,
-				d.ConsistencyLevelsToTry[currentAttempt-1])
-		}
 	}
 	return true
 }
@@ -400,6 +395,7 @@ type clusterMeta struct {
 	// replicas is map[keyspace]map[token]hosts
 	replicas  map[string]tokenRingReplicas
 	tokenRing *tokenRing
+	logger    StdLogger
 }
 
 type tokenAwareHostPolicy struct {
@@ -559,7 +555,7 @@ func (m *clusterMeta) resetTokenRing(partitioner string, hosts []*HostInfo) {
 	// create a new token ring
 	tokenRing, err := newTokenRing(partitioner, hosts)
 	if err != nil {
-		Logger.Printf("Unable to update the token ring due to error: %s", err)
+		m.logger.Printf("Unable to update the token ring due to error: %s", err)
 		return
 	}
 

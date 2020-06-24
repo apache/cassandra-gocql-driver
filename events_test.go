@@ -8,14 +8,14 @@ import (
 
 func TestEventDebounce(t *testing.T) {
 	const eventCount = 150
-	wg := &sync.WaitGroup{}
+	var wg sync.WaitGroup
 	wg.Add(1)
 
 	eventsSeen := 0
 	debouncer := newEventDebouncer("testDebouncer", func(events []frame) {
 		defer wg.Done()
 		eventsSeen += len(events)
-	})
+	}, &testLogger{})
 	defer debouncer.stop()
 
 	for i := 0; i < eventCount; i++ {

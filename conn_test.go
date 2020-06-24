@@ -1,7 +1,6 @@
 // Copyright (c) 2012 The gocql Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
-// +build all unit
 
 package gocql
 
@@ -151,10 +150,6 @@ func newTestSession(proto protoVersion, addresses ...string) (*Session, error) {
 
 func TestDNSLookupConnected(t *testing.T) {
 	log := &testLogger{}
-	Logger = log
-	defer func() {
-		Logger = &defaultLogger{}
-	}()
 
 	// Override the defaul DNS resolver and restore at the end
 	failDNS = true
@@ -166,16 +161,13 @@ func TestDNSLookupConnected(t *testing.T) {
 	cluster := NewCluster("cassandra1.invalid", srv.Address, "cassandra2.invalid")
 	cluster.ProtoVersion = int(defaultProto)
 	cluster.disableControlConn = true
+	cluster.Logger = log
 
 	// CreateSession() should attempt to resolve the DNS name "cassandraX.invalid"
 	// and fail, but continue to connect via srv.Address
 	_, err := cluster.CreateSession()
 	if err != nil {
 		t.Fatal("CreateSession() should have connected")
-	}
-
-	if !strings.Contains(log.String(), "gocql: dns error") {
-		t.Fatalf("Expected to receive dns error log message  - got '%s' instead", log.String())
 	}
 }
 
@@ -201,10 +193,6 @@ func TestDNSLookupError(t *testing.T) {
 		t.Fatal("CreateSession() should have returned an error")
 	}
 
-	if !strings.Contains(log.String(), "gocql: dns error") {
-		t.Fatalf("Expected to receive dns error log message  - got '%s' instead", log.String())
-	}
-
 	if err.Error() != "gocql: unable to create session: failed to resolve any of the provided hostnames" {
 		t.Fatalf("Expected CreateSession() to fail with message  - got '%s' instead", err.Error())
 	}
@@ -212,11 +200,7 @@ func TestDNSLookupError(t *testing.T) {
 
 func TestStartupTimeout(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
-	log := &testLogger{}
-	Logger = log
-	defer func() {
-		Logger = &defaultLogger{}
-	}()
+	defer cancel()
 
 	srv := NewTestServer(t, defaultProto, ctx)
 	defer srv.Stop()
@@ -225,33 +209,24 @@ func TestStartupTimeout(t *testing.T) {
 	atomic.StoreInt32(&srv.TimeoutOnStartup, 1)
 
 	startTime := time.Now()
-	cluster := NewCluster(srv.Address)
-	cluster.ProtoVersion = int(defaultProto)
-	cluster.disableControlConn = true
-	// Set very long query connection timeout
-	// so we know CreateSession() is using the ConnectTimeout
-	cluster.Timeout = time.Second * 5
+	c := NewCluster(srv.Address)
+	c.ProtoVersion = int(defaultProto)
+	c.disableControlConn = true
+	c.ConnectTimeout = 100 * time.Millisecond
+	c.Timeout = 1
+	c.ReconnectionPolicy = &ConstantReconnectionPolicy{MaxRetries: 1}
 
 	// Create session should timeout during connect attempt
-	_, err := cluster.CreateSession()
+	_, err := c.CreateSession()
 	if err == nil {
 		t.Fatal("CreateSession() should have returned a timeout error")
 	}
 
-	elapsed := time.Since(startTime)
-	if elapsed > time.Second*5 {
-		t.Fatal("ConnectTimeout is not respected")
-	}
-
 	if !errors.Is(err, ErrNoConnectionsStarted) {
 		t.Fatalf("Expected to receive no connections error - got '%s'", err)
+	} else if elapsed := time.Since(startTime); elapsed > c.ConnectTimeout*2 {
+		t.Fatalf("ConnectTimeout is not respected: timeout=%v elapsed=%v", c.ConnectTimeout*2, elapsed)
 	}
-
-	if !strings.Contains(log.String(), "no response to connection startup within timeout") {
-		t.Fatalf("Expected to receive timeout log message  - got '%s'", log.String())
-	}
-
-	cancel()
 }
 
 func TestTimeout(t *testing.T) {
@@ -310,7 +285,7 @@ func TestCancel(t *testing.T) {
 
 	go func() {
 		if err := qry.Exec(); err != context.Canceled {
-			t.Fatalf("expected to get context cancel error: '%v', got '%v'", context.Canceled, err)
+			t.Errorf("expected to get context cancel error: '%v', got '%v'", context.Canceled, err)
 		}
 		wg.Done()
 	}()
@@ -321,17 +296,15 @@ func TestCancel(t *testing.T) {
 }
 
 type testQueryObserver struct {
+	t       *testing.T
 	metrics map[string]*hostMetrics
-	verbose bool
 }
 
 func (o *testQueryObserver) ObserveQuery(ctx context.Context, q ObservedQuery) {
 	host := q.Host.ConnectAddress().String()
 	o.metrics[host] = q.Metrics
-	if o.verbose {
-		Logger.Printf("Observed query %q. Returned %v rows, took %v on host %q with %v attempts and total latency %v. Error: %q\n",
-			q.Statement, q.Rows, q.End.Sub(q.Start), host, q.Metrics.Attempts, q.Metrics.TotalLatency, q.Err)
-	}
+	o.t.Logf("Observed query %q. Returned %v rows, took %v on host %q with %v attempts and total latency %v. Error: %q\n",
+		q.Statement, q.Rows, q.End.Sub(q.Start), host, q.Metrics.Attempts, q.Metrics.TotalLatency, q.Err)
 }
 
 func (o *testQueryObserver) GetMetrics(host *HostInfo) *hostMetrics {
@@ -381,13 +354,35 @@ func TestQueryRetry(t *testing.T) {
 	}
 }
 
+type testLogger struct {
+	capture bytes.Buffer
+	t       testing.TB
+}
+
+func (l *testLogger) Print(v ...interface{}) {
+	fmt.Fprint(&l.capture, v...)
+	l.t.Helper()
+	l.t.Log(v...)
+}
+
+func (l *testLogger) Printf(format string, v ...interface{}) {
+	fmt.Fprintf(&l.capture, format, v...)
+	l.t.Helper()
+	l.t.Logf(format, v...)
+}
+
+func (l *testLogger) Println(v ...interface{}) {
+	fmt.Fprintln(&l.capture, v...)
+	l.t.Helper()
+	l.t.Log(v...)
+}
+
+func (l *testLogger) String() string {
+	return l.capture.String()
+}
+
 func TestQueryMultinodeWithMetrics(t *testing.T) {
 	log := &testLogger{}
-	Logger = log
-	defer func() {
-		Logger = &defaultLogger{}
-		os.Stdout.WriteString(log.String())
-	}()
 
 	// Build a 3 node cluster to test host metric mapping
 	var nodes []*TestServer
@@ -396,15 +391,19 @@ func TestQueryMultinodeWithMetrics(t *testing.T) {
 		"127.0.0.2",
 		"127.0.0.3",
 	}
+
 	// Can do with 1 context for all servers
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	for _, ip := range addresses {
 		srv := NewTestServerWithAddress(ip+":0", t, defaultProto, ctx)
 		defer srv.Stop()
 		nodes = append(nodes, srv)
 	}
 
-	db, err := newTestSession(defaultProto, nodes[0].Address, nodes[1].Address, nodes[2].Address)
+	conf := testCluster(defaultProto, nodes[0].Address, nodes[1].Address, nodes[2].Address)
+	conf.Logger = log
+	db, err := conf.CreateSession()
 	if err != nil {
 		t.Fatalf("NewCluster: %v", err)
 	}
@@ -412,7 +411,7 @@ func TestQueryMultinodeWithMetrics(t *testing.T) {
 
 	// 1 retry per host
 	rt := &SimpleRetryPolicy{NumRetries: 3}
-	observer := &testQueryObserver{metrics: make(map[string]*hostMetrics), verbose: false}
+	observer := &testQueryObserver{metrics: make(map[string]*hostMetrics), t: t}
 	qry := db.Query("kill").RetryPolicy(rt).Observer(observer)
 	if err := qry.Exec(); err == nil {
 		t.Fatalf("expected error")
@@ -459,13 +458,6 @@ func (t *testRetryPolicy) GetRetryType(err error) RetryType {
 }
 
 func TestSpeculativeExecution(t *testing.T) {
-	log := &testLogger{}
-	Logger = log
-	defer func() {
-		Logger = &defaultLogger{}
-		os.Stdout.WriteString(log.String())
-	}()
-
 	// Build a 3 node cluster
 	var nodes []*TestServer
 	var addresses = []string{
@@ -932,6 +924,8 @@ func TestFrameHeaderObserver(t *testing.T) {
 }
 
 func NewTestServerWithAddress(addr string, t testing.TB, protocol uint8, ctx context.Context) *TestServer {
+	t.Helper()
+
 	laddr, err := net.ResolveTCPAddr("tcp", addr)
 	if err != nil {
 		t.Fatal(err)
@@ -939,6 +933,10 @@ func NewTestServerWithAddress(addr string, t testing.TB, protocol uint8, ctx con
 
 	listen, err := net.ListenTCP("tcp", laddr)
 	if err != nil {
+		var v *os.SyscallError
+		if errors.As(err, &v) && v.Syscall == "bind" {
+			t.Skipf("skipping because we cant bind because the interface does not exist: %v", err)
+		}
 		t.Fatal(err)
 	}
 
@@ -1115,16 +1113,14 @@ func (srv *TestServer) process(f *framer) {
 		return
 	}
 
+	if atomic.LoadInt32(&srv.TimeoutOnStartup) > 0 {
+		// Do not respond to startup command
+		// wait until we get a cancel signal
+		return
+	}
+
 	switch head.op {
 	case opStartup:
-		if atomic.LoadInt32(&srv.TimeoutOnStartup) > 0 {
-			// Do not respond to startup command
-			// wait until we get a cancel signal
-			select {
-			case <-srv.ctx.Done():
-				return
-			}
-		}
 		f.writeHeader(0, opReady, head.stream)
 	case opOptions:
 		f.writeHeader(0, opSupported, head.stream)

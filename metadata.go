@@ -1231,12 +1231,6 @@ func (t *typeParser) parse() typeParserResult {
 				var name string
 				decoded, err := hex.DecodeString(*param.name)
 				if err != nil {
-					Logger.Printf(
-						"Error parsing type '%s', contains collection name '%s' with an invalid format: %v",
-						t.input,
-						*param.name,
-						err,
-					)
 					// just use the provided name
 					name = *param.name
 				} else {

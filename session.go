@@ -86,11 +86,12 @@ func addrsToHosts(addrs []string, defaultPort int) ([]*HostInfo, error) {
 	for _, hostport := range addrs {
 		resolvedHosts, err := hostInfo(hostport, defaultPort)
 		if err != nil {
-			// Try other hosts if unable to resolve DNS name
-			if _, ok := err.(*net.DNSError); ok {
-				Logger.Printf("gocql: dns error: %v\n", err)
+			var v *net.DNSError
+			if errors.As(err, &v) {
+				// Try other hosts if unable to resolve DNS name
 				continue
 			}
+
 			return nil, err
 		}
 
@@ -130,8 +131,8 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 
 	s.schemaDescriber = newSchemaDescriber(s)
 
-	s.nodeEvents = newEventDebouncer("NodeEvents", s.handleNodeEvent)
-	s.schemaEvents = newEventDebouncer("SchemaEvents", s.handleSchemaEvent)
+	s.nodeEvents = newEventDebouncer("NodeEvents", s.handleNodeEvent, cfg.Logger)
+	s.schemaEvents = newEventDebouncer("SchemaEvents", s.handleSchemaEvent, cfg.Logger)
 
 	s.routingKeyInfoCache.lru = lru.New(cfg.MaxRoutingKeyInfo)
 
@@ -313,7 +314,7 @@ func (s *Session) reconnectDownedHosts(intv time.Duration) {
 				for _, h := range hosts {
 					buf.WriteString("[" + h.ConnectAddress().String() + ":" + h.State().String() + "]")
 				}
-				Logger.Println(buf.String())
+				s.cfg.Logger.Println(buf.String())
 			}
 
 			for _, h := range hosts {
