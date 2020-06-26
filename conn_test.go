@@ -149,8 +149,6 @@ func newTestSession(proto protoVersion, addresses ...string) (*Session, error) {
 }
 
 func TestDNSLookupConnected(t *testing.T) {
-	log := &testLogger{}
-
 	// Override the defaul DNS resolver and restore at the end
 	failDNS = true
 	defer func() { failDNS = false }()
@@ -161,23 +159,17 @@ func TestDNSLookupConnected(t *testing.T) {
 	cluster := NewCluster("cassandra1.invalid", srv.Address, "cassandra2.invalid")
 	cluster.ProtoVersion = int(defaultProto)
 	cluster.disableControlConn = true
-	cluster.Logger = log
 
 	// CreateSession() should attempt to resolve the DNS name "cassandraX.invalid"
 	// and fail, but continue to connect via srv.Address
-	_, err := cluster.CreateSession()
+	db, err := cluster.CreateSession()
 	if err != nil {
 		t.Fatal("CreateSession() should have connected")
 	}
+	defer db.Close()
 }
 
 func TestDNSLookupError(t *testing.T) {
-	log := &testLogger{}
-	Logger = log
-	defer func() {
-		Logger = &defaultLogger{}
-	}()
-
 	// Override the defaul DNS resolver and restore at the end
 	failDNS = true
 	defer func() { failDNS = false }()
@@ -382,7 +374,7 @@ func (l *testLogger) String() string {
 }
 
 func TestQueryMultinodeWithMetrics(t *testing.T) {
-	log := &testLogger{}
+	log := &testLogger{t: t}
 
 	// Build a 3 node cluster to test host metric mapping
 	var nodes []*TestServer
