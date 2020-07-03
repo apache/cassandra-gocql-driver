@@ -184,3 +184,34 @@ func pickLoop(t *testing.T, s *scyllaConnPicker, c int, wg *sync.WaitGroup) {
 	}
 	wg.Done()
 }
+
+func TestScyllaLWTExtParsing(t *testing.T) {
+	t.Parallel()
+
+	t.Run("init framer without cql extensions", func(t *testing.T) {
+		t.Parallel()
+		// mock connection without cql extensions, expected not to have
+		// the `flagLWT` field being set in the framer created out of it
+		conn := mockConn(0)
+		f := newFramerWithExts(conn, conn, conn.compressor, conn.version, conn.cqlProtoExts)
+		if f.flagLWT != 0 {
+			t.Error("expected to have LWT flag uninitialized after framer init")
+		}
+	})
+
+	t.Run("init framer with cql extensions", func(t *testing.T) {
+		t.Parallel()
+		// create a mock connection, add `lwt` cql protocol extension to it,
+		// ensure that framer recognizes this extension and adjusts appropriately
+		conn := mockConn(0)
+		conn.cqlProtoExts = []cqlProtocolExtension{
+			lwtAddMetadataMarkExt{
+				lwtOptMetaBitMask: 1,
+			},
+		}
+		framerWithLwtExt := newFramerWithExts(conn, conn, conn.compressor, conn.version, conn.cqlProtoExts)
+		if framerWithLwtExt.flagLWT == 0 {
+			t.Error("expected to have LWT flag to be set after framer init")
+		}
+	})
+}
