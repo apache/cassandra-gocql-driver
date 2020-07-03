@@ -645,7 +645,7 @@ func (c *Conn) recv(ctx context.Context) error {
 		return fmt.Errorf("gocql: frame header stream is beyond call expected bounds: %d", head.stream)
 	} else if head.stream == -1 {
 		// TODO: handle cassandra event frames, we shouldnt get any currently
-		framer := newFramer(c, c, c.compressor, c.version, c.cqlProtoExts)
+		framer := newFramerWithExts(c, c, c.compressor, c.version, c.cqlProtoExts)
 		if err := framer.readFrame(&head); err != nil {
 			return err
 		}
@@ -654,7 +654,7 @@ func (c *Conn) recv(ctx context.Context) error {
 	} else if head.stream <= 0 {
 		// reserved stream that we dont use, probably due to a protocol error
 		// or a bug in Cassandra, this should be an error, parse it and return.
-		framer := newFramer(c, c, c.compressor, c.version, c.cqlProtoExts)
+		framer := newFramerWithExts(c, c, c.compressor, c.version, c.cqlProtoExts)
 		if err := framer.readFrame(&head); err != nil {
 			return err
 		}
@@ -869,7 +869,7 @@ func (c *Conn) exec(ctx context.Context, req frameWriter, tracer Tracer) (*frame
 	}
 
 	// resp is basically a waiting semaphore protecting the framer
-	framer := newFramer(c, c, c.compressor, c.version, c.cqlProtoExts)
+	framer := newFramerWithExts(c, c, c.compressor, c.version, c.cqlProtoExts)
 
 	call := &callReq{
 		framer:   framer,

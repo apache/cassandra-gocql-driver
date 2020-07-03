@@ -14,7 +14,7 @@ func Fuzz(data []byte) int {
 		return 0
 	}
 
-	framer := newFramer(r, &bw, nil, byte(head.version), nil)
+	framer := newFramer(r, &bw, nil, byte(head.version))
 	err = framer.readFrame(&head)
 	if err != nil {
 		return 0

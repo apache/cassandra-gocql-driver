@@ -406,7 +406,7 @@ type framer struct {
 	flagLWT int
 }
 
-func newFramer(r io.Reader, w io.Writer, compressor Compressor, version byte, cqlProtoExts []cqlProtocolExtension) *framer {
+func newFramer(r io.Reader, w io.Writer, compressor Compressor, version byte) *framer {
 	f := &framer{
 		wbuf:       make([]byte, defaultBufSize),
 		readBuffer: make([]byte, defaultBufSize),
@@ -439,6 +439,14 @@ func newFramer(r io.Reader, w io.Writer, compressor Compressor, version byte, cq
 
 	f.header = nil
 	f.traceID = nil
+
+	return f
+}
+
+func newFramerWithExts(r io.Reader, w io.Writer, compressor Compressor, version byte,
+	cqlProtoExts []cqlProtocolExtension) *framer {
+
+	f := newFramer(r, w, compressor, version)
 
 	if lwtExt := findCQLProtoExtByName(cqlProtoExts, lwtAddMetadataMarkKey); lwtExt != nil {
 		f.flagLWT = (*lwtExt).(lwtAddMetadataMarkExt).lwtOptMetaBitMask
