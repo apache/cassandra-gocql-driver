@@ -449,7 +449,14 @@ func newFramerWithExts(r io.Reader, w io.Writer, compressor Compressor, version 
 	f := newFramer(r, w, compressor, version)
 
 	if lwtExt := findCQLProtoExtByName(cqlProtoExts, lwtAddMetadataMarkKey); lwtExt != nil {
-		f.flagLWT = (*lwtExt).(lwtAddMetadataMarkExt).lwtOptMetaBitMask
+		castedExt, ok := (*lwtExt).(lwtAddMetadataMarkExt)
+		if !ok {
+			Logger.Println(
+				fmt.Errorf("Failed to cast CQL protocol extension identified by name %s to type %T",
+					lwtAddMetadataMarkKey, lwtAddMetadataMarkExt{}))
+			return f
+		}
+		f.flagLWT = castedExt.lwtOptMetaBitMask
 	}
 
 	return f
