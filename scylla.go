@@ -28,10 +28,10 @@ type cqlProtocolExtension interface {
 	serialize() map[string]string
 }
 
-func findCQLProtoExtByName(exts []cqlProtocolExtension, name string) *cqlProtocolExtension {
+func findCQLProtoExtByName(exts []cqlProtocolExtension, name string) cqlProtocolExtension {
 	for i := range exts {
 		if exts[i].name() == name {
-			return &exts[i]
+			return exts[i]
 		}
 	}
 	return nil
