@@ -58,6 +58,8 @@ type lwtAddMetadataMarkExt struct {
 	lwtOptMetaBitMask int
 }
 
+var _ cqlProtocolExtension = lwtAddMetadataMarkExt{}
+
 // Factory function to deserialize and create an `lwtAddMetadataMarkExt` instance
 // from SUPPORTED message payload.
 func newLwtAddMetaMarkExt(supported map[string][]string) *lwtAddMetadataMarkExt {
