@@ -426,7 +426,7 @@ func (s *startupCoordinator) startup(ctx context.Context) error {
 	}
 
 	for _, ext := range s.conn.cqlProtoExts {
-		var serialized = ext.serialize()
+		serialized := ext.serialize()
 		for k, v := range serialized {
 			m[k] = v
 		}
