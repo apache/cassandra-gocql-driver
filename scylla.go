@@ -58,7 +58,7 @@ type lwtAddMetadataMarkExt struct {
 	lwtOptMetaBitMask int
 }
 
-var _ cqlProtocolExtension = lwtAddMetadataMarkExt{}
+var _ cqlProtocolExtension = &lwtAddMetadataMarkExt{}
 
 // Factory function to deserialize and create an `lwtAddMetadataMarkExt` instance
 // from SUPPORTED message payload.
@@ -88,13 +88,13 @@ func newLwtAddMetaMarkExt(supported map[string][]string) *lwtAddMetadataMarkExt 
 	return nil
 }
 
-func (ext lwtAddMetadataMarkExt) serialize() map[string]string {
+func (ext *lwtAddMetadataMarkExt) serialize() map[string]string {
 	return map[string]string{
 		lwtAddMetadataMarkKey: fmt.Sprintf("LWT_OPTIMIZATION_META_BIT_MASK=%d", ext.lwtOptMetaBitMask),
 	}
 }
 
-func (ext lwtAddMetadataMarkExt) name() string {
+func (ext *lwtAddMetadataMarkExt) name() string {
 	return lwtAddMetadataMarkKey
 }
 
@@ -157,7 +157,7 @@ func parseCQLProtocolExtensions(supported map[string][]string) []cqlProtocolExte
 
 	lwtExt := newLwtAddMetaMarkExt(supported)
 	if lwtExt != nil {
-		exts = append(exts, *lwtExt)
+		exts = append(exts, lwtExt)
 	}
 
 	return exts

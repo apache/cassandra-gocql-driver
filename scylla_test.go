@@ -205,7 +205,7 @@ func TestScyllaLWTExtParsing(t *testing.T) {
 		// ensure that framer recognizes this extension and adjusts appropriately
 		conn := mockConn(0)
 		conn.cqlProtoExts = []cqlProtocolExtension{
-			lwtAddMetadataMarkExt{
+			&lwtAddMetadataMarkExt{
 				lwtOptMetaBitMask: 1,
 			},
 		}
