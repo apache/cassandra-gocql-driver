@@ -75,15 +75,22 @@ type policyConnPool struct {
 	endpoints []string
 }
 
-func connConfig(cfg *ClusterConfig) (*ConnConfig, error) {
+func connConfig(cfg *ClusterConfig, sniConfig *SNIConfig) (*ConnConfig, error) {
 	var (
 		err       error
 		tlsConfig *tls.Config
 	)
 
 	// TODO(zariel): move tls config setup into session init.
-	if cfg.SslOpts != nil {
-		tlsConfig, err = setupTLSConfig(cfg.SslOpts)
+	cfgSslOpts := cfg.SslOpts
+	if sniConfig != nil {
+		// These will completely replace any incoming ssl opts because the secure connection bundle overrides these.
+		t := sniConfig.SSLOpts
+		t.EnableHostVerification = false // Do not do host verification. The sniServerName will not match certificate. We've already cert. when we got the metadata.
+		cfgSslOpts = &t
+	}
+	if cfgSslOpts != nil {
+		tlsConfig, err = setupTLSConfig(cfgSslOpts)
 		if err != nil {
 			return nil, err
 		}
@@ -101,6 +108,7 @@ func connConfig(cfg *ClusterConfig) (*ConnConfig, error) {
 		Keepalive:       cfg.SocketKeepalive,
 		tlsConfig:       tlsConfig,
 		disableCoalesce: tlsConfig != nil, // write coalescing doesn't work with framing on top of TCP like in TLS.
+		sniConfig:       sniConfig,
 	}, nil
 }
 

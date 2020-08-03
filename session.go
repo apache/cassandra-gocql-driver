@@ -155,8 +155,37 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 	s.connectObserver = cfg.ConnectObserver
 	s.frameObserver = cfg.FrameHeaderObserver
 
+	var sniConfig *SNIConfig
+
+	if cfg.SecureConnectBundleFilename != "" {
+		// TODO Gil:
+		// 1. Unzip the secure bundle.
+		// 2. Put in temp directory (the following MUST BE FILES for this to work.
+		//    a) 'cert' file
+		//    b) 'key' file
+		//    c) 'ca.crt' file
+		// 3. Create a SNIConfig{} object into sniConfig, and set.
+		//    sniConfig.SSLOpts to
+		//      SslOptions{
+		//        CertPath: "cert",
+		//        KeyPath: "key",
+		//        CaPath:" "ca.crt"
+		//        EnableHostVerification: true,
+		//    }
+		// 4. Load the 'config.json' file as json into a map[string]interface{}
+		// 5. Create url: "https://<config.json["host"]:config.json["port"]>/metadata
+		// 6. tlsConfig, err := setupTLSConfig(&sniConfig.SSLOpts)
+		//    if err != nil {
+		//      return nil, err
+		//    }
+		// 7. Call the url and use the tlsConfig when making call. This is required to validate the certificates.
+		// 8. Gather the "data" need the sniProxyHost to be put into sniConfig.SNIProxyAddress (host:port) returned from the metadata.
+		// 9. Gather other data, not sure what yet.
+		//
+	}
+
 	//Check the TLS Config before trying to connect to anything external
-	connCfg, err := connConfig(&s.cfg)
+	connCfg, err := connConfig(&s.cfg, sniConfig)
 	if err != nil {
 		//TODO: Return a typed error
 		return nil, fmt.Errorf("gocql: unable to create session: %v", err)

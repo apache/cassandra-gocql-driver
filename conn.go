@@ -106,8 +106,15 @@ type ConnConfig struct {
 	AuthProvider   func(h *HostInfo) (Authenticator, error)
 	Keepalive      time.Duration
 
-	tlsConfig       *tls.Config
+	tlsConfig       *tls.Config // If using sni (see snihost) then this will be cloned for each new connection since it requires a modification per connection.
 	disableCoalesce bool
+
+	sniConfig *SNIConfig
+}
+
+type SNIConfig struct {
+	SNIProxyAddress string     // Using secure connection bundle SNI. All connections will be to this single host. The server name (node host_id) will be sent in on connection.
+	SSLOpts         SslOptions // SNI specific TLS options.
 }
 
 type ConnErrorHandler interface {
@@ -213,14 +220,28 @@ func (s *Session) dialWithoutObserver(ctx context.Context, host *HostInfo, cfg *
 		dialer = d
 	}
 
-	conn, err := dialer.DialContext(ctx, "tcp", host.HostnameAndPort())
+	var hostname string
+	if cfg.sniConfig == nil {
+		hostname = host.HostnameAndPort()
+	} else {
+		hostname = cfg.sniConfig.SNIProxyAddress
+	}
+
+	conn, err := dialer.DialContext(ctx, "tcp", hostname)
 	if err != nil {
 		return nil, err
 	}
 	if cfg.tlsConfig != nil {
 		// the TLS config is safe to be reused by connections but it must not
 		// be modified after being used.
-		tconn := tls.Client(conn, cfg.tlsConfig)
+		var tlscfg *tls.Config
+		if cfg.sniConfig == nil {
+			tlscfg = cfg.tlsConfig
+		} else {
+			tlscfg = cfg.tlsConfig.Clone()
+			tlscfg.ServerName = host.HostID()
+		}
+		tconn := tls.Client(conn, tlscfg)
 		if err := tconn.Handshake(); err != nil {
 			conn.Close()
 			return nil, err
