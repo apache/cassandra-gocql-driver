@@ -203,10 +203,12 @@ func (s *Session) dialWithoutObserver(ctx context.Context, host *HostInfo, cfg *
 	port := host.port
 
 	// TODO(zariel): remove these
-	if !validIpAddr(ip) {
-		panic(fmt.Sprintf("host missing connect ip address: %v", ip))
-	} else if port == 0 {
-		panic(fmt.Sprintf("host missing port: %v", port))
+	if cfg.sniConfig == nil {
+		if !validIpAddr(ip) {
+			panic(fmt.Sprintf("host missing connect ip address: %v", ip))
+		} else if port == 0 {
+			panic(fmt.Sprintf("host missing port: %v", port))
+		}
 	}
 
 	dialer := cfg.Dialer

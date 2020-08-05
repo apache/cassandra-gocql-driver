@@ -200,7 +200,8 @@ func (cfg *ClusterConfig) CreateSession() (*Session, error) {
 // and port, If no AddressTranslator or if an error occurs, the given address and
 // port will be returned.
 func (cfg *ClusterConfig) translateAddressPort(addr net.IP, port int) (net.IP, int) {
-	if cfg.AddressTranslator == nil || len(addr) == 0 {
+	// Do not do translations on secure connect bundle. It is handled automatically by sni processing.
+	if cfg.SecureConnectBundleFilename != "" || cfg.AddressTranslator == nil || len(addr) == 0 {
 		return addr, port
 	}
 	newAddr, newPort := cfg.AddressTranslator.Translate(addr, port)

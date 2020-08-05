@@ -68,6 +68,8 @@ type Session struct {
 
 	cfg ClusterConfig
 
+	sniConfig *SNIConfig
+
 	ctx    context.Context
 	cancel context.CancelFunc
 
@@ -81,20 +83,28 @@ var queryPool = &sync.Pool{
 	},
 }
 
-func addrsToHosts(addrs []string, defaultPort int) ([]*HostInfo, error) {
+// addresToHosts - only used in session initialization to set up initial contact hosts.
+func addrsToHosts(addrs []string, defaultPort int, sniConfig *SNIConfig) ([]*HostInfo, error) {
 	var hosts []*HostInfo
-	for _, hostport := range addrs {
-		resolvedHosts, err := hostInfo(hostport, defaultPort)
-		if err != nil {
-			// Try other hosts if unable to resolve DNS name
-			if _, ok := err.(*net.DNSError); ok {
-				Logger.Printf("gocql: dns error: %v\n", err)
-				continue
+	if sniConfig == nil {
+		for _, hostport := range addrs {
+			resolvedHosts, err := hostInfo(hostport, defaultPort)
+			if err != nil {
+				// Try other hosts if unable to resolve DNS name
+				if _, ok := err.(*net.DNSError); ok {
+					Logger.Printf("gocql: dns error: %v\n", err)
+					continue
+				}
+				return nil, err
 			}
-			return nil, err
-		}
 
-		hosts = append(hosts, resolvedHosts...)
+			hosts = append(hosts, resolvedHosts...)
+		}
+	} else {
+		// SNI - therefor the addrs are really Cassandrea node host_ids and not resolvable ip addresses.
+		for _, contact := range addrs {
+			hosts = append(hosts, &HostInfo{hostId: contact})
+		}
 	}
 	if len(hosts) == 0 {
 		return nil, errors.New("failed to resolve any of the provided hostnames")
@@ -155,8 +165,6 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 	s.connectObserver = cfg.ConnectObserver
 	s.frameObserver = cfg.FrameHeaderObserver
 
-	var sniConfig *SNIConfig
-
 	ihosts := cfg.Hosts
 	if cfg.SecureConnectBundleFilename != "" {
 		// TODO Gil:
@@ -165,7 +173,7 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 		//    a) 'cert' file
 		//    b) 'key' file
 		//    c) 'ca.crt' file
-		// 3. Create a SNIConfig{} object into sniConfig, and set.
+		// 3. Create a SNIConfig{} object into s.sniConfig, and set.
 		//    sniConfig.SSLOpts to
 		//      SslOptions{
 		//        CertPath: "cert",
@@ -186,7 +194,7 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 	}
 
 	//Check the TLS Config before trying to connect to anything external
-	connCfg, err := connConfig(&s.cfg, sniConfig)
+	connCfg, err := connConfig(&s.cfg, s.sniConfig)
 	if err != nil {
 		//TODO: Return a typed error
 		return nil, fmt.Errorf("gocql: unable to create session: %v", err)
@@ -209,7 +217,7 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 }
 
 func (s *Session) init(ihosts []string) error {
-	hosts, err := addrsToHosts(ihosts, s.cfg.Port)
+	hosts, err := addrsToHosts(ihosts, s.cfg.Port, s.sniConfig)
 	if err != nil {
 		return err
 	}
