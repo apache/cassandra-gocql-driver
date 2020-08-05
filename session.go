@@ -157,6 +157,7 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 
 	var sniConfig *SNIConfig
 
+	ihosts := cfg.Hosts
 	if cfg.SecureConnectBundleFilename != "" {
 		// TODO Gil:
 		// 1. Unzip the secure bundle.
@@ -181,7 +182,7 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 		// 7. Call the url and use the tlsConfig when making call. This is required to validate the certificates.
 		// 8. Gather the "data" need the sniProxyHost to be put into sniConfig.SNIProxyAddress (host:port) returned from the metadata.
 		// 9. Gather other data, not sure what yet.
-		//
+		// 10. set contact_hosts into a string array into ihosts, replacing incoming
 	}
 
 	//Check the TLS Config before trying to connect to anything external
@@ -192,7 +193,7 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 	}
 	s.connCfg = connCfg
 
-	if err := s.init(); err != nil {
+	if err := s.init(ihosts); err != nil {
 		s.Close()
 		if err == ErrNoConnectionsStarted {
 			//This error used to be generated inside NewSession & returned directly
@@ -207,8 +208,8 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 	return s, nil
 }
 
-func (s *Session) init() error {
-	hosts, err := addrsToHosts(s.cfg.Hosts, s.cfg.Port)
+func (s *Session) init(ihosts []string) error {
+	hosts, err := addrsToHosts(ihosts, s.cfg.Port)
 	if err != nil {
 		return err
 	}
