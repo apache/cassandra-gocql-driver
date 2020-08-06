@@ -82,15 +82,11 @@ func connConfig(cfg *ClusterConfig, sniConfig *SNIConfig) (*ConnConfig, error) {
 	)
 
 	// TODO(zariel): move tls config setup into session init.
-	cfgSslOpts := cfg.SslOpts
 	if sniConfig != nil {
 		// These will completely replace any incoming ssl opts because the secure connection bundle overrides these.
-		t := sniConfig.SSLOpts
-		t.EnableHostVerification = false // Do not do host verification. The sniServerName will not match certificate. We've already cert. when we got the metadata.
-		cfgSslOpts = &t
-	}
-	if cfgSslOpts != nil {
-		tlsConfig, err = setupTLSConfig(cfgSslOpts)
+		tlsConfig = sniConfig.tlsConfig
+	} else if cfg.SslOpts != nil {
+		tlsConfig, err = setupTLSConfig(cfg.SslOpts)
 		if err != nil {
 			return nil, err
 		}

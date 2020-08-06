@@ -113,8 +113,8 @@ type ConnConfig struct {
 }
 
 type SNIConfig struct {
-	SNIProxyAddress string     // Using secure connection bundle SNI. All connections will be to this single host. The server name (node host_id) will be sent in on connection.
-	SSLOpts         SslOptions // SNI specific TLS options.
+	SNIProxyAddress string      // Using secure connection bundle SNI. All connections will be to this single host. The server name (node host_id) will be sent in on connection.
+	tlsConfig       *tls.Config // Clone used in connections for tls.
 }
 
 type ConnErrorHandler interface {
@@ -199,11 +199,11 @@ func (s *Session) dial(ctx context.Context, host *HostInfo, connConfig *ConnConf
 //
 // dialWithoutObserver does not notify the connection observer, so you most probably want to call dial() instead.
 func (s *Session) dialWithoutObserver(ctx context.Context, host *HostInfo, cfg *ConnConfig, errorHandler ConnErrorHandler) (*Conn, error) {
-	ip := host.ConnectAddress()
-	port := host.port
 
 	// TODO(zariel): remove these
 	if cfg.sniConfig == nil {
+		ip := host.ConnectAddress()
+		port := host.Port()
 		if !validIpAddr(ip) {
 			panic(fmt.Sprintf("host missing connect ip address: %v", ip))
 		} else if port == 0 {
@@ -1470,6 +1470,7 @@ func (c *Conn) localHostInfo(ctx context.Context) (*HostInfo, error) {
 	port := c.conn.RemoteAddr().(*net.TCPAddr).Port
 
 	// TODO(zariel): avoid doing this here
+	// (rlk) actually need to correctly fill host info since this is a fluffed up host on incoming.
 	host, err := c.session.hostInfoFromMap(row, &HostInfo{connectAddress: c.host.connectAddress, port: port})
 	if err != nil {
 		return nil, err

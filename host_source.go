@@ -464,6 +464,11 @@ func checkSystemSchema(control *controlConn) (bool, error) {
 func (s *Session) hostInfoFromMap(row map[string]interface{}, host *HostInfo) (*HostInfo, error) {
 	const assertErrorMsg = "Assertion failed for %s"
 	var ok bool
+	if s.connCfg.sniConfig != nil {
+		// connectAddress field should never be set on incoming for a host when sni turned on.
+		// instead it will be computed from the row info as rpc, etc. and set correctly here,
+		host.connectAddress = nil
+	}
 
 	// Default to our connected port if the cluster doesn't have port information
 	for key, value := range row {

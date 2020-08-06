@@ -15,7 +15,6 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"log"
 	"net"
 	"net/http"
 	"os"
@@ -156,50 +155,10 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 		return nil, errors.New("Can't use both Authenticator and AuthProvider in cluster config.")
 	}
 
-	// TODO: we should take a context in here at some point
-	ctx, cancel := context.WithCancel(context.TODO())
+	// Needs to be here because we need to fill in hosts and sniconfig before we do anything
+	var sniConfig *SNIConfig
 
-	s := &Session{
-		cons:            cfg.Consistency,
-		prefetch:        0.25,
-		cfg:             cfg,
-		pageSize:        cfg.PageSize,
-		stmtsLRU:        &preparedLRU{lru: lru.New(cfg.MaxPreparedStmts)},
-		connectObserver: cfg.ConnectObserver,
-		ctx:             ctx,
-		cancel:          cancel,
-	}
-
-	s.schemaDescriber = newSchemaDescriber(s)
-
-	s.nodeEvents = newEventDebouncer("NodeEvents", s.handleNodeEvent)
-	s.schemaEvents = newEventDebouncer("SchemaEvents", s.handleSchemaEvent)
-
-	s.routingKeyInfoCache.lru = lru.New(cfg.MaxRoutingKeyInfo)
-
-	s.hostSource = &ringDescriber{session: s}
-
-	if cfg.PoolConfig.HostSelectionPolicy == nil {
-		cfg.PoolConfig.HostSelectionPolicy = RoundRobinHostPolicy()
-	}
-	s.pool = cfg.PoolConfig.buildPool(s)
-
-	s.policy = cfg.PoolConfig.HostSelectionPolicy
-	s.policy.Init(s)
-
-	s.executor = &queryExecutor{
-		pool:   s.pool,
-		policy: cfg.PoolConfig.HostSelectionPolicy,
-	}
-
-	s.queryObserver = cfg.QueryObserver
-	s.batchObserver = cfg.BatchObserver
-	s.connectObserver = cfg.ConnectObserver
-	s.frameObserver = cfg.FrameHeaderObserver
-
-	ihosts := cfg.Hosts
 	if cfg.SecureConnectBundleFilename != "" {
-		// TODO Gil:
 		// 1. Unzip the secure bundle.
 		r, err := zip.OpenReader(cfg.SecureConnectBundleFilename)
 		if err != nil {
@@ -215,9 +174,9 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 		// create tmp directory with secureBundle filename as root to put files into
 		dir, err := ioutil.TempDir("", cfg.SecureConnectBundleFilename)
 		if err != nil {
-			log.Fatal(err)
+			return nil, err
 		}
-		defer os.RemoveAll(dir)
+		os.RemoveAll(dir)
 
 		// add each file from bundle to the directory
 		for _, f := range r.File {
@@ -249,19 +208,12 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 		//        CaPath:" "ca.crt"
 		//        EnableHostVerification: true,
 		//    }
-		var sniConfig = &SNIConfig{
-			SSLOpts: SslOptions{
-				CertPath: path.Join(dir, "cert"),
-				KeyPath:  path.Join(dir, "key"),
-				CaPath:   path.Join(dir, "ca.crts"),
-			},
-		}
 
 		// 4. Load the 'config.json' file as json into a map[string]interface{}
 		// open config.json file
 		file, err := os.Open(path.Join(dir, "config.json")) // For read access.
 		if err != nil {
-			log.Fatal(err)
+			return nil, err
 		}
 		// read the opened jsonFile as a byte array.
 		byteValue, _ := ioutil.ReadAll(file)
@@ -277,20 +229,74 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 		//    if err != nil {
 		//      return nil, err
 		//    }
-		tlsConfig, err := setupTLSConfig(&sniConfig.SSLOpts)
+		tlsConfig, err := setupTLSConfig(&SslOptions{
+			CertPath:               path.Join(dir, "cert"),
+			KeyPath:                path.Join(dir, "key"),
+			CaPath:                 path.Join(dir, "ca.crts"),
+			EnableHostVerification: true,
+		})
 		if err != nil {
 			return nil, err
 		}
 
+		sniConfig = &SNIConfig{
+			tlsConfig: tlsConfig.Clone(),
+		}
+		sniConfig.tlsConfig.InsecureSkipVerify = true // Must use this because server name set by sni will not match certificate. Next stmt will validate certs.
+
 		// 7. Call the url and use the tlsConfig when making call. This is required to validate the certificates.
 		metadata, err := getSecureBundleMetadata(metadataURL, tlsConfig)
+		if err != nil {
+			return nil, err
+		}
 
 		// 8. Gather the "data" need the sniProxyHost to be put into sniConfig.SNIProxyAddress (host:port) returned from the metadata.
 		sniConfig.SNIProxyAddress = metadata.ContactInfo.SNIProxyAddress
-		// 9. Gather other data, not sure what yet.
-		// 10. set contact_hosts into a string array into ihosts, replacing incoming
-		ihosts = metadata.ContactInfo.ContactPoints
+		// 10. set contact_hosts into a string array into hosts, replacing incoming
+		cfg.Hosts = metadata.ContactInfo.ContactPoints
 	}
+
+	// TODO: we should take a context in here at some point
+	ctx, cancel := context.WithCancel(context.TODO())
+
+	s := &Session{
+		cons:            cfg.Consistency,
+		prefetch:        0.25,
+		cfg:             cfg,
+		pageSize:        cfg.PageSize,
+		stmtsLRU:        &preparedLRU{lru: lru.New(cfg.MaxPreparedStmts)},
+		connectObserver: cfg.ConnectObserver,
+		ctx:             ctx,
+		cancel:          cancel,
+		sniConfig:       sniConfig,
+	}
+
+	s.schemaDescriber = newSchemaDescriber(s)
+
+	s.nodeEvents = newEventDebouncer("NodeEvents", s.handleNodeEvent)
+	s.schemaEvents = newEventDebouncer("SchemaEvents", s.handleSchemaEvent)
+
+	s.routingKeyInfoCache.lru = lru.New(cfg.MaxRoutingKeyInfo)
+
+	s.hostSource = &ringDescriber{session: s}
+
+	if cfg.PoolConfig.HostSelectionPolicy == nil {
+		cfg.PoolConfig.HostSelectionPolicy = RoundRobinHostPolicy()
+	}
+	s.pool = cfg.PoolConfig.buildPool(s)
+
+	s.policy = cfg.PoolConfig.HostSelectionPolicy
+	s.policy.Init(s)
+
+	s.executor = &queryExecutor{
+		pool:   s.pool,
+		policy: cfg.PoolConfig.HostSelectionPolicy,
+	}
+
+	s.queryObserver = cfg.QueryObserver
+	s.batchObserver = cfg.BatchObserver
+	s.connectObserver = cfg.ConnectObserver
+	s.frameObserver = cfg.FrameHeaderObserver
 
 	//Check the TLS Config before trying to connect to anything external
 	connCfg, err := connConfig(&s.cfg, s.sniConfig)
@@ -300,7 +306,7 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 	}
 	s.connCfg = connCfg
 
-	if err := s.init(ihosts); err != nil {
+	if err := s.init(); err != nil {
 		s.Close()
 		if err == ErrNoConnectionsStarted {
 			//This error used to be generated inside NewSession & returned directly
@@ -315,8 +321,8 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 	return s, nil
 }
 
-func (s *Session) init(ihosts []string) error {
-	hosts, err := addrsToHosts(ihosts, s.cfg.Port, s.sniConfig)
+func (s *Session) init() error {
+	hosts, err := addrsToHosts(s.cfg.Hosts, s.cfg.Port, s.sniConfig)
 	if err != nil {
 		return err
 	}
