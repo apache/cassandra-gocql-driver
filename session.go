@@ -5,13 +5,23 @@
 package gocql
 
 import (
+	"archive/zip"
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"io/ioutil"
+	"log"
 	"net"
+	"net/http"
+	"os"
+	"path"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -77,6 +87,28 @@ type Session struct {
 	isClosed bool
 }
 
+type secureBundleConfig struct {
+	Host               string `json:"host"`
+	Port               int    `json:"port"`
+	Keyspace           string `json:"keyspace"`
+	KeyStorePassword   string `json:"keyStorePassword"`
+	TrustStorePassword string `json:"trustStorePassword"`
+	PfxCertPassword    string `json:"pfxCertPassword"`
+}
+
+type secureBundleMetadata struct {
+	Version     int         `json:"version"`
+	Region      string      `json:"region"`
+	ContactInfo contactInfo `json:"contact_info"`
+}
+
+type contactInfo struct {
+	Type            string   `json:"type"`
+	LocalDC         string   `json:"localDC"`
+	ContactPoints   []string `json:"contact_points"`
+	SNIProxyAddress string   `json:"sni_proxy_address"`
+}
+
 var queryPool = &sync.Pool{
 	New: func() interface{} {
 		return new(Query)
@@ -114,8 +146,8 @@ func addrsToHosts(addrs []string, defaultPort int, sniConfig *SNIConfig) ([]*Hos
 
 // NewSession wraps an existing Node.
 func NewSession(cfg ClusterConfig) (*Session, error) {
-	// Check that hosts in the ClusterConfig is not empty
-	if len(cfg.Hosts) < 1 {
+	// Check that hosts in the ClusterConfig is not empty. If SecureConnectBudndle hosts are not expected
+	if len(cfg.Hosts) < 1 && cfg.SecureConnectBundleFilename == "" {
 		return nil, ErrNoHosts
 	}
 
@@ -169,11 +201,47 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 	if cfg.SecureConnectBundleFilename != "" {
 		// TODO Gil:
 		// 1. Unzip the secure bundle.
+		r, err := zip.OpenReader(cfg.SecureConnectBundleFilename)
+		if err != nil {
+			return nil, err
+		}
+		defer r.Close()
+
 		// 2. Put in temp directory (the following MUST BE FILES for this to work.
 		//    a) 'cert' file
 		//    b) 'key' file
 		//    c) 'ca.crt' file
-		// 3. Create a SNIConfig{} object into s.sniConfig, and set.
+
+		// create tmp directory with secureBundle filename as root to put files into
+		dir, err := ioutil.TempDir("", cfg.SecureConnectBundleFilename)
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer os.RemoveAll(dir)
+
+		// add each file from bundle to the directory
+		for _, f := range r.File {
+			fpath := filepath.Join(dir, f.Name)
+
+			// Make File
+			if err = os.MkdirAll(filepath.Dir(fpath), os.ModePerm); err != nil {
+				return nil, err
+			}
+
+			outFile, err := os.OpenFile(fpath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, f.Mode())
+			if err != nil {
+				return nil, err
+			}
+
+			rc, err := f.Open()
+			if err != nil {
+				return nil, err
+			}
+
+			_, err = io.Copy(outFile, rc)
+		}
+
+		// 3. Create a SNIConfig{} object into sniConfig, and set.
 		//    sniConfig.SSLOpts to
 		//      SslOptions{
 		//        CertPath: "cert",
@@ -181,16 +249,47 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 		//        CaPath:" "ca.crt"
 		//        EnableHostVerification: true,
 		//    }
+		var sniConfig = &SNIConfig{
+			SSLOpts: SslOptions{
+				CertPath: path.Join(dir, "cert"),
+				KeyPath:  path.Join(dir, "key"),
+				CaPath:   path.Join(dir, "ca.crts"),
+			},
+		}
+
 		// 4. Load the 'config.json' file as json into a map[string]interface{}
+		// open config.json file
+		file, err := os.Open(path.Join(dir, "config.json")) // For read access.
+		if err != nil {
+			log.Fatal(err)
+		}
+		// read the opened jsonFile as a byte array.
+		byteValue, _ := ioutil.ReadAll(file)
+
+		// parse json file
+		config := secureBundleConfig{}
+		_ = json.Unmarshal(byteValue, &config)
+
 		// 5. Create url: "https://<config.json["host"]:config.json["port"]>/metadata
+		metadataURL := fmt.Sprintf("https://%s:%s/metadata", config.Host, strconv.Itoa(config.Port))
+
 		// 6. tlsConfig, err := setupTLSConfig(&sniConfig.SSLOpts)
 		//    if err != nil {
 		//      return nil, err
 		//    }
+		tlsConfig, err := setupTLSConfig(&sniConfig.SSLOpts)
+		if err != nil {
+			return nil, err
+		}
+
 		// 7. Call the url and use the tlsConfig when making call. This is required to validate the certificates.
+		metadata, err := getSecureBundleMetadata(metadataURL, tlsConfig)
+
 		// 8. Gather the "data" need the sniProxyHost to be put into sniConfig.SNIProxyAddress (host:port) returned from the metadata.
+		sniConfig.SNIProxyAddress = metadata.ContactInfo.SNIProxyAddress
 		// 9. Gather other data, not sure what yet.
 		// 10. set contact_hosts into a string array into ihosts, replacing incoming
+		ihosts = metadata.ContactInfo.ContactPoints
 	}
 
 	//Check the TLS Config before trying to connect to anything external
@@ -319,6 +418,31 @@ func (s *Session) init(ihosts []string) error {
 	}
 
 	return nil
+}
+
+func getSecureBundleMetadata(endpoint string, tlsConfig *tls.Config) (*secureBundleMetadata, error) {
+
+	var client = &http.Client{
+		Timeout: 10 * time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig: tlsConfig,
+		},
+	}
+	var metadata secureBundleMetadata
+
+	resp, err := client.Get(endpoint)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode > 299 {
+		// err := utils.NewError(resp.StatusCode, msg)
+		// return nil, err
+	}
+
+	json.NewDecoder(resp.Body).Decode(&metadata)
+
+	return &metadata, nil
 }
 
 // AwaitSchemaAgreement will wait until schema versions across all nodes in the
@@ -473,6 +597,11 @@ func (s *Session) Closed() bool {
 	closed := s.isClosed
 	s.closeMu.RUnlock()
 	return closed
+}
+
+func readCloudConfigFromZip(secureBundle string) error {
+
+	return nil
 }
 
 func (s *Session) executeQuery(qry *Query) (it *Iter) {
