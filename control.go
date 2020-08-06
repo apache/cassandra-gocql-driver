@@ -274,7 +274,8 @@ func (c *controlConn) setupConn(conn *Conn) error {
 
 	// TODO(zariel): do we need to fetch host info everytime
 	// the control conn connects? Surely we have it cached?
-	// (rlk) - not necessarily on the first time for this host.
+	// (rlk) - actually may be needed on the first time for this host since the info may not be filled in yet.
+	// Maybe a test to see if local info filled in?
 	host, err := conn.localHostInfo(context.TODO())
 	if err != nil {
 		return err

@@ -63,9 +63,9 @@ type ClusterConfig struct {
 	MaxRoutingKeyInfo           int                                      // Sets the maximum cache size for query info about statements for each session (default: 1000)
 	PageSize                    int                                      // Default page size to use for created sessions (default: 5000)
 	SerialConsistency           SerialConsistency                        // Sets the consistency for the serial part of queries, values can be either SERIAL or LOCAL_SERIAL (default: unset)
-	SslOpts                     *SslOptions
-	SecureConnectBundleFilename string // Sets the Secure Connect Bundle
-	DefaultTimestamp            bool   // Sends a client side timestamp for all requests which overrides the timestamp at which it arrives at the server. (default: true, only enabled for protocol 3 and above)
+	SslOpts                     *SslOptions                              // SSlOpts to use for this cluster. Ignored if SecureConnectBundleFilename is set.
+	SecureConnectBundleFilename string                                   // Sets the Secure Connect Bundle
+	DefaultTimestamp            bool                                     // Sends a client side timestamp for all requests which overrides the timestamp at which it arrives at the server. (default: true, only enabled for protocol 3 and above)
 	// PoolConfig configures the underlying connection pool, allowing the
 	// configuration of host selection and connection selection policies.
 	PoolConfig PoolConfig
@@ -186,6 +186,13 @@ func NewCluster(hosts ...string) *ClusterConfig {
 		ReconnectionPolicy:     &ConstantReconnectionPolicy{MaxRetries: 3, Interval: 1 * time.Second},
 		WriteCoalesceWaitTime:  200 * time.Microsecond,
 	}
+	return cfg
+}
+
+// Create a Cluster for using Secure Connect Bundle.
+func NewClusterSecureConnectBundle(connectBundleFilename string) *ClusterConfig {
+	cfg := NewCluster()
+	cfg.SecureConnectBundleFilename = connectBundleFilename
 	return cfg
 }
 

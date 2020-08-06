@@ -114,7 +114,6 @@ var queryPool = &sync.Pool{
 	},
 }
 
-// addresToHosts - only used in session initialization to set up initial contact hosts.
 func addrsToHosts(addrs []string, defaultPort int, sniConfig *SNIConfig) ([]*HostInfo, error) {
 	var hosts []*HostInfo
 	if sniConfig == nil {
@@ -176,7 +175,7 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 		if err != nil {
 			return nil, err
 		}
-		os.RemoveAll(dir)
+		defer os.RemoveAll(dir) // the files are only needed until we create the tlsConfig, at that point they have been read in and processed, so not needed any longer and can be deleted at end of method.
 
 		// add each file from bundle to the directory
 		for _, f := range r.File {
@@ -198,6 +197,11 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 			}
 
 			_, err = io.Copy(outFile, rc)
+			outFile.Close()
+			rc.Close()
+			if err != nil {
+				return nil, err
+			}
 		}
 
 		// 3. Create a SNIConfig{} object into sniConfig, and set.
@@ -217,6 +221,7 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 		}
 		// read the opened jsonFile as a byte array.
 		byteValue, _ := ioutil.ReadAll(file)
+		file.Close()
 
 		// parse json file
 		config := secureBundleConfig{}
@@ -603,11 +608,6 @@ func (s *Session) Closed() bool {
 	closed := s.isClosed
 	s.closeMu.RUnlock()
 	return closed
-}
-
-func readCloudConfigFromZip(secureBundle string) error {
-
-	return nil
 }
 
 func (s *Session) executeQuery(qry *Query) (it *Iter) {
