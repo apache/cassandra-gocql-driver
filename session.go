@@ -179,7 +179,7 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 		if err != nil {
 			return nil, err
 		}
-		// defer os.RemoveAll(dir) // the files are only needed until we create the tlsConfig, at that point they have been read in and processed, so not needed any longer and can be deleted at end of method.
+		defer os.RemoveAll(dir) // the files are only needed until we create the tlsConfig, at that point they have been read in and processed, so not needed any longer and can be deleted at end of method.
 
 		// add each file from bundle to the directory
 		for _, f := range r.File {
