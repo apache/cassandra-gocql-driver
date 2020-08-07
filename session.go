@@ -171,11 +171,15 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 		//    c) 'ca.crt' file
 
 		// create tmp directory with secureBundle filename as root to put files into
-		dir, err := ioutil.TempDir("", cfg.SecureConnectBundleFilename)
+		tmp, err := os.Getwd()
+		dir, err := ioutil.TempDir(tmp, cfg.SecureConnectBundleFilename)
 		if err != nil {
 			return nil, err
 		}
-		defer os.RemoveAll(dir) // the files are only needed until we create the tlsConfig, at that point they have been read in and processed, so not needed any longer and can be deleted at end of method.
+		if err != nil {
+			return nil, err
+		}
+		// defer os.RemoveAll(dir) // the files are only needed until we create the tlsConfig, at that point they have been read in and processed, so not needed any longer and can be deleted at end of method.
 
 		// add each file from bundle to the directory
 		for _, f := range r.File {
@@ -237,7 +241,7 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 		tlsConfig, err := setupTLSConfig(&SslOptions{
 			CertPath:               path.Join(dir, "cert"),
 			KeyPath:                path.Join(dir, "key"),
-			CaPath:                 path.Join(dir, "ca.crts"),
+			CaPath:                 path.Join(dir, "ca.crt"),
 			EnableHostVerification: true,
 		})
 		if err != nil {
