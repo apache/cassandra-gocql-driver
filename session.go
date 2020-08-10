@@ -370,6 +370,18 @@ func (s *Session) init() error {
 				}
 			}
 			hosts = append(hosts, filteredHosts...)
+			var newFinalHosts []*HostInfo
+				for _, filteredHost := range filteredHosts {
+					if host.HostID() == filteredHost.HostID() {
+						found = true
+						newFinalHosts = append(newFinalHosts, filteredHost)
+					}
+				}
+				if !found {
+					newFinalHosts = append(newFinalHosts, host)
+				}
+			}
+			hosts = newFinalHosts
 		}
 	}
 
