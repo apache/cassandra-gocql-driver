@@ -369,8 +369,9 @@ func (s *Session) init() error {
 					filteredHosts = append(filteredHosts, host)
 				}
 			}
-			hosts = append(hosts, filteredHosts...)
 			var newFinalHosts []*HostInfo
+			for _, host := range hosts {
+				found := false
 				for _, filteredHost := range filteredHosts {
 					if host.HostID() == filteredHost.HostID() {
 						found = true
