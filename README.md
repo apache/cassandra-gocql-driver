@@ -148,7 +148,7 @@ func main() {
 
 	/* Search for a specific set of records whose 'timeline' column matches
 	 * the value 'me'. The secondary index that we created earlier will be
-	 * used for optimizing the search */
+	 * used for optimizing the search. */
 	if err := session.Query(`SELECT id, text FROM tweet WHERE timeline = ? LIMIT 1`,
 		"me").Consistency(gocql.One).Scan(&id, &text); err != nil {
 		log.Fatal(err)
@@ -159,7 +159,7 @@ func main() {
 	 * Note: Unmarshalling into []byte re-uses the existing slice rather than copying it,
 	 * as a performance optimization: https://github.com/gocql/gocql/pull/1167
 	 * So when iterating, you must reset the value each time. This example demonstrates
-	 * unmarshalling into a struct that contains a []byte field.
+	 * unmarshalling into a struct that contains a []byte field. */
 	Tweet type struct{
 		timeline []byte
 		id gocql.UUID
