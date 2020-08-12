@@ -155,10 +155,22 @@ func main() {
 	}
 	fmt.Println("Tweet:", id, text)
 
-	// list all tweets
-	iter := session.Query(`SELECT id, text FROM tweet WHERE timeline = ?`, "me").Iter()
-	for iter.Scan(&id, &text) {
-		fmt.Println("Tweet:", id, text)
+	/* List all tweets
+	 * Note: Unmarshalling into []byte re-uses the existing slice rather than copying it,
+	 * as a performance optimization: https://github.com/gocql/gocql/pull/1167
+	 * So when iterating, you must reset the value each time. This example demonstrates
+	 * unmarshalling into a struct that contains a []byte field.
+	Tweet type struct{
+		timeline []byte
+		id gocql.UUID
+		text string
+	}
+	var tweets []Tweet
+	var tweet Tweet
+	iter := session.Query(`SELECT timeline, id, text FROM tweet WHERE timeline = ?`, "me").Iter()
+	for iter.Scan(&tweet.timeline, &tweet.id, &tweet.text) {
+		tweets = append(tweets, tweet)
+		tweet.timeline = nil // Reset []byte field to nil to prevent future rows from mutating this row
 	}
 	if err := iter.Close(); err != nil {
 		log.Fatal(err)
