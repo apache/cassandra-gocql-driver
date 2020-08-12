@@ -223,7 +223,8 @@ func (cfg *ClusterConfig) filterHost(host *HostInfo) bool {
 }
 
 var (
-	ErrNoHosts              = errors.New("no hosts provided")
-	ErrNoConnectionsStarted = errors.New("no connections were made when creating the session")
-	ErrHostQueryFailed      = errors.New("unable to populate Hosts")
+	ErrNoHosts                            = errors.New("no hosts provided")
+	ErrNoConnectionsStarted               = errors.New("no connections were made when creating the session")
+	ErrHostQueryFailed                    = errors.New("unable to populate Hosts")
+	ErrDisableInitialHostLookupNotAllowed = errors.New("DisableInitialHostLookup true not allowed with a Secure Connection Bundle")
 )

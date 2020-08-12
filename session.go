@@ -144,6 +144,13 @@ func addrsToHosts(addrs []string, defaultPort int, sniConfig *SNIConfig) ([]*Hos
 
 // NewSession wraps an existing Node.
 func NewSession(cfg ClusterConfig) (*Session, error) {
+
+	// Not able to support DisableInitialHostLookup and secure bundle because the generated hosts are not resolvable
+	// They hosts can only be resolved by getting the host lookup data.
+	if cfg.DisableInitialHostLookup && cfg.SecureConnectBundleFilename != "" {
+		return nil, ErrDisableInitialHostLookupNotAllowed
+	}
+
 	// Check that hosts in the ClusterConfig is not empty. If SecureConnectBudndle hosts are not expected
 	if len(cfg.Hosts) < 1 && cfg.SecureConnectBundleFilename == "" {
 		return nil, ErrNoHosts
