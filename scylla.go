@@ -17,6 +17,8 @@ type scyllaSupported struct {
 	msbIgnore         uint64
 	partitioner       string
 	shardingAlgorithm string
+	shardAwarePort    uint16
+	shardAwarePortSSL uint16
 	lwtFlagMask       int
 }
 
@@ -105,6 +107,8 @@ func parseSupported(supported map[string][]string) scyllaSupported {
 		scyllaPartitioner       = "SCYLLA_PARTITIONER"
 		scyllaShardingAlgorithm = "SCYLLA_SHARDING_ALGORITHM"
 		scyllaShardingIgnoreMSB = "SCYLLA_SHARDING_IGNORE_MSB"
+		scyllaShardAwarePort    = "SCYLLA_SHARD_AWARE_PORT"
+		scyllaShardAwarePortSSL = "SCYLLA_SHARD_AWARE_PORT_SSL"
 	)
 
 	var (
@@ -139,6 +143,24 @@ func parseSupported(supported map[string][]string) scyllaSupported {
 	}
 	if s, ok := supported[scyllaShardingAlgorithm]; ok {
 		si.shardingAlgorithm = s[0]
+	}
+	if s, ok := supported[scyllaShardAwarePort]; ok {
+		if shardAwarePort, err := strconv.ParseUint(s[0], 10, 16); err != nil {
+			if gocqlDebug {
+				Logger.Printf("scylla: failed to parse %s value %v: %s", scyllaShardAwarePort, s, err)
+			}
+		} else {
+			si.shardAwarePort = uint16(shardAwarePort)
+		}
+	}
+	if s, ok := supported[scyllaShardAwarePortSSL]; ok {
+		if shardAwarePortSSL, err := strconv.ParseUint(s[0], 10, 16); err != nil {
+			if gocqlDebug {
+				Logger.Printf("scylla: failed to parse %s value %v: %s", scyllaShardAwarePortSSL, s, err)
+			}
+		} else {
+			si.shardAwarePortSSL = uint16(shardAwarePortSSL)
+		}
 	}
 
 	if si.partitioner != "org.apache.cassandra.dht.Murmur3Partitioner" || si.shardingAlgorithm != "biased-token-round-robin" || si.nrShards == 0 || si.msbIgnore == 0 {
