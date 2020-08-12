@@ -170,12 +170,7 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 		//    b) 'key' file
 		//    c) 'ca.crt' file
 
-		// create tmp directory with secureBundle filename as root to put files into
-		tmp, err := os.Getwd()
-		dir, err := ioutil.TempDir(tmp, cfg.SecureConnectBundleFilename)
-		if err != nil {
-			return nil, err
-		}
+		dir, err := ioutil.TempDir("", "securezip")
 		if err != nil {
 			return nil, err
 		}
