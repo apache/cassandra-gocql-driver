@@ -22,6 +22,12 @@ import (
 	inf "gopkg.in/inf.v0"
 )
 
+type funcQueryObserver func(context.Context, ObservedQuery)
+
+func (f funcQueryObserver) ObserveQuery(ctx context.Context, o ObservedQuery) {
+	f(ctx, o)
+}
+
 func TestEmptyHosts(t *testing.T) {
 	cluster := createCluster()
 	cluster.Hosts = nil
@@ -121,18 +127,6 @@ func TestTracing(t *testing.T) {
 	} else if value != 42 {
 		t.Fatalf("value: expected %d, got %d", 42, value)
 	} else if buf.Len() == 0 {
-		t.Fatal("select: failed to obtain any tracing")
-	}
-
-	// also works from session tracer
-	session.SetTrace(trace)
-	trace.mu.Lock()
-	buf.Reset()
-	trace.mu.Unlock()
-	if err := session.Query(`SELECT id FROM trace WHERE id = ?`, 42).Scan(&value); err != nil {
-		t.Fatal("select:", err)
-	}
-	if buf.Len() == 0 {
 		t.Fatal("select: failed to obtain any tracing")
 	}
 }
@@ -2194,45 +2188,6 @@ func TestGetColumnMetadata(t *testing.T) {
 	}
 }
 
-func TestViewMetadata(t *testing.T) {
-	session := createSession(t)
-	defer session.Close()
-	createViews(t, session)
-
-	views, err := getViewsMetadata(session, "gocql_test")
-	if err != nil {
-		t.Fatalf("failed to query view metadata with err: %v", err)
-	}
-	if views == nil {
-		t.Fatal("failed to query view metadata, nil returned")
-	}
-
-	if len(views) != 1 {
-		t.Fatal("expected one view")
-	}
-
-	textType := TypeText
-	if flagCassVersion.Before(3, 0, 0) {
-		textType = TypeVarchar
-	}
-
-	expectedView := ViewMetadata{
-		Keyspace:   "gocql_test",
-		Name:       "basicview",
-		FieldNames: []string{"birthday", "nationality", "weight", "height"},
-		FieldTypes: []TypeInfo{
-			NativeType{typ: TypeTimestamp},
-			NativeType{typ: textType},
-			NativeType{typ: textType},
-			NativeType{typ: textType},
-		},
-	}
-
-	if !reflect.DeepEqual(views[0], expectedView) {
-		t.Fatalf("view is %+v, but expected %+v", views[0], expectedView)
-	}
-}
-
 func TestMaterializedViewMetadata(t *testing.T) {
 	if flagCassVersion.Before(3, 0, 0) {
 		return
@@ -2472,20 +2427,6 @@ func TestKeyspaceMetadata(t *testing.T) {
 	}
 	if aggregate.StateFunc.Name != "avgstate" {
 		t.Fatalf("expected state function %s, but got %s", "avgstate", aggregate.StateFunc.Name)
-	}
-
-	_, found = keyspaceMetadata.Views["basicview"]
-	if !found {
-		t.Fatal("failed to find the view in metadata")
-	}
-	if flagCassVersion.Major >= 3 {
-		materializedView, found := keyspaceMetadata.MaterializedViews["view_view"]
-		if !found {
-			t.Fatal("failed to find the materialized view in metadata")
-		}
-		if materializedView.BaseTable.Name != "view_table" {
-			t.Fatalf("expected name: %s, materialized view base table name: %s", "view_table", materializedView.BaseTable.Name)
-		}
 	}
 }
 

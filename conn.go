@@ -1217,7 +1217,7 @@ func (c *Conn) AvailableStreams() int {
 
 func (c *Conn) UseKeyspace(keyspace string) error {
 	q := &writeQueryFrame{statement: `USE "` + keyspace + `"`}
-	q.params.consistency = c.session.cons
+	q.params.consistency = LocalOne
 
 	framer, err := c.exec(c.ctx, q, nil)
 	if err != nil {
@@ -1231,13 +1231,12 @@ func (c *Conn) UseKeyspace(keyspace string) error {
 
 	switch x := resp.(type) {
 	case *resultKeyspaceFrame:
+		c.currentKeyspace = x.keyspace
 	case error:
 		return x
 	default:
 		return NewErrProtocol("unknown frame in response to USE: %v", x)
 	}
-
-	c.currentKeyspace = keyspace
 
 	return nil
 }
