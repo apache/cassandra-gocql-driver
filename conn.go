@@ -125,7 +125,7 @@ func (fn connErrorHandlerFn) HandleError(conn *Conn, err error, closed bool) {
 // which may be serving more queries just fine.
 // Default is 0, should not be changed concurrently with queries.
 //
-// depreciated
+// Deprecated.
 var TimeoutLimit int64 = 0
 
 // Conn is a single connection to a Cassandra node. It can be used to execute
