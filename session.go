@@ -27,7 +27,7 @@ import (
 // scenario is to have one global session object to interact with the
 // whole Cassandra cluster.
 //
-// This type extends the Node interface by adding a convinient query builder
+// This type extends the Node interface by adding a convenient query builder
 // and automatically sets a default consistency level on all operations
 // that do not have a consistency level set.
 type Session struct {
