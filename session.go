@@ -796,27 +796,31 @@ func (qm *queryMetrics) attempt(addAttempts int, addLatency time.Duration,
 
 // Query represents a CQL statement that can be executed.
 type Query struct {
-	stmt                  string
-	values                []interface{}
-	cons                  Consistency
-	pageSize              int
-	routingKey            []byte
-	pageState             []byte
-	prefetch              float64
-	trace                 Tracer
-	observer              QueryObserver
-	session               *Session
-	rt                    RetryPolicy
-	spec                  SpeculativeExecutionPolicy
-	binding               func(q *QueryInfo) ([]interface{}, error)
-	serialCons            SerialConsistency
-	defaultTimestamp      bool
+	stmt             string
+	values           []interface{}
+	cons             Consistency
+	pageSize         int
+	routingKey       []byte
+	pageState        []byte
+	prefetch         float64
+	trace            Tracer
+	observer         QueryObserver
+	session          *Session
+	rt               RetryPolicy
+	spec             SpeculativeExecutionPolicy
+	binding          func(q *QueryInfo) ([]interface{}, error)
+	serialCons       SerialConsistency
+	defaultTimestamp bool
+
+	// defaultTimestampValue is the value of default timestamp in microseconds since epoch.
+	// https://github.com/datastax/native-protocol/blob/1acbf1f40d5dfeb2a50de765bc22f12d5241ea1c/src/main/resources/native_protocol_v4.spec#L338-L343
 	defaultTimestampValue int64
-	disableSkipMetadata   bool
-	context               context.Context
-	idempotent            bool
-	customPayload         map[string][]byte
-	metrics               *queryMetrics
+
+	disableSkipMetadata bool
+	context             context.Context
+	idempotent          bool
+	customPayload       map[string][]byte
+	metrics             *queryMetrics
 
 	disableAutoPage bool
 
@@ -946,10 +950,12 @@ func (q *Query) DefaultTimestamp(enable bool) *Query {
 // It works the same way as USING TIMESTAMP in the query itself, but
 // should not break prepared query optimization
 //
+// The value of timestamp is time.Time representing the time instant.
+//
 // Only available on protocol >= 3
-func (q *Query) WithTimestamp(timestamp int64) *Query {
+func (q *Query) WithTimestamp(timestamp time.Time) *Query {
 	q.DefaultTimestamp(true)
-	q.defaultTimestampValue = timestamp
+	q.defaultTimestampValue = timestamp.UnixNano() / 1e3
 	return q
 }
 
@@ -1527,23 +1533,27 @@ func (n *nextIter) fetch() *Iter {
 }
 
 type Batch struct {
-	Type                  BatchType
-	Entries               []BatchEntry
-	Cons                  Consistency
-	routingKey            []byte
-	routingKeyBuffer      []byte
-	CustomPayload         map[string][]byte
-	rt                    RetryPolicy
-	spec                  SpeculativeExecutionPolicy
-	observer              BatchObserver
-	session               *Session
-	serialCons            SerialConsistency
-	defaultTimestamp      bool
+	Type             BatchType
+	Entries          []BatchEntry
+	Cons             Consistency
+	routingKey       []byte
+	routingKeyBuffer []byte
+	CustomPayload    map[string][]byte
+	rt               RetryPolicy
+	spec             SpeculativeExecutionPolicy
+	observer         BatchObserver
+	session          *Session
+	serialCons       SerialConsistency
+	defaultTimestamp bool
+
+	// defaultTimestampValue is the value of default timestamp in microseconds since epoch.
+	// https://github.com/datastax/native-protocol/blob/1acbf1f40d5dfeb2a50de765bc22f12d5241ea1c/src/main/resources/native_protocol_v4.spec#L338-L343
 	defaultTimestampValue int64
-	context               context.Context
-	cancelBatch           func()
-	keyspace              string
-	metrics               *queryMetrics
+
+	context     context.Context
+	cancelBatch func()
+	keyspace    string
+	metrics     *queryMetrics
 }
 
 // NewBatch creates a new batch operation using defaults defined in the cluster
@@ -1703,10 +1713,12 @@ func (b *Batch) DefaultTimestamp(enable bool) *Batch {
 // It works the same way as USING TIMESTAMP in the query itself, but
 // should not break prepared query optimization
 //
+// The value of timestamp is time.Time representing the time instant.
+//
 // Only available on protocol >= 3
-func (b *Batch) WithTimestamp(timestamp int64) *Batch {
+func (b *Batch) WithTimestamp(timestamp time.Time) *Batch {
 	b.DefaultTimestamp(true)
-	b.defaultTimestampValue = timestamp
+	b.defaultTimestampValue = timestamp.UnixNano() / 1e3
 	return b
 }
 

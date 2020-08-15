@@ -41,10 +41,11 @@ func TestBatch_WithTimestamp(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	micros := time.Now().UnixNano()/1e3 - 1000
+	timestamp := time.Now().Add(-1000 * time.Microsecond)
+	micros := timestamp.UnixNano() / 1e3
 
 	b := session.NewBatch(LoggedBatch)
-	b.WithTimestamp(micros)
+	b.WithTimestamp(timestamp)
 	b.Query("INSERT INTO batch_ts (id, val) VALUES (?, ?)", 1, "val")
 	if err := session.ExecuteBatch(b); err != nil {
 		t.Fatal(err)
