@@ -31,12 +31,8 @@ import (
 // and automatically sets a default consistency level on all operations
 // that do not have a consistency level set.
 type Session struct {
-	cons                Consistency
-	pageSize            int
-	prefetch            float64
 	routingKeyInfoCache routingKeyInfoLRU
 	schemaDescriber     *schemaDescriber
-	trace               Tracer
 	queryObserver       QueryObserver
 	batchObserver       BatchObserver
 	connectObserver     ConnectObserver
@@ -52,8 +48,6 @@ type Session struct {
 
 	ring     ring
 	metadata clusterMetadata
-
-	mu sync.RWMutex
 
 	control *controlConn
 
@@ -118,10 +112,7 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 	ctx, cancel := context.WithCancel(context.TODO())
 
 	s := &Session{
-		cons:            cfg.Consistency,
-		prefetch:        0.25,
 		cfg:             cfg,
-		pageSize:        cfg.PageSize,
 		stmtsLRU:        &preparedLRU{lru: lru.New(cfg.MaxPreparedStmts)},
 		connectObserver: cfg.ConnectObserver,
 		ctx:             ctx,
@@ -326,41 +317,6 @@ func (s *Session) reconnectDownedHosts(intv time.Duration) {
 			return
 		}
 	}
-}
-
-// SetConsistency sets the default consistency level for this session. This
-// setting can also be changed on a per-query basis and the default value
-// is Quorum.
-func (s *Session) SetConsistency(cons Consistency) {
-	s.mu.Lock()
-	s.cons = cons
-	s.mu.Unlock()
-}
-
-// SetPageSize sets the default page size for this session. A value <= 0 will
-// disable paging. This setting can also be changed on a per-query basis.
-func (s *Session) SetPageSize(n int) {
-	s.mu.Lock()
-	s.pageSize = n
-	s.mu.Unlock()
-}
-
-// SetPrefetch sets the default threshold for pre-fetching new pages. If
-// there are only p*pageSize rows remaining, the next page will be requested
-// automatically. This value can also be changed on a per-query basis and
-// the default value is 0.25.
-func (s *Session) SetPrefetch(p float64) {
-	s.mu.Lock()
-	s.prefetch = p
-	s.mu.Unlock()
-}
-
-// SetTrace sets the default tracer for this session. This setting can also
-// be changed on a per-query basis.
-func (s *Session) SetTrace(trace Tracer) {
-	s.mu.Lock()
-	s.trace = trace
-	s.mu.Unlock()
 }
 
 // Query generates a new query object for interacting with the database.
@@ -698,7 +654,7 @@ func (s *Session) MapExecuteBatchCAS(batch *Batch, dest map[string]interface{}) 
 type hostMetrics struct {
 	// Attempts is count of how many times this query has been attempted for this host.
 	// An attempt is either a retry or fetching next page of results.
-	Attempts     int
+	Attempts int
 
 	// TotalLatency is the sum of attempt latencies for this host in nanoseconds.
 	TotalLatency int64
@@ -835,12 +791,11 @@ type Query struct {
 func (q *Query) defaultsFromSession() {
 	s := q.session
 
-	s.mu.RLock()
-	q.cons = s.cons
-	q.pageSize = s.pageSize
-	q.trace = s.trace
+	q.cons = s.cfg.Consistency
+	q.pageSize = s.cfg.PageSize
+	q.trace = s.cfg.Tracer
 	q.observer = s.queryObserver
-	q.prefetch = s.prefetch
+	q.prefetch = s.cfg.QueryPrefetch
 	q.rt = s.cfg.RetryPolicy
 	q.serialCons = s.cfg.SerialConsistency
 	q.defaultTimestamp = s.cfg.DefaultTimestamp
@@ -848,7 +803,6 @@ func (q *Query) defaultsFromSession() {
 	q.metrics = &queryMetrics{m: make(map[string]*hostMetrics)}
 
 	q.spec = &NonSpeculativeExecution{}
-	s.mu.RUnlock()
 }
 
 // Statement returns the statement that was used to generate this query.
@@ -876,7 +830,7 @@ func (q *Query) Latency() int64 {
 }
 
 func (q *Query) AddLatency(l int64, host *HostInfo) {
-	q.metrics.attempt(0, time.Duration(l) * time.Nanosecond, host, false)
+	q.metrics.attempt(0, time.Duration(l)*time.Nanosecond, host, false)
 }
 
 // Consistency sets the consistency level for this query. If no consistency
@@ -1558,21 +1512,19 @@ type Batch struct {
 
 // NewBatch creates a new batch operation using defaults defined in the cluster
 func (s *Session) NewBatch(typ BatchType) *Batch {
-	s.mu.RLock()
 	batch := &Batch{
 		Type:             typ,
 		rt:               s.cfg.RetryPolicy,
 		serialCons:       s.cfg.SerialConsistency,
 		observer:         s.batchObserver,
 		session:          s,
-		Cons:             s.cons,
+		Cons:             s.cfg.Consistency,
 		defaultTimestamp: s.cfg.DefaultTimestamp,
 		keyspace:         s.cfg.Keyspace,
 		metrics:          &queryMetrics{m: make(map[string]*hostMetrics)},
 		spec:             &NonSpeculativeExecution{},
 	}
 
-	s.mu.RUnlock()
 	return batch
 }
 
@@ -1602,7 +1554,7 @@ func (b *Batch) Latency() int64 {
 }
 
 func (b *Batch) AddLatency(l int64, host *HostInfo) {
-	b.metrics.attempt(0, time.Duration(l) * time.Nanosecond, host, false)
+	b.metrics.attempt(0, time.Duration(l)*time.Nanosecond, host, false)
 }
 
 // GetConsistency returns the currently configured consistency level for the batch

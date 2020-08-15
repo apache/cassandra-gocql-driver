@@ -149,6 +149,16 @@ type ClusterConfig struct {
 	// If not provided, a default dialer configured with ConnectTimeout will be used.
 	Dialer Dialer
 
+	// QueryPrefetch sets the default threshold for pre-fetching new pages. If
+	// there are only p*pageSize rows remaining, the next page will be requested
+	// automatically. This value can also be changed on a per-query basis and
+	// the default value is 0.25.
+	QueryPrefetch float64
+
+	// Tracer sets the default tracer for the whole session. This setting can also
+	// be changed on a per-query basis.
+	Tracer Tracer
+
 	// internal config for testing
 	disableControlConn bool
 }
@@ -184,6 +194,7 @@ func NewCluster(hosts ...string) *ClusterConfig {
 		ConvictionPolicy:       &SimpleConvictionPolicy{},
 		ReconnectionPolicy:     &ConstantReconnectionPolicy{MaxRetries: 3, Interval: 1 * time.Second},
 		WriteCoalesceWaitTime:  200 * time.Microsecond,
+		QueryPrefetch:          0.25,
 	}
 	return cfg
 }
