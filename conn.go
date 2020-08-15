@@ -44,8 +44,8 @@ func approve(authenticator string) bool {
 	return false
 }
 
-//JoinHostPort is a utility to return a address string that can be used
-//gocql.Conn to form a connection with a host.
+// JoinHostPort is a utility to return an address string that can be used
+// by `gocql.Conn` to form a connection with a host.
 func JoinHostPort(addr string, port int) string {
 	addr = strings.TrimSpace(addr)
 	if _, _, err := net.SplitHostPort(addr); err != nil {
