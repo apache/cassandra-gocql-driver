@@ -16,7 +16,7 @@ jobs:
         ports:
           - 9042:9042
         options: >-
-          --health-cmd nodetool statusgossip
+          --health-cmd "nodetool statusgossip"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
