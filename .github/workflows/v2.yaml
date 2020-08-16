@@ -10,18 +10,21 @@ jobs:
   build:
     name: Build
     runs-on: ubuntu-latest
+    services:
+      cassandra:
+        image: cassandra
     steps:
       - name: Set up Go 1.x
         uses: actions/setup-go@v2
         with:
-          go-version: ^1.14
+          go-version: ^1.15
         id: go
 
       - name: Check out code into the Go module directory
         uses: actions/checkout@v2
 
       - name: Build
-        run: go build -v .
+        run: go build ./...
 
       - name: Test
-        run: go test -v .
+        run: go test -tags=cassandra ./...
