@@ -102,7 +102,8 @@ func createCluster(opts ...func(*ClusterConfig)) *ClusterConfig {
 }
 
 func createKeyspace(tb testing.TB, cluster *ClusterConfig, keyspace string) {
-	// TODO: tb.Helper()
+	tb.Helper()
+
 	c := *cluster
 	c.Keyspace = "system"
 	c.Timeout = 30 * time.Second
@@ -129,6 +130,8 @@ func createKeyspace(tb testing.TB, cluster *ClusterConfig, keyspace string) {
 }
 
 func createSessionFromCluster(cluster *ClusterConfig, tb testing.TB) *Session {
+	tb.Helper()
+
 	// Drop and re-create the keyspace once. Different tests should use their own
 	// individual tables, but can assume that the table does not exist before.
 	initOnce.Do(func() {
@@ -149,6 +152,7 @@ func createSessionFromCluster(cluster *ClusterConfig, tb testing.TB) *Session {
 }
 
 func createSession(tb testing.TB, opts ...func(config *ClusterConfig)) *Session {
+	tb.Helper()
 	cluster := createCluster(opts...)
 	return createSessionFromCluster(cluster, tb)
 }
