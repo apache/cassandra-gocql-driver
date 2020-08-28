@@ -309,10 +309,10 @@ func TestCancel(t *testing.T) {
 	wg.Add(1)
 
 	go func() {
+		defer wg.Done()
 		if err := qry.Exec(); err != context.Canceled {
-			t.Fatalf("expected to get context cancel error: '%v', got '%v'", context.Canceled, err)
+			t.Errorf("expected to get context cancel error: '%v', got '%v'", context.Canceled, err)
 		}
-		wg.Done()
 	}()
 
 	// The query will timeout after about 1 seconds, so cancel it after a short pause
@@ -763,8 +763,6 @@ func tcpConnPair() (s, c net.Conn, err error) {
 }
 
 func TestWriteCoalescing(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 	server, client, err := tcpConnPair()
 	if err != nil {
 		t.Fatal(err)
@@ -797,7 +795,7 @@ func TestWriteCoalescing(t *testing.T) {
 		c:       client,
 		writeCh: make(chan struct{}),
 		cond:    sync.NewCond(&sync.Mutex{}),
-		quit:    ctx.Done(),
+		quit:    make(chan struct{}),
 		running: true,
 	}
 
@@ -854,7 +852,7 @@ func TestWriteCoalescing_WriteAfterClose(t *testing.T) {
 		server.Close()
 		close(done)
 	}()
-	w := newWriteCoalescer(client, 0, 5*time.Millisecond, ctx.Done())
+	w := newWriteCoalescer(ctx, client, 0, 5*time.Millisecond)
 
 	// ensure 1 write works
 	if _, err := w.Write([]byte("one")); err != nil {
