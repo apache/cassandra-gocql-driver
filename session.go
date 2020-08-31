@@ -337,8 +337,8 @@ func (s *Session) SetConsistency(cons Consistency) {
 	s.mu.Unlock()
 }
 
-// GetConsistency gets the default consistency level for this session.
-func (s *Session) GetConsistency() Consistency {
+// getConsistency gets the default consistency level for this session.
+func (s *Session) getConsistency() Consistency {
 	s.mu.RLock()
 	cons := s.cons
 	s.mu.RUnlock()
