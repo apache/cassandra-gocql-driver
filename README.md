@@ -65,6 +65,7 @@ Features
   * Support for UDTs via a custom marshaller or struct tags
 * Support for Cassandra 3.0+ [binary protocol version 4](https://github.com/apache/cassandra/blob/trunk/doc/native_protocol_v4.spec)
 * An API to access the schema metadata of a given keyspace
+* Connection support for secure connect bundle
 
 Performance
 -----------
