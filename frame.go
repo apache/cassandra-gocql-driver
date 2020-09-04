@@ -2113,3 +2113,11 @@ func (f *framer) writeBytesMap(m map[string][]byte) {
 		f.writeBytes(v)
 	}
 }
+
+func (f *framer) writeStringMultiMap(m map[string][]string) {
+	f.writeShort(uint16(len(m)))
+	for k, v := range m {
+		f.writeString(k)
+		f.writeStringList(v)
+	}
+}

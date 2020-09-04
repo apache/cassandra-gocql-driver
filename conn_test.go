@@ -932,6 +932,10 @@ func TestFrameHeaderObserver(t *testing.T) {
 }
 
 func NewTestServerWithAddress(addr string, t testing.TB, protocol uint8, ctx context.Context) *TestServer {
+	return NewTestServerWithAddressAndSupportedFactory(addr, t, protocol, ctx, nil)
+}
+
+func NewTestServerWithAddressAndSupportedFactory(addr string, t testing.TB, protocol uint8, ctx context.Context, supportedFactory testSupportedFactory) *TestServer {
 	laddr, err := net.ResolveTCPAddr("tcp", addr)
 	if err != nil {
 		t.Fatal(err)
@@ -956,6 +960,8 @@ func NewTestServerWithAddress(addr string, t testing.TB, protocol uint8, ctx con
 		headerSize: headerSize,
 		ctx:        ctx,
 		cancel:     cancel,
+
+		supportedFactory: supportedFactory,
 	}
 
 	go srv.closeWatch()
@@ -969,6 +975,10 @@ func NewTestServer(t testing.TB, protocol uint8, ctx context.Context) *TestServe
 }
 
 func NewSSLTestServer(t testing.TB, protocol uint8, ctx context.Context) *TestServer {
+	return NewSSLTestServerWithSupportedFactory(t, protocol, ctx, nil)
+}
+
+func NewSSLTestServerWithSupportedFactory(t testing.TB, protocol uint8, ctx context.Context, supportedFactory testSupportedFactory) *TestServer {
 	pem, err := ioutil.ReadFile("testdata/pki/ca.crt")
 	certPool := x509.NewCertPool()
 	if !certPool.AppendCertsFromPEM(pem) {
@@ -1001,6 +1011,8 @@ func NewSSLTestServer(t testing.TB, protocol uint8, ctx context.Context) *TestSe
 		headerSize: headerSize,
 		ctx:        ctx,
 		cancel:     cancel,
+
+		supportedFactory: supportedFactory,
 	}
 
 	go srv.closeWatch()
@@ -1016,6 +1028,7 @@ type TestServer struct {
 	listen           net.Listener
 	nKillReq         int64
 	compressor       Compressor
+	supportedFactory testSupportedFactory
 
 	protocol   byte
 	headerSize int
@@ -1026,6 +1039,8 @@ type TestServer struct {
 	mu     sync.Mutex
 	closed bool
 }
+
+type testSupportedFactory func(conn net.Conn) map[string][]string
 
 func (srv *TestServer) session() (*Session, error) {
 	return testCluster(protoVersion(srv.protocol), srv.Address).CreateSession()
@@ -1056,7 +1071,12 @@ func (srv *TestServer) serve() {
 			break
 		}
 
-		go func(conn net.Conn) {
+		var exts map[string][]string
+		if srv.supportedFactory != nil {
+			exts = (srv.supportedFactory)(conn)
+		}
+
+		go func(conn net.Conn, exts map[string][]string) {
 			defer conn.Close()
 			for !srv.isClosed() {
 				framer, err := srv.readFrame(conn)
@@ -1070,9 +1090,9 @@ func (srv *TestServer) serve() {
 
 				atomic.AddUint64(&srv.nreq, 1)
 
-				go srv.process(framer)
+				go srv.process(framer, exts)
 			}
-		}(conn)
+		}(conn, exts)
 	}
 }
 
@@ -1108,7 +1128,7 @@ func (srv *TestServer) errorLocked(err interface{}) {
 	srv.t.Error(err)
 }
 
-func (srv *TestServer) process(f *framer) {
+func (srv *TestServer) process(f *framer, exts map[string][]string) {
 	head := f.header
 	if head == nil {
 		srv.errorLocked("process frame with a nil header")
@@ -1128,7 +1148,7 @@ func (srv *TestServer) process(f *framer) {
 		f.writeHeader(0, opReady, head.stream)
 	case opOptions:
 		f.writeHeader(0, opSupported, head.stream)
-		f.writeShort(0)
+		f.writeStringMultiMap(exts)
 	case opQuery:
 		query := f.readLongString()
 		first := query
