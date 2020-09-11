@@ -371,20 +371,27 @@ func (s *Session) init() error {
 					filteredHosts = append(filteredHosts, host)
 				}
 			}
-			var newFinalHosts []*HostInfo
-			for _, host := range hosts {
-				found := false
-				for _, filteredHost := range filteredHosts {
-					if host.HostID() == filteredHost.HostID() {
-						found = true
-						newFinalHosts = append(newFinalHosts, filteredHost)
+			if s.sniConfig == nil {
+				hosts = append(hosts, filteredHosts...)
+			} else {
+				// with secure connection we need to replace the old that match by host id with new host into final host list,
+				// otherwise we would get duplicates. The new host is complete with needed hostinfo.
+				// Filter out original with same hostid and replace with new one. All that weren't matched will remain in list.
+				var newFinalHosts []*HostInfo
+				for _, host := range hosts {
+					found := false
+					for _, filteredHost := range filteredHosts {
+						if host.HostID() == filteredHost.HostID() {
+							found = true
+							newFinalHosts = append(newFinalHosts, filteredHost)
+						}
+					}
+					if !found {
+						newFinalHosts = append(newFinalHosts, host)
 					}
 				}
-				if !found {
-					newFinalHosts = append(newFinalHosts, host)
-				}
+				hosts = newFinalHosts
 			}
-			hosts = newFinalHosts
 		}
 	}
 
