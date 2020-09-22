@@ -198,41 +198,6 @@ func newScyllaConnPicker(conn *Conn) *scyllaConnPicker {
 	}
 }
 
-func (p *scyllaConnPicker) Remove(conn *Conn) {
-	shard := conn.scyllaSupported.shard
-
-	if conn.scyllaSupported.nrShards == 0 {
-		// It is possible for Remove to be called before the connection is added to the pool.
-		// Ignoring these connections here is safe.
-		if gocqlDebug {
-			Logger.Printf("scylla: %s has unknown sharding state, ignoring it", conn.Address())
-		}
-		return
-	}
-	if gocqlDebug {
-		Logger.Printf("scylla: %s remove shard %d connection", conn.Address(), shard)
-	}
-
-	if p.conns[shard] != nil {
-		p.conns[shard] = nil
-		p.nrConns--
-	}
-}
-
-func (p *scyllaConnPicker) Close() {
-	conns := p.conns
-	p.conns = nil
-	for _, conn := range conns {
-		if conn != nil {
-			conn.Close()
-		}
-	}
-}
-
-func (p *scyllaConnPicker) Size() (int, int) {
-	return p.nrConns, p.nrShards - p.nrConns
-}
-
 func (p *scyllaConnPicker) Pick(t token) *Conn {
 	if len(p.conns) == 0 {
 		return nil
@@ -330,4 +295,39 @@ func (p *scyllaConnPicker) closeExcessConns() {
 		c.Close()
 	}
 	p.excessConns = nil
+}
+
+func (p *scyllaConnPicker) Remove(conn *Conn) {
+	shard := conn.scyllaSupported.shard
+
+	if conn.scyllaSupported.nrShards == 0 {
+		// It is possible for Remove to be called before the connection is added to the pool.
+		// Ignoring these connections here is safe.
+		if gocqlDebug {
+			Logger.Printf("scylla: %s has unknown sharding state, ignoring it", conn.Address())
+		}
+		return
+	}
+	if gocqlDebug {
+		Logger.Printf("scylla: %s remove shard %d connection", conn.Address(), shard)
+	}
+
+	if p.conns[shard] != nil {
+		p.conns[shard] = nil
+		p.nrConns--
+	}
+}
+
+func (p *scyllaConnPicker) Size() (int, int) {
+	return p.nrConns, p.nrShards - p.nrConns
+}
+
+func (p *scyllaConnPicker) Close() {
+	conns := p.conns
+	p.conns = nil
+	for _, conn := range conns {
+		if conn != nil {
+			conn.Close()
+		}
+	}
 }
