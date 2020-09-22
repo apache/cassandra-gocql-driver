@@ -244,10 +244,10 @@ func (p *scyllaConnPicker) shardOf(token murmur3Token) int {
 }
 
 func (p *scyllaConnPicker) Put(conn *Conn) {
-	const maxExcessConnsFactor = 10
-
-	nrShards := conn.scyllaSupported.nrShards
-	shard := conn.scyllaSupported.shard
+	var (
+		nrShards = conn.scyllaSupported.nrShards
+		shard    = conn.scyllaSupported.shard
+	)
 
 	if nrShards == 0 {
 		panic(fmt.Sprintf("scylla: %s not a sharded connection", conn.Address()))
@@ -261,40 +261,32 @@ func (p *scyllaConnPicker) Put(conn *Conn) {
 		p.conns = make([]*Conn, nrShards, nrShards)
 		copy(p.conns, conns)
 	}
+
 	if c := p.conns[shard]; c != nil {
 		p.excessConns = append(p.excessConns, conn)
-		if len(p.excessConns) > maxExcessConnsFactor*p.nrShards {
-			if gocqlDebug {
-				Logger.Printf("scylla: excess connections limit reached (%d)", maxExcessConnsFactor*p.nrShards)
-			}
-			p.closeExcessConns()
+		if gocqlDebug {
+			Logger.Printf("scylla: %s put shard %d excess connection total: %d missing: %d excess: %d", conn.Address(), shard, p.nrConns, p.nrShards-p.nrConns, len(p.excessConns))
 		}
-		return
+	} else {
+		p.conns[shard] = conn
+		p.nrConns++
+		if gocqlDebug {
+			Logger.Printf("scylla: %s put shard %d connection total: %d missing: %d", conn.Address(), shard, p.nrConns, p.nrShards-p.nrConns)
+		}
 	}
-	p.conns[shard] = conn
-	p.nrConns++
-	if p.nrConns >= p.nrShards {
-		// We have reached one connection to each shard and
-		// it's time to close the excess connections.
+
+	if p.shouldCloseExcessConns() {
 		p.closeExcessConns()
-	}
-	if gocqlDebug {
-		Logger.Printf("scylla: %s put shard %d connection total: %d missing: %d", conn.Address(), shard, p.nrConns, p.nrShards-p.nrConns)
 	}
 }
 
-// closeExcessConns closes the excess connections and clears
-// the excessConns slice. This function needs to be called
-// in a goroutine safe context, i.e. when the external pool
-// write lock is held or other synchronization is needed.
-func (p *scyllaConnPicker) closeExcessConns() {
-	if gocqlDebug {
-		Logger.Printf("scylla: closing %d excess connections", len(p.excessConns))
+func (p *scyllaConnPicker) shouldCloseExcessConns() bool {
+	const maxExcessConnsFactor = 10
+
+	if p.nrConns >= p.nrShards {
+		return true
 	}
-	for _, c := range p.excessConns {
-		c.Close()
-	}
-	p.excessConns = nil
+	return len(p.excessConns) > maxExcessConnsFactor*p.nrShards
 }
 
 func (p *scyllaConnPicker) Remove(conn *Conn) {
@@ -323,8 +315,43 @@ func (p *scyllaConnPicker) Size() (int, int) {
 }
 
 func (p *scyllaConnPicker) Close() {
+	p.closeConns()
+	p.closeExcessConns()
+}
+
+func (p *scyllaConnPicker) closeConns() {
+	if len(p.conns) == 0 {
+		return
+	}
+
 	conns := p.conns
 	p.conns = nil
+	p.nrConns = 0
+
+	if gocqlDebug {
+		Logger.Printf("scylla: closing %d connections", len(conns))
+	}
+	go closeConns(conns)
+}
+
+func (p *scyllaConnPicker) closeExcessConns() {
+	if len(p.excessConns) == 0 {
+		return
+	}
+
+	conns := p.excessConns
+	p.excessConns = nil
+
+	if gocqlDebug {
+		Logger.Printf("scylla: closing %d excess connections", len(conns))
+	}
+	go closeConns(conns)
+}
+
+// Closing must be done outside of hostConnPool lock. If holding a lock
+// a deadlock can occur when closing one of the connections returns error on close.
+// See scylladb/gocql#53.
+func closeConns(conns []*Conn) {
 	for _, conn := range conns {
 		if conn != nil {
 			conn.Close()
