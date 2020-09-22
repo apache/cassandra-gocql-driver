@@ -257,6 +257,16 @@ func (p *scyllaConnPicker) Pick(t token) *Conn {
 	return p.randomConn()
 }
 
+func (p *scyllaConnPicker) randomConn() *Conn {
+	idx := int(atomic.AddUint64(&p.pos, 1))
+	for i := 0; i < len(p.conns); i++ {
+		if conn := p.conns[(idx+i)%len(p.conns)]; conn != nil {
+			return conn
+		}
+	}
+	return nil
+}
+
 func (p *scyllaConnPicker) shardOf(token murmur3Token) int {
 	shards := uint64(p.nrShards)
 	z := uint64(token+math.MinInt64) << p.msbIgnore
@@ -320,14 +330,4 @@ func (p *scyllaConnPicker) closeExcessConns() {
 		c.Close()
 	}
 	p.excessConns = nil
-}
-
-func (p *scyllaConnPicker) randomConn() *Conn {
-	idx := int(atomic.AddUint64(&p.pos, 1))
-	for i := 0; i < len(p.conns); i++ {
-		if conn := p.conns[(idx+i)%len(p.conns)]; conn != nil {
-			return conn
-		}
-	}
-	return nil
 }
