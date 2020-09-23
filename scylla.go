@@ -325,6 +325,9 @@ func (p *scyllaConnPicker) Close() {
 
 func (p *scyllaConnPicker) closeConns() {
 	if len(p.conns) == 0 {
+		if gocqlDebug {
+			Logger.Printf("scylla: %s no connections to close", p.address)
+		}
 		return
 	}
 
@@ -333,13 +336,16 @@ func (p *scyllaConnPicker) closeConns() {
 	p.nrConns = 0
 
 	if gocqlDebug {
-		Logger.Printf("scylla: closing %d connections", len(conns))
+		Logger.Printf("scylla: %s closing %d connections", p.address, len(conns))
 	}
 	go closeConns(conns)
 }
 
 func (p *scyllaConnPicker) closeExcessConns() {
 	if len(p.excessConns) == 0 {
+		if gocqlDebug {
+			Logger.Printf("scylla: %s no excess connections to close", p.address)
+		}
 		return
 	}
 
@@ -347,7 +353,7 @@ func (p *scyllaConnPicker) closeExcessConns() {
 	p.excessConns = nil
 
 	if gocqlDebug {
-		Logger.Printf("scylla: closing %d excess connections", len(conns))
+		Logger.Printf("scylla: %s closing %d excess connections", p.address, len(conns))
 	}
 	go closeConns(conns)
 }
