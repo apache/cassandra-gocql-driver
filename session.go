@@ -227,17 +227,25 @@ func (s *Session) init() error {
 	}
 
 	hosts = hosts[:0]
+
+	var wg sync.WaitGroup
 	for _, host := range hostMap {
-		host = s.ring.addOrUpdate(host)
+		host := s.ring.addOrUpdate(host)
 		if s.cfg.filterHost(host) {
 			continue
 		}
 
 		host.setState(NodeUp)
-		s.pool.addHost(host)
-
 		hosts = append(hosts, host)
+
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			s.pool.addHost(host)
+		}()
 	}
+
+	wg.Wait()
 
 	type bulkAddHosts interface {
 		AddHosts([]*HostInfo)
