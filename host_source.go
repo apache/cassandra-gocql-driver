@@ -415,13 +415,6 @@ func (h *HostInfo) IsUp() bool {
 	return h != nil && h.State() == NodeUp
 }
 
-func (h *HostInfo) HostnameAndPort() string {
-	if h.hostname == "" {
-		h.hostname = h.ConnectAddress().String()
-	}
-	return net.JoinHostPort(h.hostname, strconv.Itoa(h.port))
-}
-
 func (h *HostInfo) String() string {
 	h.mu.RLock()
 	defer h.mu.RUnlock()

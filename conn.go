@@ -213,7 +213,8 @@ func (s *Session) dialWithoutObserver(ctx context.Context, host *HostInfo, cfg *
 		dialer = d
 	}
 
-	conn, err := dialer.DialContext(ctx, "tcp", host.HostnameAndPort())
+	addr := net.JoinHostPort(ip.String(), strconv.Itoa(port))
+	conn, err := dialer.DialContext(ctx, "tcp", addr)
 	if err != nil {
 		return nil, err
 	}
