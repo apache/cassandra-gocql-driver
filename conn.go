@@ -89,10 +89,14 @@ type SslOptions struct {
 	CertPath string
 	KeyPath  string
 	CaPath   string //optional depending on server config
-	// If you want to verify the hostname and server cert (like a wildcard for cass cluster) then you should turn this on
-	// This option is basically the inverse of InSecureSkipVerify
+
+	// If you want to verify the hostname and server cert (like a wildcard
+	// for a Cassandra cluster) then you should turn this on. This option
+	// is basically the inverse of InSecureSkipVerify. If you enable this
+	// option, make sure you set the HostServerName property too
 	// See InSecureSkipVerify in http://golang.org/pkg/crypto/tls/ for more info
 	EnableHostVerification bool
+	HostServerName         string
 }
 
 type ConnConfig struct {
@@ -220,7 +224,15 @@ func (s *Session) dialWithoutObserver(ctx context.Context, host *HostInfo, cfg *
 	if cfg.tlsConfig != nil {
 		// the TLS config is safe to be reused by connections but it must not
 		// be modified after being used.
-		tconn := tls.Client(conn, cfg.tlsConfig)
+		tlsCfg := cfg.tlsConfig
+		if !tlsCfg.InsecureSkipVerify && len(tlsCfg.ServerName) == 0 {
+			if len(host.hostname) == 0 {
+				return nil, errors.New("gocql: host verification is enabled but HostServerName was not set in sslOpts")
+			}
+			tlsCfg = tlsCfg.Clone()
+			tlsCfg.ServerName = host.hostname
+		}
+		tconn := tls.Client(conn, tlsCfg)
 		if err := tconn.Handshake(); err != nil {
 			conn.Close()
 			return nil, err

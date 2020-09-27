@@ -57,6 +57,7 @@ func setupTLSConfig(sslOpts *SslOptions) (*tls.Config, error) {
 	}
 
 	sslOpts.InsecureSkipVerify = !sslOpts.EnableHostVerification
+	sslOpts.ServerName = sslOpts.HostServerName
 
 	// return clone to avoid race
 	return sslOpts.Config.Clone(), nil
