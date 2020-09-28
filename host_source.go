@@ -109,27 +109,28 @@ func (c cassVersion) nodeUpDelay() time.Duration {
 type HostInfo struct {
 	// TODO(zariel): reduce locking maybe, not all values will change, but to ensure
 	// that we are thread safe use a mutex to access all fields.
-	mu               sync.RWMutex
-	hostname         string
-	peer             net.IP
-	broadcastAddress net.IP
-	listenAddress    net.IP
-	rpcAddress       net.IP
-	preferredIP      net.IP
-	connectAddress   net.IP
-	port             int
-	dataCenter       string
-	rack             string
-	hostId           string
-	workload         string
-	graph            bool
-	dseVersion       string
-	partitioner      string
-	clusterName      string
-	version          cassVersion
-	state            nodeState
-	schemaVersion    string
-	tokens           []string
+	mu                         sync.RWMutex
+	hostname                   string
+	peer                       net.IP
+	broadcastAddress           net.IP
+	listenAddress              net.IP
+	rpcAddress                 net.IP
+	preferredIP                net.IP
+	connectAddress             net.IP
+	untranslatedConnectAddress net.IP
+	port                       int
+	dataCenter                 string
+	rack                       string
+	hostId                     string
+	workload                   string
+	graph                      bool
+	dseVersion                 string
+	partitioner                string
+	clusterName                string
+	version                    cassVersion
+	state                      nodeState
+	schemaVersion              string
+	tokens                     []string
 }
 
 func (h *HostInfo) Equal(host *HostInfo) bool {
@@ -187,6 +188,20 @@ func (h *HostInfo) connectAddressLocked() (net.IP, string) {
 func (h *HostInfo) ConnectAddress() net.IP {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
+
+	if addr, _ := h.connectAddressLocked(); validIpAddr(addr) {
+		return addr
+	}
+	panic(fmt.Sprintf("no valid connect address for host: %v. Is your cluster configured correctly?", h))
+}
+
+func (h *HostInfo) UntranslatedConnectAddress() net.IP {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+
+	if len(h.untranslatedConnectAddress) != 0 {
+		return h.untranslatedConnectAddress
+	}
 
 	if addr, _ := h.connectAddressLocked(); validIpAddr(addr) {
 		return addr
@@ -561,7 +576,8 @@ func (s *Session) hostInfoFromMap(row map[string]interface{}, host *HostInfo) (*
 		// Not sure what the port field will be called until the JIRA issue is complete
 	}
 
-	ip, port := s.cfg.translateAddressPort(host.ConnectAddress(), host.port)
+	host.untranslatedConnectAddress = host.ConnectAddress()
+	ip, port := s.cfg.translateAddressPort(host.untranslatedConnectAddress, host.port)
 	host.connectAddress = ip
 	host.port = port
 
