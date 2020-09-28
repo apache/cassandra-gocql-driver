@@ -3,6 +3,7 @@ package gocql
 import (
 	"fmt"
 	"math"
+	"net"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -197,13 +198,14 @@ func isScyllaConn(conn *Conn) bool {
 // reaching equilibrium faster since the likelihood of hitting the same shard
 // decreases with the number of connections to the shard.
 type scyllaConnPicker struct {
-	address     string
-	conns       []*Conn
-	excessConns []*Conn
-	nrConns     int
-	nrShards    int
-	msbIgnore   uint64
-	pos         uint64
+	address           string
+	shardAwareAddress string
+	conns             []*Conn
+	excessConns       []*Conn
+	nrConns           int
+	nrShards          int
+	msbIgnore         uint64
+	pos               uint64
 }
 
 func newScyllaConnPicker(conn *Conn) *scyllaConnPicker {
@@ -217,10 +219,24 @@ func newScyllaConnPicker(conn *Conn) *scyllaConnPicker {
 		Logger.Printf("scylla: %s new conn picker sharding options %+v", addr, conn.scyllaSupported)
 	}
 
+	var shardAwarePort uint16
+	if conn.session.connCfg.tlsConfig != nil {
+		shardAwarePort = conn.scyllaSupported.shardAwarePortSSL
+	} else {
+		shardAwarePort = conn.scyllaSupported.shardAwarePort
+	}
+
+	var shardAwareAddress string
+	if shardAwarePort != 0 {
+		tIP, tPort := conn.session.cfg.translateAddressPort(conn.host.UntranslatedConnectAddress(), int(shardAwarePort))
+		shardAwareAddress = net.JoinHostPort(tIP.String(), strconv.Itoa(tPort))
+	}
+
 	return &scyllaConnPicker{
-		address:   addr,
-		nrShards:  conn.scyllaSupported.nrShards,
-		msbIgnore: conn.scyllaSupported.msbIgnore,
+		address:           addr,
+		shardAwareAddress: shardAwareAddress,
+		nrShards:          conn.scyllaSupported.nrShards,
+		msbIgnore:         conn.scyllaSupported.msbIgnore,
 	}
 }
 
