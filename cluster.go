@@ -149,6 +149,17 @@ type ClusterConfig struct {
 	// If not provided, a default dialer configured with ConnectTimeout will be used.
 	Dialer Dialer
 
+	// DisableShardAwarePort will prevent the driver from connecting to Scylla's shard-aware port,
+	// even if there are nodes in the cluster that support it.
+	//
+	// It is generally recommended to leave this option turned off because gocql can use
+	// the shard-aware port to make the process of establishing more robust.
+	// However, if you have a cluster with nodes which expose shard-aware port
+	// but the port is unreachable due to network configuration issues, you can use
+	// this option to work around the issue. Set it to true only if you neither can fix
+	// your network nor disable shard-aware port on your nodes.
+	DisableShardAwarePort bool
+
 	// internal config for testing
 	disableControlConn bool
 }

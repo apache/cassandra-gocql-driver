@@ -208,16 +208,17 @@ func isScyllaConn(conn *Conn) bool {
 // it tries to make, the shard that it aims to connect to is chosen
 // in a round-robin fashion.
 type scyllaConnPicker struct {
-	address            string
-	shardAwareAddress  string
-	conns              []*Conn
-	excessConns        []*Conn
-	nrConns            int
-	nrShards           int
-	msbIgnore          uint64
-	pos                uint64
-	dialer             Dialer
-	lastAttemptedShard uint64
+	address                string
+	shardAwareAddress      string
+	conns                  []*Conn
+	excessConns            []*Conn
+	nrConns                int
+	nrShards               int
+	msbIgnore              uint64
+	pos                    uint64
+	dialer                 Dialer
+	lastAttemptedShard     uint64
+	shardAwarePortDisabled bool
 }
 
 func newScyllaConnPicker(conn *Conn) *scyllaConnPicker {
@@ -245,12 +246,13 @@ func newScyllaConnPicker(conn *Conn) *scyllaConnPicker {
 	}
 
 	return &scyllaConnPicker{
-		address:            addr,
-		shardAwareAddress:  shardAwareAddress,
-		nrShards:           conn.scyllaSupported.nrShards,
-		msbIgnore:          conn.scyllaSupported.msbIgnore,
-		dialer:             makeDialerForScyllaConnPicker(conn),
-		lastAttemptedShard: uint64(conn.scyllaSupported.shard),
+		address:                addr,
+		shardAwareAddress:      shardAwareAddress,
+		nrShards:               conn.scyllaSupported.nrShards,
+		msbIgnore:              conn.scyllaSupported.msbIgnore,
+		dialer:                 makeDialerForScyllaConnPicker(conn),
+		lastAttemptedShard:     uint64(conn.scyllaSupported.shard),
+		shardAwarePortDisabled: conn.session.cfg.DisableShardAwarePort,
 	}
 }
 
@@ -437,7 +439,7 @@ func closeConns(conns []*Conn) {
 }
 
 func (p *scyllaConnPicker) DialContext(ctx context.Context, network, addr string) (net.Conn, error) {
-	if p.shardAwareAddress != "" {
+	if !p.shardAwarePortDisabled && p.shardAwareAddress != "" {
 		shardCounter := atomic.AddUint64(&p.lastAttemptedShard, 1)
 		shardID := int(shardCounter) % p.nrShards
 
