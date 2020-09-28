@@ -159,10 +159,12 @@ func TestObserve(t *testing.T) {
 		observedStmt = ""
 	}
 
-	observer := funcQueryObserver(func(ctx context.Context, o ObservedQuery) {
-		observedKeyspace = o.Keyspace
-		observedStmt = o.Statement
-		observedErr = o.Err
+	observer := funcQueryObserver(func(ctx context.Context, o *ObservedQuery) {
+		if o != nil {
+			observedKeyspace = o.Keyspace
+			observedStmt = o.Statement
+			observedErr = o.Err
+		}
 	})
 
 	// select before inserted, will error but the reporting is err=nil as the query is valid
@@ -244,8 +246,10 @@ func TestObserve_Pagination(t *testing.T) {
 		observedRows = -1
 	}
 
-	observer := funcQueryObserver(func(ctx context.Context, o ObservedQuery) {
-		observedRows = o.Rows
+	observer := funcQueryObserver(func(ctx context.Context, o *ObservedQuery) {
+		if o != nil {
+			observedRows = o.Rows
+		}
 	})
 
 	// insert 100 entries, relevant for pagination

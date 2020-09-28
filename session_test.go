@@ -132,7 +132,7 @@ func TestQueryBasicAPI(t *testing.T) {
 		t.Fatalf("expected Query.Trace to be '%v', got '%v'", trace, qry.trace)
 	}
 
-	observer := funcQueryObserver(func(context.Context, ObservedQuery) {})
+	observer := funcQueryObserver(func(context.Context, *ObservedQuery) {})
 	qry.Observer(observer)
 	if qry.observer == nil { // can't compare func to func, checking not nil instead
 		t.Fatal("expected Query.QueryObserver to be set, got nil")
