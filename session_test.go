@@ -91,9 +91,9 @@ func TestSessionAPI(t *testing.T) {
 	}
 }
 
-type funcQueryObserver func(context.Context, ObservedQuery)
+type funcQueryObserver func(context.Context, *ObservedQuery)
 
-func (f funcQueryObserver) ObserveQuery(ctx context.Context, o ObservedQuery) {
+func (f funcQueryObserver) ObserveQuery(ctx context.Context, o *ObservedQuery) {
 	f(ctx, o)
 }
 
