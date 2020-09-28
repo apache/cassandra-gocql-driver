@@ -172,15 +172,23 @@ func (s *Session) connect(ctx context.Context, host *HostInfo, errorHandler Conn
 	return s.dial(ctx, host, s.connCfg, errorHandler)
 }
 
+func (s *Session) connectWithDialer(ctx context.Context, host *HostInfo, errorHandler ConnErrorHandler, dialer Dialer) (*Conn, error) {
+	return s.dialWithDialer(ctx, host, s.connCfg, errorHandler, dialer)
+}
+
 // dial establishes a connection to a Cassandra node and notifies the session's connectObserver.
 func (s *Session) dial(ctx context.Context, host *HostInfo, connConfig *ConnConfig, errorHandler ConnErrorHandler) (*Conn, error) {
+	return s.dialWithDialer(ctx, host, connConfig, errorHandler, connConfig.Dialer)
+}
+
+func (s *Session) dialWithDialer(ctx context.Context, host *HostInfo, connConfig *ConnConfig, errorHandler ConnErrorHandler, dialer Dialer) (*Conn, error) {
 	var obs ObservedConnect
 	if s.connectObserver != nil {
 		obs.Host = host
 		obs.Start = time.Now()
 	}
 
-	conn, err := s.dialWithoutObserver(ctx, host, connConfig, errorHandler)
+	conn, err := s.dialWithoutObserver(ctx, host, connConfig, errorHandler, dialer)
 
 	if s.connectObserver != nil {
 		obs.End = time.Now()
@@ -194,7 +202,7 @@ func (s *Session) dial(ctx context.Context, host *HostInfo, connConfig *ConnConf
 // dialWithoutObserver establishes connection to a Cassandra node.
 //
 // dialWithoutObserver does not notify the connection observer, so you most probably want to call dial() instead.
-func (s *Session) dialWithoutObserver(ctx context.Context, host *HostInfo, cfg *ConnConfig, errorHandler ConnErrorHandler) (*Conn, error) {
+func (s *Session) dialWithoutObserver(ctx context.Context, host *HostInfo, cfg *ConnConfig, errorHandler ConnErrorHandler, dialer Dialer) (*Conn, error) {
 	ip := host.ConnectAddress()
 	port := host.port
 
@@ -205,7 +213,6 @@ func (s *Session) dialWithoutObserver(ctx context.Context, host *HostInfo, cfg *
 		panic(fmt.Sprintf("host missing port: %v", port))
 	}
 
-	dialer := cfg.Dialer
 	if dialer == nil {
 		d := &net.Dialer{
 			Timeout: cfg.ConnectTimeout,

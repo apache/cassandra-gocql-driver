@@ -463,13 +463,18 @@ func (pool *hostConnPool) connectMany(count int) error {
 
 // create a new connection to the host and add it to the pool
 func (pool *hostConnPool) connect() (err error) {
+	dialer, ok := pool.connPicker.(Dialer)
+	if !ok {
+		dialer = pool.session.cfg.Dialer
+	}
+
 	// TODO: provide a more robust connection retry mechanism, we should also
 	// be able to detect hosts that come up by trying to connect to downed ones.
 	// try to connect
 	var conn *Conn
 	reconnectionPolicy := pool.session.cfg.ReconnectionPolicy
 	for i := 0; i < reconnectionPolicy.GetMaxRetries(); i++ {
-		conn, err = pool.session.connect(pool.session.ctx, pool.host, pool)
+		conn, err = pool.session.connectWithDialer(pool.session.ctx, pool.host, pool, dialer)
 		if err == nil {
 			break
 		}
