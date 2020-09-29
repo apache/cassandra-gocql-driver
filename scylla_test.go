@@ -1,6 +1,7 @@
 package gocql
 
 import (
+	"fmt"
 	"math"
 	"runtime"
 	"sync"
@@ -214,4 +215,62 @@ func TestScyllaLWTExtParsing(t *testing.T) {
 			t.Error("expected to have LWT flag to be set after framer init")
 		}
 	})
+}
+
+func TestScyllaPortIterator(t *testing.T) {
+	t.Parallel()
+
+	for _shardCount := 1; _shardCount <= 64; _shardCount++ {
+		shardCount := _shardCount
+		t.Run(fmt.Sprintf("shard count %d", shardCount), func(t *testing.T) {
+			t.Parallel()
+			for shardID := 0; shardID < shardCount; shardID++ {
+				// Count by brute force ports that can be used to connect to requested shard
+				expectedPortCount := 0
+				for i := scyllaPortBasedBalancingMin; i <= scyllaPortBasedBalancingMax; i++ {
+					if i%shardCount == shardID {
+						expectedPortCount++
+					}
+				}
+
+				// Enumerate all ports using the port iterator and assert various things
+				iterator := newScyllaPortIterator(shardID, shardCount)
+				actualPortCount := 0
+				previousPort := 0
+
+				for {
+					portU16, ok := iterator.nextPort()
+					if !ok {
+						break
+					}
+
+					port := int(portU16)
+
+					if port < scyllaPortBasedBalancingMin || port > scyllaPortBasedBalancingMax {
+						t.Errorf("expected port %d generated from iterator to be in range [%d..%d]",
+							port, scyllaPortBasedBalancingMin, scyllaPortBasedBalancingMax)
+					}
+
+					if port <= previousPort {
+						t.Errorf("expected port %d generated from iterator to be larger than the previous generated port %d",
+							port, previousPort)
+					}
+
+					actualShardOfPort := scyllaShardForSourcePort(portU16, shardCount)
+					if actualShardOfPort != shardID {
+						t.Errorf("expected port %d returned from iterator to belong to shard %d, but belongs to %d",
+							port, shardID, actualShardOfPort)
+					}
+
+					previousPort = port
+					actualPortCount++
+				}
+
+				if expectedPortCount != actualPortCount {
+					t.Errorf("expected port iterator to generate %d ports, but got %d",
+						expectedPortCount, actualPortCount)
+				}
+			}
+		})
+	}
 }

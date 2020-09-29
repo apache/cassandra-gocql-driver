@@ -406,3 +406,49 @@ func closeConns(conns []*Conn) {
 		}
 	}
 }
+
+type scyllaPortIterator struct {
+	currentPort int
+	shardCount  int
+}
+
+const (
+	scyllaPortBasedBalancingMin = 0x8000
+	scyllaPortBasedBalancingMax = 0xFFFF
+)
+
+func newScyllaPortIterator(shardID, shardCount int) *scyllaPortIterator {
+	if shardCount == 0 {
+		panic("shardCount cannot be 0")
+	}
+
+	// Find the smallest port p such that p >= min and p % shardCount == shardID
+	port := scyllaPortBasedBalancingMin - scyllaShardForSourcePort(scyllaPortBasedBalancingMin, shardCount) + shardID
+	if port < scyllaPortBasedBalancingMin {
+		port += shardCount
+	}
+
+	return &scyllaPortIterator{
+		currentPort: port,
+		shardCount:  shardCount,
+	}
+}
+
+func (spi *scyllaPortIterator) nextPort() (uint16, bool) {
+	if spi == nil {
+		return 0, false
+	}
+
+	p := spi.currentPort
+
+	if p > scyllaPortBasedBalancingMax {
+		return 0, false
+	}
+
+	spi.currentPort += spi.shardCount
+	return uint16(p), true
+}
+
+func scyllaShardForSourcePort(sourcePort uint16, shardCount int) int {
+	return int(sourcePort) % shardCount
+}
