@@ -326,13 +326,11 @@ type testQueryObserver struct {
 }
 
 func (o *testQueryObserver) ObserveQuery(ctx context.Context, q *ObservedQuery) {
-	if q !=  nil {
-		host := q.Host.ConnectAddress().String()
-		o.metrics[host] = q.Metrics
-		if o.verbose {
-			Logger.Printf("Observed query %q. Returned %v rows, took %v on host %q with %v attempts and total latency %v. Error: %q\n",
-				q.Statement, q.Rows, q.End.Sub(q.Start), host, q.Metrics.Attempts, q.Metrics.TotalLatency, q.Err)
-		}
+	host := q.Host.ConnectAddress().String()
+	o.metrics[host] = q.Metrics
+	if o.verbose {
+		Logger.Printf("Observed query %q. Returned %v rows, took %v on host %q with %v attempts and total latency %v. Error: %q\n",
+			q.Statement, q.Rows, q.End.Sub(q.Start), host, q.Metrics.Attempts, q.Metrics.TotalLatency, q.Err)
 	}
 }
 
