@@ -160,11 +160,9 @@ func TestObserve(t *testing.T) {
 	}
 
 	observer := funcQueryObserver(func(ctx context.Context, o *ObservedQuery) {
-		if o != nil {
-			observedKeyspace = o.Keyspace
-			observedStmt = o.Statement
-			observedErr = o.Err
-		}
+		observedKeyspace = o.Keyspace
+		observedStmt = o.Statement
+		observedErr = o.Err
 	})
 
 	// select before inserted, will error but the reporting is err=nil as the query is valid
@@ -1849,9 +1847,9 @@ func TestBatchStats(t *testing.T) {
 	}
 }
 
-type funcBatchObserver func(context.Context, ObservedBatch)
+type funcBatchObserver func(context.Context, *ObservedBatch)
 
-func (f funcBatchObserver) ObserveBatch(ctx context.Context, o ObservedBatch) {
+func (f funcBatchObserver) ObserveBatch(ctx context.Context, o *ObservedBatch) {
 	f(ctx, o)
 }
 
@@ -1876,7 +1874,7 @@ func TestBatchObserve(t *testing.T) {
 	var observedBatch *observation
 
 	batch := session.NewBatch(LoggedBatch)
-	batch.Observer(funcBatchObserver(func(ctx context.Context, o ObservedBatch) {
+	batch.Observer(funcBatchObserver(func(ctx context.Context, o *ObservedBatch) {
 		if observedBatch != nil {
 			t.Fatal("batch observe called more than once")
 		}

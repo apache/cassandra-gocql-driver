@@ -1752,7 +1752,7 @@ func (b *Batch) attempt(keyspace string, end, start time.Time, iter *Iter, host 
 		statements[i] = entry.Stmt
 	}
 
-	b.observer.ObserveBatch(b.Context(), ObservedBatch{
+	b.observer.ObserveBatch(b.Context(), &ObservedBatch{
 		Keyspace:   keyspace,
 		Statements: statements,
 		Start:      start,
@@ -2022,7 +2022,7 @@ type BatchObserver interface {
 	// It doesn't get called if there is no query because the session is closed or there are no connections available.
 	// The error reported only shows query errors, i.e. if a SELECT is valid but finds no matches it will be nil.
 	// Unlike QueryObserver.ObserveQuery it does no reporting on rows read.
-	ObserveBatch(context.Context, ObservedBatch)
+	ObserveBatch(context.Context, *ObservedBatch)
 }
 
 type ObservedConnect struct {
