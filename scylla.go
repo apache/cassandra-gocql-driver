@@ -1,12 +1,16 @@
 package gocql
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"math"
 	"net"
+	"os"
 	"strconv"
 	"strings"
 	"sync/atomic"
+	"syscall"
 )
 
 // scyllaSupported represents Scylla connection options as sent in SUPPORTED
@@ -197,15 +201,23 @@ func isScyllaConn(conn *Conn) bool {
 // connections to already opened shards. Keeping excess connections open helps
 // reaching equilibrium faster since the likelihood of hitting the same shard
 // decreases with the number of connections to the shard.
+//
+// scyllaConnPicker keeps track of the details about the shard-aware port.
+// When used as a Dialer, it connects to the shard-aware port instead of the
+// regular port (if the node supports it). For each subsequent connection
+// it tries to make, the shard that it aims to connect to is chosen
+// in a round-robin fashion.
 type scyllaConnPicker struct {
-	address           string
-	shardAwareAddress string
-	conns             []*Conn
-	excessConns       []*Conn
-	nrConns           int
-	nrShards          int
-	msbIgnore         uint64
-	pos               uint64
+	address            string
+	shardAwareAddress  string
+	conns              []*Conn
+	excessConns        []*Conn
+	nrConns            int
+	nrShards           int
+	msbIgnore          uint64
+	pos                uint64
+	dialer             Dialer
+	lastAttemptedShard uint64
 }
 
 func newScyllaConnPicker(conn *Conn) *scyllaConnPicker {
@@ -233,11 +245,28 @@ func newScyllaConnPicker(conn *Conn) *scyllaConnPicker {
 	}
 
 	return &scyllaConnPicker{
-		address:           addr,
-		shardAwareAddress: shardAwareAddress,
-		nrShards:          conn.scyllaSupported.nrShards,
-		msbIgnore:         conn.scyllaSupported.msbIgnore,
+		address:            addr,
+		shardAwareAddress:  shardAwareAddress,
+		nrShards:           conn.scyllaSupported.nrShards,
+		msbIgnore:          conn.scyllaSupported.msbIgnore,
+		dialer:             makeDialerForScyllaConnPicker(conn),
+		lastAttemptedShard: uint64(conn.scyllaSupported.shard),
 	}
+}
+
+func makeDialerForScyllaConnPicker(conn *Conn) Dialer {
+	cfg := conn.session.connCfg
+	dialer := cfg.Dialer
+	if dialer == nil {
+		d := &ScyllaShardAwareDialer{}
+		d.Timeout = cfg.ConnectTimeout
+		if cfg.Keepalive > 0 {
+			d.KeepAlive = cfg.Keepalive
+		}
+		dialer = d
+	}
+
+	return dialer
 }
 
 func (p *scyllaConnPicker) Pick(t token) *Conn {
@@ -407,6 +436,70 @@ func closeConns(conns []*Conn) {
 	}
 }
 
+func (p *scyllaConnPicker) DialContext(ctx context.Context, network, addr string) (net.Conn, error) {
+	if p.shardAwareAddress != "" {
+		shardCounter := atomic.AddUint64(&p.lastAttemptedShard, 1)
+		shardID := int(shardCounter) % p.nrShards
+
+		iter := newScyllaPortIterator(shardID, p.nrShards)
+
+		for {
+			port, ok := iter.nextPort()
+			if !ok {
+				return nil, errors.New("could not allocate port")
+			}
+
+			ctxWithPort := context.WithValue(ctx, scyllaSourcePortCtx{}, port)
+			conn, err := p.dialer.DialContext(ctxWithPort, network, p.shardAwareAddress)
+
+			if isLocalAddrInUseErr(err) {
+				// This indicates that the source port is already in use
+				// We can immediately retry with another source port for this shard
+				continue
+			}
+			return conn, err
+		}
+	}
+
+	return p.dialer.DialContext(ctx, network, addr)
+}
+
+func isLocalAddrInUseErr(err error) bool {
+	if err != nil {
+		if opErr, ok := err.(*net.OpError); ok {
+			if sysErr, ok := opErr.Err.(*os.SyscallError); ok {
+				return sysErr.Err == syscall.EADDRINUSE
+			}
+		}
+	}
+	return false
+}
+
+// ScyllaShardAwareDialer wraps a net.Dialer, but uses a source port specified by gocql when connecting.
+//
+// Unlike in the case standard native transport ports, gocql can choose which shard will handle
+// a new connection by connecting from a specific source port. If you are using your own net.Dialer
+// in ClusterConfig, you can use ScyllaShardAwareDialer to "upgrade" it so that it connects
+// from the source port chosen by gocql.
+//
+// Please note that ScyllaShardAwareDialer overwrites the LocalAddr field in order to choose
+// the right source port for connection.
+type ScyllaShardAwareDialer struct {
+	net.Dialer
+}
+
+func (d *ScyllaShardAwareDialer) DialContext(ctx context.Context, network, addr string) (net.Conn, error) {
+	sourcePort := ScyllaGetSourcePort(ctx)
+	localAddr, err := net.ResolveTCPAddr(network, fmt.Sprintf(":%d", sourcePort))
+	if err != nil {
+		return nil, err
+	}
+	var dialerWithLocalAddr net.Dialer = d.Dialer
+	dialerWithLocalAddr.LocalAddr = localAddr
+
+	return dialerWithLocalAddr.DialContext(ctx, network, addr)
+}
+
 type scyllaPortIterator struct {
 	currentPort int
 	shardCount  int
@@ -451,4 +544,22 @@ func (spi *scyllaPortIterator) nextPort() (uint16, bool) {
 
 func scyllaShardForSourcePort(sourcePort uint16, shardCount int) int {
 	return int(sourcePort) % shardCount
+}
+
+type scyllaSourcePortCtx struct{}
+
+// ScyllaGetSourcePort returns the source port that should be used when connecting to a node.
+//
+// Unlike in the case standard native transport ports, gocql can choose which shard will handle
+// a new connection at the shard-aware port by connecting from a specific source port. Therefore,
+// if you are using a custom Dialer and your nodes expose shard-aware ports, your dialer should
+// use the source port specified by gocql.
+//
+// If this function returns 0, then your dialer can use any source port.
+//
+// If you aren't using a custom dialer, gocql will use a default one which uses appropriate source port.
+// If you are using net.Dialer, consider wrapping it in a gocql.ScyllaShardAwareDialer.
+func ScyllaGetSourcePort(ctx context.Context) uint16 {
+	sourcePort, _ := ctx.Value(scyllaSourcePortCtx{}).(uint16)
+	return sourcePort
 }
