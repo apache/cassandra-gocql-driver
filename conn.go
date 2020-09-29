@@ -992,7 +992,7 @@ type inflightPrepare struct {
 }
 
 func (c *Conn) prepareStatement(ctx context.Context, stmt string, tracer Tracer) (*preparedStatment, error) {
-	stmtCacheKey := c.session.stmtsLRU.keyFor(c.addr, c.currentKeyspace, stmt)
+	stmtCacheKey := c.session.stmtsLRU.keyFor(c.host.HostnameAndPort(), c.currentKeyspace, stmt)
 	flight, ok := c.session.stmtsLRU.execIfMissing(stmtCacheKey, func(lru *lru.Cache) *inflightPrepare {
 		flight := &inflightPrepare{
 			done: make(chan struct{}),
@@ -1226,7 +1226,7 @@ func (c *Conn) executeQuery(ctx context.Context, qry *Query) *Iter {
 		// is not consistent with regards to its schema.
 		return iter
 	case *RequestErrUnprepared:
-		stmtCacheKey := c.session.stmtsLRU.keyFor(c.addr, c.currentKeyspace, qry.stmt)
+		stmtCacheKey := c.session.stmtsLRU.keyFor(c.host.HostnameAndPort(), c.currentKeyspace, qry.stmt)
 		c.session.stmtsLRU.evictPreparedID(stmtCacheKey, x.StatementId)
 		return c.executeQuery(ctx, qry)
 	case error:
@@ -1377,7 +1377,7 @@ func (c *Conn) executeBatch(ctx context.Context, batch *Batch) *Iter {
 	case *RequestErrUnprepared:
 		stmt, found := stmts[string(x.StatementId)]
 		if found {
-			key := c.session.stmtsLRU.keyFor(c.addr, c.currentKeyspace, stmt)
+			key := c.session.stmtsLRU.keyFor(c.host.HostnameAndPort(), c.currentKeyspace, stmt)
 			c.session.stmtsLRU.evictPreparedID(key, x.StatementId)
 		}
 		return c.executeBatch(ctx, batch)
