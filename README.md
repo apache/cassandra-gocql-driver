@@ -72,6 +72,29 @@ if localDC != "" {
 }
 ```
 
+### Shard-aware port
+
+This version of gocql supports a more robust method of establishing connection for each shard by using _shard aware port_ for native transport. It greatly reduces time and the number of connections that need to be opened in some specific cases, e.g. when many clients connect at once, or when there are other non-shard-aware clients connected to the same node.
+
+For this feature to work correctly, the shard-aware port on the nodes that expose it should be reachable from the client. If it's not, gocql will establish only one connection for each such host and will get stuck trying to establish connection for each remaining shard through the shard-aware port. If you can neither fix your network nor disable shard-aware port on your cluster, you can use `ClusterConfig.DisableShardAwarePort` to disable it.
+
+If you are using a custom Dialer and if your nodes expose the shard-aware port, it is highly recommended to update it so that it uses a specific source port when connecting.
+
+- If you are using a custom `net.Dialer`, you can make your dialer honor the source port by wrapping it in a `gocql.ScyllaShardAwareDialer`:
+  ```go
+  oldDialer := net.Dialer{...}
+  clusterConfig.Dialer := &gocql.ScyllaShardAwareDialer{oldDialer}
+  ```
+- If you are using a custom type implementing `gocql.Dialer`, you can get the source port by using the `gocql.ScyllaGetSourcePort` function:
+  ```go
+  func (d *myDialer) DialContext(ctx context.Context, network, addr string) (net.Conn, error) {
+	  sourcePort := gocql.ScyllaGetSourcePort(ctx)
+	  // ... rest of the dialer ...
+  }
+  ```
+
+
+
 ---
 
 Package gocql implements a fast and robust Cassandra client for the
