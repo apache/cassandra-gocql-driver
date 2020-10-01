@@ -325,7 +325,7 @@ type testQueryObserver struct {
 	verbose bool
 }
 
-func (o *testQueryObserver) ObserveQuery(ctx context.Context, q ObservedQuery) {
+func (o *testQueryObserver) ObserveQuery(ctx context.Context, q *ObservedQuery) {
 	host := q.Host.ConnectAddress().String()
 	o.metrics[host] = q.Metrics
 	if o.verbose {

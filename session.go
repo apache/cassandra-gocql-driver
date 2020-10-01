@@ -999,7 +999,7 @@ func (q *Query) attempt(keyspace string, end, start time.Time, iter *Iter, host 
 	attempt, metricsForHost := q.metrics.attempt(1, latency, host, q.observer != nil)
 
 	if q.observer != nil {
-		q.observer.ObserveQuery(q.Context(), ObservedQuery{
+		q.observer.ObserveQuery(q.Context(), &ObservedQuery{
 			Keyspace:  keyspace,
 			Statement: q.stmt,
 			Start:     start,
@@ -1752,7 +1752,7 @@ func (b *Batch) attempt(keyspace string, end, start time.Time, iter *Iter, host 
 		statements[i] = entry.Stmt
 	}
 
-	b.observer.ObserveBatch(b.Context(), ObservedBatch{
+	b.observer.ObserveBatch(b.Context(), &ObservedBatch{
 		Keyspace:   keyspace,
 		Statements: statements,
 		Start:      start,
@@ -1989,7 +1989,7 @@ type QueryObserver interface {
 	// ObserveQuery gets called on every query to cassandra, including all queries in an iterator when paging is enabled.
 	// It doesn't get called if there is no query because the session is closed or there are no connections available.
 	// The error reported only shows query errors, i.e. if a SELECT is valid but finds no matches it will be nil.
-	ObserveQuery(context.Context, ObservedQuery)
+	ObserveQuery(context.Context, *ObservedQuery)
 }
 
 type ObservedBatch struct {
@@ -2022,7 +2022,7 @@ type BatchObserver interface {
 	// It doesn't get called if there is no query because the session is closed or there are no connections available.
 	// The error reported only shows query errors, i.e. if a SELECT is valid but finds no matches it will be nil.
 	// Unlike QueryObserver.ObserveQuery it does no reporting on rows read.
-	ObserveBatch(context.Context, ObservedBatch)
+	ObserveBatch(context.Context, *ObservedBatch)
 }
 
 type ObservedConnect struct {

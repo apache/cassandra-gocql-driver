@@ -159,7 +159,7 @@ func TestObserve(t *testing.T) {
 		observedStmt = ""
 	}
 
-	observer := funcQueryObserver(func(ctx context.Context, o ObservedQuery) {
+	observer := funcQueryObserver(func(ctx context.Context, o *ObservedQuery) {
 		observedKeyspace = o.Keyspace
 		observedStmt = o.Statement
 		observedErr = o.Err
@@ -244,8 +244,10 @@ func TestObserve_Pagination(t *testing.T) {
 		observedRows = -1
 	}
 
-	observer := funcQueryObserver(func(ctx context.Context, o ObservedQuery) {
-		observedRows = o.Rows
+	observer := funcQueryObserver(func(ctx context.Context, o *ObservedQuery) {
+		if o != nil {
+			observedRows = o.Rows
+		}
 	})
 
 	// insert 100 entries, relevant for pagination
@@ -1845,9 +1847,9 @@ func TestBatchStats(t *testing.T) {
 	}
 }
 
-type funcBatchObserver func(context.Context, ObservedBatch)
+type funcBatchObserver func(context.Context, *ObservedBatch)
 
-func (f funcBatchObserver) ObserveBatch(ctx context.Context, o ObservedBatch) {
+func (f funcBatchObserver) ObserveBatch(ctx context.Context, o *ObservedBatch) {
 	f(ctx, o)
 }
 
@@ -1872,7 +1874,7 @@ func TestBatchObserve(t *testing.T) {
 	var observedBatch *observation
 
 	batch := session.NewBatch(LoggedBatch)
-	batch.Observer(funcBatchObserver(func(ctx context.Context, o ObservedBatch) {
+	batch.Observer(funcBatchObserver(func(ctx context.Context, o *ObservedBatch) {
 		if observedBatch != nil {
 			t.Fatal("batch observe called more than once")
 		}
