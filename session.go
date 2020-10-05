@@ -1748,18 +1748,18 @@ func (b *Batch) attempt(keyspace string, end, start time.Time, iter *Iter, host 
 		return
 	}
 
-	entries := make(map[string][]interface{}, len(b.Entries))
+	values := make([][]interface{}, len(b.Entries))
 	statements := make([]string, len(b.Entries))
 
 	for i, entry := range b.Entries {
 		statements[i] = entry.Stmt
-		entries[entry.Stmt] = entry.Args
+		values[i] = entry.Args
 	}
 
 	b.observer.ObserveBatch(b.Context(), ObservedBatch{
 		Keyspace:   keyspace,
 		Statements: statements,
-		Entries:    entries,
+		Values:     values,
 		Start:      start,
 		End:        end,
 		// Rows not used in batch observations // TODO - might be able to support it when using BatchCAS
@@ -2001,7 +2001,7 @@ type QueryObserver interface {
 type ObservedBatch struct {
 	Keyspace   string
 	Statements []string
-	Entries    map[string][]interface{}
+	Values     [][]interface{}
 
 	Start time.Time // time immediately before the batch query was called
 	End   time.Time // time immediately after the batch query returned

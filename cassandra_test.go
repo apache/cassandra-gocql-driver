@@ -1867,7 +1867,7 @@ func TestBatchObserve(t *testing.T) {
 		observedErr      error
 		observedKeyspace string
 		observedStmts    []string
-		observedEntries  map[string][]interface{}
+		observedValues   [][]interface{}
 	}
 
 	var observedBatch *observation
@@ -1882,7 +1882,7 @@ func TestBatchObserve(t *testing.T) {
 			observedKeyspace: o.Keyspace,
 			observedStmts:    o.Statements,
 			observedErr:      o.Err,
-			observedEntries:  o.Entries,
+			observedValues:   o.Values,
 		}
 	}))
 	for i := 0; i < 100; i++ {
@@ -1909,8 +1909,8 @@ func TestBatchObserve(t *testing.T) {
 		if stmt != fmt.Sprintf(`INSERT INTO batch_observe_table (id,other) VALUES (?,%d)`, i) {
 			t.Fatal("unexpected query", stmt)
 		}
-		if observedBatch.observedEntries[stmt] != i {
-			t.Fatal("expecting bound value '%v', got %q", i, observedBatch.observedEntries[stmt])
+		if observedBatch.observedValues[i] != []interface{}{i} {
+			t.Fatal("expecting bound value '%v', got %q", []interface{}{i}, observedBatch.observedEntries[i])
 		}
 	}
 }
