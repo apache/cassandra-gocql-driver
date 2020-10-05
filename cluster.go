@@ -123,6 +123,11 @@ type ClusterConfig struct {
 	// Use it to collect metrics / stats from queries by providing an implementation of QueryObserver.
 	QueryObserver QueryObserver
 
+	// ShardedQueryObserver will set the provided shared query observer on all
+	// sharded queries from this session. Use it to collect metrics / status
+	// from shared queries.
+	ShardedQueryObserver ShardedQueryObserver
+
 	// BatchObserver will set the provided batch observer on all queries created from this session.
 	// Use it to collect metrics / stats from batch queries by providing an implementation of BatchObserver.
 	BatchObserver BatchObserver

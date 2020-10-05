@@ -32,19 +32,20 @@ import (
 // and automatically sets a default consistency level on all operations
 // that do not have a consistency level set.
 type Session struct {
-	cons                Consistency
-	pageSize            int
-	prefetch            float64
-	routingKeyInfoCache routingKeyInfoLRU
-	schemaDescriber     *schemaDescriber
-	trace               Tracer
-	queryObserver       QueryObserver
-	batchObserver       BatchObserver
-	connectObserver     ConnectObserver
-	connErrorObserver   ConnErrorObserver
-	frameObserver       FrameHeaderObserver
-	hostSource          *ringDescriber
-	stmtsLRU            *preparedLRU
+	cons                 Consistency
+	pageSize             int
+	prefetch             float64
+	routingKeyInfoCache  routingKeyInfoLRU
+	schemaDescriber      *schemaDescriber
+	trace                Tracer
+	queryObserver        QueryObserver
+	shardedQueryObserver ShardedQueryObserver
+	batchObserver        BatchObserver
+	connectObserver      ConnectObserver
+	connErrorObserver    ConnErrorObserver
+	frameObserver        FrameHeaderObserver
+	hostSource           *ringDescriber
+	stmtsLRU             *preparedLRU
 
 	connCfg *ConnConfig
 
@@ -148,6 +149,7 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 	}
 
 	s.queryObserver = cfg.QueryObserver
+	s.shardedQueryObserver = cfg.ShardedQueryObserver
 	s.batchObserver = cfg.BatchObserver
 	s.connectObserver = cfg.ConnectObserver
 	s.frameObserver = cfg.FrameHeaderObserver
@@ -439,10 +441,15 @@ func (s *Session) querySharded(
 		q.Release()
 	}
 
+	type shardEntry struct {
+		HostInfo *HostInfo
+		Keys     []interface{}
+	}
+
 	// TODO(cmc): pool these?
-	const _nbShardsHeuristic = 16                                      // this
-	keysPerShard := make(map[string][]interface{}, _nbShardsHeuristic) // is
-	keysPerShardLen := len(pkeys) / _nbShardsHeuristic                 // arbitrary
+	const _nbShardsHeuristic = 16                                       // this
+	entriesPerShard := make(map[string]*shardEntry, _nbShardsHeuristic) // is
+	keysPerShardLen := len(pkeys) / _nbShardsHeuristic                  // arbitrary
 	for _, pkey := range pkeys {
 		// I'd rather not have to allocate and build a string here, but relying
 		// on the host to have an IPv4 address seems hackish at best...
@@ -487,18 +494,33 @@ func (s *Session) querySharded(
 			}
 		}
 
-		var keys []interface{} // TODO(cmc): pool these?
-		if keys, ok = keysPerShard[shardID]; !ok {
-			keys = make([]interface{}, 0, keysPerShardLen)
-			keysPerShard[shardID] = keys
+		var entry *shardEntry // TODO(cmc): pool these?
+		if entry, ok = entriesPerShard[shardID]; !ok {
+			entry = &shardEntry{
+				HostInfo: host,
+				Keys:     make([]interface{}, 0, keysPerShardLen),
+			}
+			entriesPerShard[shardID] = entry
 		}
-		keysPerShard[shardID] = append(keys, pkey)
+		entry.Keys = append(entry.Keys, pkey)
 	}
 
-	queries := make([]*Query, 0, len(keysPerShard))
-	for _, keys := range keysPerShard {
+	queries := make([]*Query, 0, len(entriesPerShard))
+	for shardID, entry := range entriesPerShard {
+		keys := entry.Keys
 		if len(keys) == 0 {
 			panic("unreachable: len(keys) == 0")
+		}
+
+		if observer := s.shardedQueryObserver; observer != nil {
+			observer.ObserveShardedQuery(ObservedShardedQuery{
+				Keyspace:  keyspace,
+				HostInfo:  entry.HostInfo,
+				ShardID:   shardID,
+				TotalKeys: len(pkeys),
+				NumKeys:   len(entry.Keys),
+				PerCore:   perCore,
+			})
 		}
 
 		// TODO(cmc): cache these?
@@ -2134,6 +2156,27 @@ func (t *traceWriter) Trace(traceId []byte) {
 	if err := iter.Close(); err != nil {
 		fmt.Fprintln(t.w, "Error:", err)
 	}
+}
+
+type ObservedShardedQuery struct {
+	HostInfo *HostInfo
+	Keyspace string
+
+	// The total number of keys for the original query.
+	TotalKeys int
+
+	// The number of keys in this split.
+	NumKeys int
+
+	// The shard id for this set of keys.
+	ShardID string
+
+	// Whether this query was directed to a specific core or a specific host.
+	PerCore bool
+}
+
+type ShardedQueryObserver interface {
+	ObserveShardedQuery(ObservedShardedQuery)
 }
 
 type ObservedQuery struct {
