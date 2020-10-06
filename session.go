@@ -1748,8 +1748,8 @@ func (b *Batch) attempt(keyspace string, end, start time.Time, iter *Iter, host 
 		return
 	}
 
-	values := make([][]interface{}, len(b.Entries))
 	statements := make([]string, len(b.Entries))
+	values := make([][]interface{}, len(b.Entries))
 
 	for i, entry := range b.Entries {
 		statements[i] = entry.Stmt
@@ -1962,7 +1962,10 @@ func (t *traceWriter) Trace(traceId []byte) {
 type ObservedQuery struct {
 	Keyspace  string
 	Statement string
-	Values    []interface{}
+
+	// Values holds a slice of bound values for the query.
+	// Do not modify the values here, they are shared with multiple goroutines.
+	Values []interface{}
 
 	Start time.Time // time immediately before the query was called
 	End   time.Time // time immediately after the query returned
@@ -2001,7 +2004,11 @@ type QueryObserver interface {
 type ObservedBatch struct {
 	Keyspace   string
 	Statements []string
-	Values     [][]interface{}
+
+	// Values holds a slice of bound values for each statement.
+	// Values[i] are bound values passed to Statements[i].
+	// Do not modify the values here, they are shared with multiple goroutines.
+	Values [][]interface{}
 
 	Start time.Time // time immediately before the batch query was called
 	End   time.Time // time immediately after the batch query returned
