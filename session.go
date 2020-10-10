@@ -128,6 +128,14 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 		cancel:          cancel,
 	}
 
+	// Close created resources on error otherwise they'll leak
+	var err error
+	defer func() {
+		if err != nil {
+			s.Close()
+		}
+	}()
+
 	s.schemaDescriber = newSchemaDescriber(s)
 
 	s.nodeEvents = newEventDebouncer("NodeEvents", s.handleNodeEvent)
@@ -163,8 +171,7 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 	}
 	s.connCfg = connCfg
 
-	if err := s.init(); err != nil {
-		s.Close()
+	if err = s.init(); err != nil {
 		if err == ErrNoConnectionsStarted {
 			//This error used to be generated inside NewSession & returned directly
 			//Forward it on up to be backwards compatible
