@@ -2106,18 +2106,18 @@ func (f *framer) writeStringMap(m map[string]string) {
 	}
 }
 
-func (f *framer) writeBytesMap(m map[string][]byte) {
-	f.writeShort(uint16(len(m)))
-	for k, v := range m {
-		f.writeString(k)
-		f.writeBytes(v)
-	}
-}
-
 func (f *framer) writeStringMultiMap(m map[string][]string) {
 	f.writeShort(uint16(len(m)))
 	for k, v := range m {
 		f.writeString(k)
 		f.writeStringList(v)
+	}
+}
+
+func (f *framer) writeBytesMap(m map[string][]byte) {
+	f.writeShort(uint16(len(m)))
+	for k, v := range m {
+		f.writeString(k)
+		f.writeBytes(v)
 	}
 }
