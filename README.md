@@ -74,9 +74,12 @@ if localDC != "" {
 
 ### Shard-aware port
 
-This version of gocql supports a more robust method of establishing connection for each shard by using _shard aware port_ for native transport. It greatly reduces time and the number of connections that need to be opened in some specific cases, e.g. when many clients connect at once, or when there are other non-shard-aware clients connected to the same node.
+This version of gocql supports a more robust method of establishing connection for each shard by using _shard aware port_ for native transport.
+It greatly reduces time and the number of connections that need to be opened in some specific cases, ex. when many clients connect at once, or when there are other non-shard-aware clients connected to the same node.
 
-For this feature to work correctly, the shard-aware port on the nodes that expose it should be reachable from the client. If it's not, gocql will establish only one connection for each such host and will get stuck trying to establish connection for each remaining shard through the shard-aware port. If you can neither fix your network nor disable shard-aware port on your cluster, you can use `ClusterConfig.DisableShardAwarePort` to disable it.
+For this feature to work correctly, the shard-aware port on the nodes that expose it should be reachable from the client.
+If it's not, gocql will establish only one connection for each such host and will get stuck trying to establish connection for each remaining shard through the shard-aware port.
+If you can neither fix your network nor disable shard-aware port on your cluster, you can use `ClusterConfig.DisableShardAwarePort` to disable it.
 
 If you are using a custom Dialer and if your nodes expose the shard-aware port, it is highly recommended to update it so that it uses a specific source port when connecting.
 
