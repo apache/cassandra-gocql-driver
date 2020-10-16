@@ -446,7 +446,7 @@ func (p *scyllaConnPicker) DialContext(ctx context.Context, network, addr string
 		iter := newScyllaPortIterator(shardID, p.nrShards)
 
 		for {
-			port, ok := iter.nextPort()
+			port, ok := iter.Next()
 			if !ok {
 				return nil, errors.New("could not allocate port")
 			}
@@ -529,7 +529,7 @@ func newScyllaPortIterator(shardID, shardCount int) *scyllaPortIterator {
 	}
 }
 
-func (spi *scyllaPortIterator) nextPort() (uint16, bool) {
+func (spi *scyllaPortIterator) Next() (uint16, bool) {
 	if spi == nil {
 		return 0, false
 	}

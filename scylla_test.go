@@ -239,7 +239,7 @@ func TestScyllaPortIterator(t *testing.T) {
 				previousPort := 0
 
 				for {
-					portU16, ok := iterator.nextPort()
+					portU16, ok := iterator.Next()
 					if !ok {
 						break
 					}
