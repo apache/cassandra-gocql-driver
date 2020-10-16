@@ -96,8 +96,6 @@ If you are using a custom Dialer and if your nodes expose the shard-aware port, 
   }
   ```
 
-
-
 ---
 
 Package gocql implements a fast and robust Cassandra client for the
