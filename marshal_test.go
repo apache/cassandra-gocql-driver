@@ -1538,8 +1538,6 @@ func (c *CustomString) UnmarshalCQL(info TypeInfo, data []byte) error {
 
 type MyString string
 
-type MyInt int
-
 var typeLookupTest = []struct {
 	TypeName     string
 	ExpectedType Type

@@ -1078,31 +1078,17 @@ type TestServer struct {
 	t                testing.TB
 	listen           net.Listener
 	nKillReq         int64
-	compressor       Compressor
 
 	protocol   byte
 	headerSize int
 	ctx        context.Context
 	cancel     context.CancelFunc
 
-	quit   chan struct{}
 	mu     sync.Mutex
 	closed bool
 
 	// onRecv is a hook point for tests, called in receive loop.
 	onRecv func(*framer)
-}
-
-func (srv *TestServer) session() (*Session, error) {
-	return testCluster(protoVersion(srv.protocol), srv.Address).CreateSession()
-}
-
-func (srv *TestServer) host() *HostInfo {
-	hosts, err := hostInfo(srv.Address, 9042)
-	if err != nil {
-		srv.t.Fatal(err)
-	}
-	return hosts[0]
 }
 
 func (srv *TestServer) closeWatch() {

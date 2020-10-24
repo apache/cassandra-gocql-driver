@@ -1,12 +1,9 @@
 package gocql
 
 import (
-	"context"
 	"net"
 	"strconv"
 	"sync"
-	"testing"
-	"time"
 )
 
 type OneConnTestServer struct {
@@ -68,26 +65,4 @@ func parseAddressPort(hostPort string) (net.IP, int) {
 	}
 	port, _ := strconv.Atoi(portStr)
 	return net.ParseIP(host), port
-}
-
-func testConnErrorHandler(t *testing.T) ConnErrorHandler {
-	return connErrorHandlerFn(func(conn *Conn, err error, closed bool) {
-		t.Errorf("in connection handler: %v", err)
-	})
-}
-
-func assertConnectionEventually(t *testing.T, wait time.Duration, srvr *OneConnTestServer) {
-	ctx, cancel := context.WithTimeout(context.Background(), wait)
-	defer cancel()
-
-	select {
-	case <-ctx.Done():
-		if ctx.Err() != nil {
-			t.Errorf("waiting for connection: %v", ctx.Err())
-		}
-	case <-srvr.Accepted():
-		if srvr.Err != nil {
-			t.Errorf("accepting connection: %v", srvr.Err)
-		}
-	}
 }

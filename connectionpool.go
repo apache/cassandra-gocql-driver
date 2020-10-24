@@ -252,12 +252,6 @@ func (p *policyConnPool) removeHost(ip net.IP) {
 	go pool.Close()
 }
 
-func (p *policyConnPool) hostUp(host *HostInfo) {
-	// TODO(zariel): have a set of up hosts and down hosts, we can internally
-	// detect down hosts, then try to reconnect to them.
-	p.addHost(host)
-}
-
 func (p *policyConnPool) hostDown(ip net.IP) {
 	// TODO(zariel): mark host as down so we can try to connect to it later, for
 	// now just treat it has removed.

@@ -176,8 +176,6 @@ type Conn struct {
 	closed int32
 	ctx    context.Context
 	cancel context.CancelFunc
-
-	timeouts int64
 }
 
 // connect establishes a connection to a Cassandra node using session's connection config.

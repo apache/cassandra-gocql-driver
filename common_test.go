@@ -153,26 +153,6 @@ func createSession(tb testing.TB, opts ...func(config *ClusterConfig)) *Session 
 	return createSessionFromCluster(cluster, tb)
 }
 
-// createTestSession is hopefully moderately useful in actual unit tests
-func createTestSession() *Session {
-	config := NewCluster()
-	config.NumConns = 1
-	config.Timeout = 0
-	config.DisableInitialHostLookup = true
-	config.IgnorePeerAddr = true
-	config.PoolConfig.HostSelectionPolicy = RoundRobinHostPolicy()
-	session := &Session{
-		cfg: *config,
-		connCfg: &ConnConfig{
-			Timeout:   10 * time.Millisecond,
-			Keepalive: 0,
-		},
-		policy: config.PoolConfig.HostSelectionPolicy,
-	}
-	session.pool = config.PoolConfig.buildPool(session)
-	return session
-}
-
 func createViews(t *testing.T, session *Session) {
 	if err := session.Query(`
 		CREATE TYPE IF NOT EXISTS gocql_test.basicView (
@@ -291,12 +271,5 @@ func assertNil(t *testing.T, description string, actual interface{}) {
 	t.Helper()
 	if actual != nil {
 		t.Fatalf("expected %s to be (nil) but was (%+v) instead", description, actual)
-	}
-}
-
-func assertNotNil(t *testing.T, description string, actual interface{}) {
-	t.Helper()
-	if actual == nil {
-		t.Fatalf("expected %s not to be (nil)", description)
 	}
 }
