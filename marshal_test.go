@@ -2172,3 +2172,17 @@ func TestReadCollectionSize(t *testing.T) {
 		})
 	}
 }
+
+func BenchmarkUnmarshalUUID(b *testing.B) {
+	b.ReportAllocs()
+	src := make([]byte, 16)
+	dst := UUID{}
+	var ti TypeInfo = NativeType{}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if err := unmarshalUUID(ti, src, &dst); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
