@@ -1431,7 +1431,7 @@ func (iter *Iter) Scan(dest ...interface{}) bool {
 	}
 
 	if iter.next != nil && iter.pos >= iter.next.pos {
-		go iter.next.fetch()
+		iter.next.fetchAsync()
 	}
 
 	// currently only support scanning into an expand tuple, such that its the same
@@ -1526,10 +1526,17 @@ func (iter *Iter) NumRows() int {
 }
 
 type nextIter struct {
-	qry  *Query
-	pos  int
-	once sync.Once
-	next *Iter
+	qry   *Query
+	pos   int
+	oncea sync.Once
+	once  sync.Once
+	next  *Iter
+}
+
+func (n *nextIter) fetchAsync() {
+	n.oncea.Do(func() {
+		go n.fetch()
+	})
 }
 
 func (n *nextIter) fetch() *Iter {
