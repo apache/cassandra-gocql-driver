@@ -559,7 +559,7 @@ func getKeyspaceMetadata(session *Session, keyspaceName string) (*KeyspaceMetada
 		iter.Scan(&keyspace.DurableWrites, &replication)
 		err := iter.Close()
 		if err != nil {
-			return nil, fmt.Errorf("Error querying keyspace schema: %v", err)
+			return nil, fmt.Errorf("error querying keyspace schema: %v", err)
 		}
 
 		keyspace.StrategyClass = replication["class"]
@@ -585,13 +585,13 @@ func getKeyspaceMetadata(session *Session, keyspaceName string) (*KeyspaceMetada
 		iter.Scan(&keyspace.DurableWrites, &keyspace.StrategyClass, &strategyOptionsJSON)
 		err := iter.Close()
 		if err != nil {
-			return nil, fmt.Errorf("Error querying keyspace schema: %v", err)
+			return nil, fmt.Errorf("error querying keyspace schema: %v", err)
 		}
 
 		err = json.Unmarshal(strategyOptionsJSON, &keyspace.StrategyOptions)
 		if err != nil {
 			return nil, fmt.Errorf(
-				"Invalid JSON value '%s' as strategy_options for in keyspace '%s': %v",
+				"invalid JSON value '%s' as strategy_options for in keyspace '%s': %v",
 				strategyOptionsJSON, keyspace.Name, err,
 			)
 		}
@@ -703,7 +703,7 @@ func getTableMetadata(session *Session, keyspaceName string) ([]TableMetadata, e
 			if err != nil {
 				iter.Close()
 				return nil, fmt.Errorf(
-					"Invalid JSON value '%s' as key_aliases for in table '%s': %v",
+					"invalid JSON value '%s' as key_aliases for in table '%s': %v",
 					keyAliasesJSON, table.Name, err,
 				)
 			}
@@ -716,7 +716,7 @@ func getTableMetadata(session *Session, keyspaceName string) ([]TableMetadata, e
 			if err != nil {
 				iter.Close()
 				return nil, fmt.Errorf(
-					"Invalid JSON value '%s' as column_aliases for in table '%s': %v",
+					"invalid JSON value '%s' as column_aliases for in table '%s': %v",
 					columnAliasesJSON, table.Name, err,
 				)
 			}
@@ -728,7 +728,7 @@ func getTableMetadata(session *Session, keyspaceName string) ([]TableMetadata, e
 
 	err := iter.Close()
 	if err != nil && err != ErrNotFound {
-		return nil, fmt.Errorf("Error querying table schema: %v", err)
+		return nil, fmt.Errorf("error querying table schema: %v", err)
 	}
 
 	return tables, nil
@@ -777,7 +777,7 @@ func (s *Session) scanColumnMetadataV1(keyspace string) ([]ColumnMetadata, error
 			err := json.Unmarshal(indexOptionsJSON, &column.Index.Options)
 			if err != nil {
 				return nil, fmt.Errorf(
-					"Invalid JSON value '%s' as index_options for column '%s' in table '%s': %v",
+					"invalid JSON value '%s' as index_options for column '%s' in table '%s': %v",
 					indexOptionsJSON,
 					column.Name,
 					column.Table,
@@ -837,7 +837,7 @@ func (s *Session) scanColumnMetadataV2(keyspace string) ([]ColumnMetadata, error
 			err := json.Unmarshal(indexOptionsJSON, &column.Index.Options)
 			if err != nil {
 				return nil, fmt.Errorf(
-					"Invalid JSON value '%s' as index_options for column '%s' in table '%s': %v",
+					"invalid JSON value '%s' as index_options for column '%s' in table '%s': %v",
 					indexOptionsJSON,
 					column.Name,
 					column.Table,
@@ -915,7 +915,7 @@ func getColumnMetadata(session *Session, keyspaceName string) ([]ColumnMetadata,
 	}
 
 	if err != nil && err != ErrNotFound {
-		return nil, fmt.Errorf("Error querying column schema: %v", err)
+		return nil, fmt.Errorf("error querying column schema: %v", err)
 	}
 
 	return columns, nil

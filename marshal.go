@@ -2143,7 +2143,7 @@ func marshalUDT(info TypeInfo, value interface{}) ([]byte, error) {
 	case Marshaler:
 		return v.MarshalCQL(info)
 	case unsetColumn:
-		return nil, unmarshalErrorf("Invalid request: UnsetValue is unsupported for user defined types")
+		return nil, unmarshalErrorf("invalid request: UnsetValue is unsupported for user defined types")
 	case UDTMarshaler:
 		var buf []byte
 		for _, e := range udt.Elements {
