@@ -1,7 +1,7 @@
 gocql
 =====
 
-[![Build Status](https://travis-ci.org/scylladb/gocql.svg?branch=master)](https://travis-ci.org/scylladb/gocql)
+![Build](https://github.com/scylladb/gocql/workflows/Build/badge.svg)
 [![GoDoc](https://godoc.org/github.com/scylladb/gocql?status.svg)](https://godoc.org/github.com/scylladb/gocql)
 
 This is a fork of [gocql](https://github.com/gocql/gocql) package that we created at Scylla.

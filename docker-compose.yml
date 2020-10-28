@@ -4,7 +4,7 @@ services:
   node_1:
     image: ${SCYLLA_IMAGE}
     privileged: true
-    command: --smp 2 --memory 512M
+    command: --smp 2 --memory 512M --seeds 192.168.100.11 --overprovisioned 1
     networks:
       public:
         ipv4_address: 192.168.100.11
@@ -12,7 +12,7 @@ services:
   node_2:
     image: ${SCYLLA_IMAGE}
     privileged: true
-    command: --smp 2 --memory 512M --seeds 192.168.100.11
+    command: --smp 2 --memory 512M --seeds 192.168.100.11 --overprovisioned 1
     networks:
       public:
         ipv4_address: 192.168.100.12
