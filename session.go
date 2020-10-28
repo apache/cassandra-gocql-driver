@@ -820,7 +820,7 @@ type Query struct {
 	rt                    RetryPolicy
 	spec                  SpeculativeExecutionPolicy
 	binding               func(q *QueryInfo) ([]interface{}, error)
-	serialCons            SerialConsistency
+	serialCons            Consistency
 	defaultTimestamp      bool
 	defaultTimestampValue int64
 	disableSkipMetadata   bool
@@ -1141,6 +1141,9 @@ func (q *Query) Bind(v ...interface{}) *Query {
 // SERIAL. This option will be ignored for anything else that a
 // conditional update/insert.
 func (q *Query) SerialConsistency(cons SerialConsistency) *Query {
+	if !cons.IsSerial() {
+		panic("Serial consistency can only be SERIAL or LOCAL_SERIAL got " + cons.String())
+	}
 	q.serialCons = cons
 	return q
 }
@@ -1564,7 +1567,7 @@ type Batch struct {
 	spec                  SpeculativeExecutionPolicy
 	observer              BatchObserver
 	session               *Session
-	serialCons            SerialConsistency
+	serialCons            Consistency
 	defaultTimestamp      bool
 	defaultTimestampValue int64
 	context               context.Context
@@ -1737,6 +1740,9 @@ func (b *Batch) Size() int {
 //
 // Only available for protocol 3 and above
 func (b *Batch) SerialConsistency(cons SerialConsistency) *Batch {
+	if !cons.IsSerial() {
+		panic("Serial consistency can only be SERIAL or LOCAL_SERIAL got " + cons.String())
+	}
 	b.serialCons = cons
 	return b
 }

@@ -170,6 +170,9 @@ const (
 	flagBetaProtocol  byte = 0x10
 )
 
+// DEPRECATED use Consistency type, SerialConsistency is now an alias for backwards compatibility.
+type SerialConsistency = Consistency
+
 type Consistency uint16
 
 const (
@@ -181,6 +184,8 @@ const (
 	All         Consistency = 0x05
 	LocalQuorum Consistency = 0x06
 	EachQuorum  Consistency = 0x07
+	Serial      Consistency = 0x08
+	LocalSerial Consistency = 0x09
 	LocalOne    Consistency = 0x0A
 )
 
@@ -202,11 +207,19 @@ func (c Consistency) String() string {
 		return "LOCAL_QUORUM"
 	case EachQuorum:
 		return "EACH_QUORUM"
+	case Serial:
+		return "SERIAL"
+	case LocalSerial:
+		return "LOCAL_SERIAL"
 	case LocalOne:
 		return "LOCAL_ONE"
 	default:
 		return fmt.Sprintf("UNKNOWN_CONS_0x%x", uint16(c))
 	}
+}
+
+func (c Consistency) IsSerial() bool {
+	return c == Serial || c == LocalSerial
 }
 
 func (c Consistency) MarshalText() (text []byte, err error) {
@@ -231,6 +244,10 @@ func (c *Consistency) UnmarshalText(text []byte) error {
 		*c = LocalQuorum
 	case "EACH_QUORUM":
 		*c = EachQuorum
+	case "SERIAL":
+		*c = Serial
+	case "LOCAL_SERIAL":
+		*c = LocalSerial
 	case "LOCAL_ONE":
 		*c = LocalOne
 	default:
@@ -264,41 +281,6 @@ func MustParseConsistency(s string) (Consistency, error) {
 		panic(err)
 	}
 	return c, nil
-}
-
-type SerialConsistency uint16
-
-const (
-	Serial      SerialConsistency = 0x08
-	LocalSerial SerialConsistency = 0x09
-)
-
-func (s SerialConsistency) String() string {
-	switch s {
-	case Serial:
-		return "SERIAL"
-	case LocalSerial:
-		return "LOCAL_SERIAL"
-	default:
-		return fmt.Sprintf("UNKNOWN_SERIAL_CONS_0x%x", uint16(s))
-	}
-}
-
-func (s SerialConsistency) MarshalText() (text []byte, err error) {
-	return []byte(s.String()), nil
-}
-
-func (s *SerialConsistency) UnmarshalText(text []byte) error {
-	switch string(text) {
-	case "SERIAL":
-		*s = Serial
-	case "LOCAL_SERIAL":
-		*s = LocalSerial
-	default:
-		return fmt.Errorf("invalid consistency %q", string(text))
-	}
-
-	return nil
 }
 
 const (
@@ -1474,7 +1456,7 @@ type queryParams struct {
 	values            []queryValues
 	pageSize          int
 	pagingState       []byte
-	serialConsistency SerialConsistency
+	serialConsistency Consistency
 	// v3+
 	defaultTimestamp      bool
 	defaultTimestampValue int64
@@ -1563,7 +1545,7 @@ func (f *framer) writeQueryParams(opts *queryParams) {
 	}
 
 	if opts.serialConsistency > 0 {
-		f.writeConsistency(Consistency(opts.serialConsistency))
+		f.writeConsistency(opts.serialConsistency)
 	}
 
 	if f.proto > protoVersion2 && opts.defaultTimestamp {
@@ -1675,7 +1657,7 @@ type writeBatchFrame struct {
 	consistency Consistency
 
 	// v3+
-	serialConsistency     SerialConsistency
+	serialConsistency     Consistency
 	defaultTimestamp      bool
 	defaultTimestampValue int64
 
@@ -1747,7 +1729,7 @@ func (f *framer) writeBatchFrame(streamID int, w *writeBatchFrame, customPayload
 		}
 
 		if w.serialConsistency > 0 {
-			f.writeConsistency(Consistency(w.serialConsistency))
+			f.writeConsistency(w.serialConsistency)
 		}
 
 		if w.defaultTimestamp {

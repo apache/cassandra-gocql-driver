@@ -126,6 +126,16 @@ func TestQueryBasicAPI(t *testing.T) {
 		t.Fatalf("expected Query.GetConsistency to return 'All', got '%s'", qry.GetConsistency())
 	}
 
+	qry.Consistency(LocalSerial)
+	if qry.GetConsistency() != LocalSerial {
+		t.Fatalf("expected Query.GetConsistency to return 'LocalSerial', got '%s'", qry.GetConsistency())
+	}
+
+	qry.SerialConsistency(LocalSerial)
+	if qry.GetConsistency() != LocalSerial {
+		t.Fatalf("expected Query.GetConsistency to return 'LocalSerial', got '%s'", qry.GetConsistency())
+	}
+
 	trace := &traceWriter{}
 	qry.Trace(trace)
 	if qry.trace != trace {

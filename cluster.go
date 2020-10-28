@@ -62,7 +62,7 @@ type ClusterConfig struct {
 	MaxPreparedStmts   int                                      // Sets the maximum cache size for prepared statements globally for gocql (default: 1000)
 	MaxRoutingKeyInfo  int                                      // Sets the maximum cache size for query info about statements for each session (default: 1000)
 	PageSize           int                                      // Default page size to use for created sessions (default: 5000)
-	SerialConsistency  SerialConsistency                        // Sets the consistency for the serial part of queries, values can be either SERIAL or LOCAL_SERIAL (default: unset)
+	SerialConsistency  Consistency                              // Sets the consistency for the serial part of queries, values can be either SERIAL or LOCAL_SERIAL (default: unset)
 	SslOpts            *SslOptions
 	DefaultTimestamp   bool // Sends a client side timestamp for all requests which overrides the timestamp at which it arrives at the server. (default: true, only enabled for protocol 3 and above)
 	// PoolConfig configures the underlying connection pool, allowing the
