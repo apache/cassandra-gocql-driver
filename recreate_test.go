@@ -106,8 +106,8 @@ func TestRecreateSchema(t *testing.T) {
 			for i, dq := range dumpQueries {
 				gq := goldenQueries[i]
 
-				if gq != dq {
-					t.Errorf("dumpQueries[%d] expected to be '%s', got '%s'", i, gq, dq)
+				if diff := cmp.Diff(gq, dq); diff != "" {
+					t.Errorf("dumpQueries[%d] diff\n%s", i, diff)
 				}
 			}
 
