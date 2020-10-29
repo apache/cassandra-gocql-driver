@@ -1,6 +1,6 @@
 CREATE KEYSPACE gocqlx_table WITH replication = {
     'class': 'SimpleStrategy',
-    'replication_factor': '1'
+    'replication_factor': '2'
 };
 
 CREATE TABLE gocqlx_table.loads (
@@ -11,12 +11,12 @@ CREATE TABLE gocqlx_table.loads (
     PRIMARY KEY ((machine, cpu), mtime)
 ) WITH CLUSTERING ORDER BY (mtime DESC)
     AND bloom_filter_fp_chance = 0.01
-    AND caching = {'keys':'ALL','rows_per_partition':'ALL'}
+    AND caching = {'keys':'ALL','rows_per_partition':'NONE'}
     AND comment = ''
     AND compaction = {'class':'TimeWindowCompactionStrategy','compaction_window_size':'14','compaction_window_unit':'DAYS'}
     AND compression = {'sstable_compression':'org.apache.cassandra.io.compress.LZ4Compressor'}
     AND crc_check_chance = 1
-    AND dclocal_read_repair_chance = 0.1
+    AND dclocal_read_repair_chance = 0
     AND default_time_to_live = 0
     AND gc_grace_seconds = 864000
     AND max_index_interval = 2048
@@ -36,7 +36,7 @@ CREATE TABLE gocqlx_table.monkeyspecies (
     AND compaction = {'class':'SizeTieredCompactionStrategy'}
     AND compression = {'sstable_compression':'org.apache.cassandra.io.compress.LZ4Compressor'}
     AND crc_check_chance = 1
-    AND dclocal_read_repair_chance = 0.1
+    AND dclocal_read_repair_chance = 0
     AND default_time_to_live = 0
     AND gc_grace_seconds = 864000
     AND max_index_interval = 2048
@@ -59,7 +59,7 @@ CREATE TABLE gocqlx_table.timeline (
     AND compaction = {'class':'LeveledCompactionStrategy'}
     AND compression = {'sstable_compression':'org.apache.cassandra.io.compress.LZ4Compressor'}
     AND crc_check_chance = 1
-    AND dclocal_read_repair_chance = 0.1
+    AND dclocal_read_repair_chance = 0
     AND default_time_to_live = 0
     AND gc_grace_seconds = 864000
     AND max_index_interval = 2048
@@ -81,7 +81,7 @@ CREATE TABLE gocqlx_table.users_picture (
     AND compaction = {'class':'SizeTieredCompactionStrategy'}
     AND compression = {'sstable_compression':'org.apache.cassandra.io.compress.LZ4Compressor'}
     AND crc_check_chance = 1
-    AND dclocal_read_repair_chance = 0.1
+    AND dclocal_read_repair_chance = 0
     AND default_time_to_live = 0
     AND gc_grace_seconds = 864000
     AND max_index_interval = 2048
