@@ -22,6 +22,10 @@ func TestShardAwarePortMockedMaliciousNAT(t *testing.T) {
 	testWithAndWithoutTLS(t, testShardAwarePortMaliciousNAT)
 }
 
+func TestShardAwarePortMockedUnreachable(t *testing.T) {
+	testWithAndWithoutTLS(t, testShardAwarePortUnreachable)
+}
+
 func TestShardAwarePortMockedUnusedIfNotEnabled(t *testing.T) {
 	testWithAndWithoutTLS(t, testShardAwarePortUnusedIfNotEnabled)
 }

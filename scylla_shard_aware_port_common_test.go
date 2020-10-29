@@ -135,6 +135,37 @@ func testShardAwarePortMaliciousNAT(t *testing.T, makeCluster makeClusterTestFun
 	}
 }
 
+func testShardAwarePortUnreachable(t *testing.T, makeCluster makeClusterTestFunc) {
+	cluster := makeCluster()
+	cluster.PoolConfig.HostSelectionPolicy = TokenAwareHostPolicy(RoundRobinHostPolicy())
+	cluster.Dialer = &allowOnlyNonShardAwarePortDialer{allowedPort: getClusterPort(cluster)}
+
+	sess, err := cluster.CreateSession()
+	if err != nil {
+		t.Fatalf("an error occurred while creating a session: %s", err)
+	}
+	defer sess.Close()
+
+	// In this situation, the connecting to the shard-aware port will fail,
+	// but connections to the non-shard-aware port will succeed. This test
+	// checks that we detect that the shard-aware-port is unreachable and
+	// we fall back to the old port.
+
+	// Retry until we establish one connection per shard
+
+	for {
+		if err := waitUntilPoolsStopFilling(context.Background(), sess, 10*time.Second); err != nil {
+			t.Fatal(err)
+		}
+
+		if checkIfPoolsAreFull(sess) {
+			break
+		}
+
+		triggerPoolsRefill(sess)
+	}
+}
+
 func testShardAwarePortUnusedIfNotEnabled(t *testing.T, makeCluster makeClusterTestFunc) {
 	dialer := newLoggingTestDialer()
 	cluster := makeCluster()
@@ -261,6 +292,17 @@ func checkIfPoolsAreFull(sess *Session) bool {
 	return true
 }
 
+func getClusterPort(cluster *ClusterConfig) uint16 {
+	_, portStr, _ := net.SplitHostPort(cluster.Hosts[0])
+	port, _ := strconv.Atoi(portStr)
+
+	if port == 0 {
+		// Assume default if it's not explicitly specified
+		return 9042
+	}
+	return uint16(port)
+}
+
 type sourcePortOffByOneTestDialer struct {
 	ScyllaShardAwareDialer
 }
@@ -276,6 +318,24 @@ func (spobo *sourcePortOffByOneTestDialer) DialContext(ctx context.Context, netw
 	}
 	newCtx := context.WithValue(ctx, scyllaSourcePortCtx{}, sourcePort)
 	return spobo.ScyllaShardAwareDialer.DialContext(newCtx, network, addr)
+}
+
+type allowOnlyNonShardAwarePortDialer struct {
+	net.Dialer
+
+	allowedPort uint16
+}
+
+func (aonsa *allowOnlyNonShardAwarePortDialer) DialContext(ctx context.Context, network, addr string) (net.Conn, error) {
+	// Simulate a network configuration which allows connections to the
+	// non-shard-aware port, but not to the shard-aware one.
+
+	_, targetPort, _ := net.SplitHostPort(addr)
+	if targetPort != strconv.Itoa(int(aonsa.allowedPort)) {
+		return nil, fmt.Errorf("allowOnlyNonShardAwarePortDialer: tried to connect to port %s, but only %d is allowed", targetPort, aonsa.allowedPort)
+	}
+
+	return aonsa.Dialer.DialContext(ctx, network, addr)
 }
 
 type loggingTestDialer struct {

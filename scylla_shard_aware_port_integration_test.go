@@ -17,6 +17,12 @@ func TestShardAwarePortIntegrationMaliciousNAT(t *testing.T) {
 	})
 }
 
+func TestShardAwarePortIntegrationUnreachable(t *testing.T) {
+	testShardAwarePortUnreachable(t, func() *ClusterConfig {
+		return createCluster()
+	})
+}
+
 func TestShardAwarePortIntegrationUnusedIfNotEnabled(t *testing.T) {
 	testShardAwarePortUnusedIfNotEnabled(t, func() *ClusterConfig {
 		return createCluster()
