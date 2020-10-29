@@ -97,7 +97,7 @@ func TestCompileMetadata(t *testing.T) {
 		{Keyspace: "V1Keyspace", Table: "peers", Kind: ColumnRegular, Name: "schema_version", ComponentIndex: 0, Validator: "org.apache.cassandra.db.marshal.UUIDType"},
 		{Keyspace: "V1Keyspace", Table: "peers", Kind: ColumnRegular, Name: "tokens", ComponentIndex: 0, Validator: "org.apache.cassandra.db.marshal.SetType(org.apache.cassandra.db.marshal.UTF8Type)"},
 	}
-	compileMetadata(1, keyspace, tables, columns, nil, nil, nil)
+	compileMetadata(1, keyspace, tables, columns, nil, nil, nil, nil)
 	assertKeyspaceMetadata(
 		t,
 		keyspace,
@@ -378,7 +378,7 @@ func TestCompileMetadata(t *testing.T) {
 			Validator: "org.apache.cassandra.db.marshal.UTF8Type",
 		},
 	}
-	compileMetadata(2, keyspace, tables, columns, nil, nil, nil)
+	compileMetadata(2, keyspace, tables, columns, nil, nil, nil, nil)
 	assertKeyspaceMetadata(
 		t,
 		keyspace,

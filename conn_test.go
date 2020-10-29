@@ -11,6 +11,7 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -242,7 +243,7 @@ func TestStartupTimeout(t *testing.T) {
 		t.Fatal("ConnectTimeout is not respected")
 	}
 
-	if !strings.Contains(err.Error(), "no connections were made when creating the session") {
+	if !errors.Is(err, ErrNoConnectionsStarted) {
 		t.Fatalf("Expected to receive no connections error - got '%s'", err)
 	}
 
@@ -516,90 +517,6 @@ func TestSpeculativeExecution(t *testing.T) {
 	// expecting to see 4 (on successful node) + not more than 2 (as cancelled on another node) == 6
 	if requests1+requests2+requests3 > 6 {
 		t.Errorf("error: expected to see 6 attempts, got %v\n", requests1+requests2+requests3)
-	}
-}
-
-func TestStreams_Protocol1(t *testing.T) {
-	srv := NewTestServer(t, protoVersion1, context.Background())
-	defer srv.Stop()
-
-	// TODO: these are more like session tests and should instead operate
-	// on a single Conn
-	cluster := testCluster(protoVersion1, srv.Address)
-	cluster.NumConns = 1
-	cluster.ProtoVersion = 1
-
-	db, err := cluster.CreateSession()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
-
-	var wg sync.WaitGroup
-	for i := 1; i < 128; i++ {
-		// here were just validating that if we send NumStream request we get
-		// a response for every stream and the lengths for the queries are set
-		// correctly.
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			if err := db.Query("void").Exec(); err != nil {
-				t.Error(err)
-			}
-		}()
-	}
-	wg.Wait()
-}
-
-func TestStreams_Protocol3(t *testing.T) {
-	srv := NewTestServer(t, protoVersion3, context.Background())
-	defer srv.Stop()
-
-	// TODO: these are more like session tests and should instead operate
-	// on a single Conn
-	cluster := testCluster(protoVersion3, srv.Address)
-	cluster.NumConns = 1
-	cluster.ProtoVersion = 3
-
-	db, err := cluster.CreateSession()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
-
-	for i := 1; i < 32768; i++ {
-		// the test server processes each conn synchronously
-		// here were just validating that if we send NumStream request we get
-		// a response for every stream and the lengths for the queries are set
-		// correctly.
-		if err = db.Query("void").Exec(); err != nil {
-			t.Fatal(err)
-		}
-	}
-}
-
-func BenchmarkProtocolV3(b *testing.B) {
-	srv := NewTestServer(b, protoVersion3, context.Background())
-	defer srv.Stop()
-
-	// TODO: these are more like session tests and should instead operate
-	// on a single Conn
-	cluster := NewCluster(srv.Address)
-	cluster.NumConns = 1
-	cluster.ProtoVersion = 3
-
-	db, err := cluster.CreateSession()
-	if err != nil {
-		b.Fatal(err)
-	}
-	defer db.Close()
-
-	b.ResetTimer()
-	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
-		if err = db.Query("void").Exec(); err != nil {
-			b.Fatal(err)
-		}
 	}
 }
 

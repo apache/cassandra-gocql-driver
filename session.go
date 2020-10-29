@@ -27,7 +27,7 @@ import (
 // scenario is to have one global session object to interact with the
 // whole Cassandra cluster.
 //
-// This type extends the Node interface by adding a convinient query builder
+// This type extends the Node interface by adding a convenient query builder
 // and automatically sets a default consistency level on all operations
 // that do not have a consistency level set.
 type Session struct {
@@ -234,17 +234,25 @@ func (s *Session) init() error {
 	}
 
 	hosts = hosts[:0]
+
+	var wg sync.WaitGroup
 	for _, host := range hostMap {
-		host = s.ring.addOrUpdate(host)
+		host := s.ring.addOrUpdate(host)
 		if s.cfg.filterHost(host) {
 			continue
 		}
 
 		host.setState(NodeUp)
-		s.pool.addHost(host)
-
 		hosts = append(hosts, host)
+
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			s.pool.addHost(host)
+		}()
 	}
+
+	wg.Wait()
 
 	type bulkAddHosts interface {
 		AddHosts([]*HostInfo)
@@ -666,7 +674,7 @@ func (s *Session) ExecuteBatch(batch *Batch) error {
 }
 
 // ExecuteBatchCAS executes a batch operation and returns true if successful and
-// an iterator (to scan aditional rows if more than one conditional statement)
+// an iterator (to scan additional rows if more than one conditional statement)
 // was sent.
 // Further scans on the interator must also remember to include
 // the applied boolean as the first argument to *Iter.Scan
@@ -960,7 +968,7 @@ func (q *Query) DefaultTimestamp(enable bool) *Query {
 // WithTimestamp will enable the with default timestamp flag on the query
 // like DefaultTimestamp does. But also allows to define value for timestamp.
 // It works the same way as USING TIMESTAMP in the query itself, but
-// should not break prepared query optimization
+// should not break prepared query optimization.
 //
 // Only available on protocol >= 3
 func (q *Query) WithTimestamp(timestamp int64) *Query {
@@ -1160,7 +1168,7 @@ func (q *Query) PageState(state []byte) *Query {
 // NoSkipMetadata will override the internal result metadata cache so that the driver does not
 // send skip_metadata for queries, this means that the result will always contain
 // the metadata to parse the rows and will not reuse the metadata from the prepared
-// staement. This should only be used to work around cassandra bugs, such as when using
+// statement. This should only be used to work around cassandra bugs, such as when using
 // CAS operations which do not end in Cas.
 //
 // See https://issues.apache.org/jira/browse/CASSANDRA-11099
@@ -1448,7 +1456,7 @@ func (iter *Iter) Scan(dest ...interface{}) bool {
 	}
 
 	if iter.next != nil && iter.pos >= iter.next.pos {
-		go iter.next.fetch()
+		iter.next.fetchAsync()
 	}
 
 	// currently only support scanning into an expand tuple, such that its the same
@@ -1543,10 +1551,17 @@ func (iter *Iter) NumRows() int {
 }
 
 type nextIter struct {
-	qry  *Query
-	pos  int
-	once sync.Once
-	next *Iter
+	qry   *Query
+	pos   int
+	oncea sync.Once
+	once  sync.Once
+	next  *Iter
+}
+
+func (n *nextIter) fetchAsync() {
+	n.oncea.Do(func() {
+		go n.fetch()
+	})
 }
 
 func (n *nextIter) fetch() *Iter {
@@ -1761,7 +1776,7 @@ func (b *Batch) DefaultTimestamp(enable bool) *Batch {
 // WithTimestamp will enable the with default timestamp flag on the query
 // like DefaultTimestamp does. But also allows to define value for timestamp.
 // It works the same way as USING TIMESTAMP in the query itself, but
-// should not break prepared query optimization
+// should not break prepared query optimization.
 //
 // Only available on protocol >= 3
 func (b *Batch) WithTimestamp(timestamp int64) *Batch {
@@ -1772,7 +1787,7 @@ func (b *Batch) WithTimestamp(timestamp int64) *Batch {
 
 func (b *Batch) attempt(keyspace string, end, start time.Time, iter *Iter, host *HostInfo) {
 	latency := end.Sub(start)
-	_, metricsForHost := b.metrics.attempt(1, latency, host, b.observer != nil)
+	attempt, metricsForHost := b.metrics.attempt(1, latency, host, b.observer != nil)
 
 	if b.observer == nil {
 		return
@@ -1792,6 +1807,7 @@ func (b *Batch) attempt(keyspace string, end, start time.Time, iter *Iter, host 
 		Host:    host,
 		Metrics: metricsForHost,
 		Err:     iter.err,
+		Attempt: attempt,
 	})
 }
 
@@ -2042,6 +2058,11 @@ type ObservedBatch struct {
 
 	// The metrics per this host
 	Metrics *hostMetrics
+
+	// Attempt is the index of attempt at executing this query.
+	// An attempt might be either retry or fetching next page of a query.
+	// The first attempt is number zero and any retries have non-zero attempt number.
+	Attempt int
 }
 
 // BatchObserver is the interface implemented by batch observers / stat collectors.
