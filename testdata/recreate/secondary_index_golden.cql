@@ -1,6 +1,6 @@
 CREATE KEYSPACE gocqlx_sec_idx WITH replication = {
     'class': 'SimpleStrategy',
-    'replication_factor': '1'
+    'replication_factor': '2'
 };
 
 CREATE TABLE gocqlx_sec_idx.menus (
@@ -16,7 +16,7 @@ CREATE TABLE gocqlx_sec_idx.menus (
     AND compaction = {'class':'SizeTieredCompactionStrategy'}
     AND compression = {'sstable_compression':'org.apache.cassandra.io.compress.LZ4Compressor'}
     AND crc_check_chance = 1
-    AND dclocal_read_repair_chance = 0.1
+    AND dclocal_read_repair_chance = 0
     AND default_time_to_live = 0
     AND gc_grace_seconds = 864000
     AND max_index_interval = 2048

@@ -1,6 +1,6 @@
 CREATE KEYSPACE gocqlx_mv WITH replication = {
   'class': 'SimpleStrategy',
-  'replication_factor': '1'
+  'replication_factor': '2'
 };
 
 CREATE TABLE gocqlx_mv.mv_buildings (
