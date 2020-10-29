@@ -12,6 +12,8 @@ type ConnPicker interface {
 	Remove(conn *Conn)
 	Size() (int, int)
 	Close()
+
+	GetCustomDialer() Dialer
 }
 
 type defaultConnPicker struct {
@@ -90,6 +92,10 @@ func (p *defaultConnPicker) Put(conn *Conn) {
 	p.mu.Unlock()
 }
 
+func (*defaultConnPicker) GetCustomDialer() Dialer {
+	return nil
+}
+
 // nopConnPicker is a no-operation implementation of ConnPicker, it's used when
 // hostConnPool is created to allow deferring creation of the actual ConnPicker
 // to the point where we have first connection.
@@ -113,4 +119,8 @@ func (nopConnPicker) Size() (int, int) {
 }
 
 func (nopConnPicker) Close() {
+}
+
+func (nopConnPicker) GetCustomDialer() Dialer {
+	return nil
 }

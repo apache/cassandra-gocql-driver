@@ -463,8 +463,10 @@ func (pool *hostConnPool) connectMany(count int) error {
 
 // create a new connection to the host and add it to the pool
 func (pool *hostConnPool) connect() (err error) {
-	dialer, ok := pool.connPicker.(Dialer)
-	if !ok {
+	pool.mu.Lock()
+	dialer := pool.connPicker.GetCustomDialer()
+	pool.mu.Unlock()
+	if dialer == nil {
 		dialer = pool.session.cfg.Dialer
 	}
 

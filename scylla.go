@@ -2,7 +2,6 @@ package gocql
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"math"
 	"net"
@@ -11,6 +10,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"syscall"
+	"time"
 )
 
 // scyllaSupported represents Scylla connection options as sent in SUPPORTED
@@ -217,8 +217,11 @@ type scyllaConnPicker struct {
 	msbIgnore              uint64
 	pos                    uint64
 	dialer                 Dialer
-	lastAttemptedShard     uint64
+	lastAttemptedShard     int
 	shardAwarePortDisabled bool
+
+	// Used to disable new connections to the shard-aware port temporarily
+	disableShardAwarePortUntil *atomic.Value
 }
 
 func newScyllaConnPicker(conn *Conn) *scyllaConnPicker {
@@ -251,8 +254,10 @@ func newScyllaConnPicker(conn *Conn) *scyllaConnPicker {
 		nrShards:               conn.scyllaSupported.nrShards,
 		msbIgnore:              conn.scyllaSupported.msbIgnore,
 		dialer:                 makeDialerForScyllaConnPicker(conn),
-		lastAttemptedShard:     uint64(conn.scyllaSupported.shard),
+		lastAttemptedShard:     0,
 		shardAwarePortDisabled: conn.session.cfg.DisableShardAwarePort,
+
+		disableShardAwarePortUntil: new(atomic.Value),
 	}
 }
 
@@ -336,9 +341,31 @@ func (p *scyllaConnPicker) Put(conn *Conn) {
 	}
 
 	if c := p.conns[shard]; c != nil {
-		p.excessConns = append(p.excessConns, conn)
-		if gocqlDebug {
-			Logger.Printf("scylla: %s put shard %d excess connection total: %d missing: %d excess: %d", p.address, shard, p.nrConns, p.nrShards-p.nrConns, len(p.excessConns))
+		if conn.addr == p.shardAwareAddress {
+			// A connection made to the shard-aware port resulted in duplicate
+			// connection to the same shard being made. Because this is never
+			// intentional, it suggests that a NAT or AddressTranslator
+			// changes the source port along the way, therefore we can't trust
+			// the shard-aware port to return connection to the shard
+			// that we requested. Fall back to non-shard-aware port for some time.
+			Logger.Printf(
+				"scylla: %s connection to shard-aware address %s resulted in wrong shard being assigned; please check that you are not behind a NAT or AddressTranslater which changes source ports; falling back to non-shard-aware port for %v",
+				p.address,
+				p.shardAwareAddress,
+				scyllaShardAwarePortFallbackDuration,
+			)
+			until := time.Now().Add(scyllaShardAwarePortFallbackDuration)
+			p.disableShardAwarePortUntil.Store(until)
+
+			// Connections to shard-aware port do not influence how shards
+			// are chosen for the non-shard-aware port, therefore it can be
+			// closed immediately
+			closeConns(conn)
+		} else {
+			p.excessConns = append(p.excessConns, conn)
+			if gocqlDebug {
+				Logger.Printf("scylla: %s put shard %d excess connection total: %d missing: %d excess: %d", p.address, shard, p.nrConns, p.nrShards-p.nrConns, len(p.excessConns))
+			}
 		}
 	} else {
 		p.conns[shard] = conn
@@ -407,7 +434,7 @@ func (p *scyllaConnPicker) closeConns() {
 	if gocqlDebug {
 		Logger.Printf("scylla: %s closing %d connections", p.address, len(conns))
 	}
-	go closeConns(conns)
+	go closeConns(conns...)
 }
 
 func (p *scyllaConnPicker) closeExcessConns() {
@@ -424,13 +451,13 @@ func (p *scyllaConnPicker) closeExcessConns() {
 	if gocqlDebug {
 		Logger.Printf("scylla: %s closing %d excess connections", p.address, len(conns))
 	}
-	go closeConns(conns)
+	go closeConns(conns...)
 }
 
 // Closing must be done outside of hostConnPool lock. If holding a lock
 // a deadlock can occur when closing one of the connections returns error on close.
 // See scylladb/gocql#53.
-func closeConns(conns []*Conn) {
+func closeConns(conns ...*Conn) {
 	for _, conn := range conns {
 		if conn != nil {
 			conn.Close()
@@ -438,32 +465,92 @@ func closeConns(conns []*Conn) {
 	}
 }
 
-func (p *scyllaConnPicker) DialContext(ctx context.Context, network, addr string) (net.Conn, error) {
-	if !p.shardAwarePortDisabled && p.shardAwareAddress != "" {
-		shardCounter := atomic.AddUint64(&p.lastAttemptedShard, 1)
-		shardID := int(shardCounter) % p.nrShards
+func (p *scyllaConnPicker) GetCustomDialer() Dialer {
+	if p.shardAwarePortDisabled {
+		return nil
+	}
 
-		iter := newScyllaPortIterator(shardID, p.nrShards)
+	disableUntil, _ := p.disableShardAwarePortUntil.Load().(time.Time)
+	if time.Now().Before(disableUntil) {
+		// There is suspicion that the shard-aware-port is not reachable
+		// or misconfigured, fall back to the non-shard-aware port
+		return nil
+	}
 
-		for {
-			port, ok := iter.Next()
-			if !ok {
-				return nil, errors.New("could not allocate port")
+	// Find the shard without a connection
+	// It's important to start counting from 1 here because we want
+	// to consider the next shard after the previously attempted one
+	for i := 1; i <= p.nrShards; i++ {
+		shardID := (p.lastAttemptedShard + i) % p.nrShards
+		if p.conns == nil || p.conns[shardID] == nil {
+			p.lastAttemptedShard = shardID
+			return &scyllaOneShardDialer{
+				shardAwareAddress: p.shardAwareAddress,
+				shardID:           shardID,
+				nrShards:          p.nrShards,
+				dialer:            p.dialer,
 			}
-
-			ctxWithPort := context.WithValue(ctx, scyllaSourcePortCtx{}, port)
-			conn, err := p.dialer.DialContext(ctxWithPort, network, p.shardAwareAddress)
-
-			if isLocalAddrInUseErr(err) {
-				// This indicates that the source port is already in use
-				// We can immediately retry with another source port for this shard
-				continue
-			}
-			return conn, err
 		}
 	}
 
-	return p.dialer.DialContext(ctx, network, addr)
+	// We did not find an unallocated shard
+	// We will dial the non-shard-aware port
+	return nil
+}
+
+// A dialer which dials a particular shard
+type scyllaOneShardDialer struct {
+	shardAwareAddress string
+	shardID           int
+	nrShards          int
+	dialer            Dialer
+}
+
+const scyllaShardAwarePortFallbackDuration time.Duration = 5 * time.Minute
+
+func (sosd *scyllaOneShardDialer) DialContext(ctx context.Context, network, addr string) (net.Conn, error) {
+	iter := newScyllaPortIterator(sosd.shardID, sosd.nrShards)
+
+	if gocqlDebug {
+		Logger.Printf("scylla: connecting to shard %d", sosd.shardID)
+	}
+
+	for {
+		port, ok := iter.Next()
+		if !ok {
+			// We exhausted ports to connect from. Try the non-shard-aware port.
+			return sosd.dialer.DialContext(ctx, network, addr)
+		}
+
+		ctxWithPort := context.WithValue(ctx, scyllaSourcePortCtx{}, port)
+		conn, err := sosd.dialer.DialContext(ctxWithPort, network, sosd.shardAwareAddress)
+
+		if isLocalAddrInUseErr(err) {
+			// This indicates that the source port is already in use
+			// We can immediately retry with another source port for this shard
+			continue
+		} else if err != nil {
+			conn, err := sosd.dialer.DialContext(ctx, network, addr)
+			if err == nil {
+				// We failed to connect to the shard-aware port, but succeeded
+				// in connecting to the non-shard-aware port. This might
+				// indicate that the shard-aware port is just not reachable,
+				// but we may also be unlucky and the node became reachable
+				// just after we tried the first connection.
+				// We can't avoid false positives here, so I'm putting it
+				// behind a debug flag.
+				if gocqlDebug {
+					Logger.Printf(
+						"scylla: %s couldn't connect to shard-aware address while the non-shard-aware address %s is available; this might be an issue with ",
+						addr,
+						sosd.shardAwareAddress,
+					)
+				}
+			}
+			return conn, err
+		}
+		return conn, err
+	}
 }
 
 func isLocalAddrInUseErr(err error) bool {
