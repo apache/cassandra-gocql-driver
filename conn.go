@@ -1205,12 +1205,16 @@ func (c *Conn) executeQuery(ctx context.Context, qry *Query) *Iter {
 		}
 
 		if x.meta.morePages() && !qry.disableAutoPage {
+			newQry := new(Query)
+			*newQry = *qry
+			newQry.pageState = copyBytes(x.meta.pagingState)
+			newQry.metrics = &queryMetrics{m: make(map[string]*hostMetrics)}
+
 			iter.next = &nextIter{
-				qry: qry,
+				qry: newQry,
 				pos: int((1 - qry.prefetch) * float64(x.numRows)),
 			}
 
-			iter.next.qry.pageState = copyBytes(x.meta.pagingState)
 			if iter.next.pos < 1 {
 				iter.next.pos = 1
 			}
