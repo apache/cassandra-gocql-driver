@@ -84,13 +84,24 @@ If you are using a custom Dialer and if your nodes expose the shard-aware port, 
   oldDialer := net.Dialer{...}
   clusterConfig.Dialer := &gocql.ScyllaShardAwareDialer{oldDialer}
   ```
-- If you are using a custom type implementing `gocql.Dialer`, you can get the source port by using the `gocql.ScyllaGetSourcePort` function:
+- If you are using a custom type implementing `gocql.Dialer`, you can get the source port by using the `gocql.ScyllaGetSourcePort` function.
+  An example:
   ```go
   func (d *myDialer) DialContext(ctx context.Context, network, addr string) (net.Conn, error) {
-	  sourcePort := gocql.ScyllaGetSourcePort(ctx)
-	  // ... rest of the dialer ...
+      sourcePort := gocql.ScyllaGetSourcePort(ctx)
+      localAddr, err := net.ResolveTCPAddr(network, fmt.Sprintf(":%d", sourcePort))
+      if err != nil {
+          return nil, err
+      }
+	  d := &net.Dialer{LocalAddr: localAddr}
+	  return d.DialContext(ctx, network, addr)
   }
   ```
+  The source port might be already bound by another connection on your system.
+  In such case, you should return an appropriate error so that the driver can retry with a different port suitable for the shard it tries to connect to.
+
+  - If you are using `net.Dialer.DialContext`, this function will return an error in case the source port is unavailable, and you can just return that error from your custom `Dialer`.
+  - Otherwise, if you detect that the source port is unavailable, you can either return `gocql.ErrScyllaSourcePortAlreadyInUse` or `syscall.EADDRINUSE`.
 
 For this feature to work correctly, you need to make sure the following conditions are met:
 

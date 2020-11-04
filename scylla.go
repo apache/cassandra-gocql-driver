@@ -2,10 +2,10 @@ package gocql
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"net"
-	"os"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -553,15 +553,13 @@ func (sosd *scyllaOneShardDialer) DialContext(ctx context.Context, network, addr
 	}
 }
 
+// ErrScyllaSourcePortAlreadyInUse An error value which can returned from
+// a custom dialer implementation to indicate that the requested source port
+// to dial from is already in use
+var ErrScyllaSourcePortAlreadyInUse = errors.New("scylla: source port is already in use")
+
 func isLocalAddrInUseErr(err error) bool {
-	if err != nil {
-		if opErr, ok := err.(*net.OpError); ok {
-			if sysErr, ok := opErr.Err.(*os.SyscallError); ok {
-				return sysErr.Err == syscall.EADDRINUSE
-			}
-		}
-	}
-	return false
+	return errors.Is(err, syscall.EADDRINUSE) || errors.Is(err, ErrScyllaSourcePortAlreadyInUse)
 }
 
 // ScyllaShardAwareDialer wraps a net.Dialer, but uses a source port specified by gocql when connecting.
