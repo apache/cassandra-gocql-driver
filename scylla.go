@@ -650,3 +650,17 @@ func ScyllaGetSourcePort(ctx context.Context) uint16 {
 	sourcePort, _ := ctx.Value(scyllaSourcePortCtx{}).(uint16)
 	return sourcePort
 }
+
+// Returns a partitioner specific to the table, or "nil"
+// if the cluster-global partitioner should be used
+func scyllaGetTablePartitioner(session *Session, keyspaceName, tableName string) (partitioner, error) {
+	isCdc, err := scyllaIsCdcTable(session, keyspaceName, tableName)
+	if err != nil {
+		return nil, err
+	}
+	if isCdc {
+		return scyllaCDCPartitioner{}, nil
+	}
+
+	return nil, nil
+}

@@ -3,19 +3,23 @@ package gocql
 import (
 	"encoding/binary"
 	"math"
+	"strings"
 )
 
 // cdc partitioner
 
 const (
-	scyllaCDCPartitionerName = "CDCPartitioner"
+	scyllaCDCPartitionerName     = "CDCPartitioner"
+	scyllaCDCPartitionerFullName = "com.scylladb.dht.CDCPartitioner"
 
 	scyllaCDCPartitionKeyLength  = 16
 	scyllaCDCVersionMask         = 0x0F
 	scyllaCDCMinSupportedVersion = 1
 	scyllaCDCMaxSupportedVersion = 1
 
-	scyllaCDCMinToken = int64Token(math.MinInt64)
+	scyllaCDCMinToken           = int64Token(math.MinInt64)
+	scyllaCDCLogTableNameSuffix = "_scylla_cdc_log"
+	scyllaCDCExtensionName      = "cdc"
 )
 
 type scyllaCDCPartitioner struct{}
@@ -66,4 +70,24 @@ func (p scyllaCDCPartitioner) Hash(partitionKey []byte) token {
 
 func (p scyllaCDCPartitioner) ParseString(str string) token {
 	return parseInt64Token(str)
+}
+
+func scyllaIsCdcTable(session *Session, keyspaceName, tableName string) (bool, error) {
+	if !strings.HasSuffix(tableName, scyllaCDCLogTableNameSuffix) {
+		// Not a CDC table, use the default partitioner
+		return false, nil
+	}
+
+	// Get the table metadata to see if it has the cdc partitioner set
+	keyspaceMeta, err := session.KeyspaceMetadata(keyspaceName)
+	if err != nil {
+		return false, err
+	}
+
+	tableMeta, ok := keyspaceMeta.Tables[tableName]
+	if !ok {
+		return false, ErrNoMetadata
+	}
+
+	return tableMeta.Options.Partitioner == scyllaCDCPartitionerFullName, nil
 }
