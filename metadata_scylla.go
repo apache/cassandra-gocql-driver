@@ -56,6 +56,7 @@ type TableMetadataOptions struct {
 	SpeculativeRetry        string
 	CDC                     map[string]string
 	InMemory                bool
+	Partitioner             string
 	Version                 string
 }
 
@@ -520,12 +521,14 @@ func getTableMetadata(session *Session, keyspaceName string) ([]TableMetadata, e
 
 		table := TableMetadata{}
 		if iter.MapScan(map[string]interface{}{
-			"cdc":       &table.Options.CDC,
-			"in_memory": &table.Options.InMemory,
-			"version":   &table.Options.Version,
+			"cdc":         &table.Options.CDC,
+			"in_memory":   &table.Options.InMemory,
+			"partitioner": &table.Options.Partitioner,
+			"version":     &table.Options.Version,
 		}) {
 			tables[i].Options.CDC = table.Options.CDC
 			tables[i].Options.Version = table.Options.Version
+			tables[i].Options.Partitioner = table.Options.Partitioner
 			tables[i].Options.InMemory = table.Options.InMemory
 		}
 		if err := iter.Close(); err != nil && err != ErrNotFound {
