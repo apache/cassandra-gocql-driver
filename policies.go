@@ -592,7 +592,12 @@ func (t *tokenAwareHostPolicy) Pick(qry ExecutableQuery) NextHost {
 		return t.fallback.Pick(qry)
 	}
 
-	token := meta.tokenRing.partitioner.Hash(routingKey)
+	partitioner := qry.GetCustomPartitioner()
+	if partitioner == nil {
+		partitioner = meta.tokenRing.partitioner
+	}
+
+	token := partitioner.Hash(routingKey)
 	ht := meta.replicas[qry.Keyspace()].replicasFor(token)
 
 	var replicas []*HostInfo

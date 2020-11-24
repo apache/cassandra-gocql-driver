@@ -566,6 +566,16 @@ func (s *Session) routingKeyInfo(ctx context.Context, stmt string) (*routingKeyI
 		return nil, nil
 	}
 
+	table := info.request.columns[0].Table
+	keyspace := info.request.columns[0].Keyspace
+
+	partitioner, err := scyllaGetTablePartitioner(s, keyspace, table)
+	if err != nil {
+		// don't cache this error
+		s.routingKeyInfoCache.Remove(stmt)
+		return nil, inflight.err
+	}
+
 	if len(info.request.pkeyColumns) > 0 {
 		// proto v4 dont need to calculate primary key columns
 		types := make([]TypeInfo, len(info.request.pkeyColumns))
@@ -574,9 +584,10 @@ func (s *Session) routingKeyInfo(ctx context.Context, stmt string) (*routingKeyI
 		}
 
 		routingKeyInfo := &routingKeyInfo{
-			indexes: info.request.pkeyColumns,
-			types:   types,
-			lwt:     info.request.lwt,
+			indexes:     info.request.pkeyColumns,
+			types:       types,
+			lwt:         info.request.lwt,
+			partitioner: partitioner,
 		}
 
 		inflight.value = routingKeyInfo
@@ -584,7 +595,6 @@ func (s *Session) routingKeyInfo(ctx context.Context, stmt string) (*routingKeyI
 	}
 
 	// get the table metadata
-	table := info.request.columns[0].Table
 
 	var keyspaceMetadata *KeyspaceMetadata
 	keyspaceMetadata, inflight.err = s.KeyspaceMetadata(info.request.columns[0].Keyspace)
@@ -609,9 +619,10 @@ func (s *Session) routingKeyInfo(ctx context.Context, stmt string) (*routingKeyI
 
 	size := len(partitionKey)
 	routingKeyInfo := &routingKeyInfo{
-		indexes: make([]int, size),
-		types:   make([]TypeInfo, size),
-		lwt:     info.request.lwt,
+		indexes:     make([]int, size),
+		types:       make([]TypeInfo, size),
+		lwt:         info.request.lwt,
+		partitioner: partitioner,
 	}
 
 	for keyIndex, keyColumn := range partitionKey {
@@ -850,6 +861,9 @@ type Query struct {
 	// In effect if the query is of the form "INSERT/UPDATE/DELETE ... IF ..."
 	// For more details see https://docs.scylladb.com/using-scylla/lwt/
 	lwt bool
+
+	// If not nil, represents a custom partitioner for the table
+	partitioner partitioner
 }
 
 func (q *Query) defaultsFromSession() {
@@ -1069,6 +1083,7 @@ func (q *Query) GetRoutingKey() ([]byte, error) {
 	}
 	if routingKeyInfo != nil {
 		q.lwt = routingKeyInfo.lwt
+		q.partitioner = routingKeyInfo.partitioner
 	}
 	return createRoutingKey(routingKeyInfo, q.values)
 }
@@ -1126,6 +1141,10 @@ func (q *Query) IsIdempotent() bool {
 
 func (q *Query) IsLWT() bool {
 	return q.lwt
+}
+
+func (q *Query) GetCustomPartitioner() partitioner {
+	return q.partitioner
 }
 
 // Idempotent marks the query as being idempotent or not depending on
@@ -1596,6 +1615,9 @@ type Batch struct {
 	// It is sufficient that one batch entry is a conditional query for the
 	// whole batch to be considered for LWT optimization.
 	lwt bool
+
+	// If not nil, represents a custom partitioner for the table
+	partitioner partitioner
 }
 
 // NewBatch creates a new batch operation without defaults from the cluster
@@ -1688,6 +1710,10 @@ func (b *Batch) IsIdempotent() bool {
 
 func (b *Batch) IsLWT() bool {
 	return b.lwt
+}
+
+func (b *Batch) GetCustomPartitioner() partitioner {
+	return b.partitioner
 }
 
 func (b *Batch) speculativeExecutionPolicy() SpeculativeExecutionPolicy {
@@ -1832,6 +1858,7 @@ func (b *Batch) GetRoutingKey() ([]byte, error) {
 	}
 	if routingKeyInfo != nil {
 		b.lwt = routingKeyInfo.lwt
+		b.partitioner = routingKeyInfo.partitioner
 	}
 
 	return createRoutingKey(routingKeyInfo, entry.Args)
@@ -1907,9 +1934,10 @@ type routingKeyInfoLRU struct {
 }
 
 type routingKeyInfo struct {
-	indexes []int
-	types   []TypeInfo
-	lwt     bool
+	indexes     []int
+	types       []TypeInfo
+	lwt         bool
+	partitioner partitioner
 }
 
 func (r *routingKeyInfo) String() string {
