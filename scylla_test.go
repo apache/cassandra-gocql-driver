@@ -133,7 +133,7 @@ func TestScyllaConnPickerShardOf(t *testing.T) {
 		msbIgnore: 12,
 	}
 	for _, test := range scyllaShardOfTests {
-		if shard := s.shardOf(murmur3Token(test.token)); shard != test.shard {
+		if shard := s.shardOf(int64Token(test.token)); shard != test.shard {
 			t.Errorf("wrong scylla shard calculated for token %d, expected %d, got %d", test.token, test.shard, shard)
 		}
 	}

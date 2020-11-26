@@ -29,9 +29,8 @@ type token interface {
 	Less(token) bool
 }
 
-// murmur3 partitioner and token
+// murmur3 partitioner
 type murmur3Partitioner struct{}
-type murmur3Token int64
 
 func (p murmur3Partitioner) Name() string {
 	return "Murmur3Partitioner"
@@ -39,21 +38,28 @@ func (p murmur3Partitioner) Name() string {
 
 func (p murmur3Partitioner) Hash(partitionKey []byte) token {
 	h1 := murmur.Murmur3H1(partitionKey)
-	return murmur3Token(h1)
+	return int64Token(h1)
 }
 
 // murmur3 little-endian, 128-bit hash, but returns only h1
 func (p murmur3Partitioner) ParseString(str string) token {
-	val, _ := strconv.ParseInt(str, 10, 64)
-	return murmur3Token(val)
+	return parseInt64Token(str)
 }
 
-func (m murmur3Token) String() string {
+// int64 token
+type int64Token int64
+
+func parseInt64Token(str string) int64Token {
+	val, _ := strconv.ParseInt(str, 10, 64)
+	return int64Token(val)
+}
+
+func (m int64Token) String() string {
 	return strconv.FormatInt(int64(m), 10)
 }
 
-func (m murmur3Token) Less(token token) bool {
-	return m < token.(murmur3Token)
+func (m int64Token) Less(token token) bool {
+	return m < token.(int64Token)
 }
 
 // order preserving partitioner and token

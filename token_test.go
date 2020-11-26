@@ -31,15 +31,15 @@ func TestMurmur3Partitioner(t *testing.T) {
 	}
 }
 
-// Tests of the murmur3Token
-func TestMurmur3Token(t *testing.T) {
-	if murmur3Token(42).Less(murmur3Token(42)) {
+// Tests of the int64Token
+func TestInt64Token(t *testing.T) {
+	if int64Token(42).Less(int64Token(42)) {
 		t.Errorf("Expected Less to return false, but was true")
 	}
-	if !murmur3Token(-42).Less(murmur3Token(42)) {
+	if !int64Token(-42).Less(int64Token(42)) {
 		t.Errorf("Expected Less to return true, but was false")
 	}
-	if murmur3Token(42).Less(murmur3Token(-42)) {
+	if int64Token(42).Less(int64Token(-42)) {
 		t.Errorf("Expected Less to return false, but was true")
 	}
 }

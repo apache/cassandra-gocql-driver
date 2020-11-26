@@ -285,7 +285,7 @@ func (p *scyllaConnPicker) Pick(t token) *Conn {
 		return p.randomConn()
 	}
 
-	mmt, ok := t.(murmur3Token)
+	mmt, ok := t.(int64Token)
 	// double check if that's murmur3 token
 	if !ok {
 		return nil
@@ -310,7 +310,7 @@ func (p *scyllaConnPicker) randomConn() *Conn {
 	return nil
 }
 
-func (p *scyllaConnPicker) shardOf(token murmur3Token) int {
+func (p *scyllaConnPicker) shardOf(token int64Token) int {
 	shards := uint64(p.nrShards)
 	z := uint64(token+math.MinInt64) << p.msbIgnore
 	lo := z & 0xffffffff
