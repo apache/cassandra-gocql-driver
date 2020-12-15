@@ -93,7 +93,7 @@ var marshalTests = []struct {
 		[]byte{0xb8, 0xe8, 0x56, 0x2c, 0xc, 0xd0},
 		[]byte{0xb8, 0xe8, 0x56, 0x2c, 0xc, 0xd0},
 		MarshalError("can not marshal []byte 6 bytes long into timeuuid, must be exactly 16 bytes long"),
-		UnmarshalError("Unable to parse UUID: UUIDs must be exactly 16 bytes long"),
+		UnmarshalError("unable to parse UUID: UUIDs must be exactly 16 bytes long"),
 	},
 	{
 		NativeType{proto: 2, typ: TypeInt},
