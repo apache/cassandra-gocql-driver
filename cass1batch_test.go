@@ -52,7 +52,7 @@ func TestShouldPrepareFunction(t *testing.T) {
 	}
 
 	for _, test := range shouldPrepareTests {
-		q := &Query{stmt: test.Stmt}
+		q := &Query{stmt: test.Stmt, routingInfo: &queryRoutingInfo{}}
 		if got := q.shouldPrepare(); got != test.Result {
 			t.Fatalf("%q: got %v, expected %v\n", test.Stmt, got, test.Result)
 		}

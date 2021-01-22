@@ -77,7 +77,7 @@ type Session struct {
 
 var queryPool = &sync.Pool{
 	New: func() interface{} {
-		return new(Query)
+		return &Query{routingInfo: &queryRoutingInfo{}}
 	},
 }
 
@@ -388,7 +388,7 @@ func (s *Session) Query(stmt string, values ...interface{}) *Query {
 	qry.stmt = stmt
 	qry.values = values
 	qry.defaultsFromSession()
-	qry.lwt = false
+	qry.routingInfo.lwt = false
 	return qry
 }
 
@@ -411,7 +411,7 @@ func (s *Session) Bind(stmt string, b func(q *QueryInfo) ([]interface{}, error))
 	qry.stmt = stmt
 	qry.binding = b
 	qry.defaultsFromSession()
-	qry.lwt = false
+	qry.routingInfo.lwt = false
 	return qry
 }
 
@@ -857,13 +857,33 @@ type Query struct {
 	// tables in AWS MCS see
 	skipPrepare bool
 
+	// routingInfo is a pointer because Query can be copied and copyable struct can't hold a mutex.
+	routingInfo *queryRoutingInfo
+}
+
+type queryRoutingInfo struct {
+	// mu protects contents of queryRoutingInfo.
+	mu sync.RWMutex
+
 	// "lwt" denotes the query being an LWT operation
 	// In effect if the query is of the form "INSERT/UPDATE/DELETE ... IF ..."
 	// For more details see https://docs.scylladb.com/using-scylla/lwt/
 	lwt bool
 
-	// If not nil, represents a custom partitioner for the table
+	// If not nil, represents a custom partitioner for the table.
 	partitioner partitioner
+}
+
+func (qri *queryRoutingInfo) isLWT() bool {
+	qri.mu.RLock()
+	defer qri.mu.RUnlock()
+	return qri.lwt
+}
+
+func (qri *queryRoutingInfo) getPartitioner() partitioner {
+	qri.mu.RLock()
+	defer qri.mu.RUnlock()
+	return qri.partitioner
 }
 
 func (q *Query) defaultsFromSession() {
@@ -1082,8 +1102,10 @@ func (q *Query) GetRoutingKey() ([]byte, error) {
 		return nil, err
 	}
 	if routingKeyInfo != nil {
-		q.lwt = routingKeyInfo.lwt
-		q.partitioner = routingKeyInfo.partitioner
+		q.routingInfo.mu.Lock()
+		q.routingInfo.lwt = routingKeyInfo.lwt
+		q.routingInfo.partitioner = routingKeyInfo.partitioner
+		q.routingInfo.mu.Unlock()
 	}
 	return createRoutingKey(routingKeyInfo, q.values)
 }
@@ -1140,11 +1162,11 @@ func (q *Query) IsIdempotent() bool {
 }
 
 func (q *Query) IsLWT() bool {
-	return q.lwt
+	return q.routingInfo.isLWT()
 }
 
 func (q *Query) GetCustomPartitioner() partitioner {
-	return q.partitioner
+	return q.routingInfo.getPartitioner()
 }
 
 // Idempotent marks the query as being idempotent or not depending on
@@ -1297,7 +1319,7 @@ func (q *Query) Release() {
 
 // reset zeroes out all fields of a query so that it can be safely pooled.
 func (q *Query) reset() {
-	*q = Query{}
+	*q = Query{routingInfo: &queryRoutingInfo{}}
 }
 
 // Iter represents an iterator that can be used to iterate over all rows that
@@ -1609,15 +1631,8 @@ type Batch struct {
 	keyspace              string
 	metrics               *queryMetrics
 
-	// "lwt" denotes the query being an LWT operation
-	// In effect if the query is of the form "INSERT/UPDATE/DELETE ... IF ..."
-	// For more details see https://docs.scylladb.com/using-scylla/lwt/
-	// It is sufficient that one batch entry is a conditional query for the
-	// whole batch to be considered for LWT optimization.
-	lwt bool
-
-	// If not nil, represents a custom partitioner for the table
-	partitioner partitioner
+	// routingInfo is a pointer because Query can be copied and copyable struct can't hold a mutex.
+	routingInfo *queryRoutingInfo
 }
 
 // NewBatch creates a new batch operation without defaults from the cluster
@@ -1625,9 +1640,10 @@ type Batch struct {
 // Deprecated: use session.NewBatch instead
 func NewBatch(typ BatchType) *Batch {
 	return &Batch{
-		Type:    typ,
-		metrics: &queryMetrics{m: make(map[string]*hostMetrics)},
-		spec:    &NonSpeculativeExecution{},
+		Type:        typ,
+		metrics:     &queryMetrics{m: make(map[string]*hostMetrics)},
+		spec:        &NonSpeculativeExecution{},
+		routingInfo: &queryRoutingInfo{},
 	}
 }
 
@@ -1645,6 +1661,7 @@ func (s *Session) NewBatch(typ BatchType) *Batch {
 		keyspace:         s.cfg.Keyspace,
 		metrics:          &queryMetrics{m: make(map[string]*hostMetrics)},
 		spec:             &NonSpeculativeExecution{},
+		routingInfo:      &queryRoutingInfo{},
 	}
 
 	s.mu.RUnlock()
@@ -1709,11 +1726,11 @@ func (b *Batch) IsIdempotent() bool {
 }
 
 func (b *Batch) IsLWT() bool {
-	return b.lwt
+	return b.routingInfo.isLWT()
 }
 
 func (b *Batch) GetCustomPartitioner() partitioner {
-	return b.partitioner
+	return b.routingInfo.getPartitioner()
 }
 
 func (b *Batch) speculativeExecutionPolicy() SpeculativeExecutionPolicy {
@@ -1857,8 +1874,10 @@ func (b *Batch) GetRoutingKey() ([]byte, error) {
 		return nil, err
 	}
 	if routingKeyInfo != nil {
-		b.lwt = routingKeyInfo.lwt
-		b.partitioner = routingKeyInfo.partitioner
+		b.routingInfo.mu.Lock()
+		b.routingInfo.lwt = routingKeyInfo.lwt
+		b.routingInfo.partitioner = routingKeyInfo.partitioner
+		b.routingInfo.mu.Unlock()
 	}
 
 	return createRoutingKey(routingKeyInfo, entry.Args)

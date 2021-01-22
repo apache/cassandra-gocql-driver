@@ -53,7 +53,7 @@ func TestHostPolicy_TokenAware_SimpleStrategy(t *testing.T) {
 		return nil, errors.New("not initalized")
 	}
 
-	query := &Query{}
+	query := &Query{routingInfo: &queryRoutingInfo{}}
 	query.getKeyspace = func() string { return keyspace }
 
 	iter := policy.Pick(nil)
@@ -176,8 +176,8 @@ func TestHostPolicy_TokenAware_LWT_DisablesHostShuffling(t *testing.T) {
 				policy.AddHost(host)
 			}
 			query := &Query{
-				lwt:        tc.lwt,
-				routingKey: []byte(tc.routingKey),
+				routingKey:  []byte(tc.routingKey),
+				routingInfo: &queryRoutingInfo{lwt: tc.lwt},
 			}
 			query.getKeyspace = func() string { return keyspace }
 			iter := policy.Pick(query)
@@ -304,7 +304,7 @@ func TestHostPolicy_TokenAware_NilHostInfo(t *testing.T) {
 	}
 	policy.SetPartitioner("OrderedPartitioner")
 
-	query := &Query{}
+	query := &Query{routingInfo: &queryRoutingInfo{}}
 	query.getKeyspace = func() string { return "myKeyspace" }
 	query.RoutingKey([]byte("20"))
 
@@ -362,7 +362,7 @@ func TestCOWList_Add(t *testing.T) {
 
 // TestSimpleRetryPolicy makes sure that we only allow 1 + numRetries attempts
 func TestSimpleRetryPolicy(t *testing.T) {
-	q := &Query{}
+	q := &Query{routingInfo: &queryRoutingInfo{}}
 
 	// this should allow a total of 3 tries.
 	rt := &SimpleRetryPolicy{NumRetries: 2}
@@ -420,7 +420,7 @@ func TestExponentialBackoffPolicy(t *testing.T) {
 
 func TestDowngradingConsistencyRetryPolicy(t *testing.T) {
 
-	q := &Query{cons: LocalQuorum}
+	q := &Query{cons: LocalQuorum, routingInfo: &queryRoutingInfo{}}
 
 	rewt0 := &RequestErrWriteTimeout{
 		Received:  0,
@@ -547,7 +547,7 @@ func TestHostPolicy_TokenAware(t *testing.T) {
 		return nil, errors.New("not initialized")
 	}
 
-	query := &Query{}
+	query := &Query{routingInfo: &queryRoutingInfo{}}
 	query.getKeyspace = func() string { return keyspace }
 
 	iter := policy.Pick(nil)
@@ -647,7 +647,7 @@ func TestHostPolicy_TokenAware_NetworkStrategy(t *testing.T) {
 		return nil, errors.New("not initialized")
 	}
 
-	query := &Query{}
+	query := &Query{routingInfo: &queryRoutingInfo{}}
 	query.getKeyspace = func() string { return keyspace }
 
 	iter := policy.Pick(nil)
@@ -737,7 +737,7 @@ func TestHostPolicy_TokenAware_Issue1274(t *testing.T) {
 		return nil, errors.New("not initialized")
 	}
 
-	query := &Query{}
+	query := &Query{routingInfo: &queryRoutingInfo{}}
 	query.getKeyspace = func() string { return "myKeyspace" }
 
 	iter := policy.Pick(nil)
