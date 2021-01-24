@@ -213,14 +213,26 @@ func (s *Session) dialWithoutObserver(ctx context.Context, host *HostInfo, cfg *
 		dialer = d
 	}
 
-	conn, err := dialer.DialContext(ctx, "tcp", host.HostnameAndPort())
+	addr := host.HostnameAndPort()
+	conn, err := dialer.DialContext(ctx, "tcp", addr)
 	if err != nil {
 		return nil, err
 	}
 	if cfg.tlsConfig != nil {
 		// the TLS config is safe to be reused by connections but it must not
 		// be modified after being used.
-		tconn := tls.Client(conn, cfg.tlsConfig)
+		tlsConfig := cfg.tlsConfig
+		if !tlsConfig.InsecureSkipVerify && tlsConfig.ServerName == "" {
+			colonPos := strings.LastIndex(addr, ":")
+			if colonPos == -1 {
+				colonPos = len(addr)
+			}
+			hostname := addr[:colonPos]
+			// clone config to avoid modifying the shared one.
+			tlsConfig = tlsConfig.Clone()
+			tlsConfig.ServerName = hostname
+		}
+		tconn := tls.Client(conn, tlsConfig)
 		if err := tconn.Handshake(); err != nil {
 			conn.Close()
 			return nil, err
