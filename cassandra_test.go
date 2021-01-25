@@ -2249,7 +2249,7 @@ func TestMaterializedViewMetadata(t *testing.T) {
 		t.Fatal("failed to query view metadata, nil returned")
 	}
 	if len(materializedViews) != 2 {
-		t.Fatal("expected two view")
+		t.Fatal("expected two views")
 	}
 	expectedView1 := MaterializedViewMetadata{
 		Keyspace:                "gocql_test",
@@ -2524,7 +2524,7 @@ func TestKeyspaceMetadata(t *testing.T) {
 	if flagCassVersion.Major >= 3 {
 		materializedView, found := keyspaceMetadata.MaterializedViews["view_view"]
 		if !found {
-			t.Fatal("failed to find materialized view_view in metadata")
+			t.Fatal("failed to find materialized view view_view in metadata")
 		}
 		if materializedView.BaseTable.Name != "view_table" {
 			t.Fatalf("expected name: %s, materialized view base table name: %s", "view_table", materializedView.BaseTable.Name)
