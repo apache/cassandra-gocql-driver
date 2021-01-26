@@ -324,10 +324,10 @@ func compileMetadata(
 		keyspace.Functions[functions[i].Name] = &functions[i]
 	}
 	keyspace.Aggregates = make(map[string]*AggregateMetadata, len(aggregates))
-	for _, aggregate := range aggregates {
-		aggregate.FinalFunc = *keyspace.Functions[aggregate.finalFunc]
-		aggregate.StateFunc = *keyspace.Functions[aggregate.stateFunc]
-		keyspace.Aggregates[aggregate.Name] = &aggregate
+	for i, _ := range aggregates {
+		aggregates[i].FinalFunc = *keyspace.Functions[aggregates[i].finalFunc]
+		aggregates[i].StateFunc = *keyspace.Functions[aggregates[i].stateFunc]
+		keyspace.Aggregates[aggregates[i].Name] = &aggregates[i]
 	}
 	keyspace.Views = make(map[string]*ViewMetadata, len(views))
 	for i := range views {

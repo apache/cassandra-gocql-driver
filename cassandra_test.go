@@ -2310,10 +2310,9 @@ func TestAggregateMetadata(t *testing.T) {
 	if aggregates == nil {
 		t.Fatal("failed to query aggregate metadata, nil returned")
 	}
-	if len(aggregates) != 1 {
-		t.Fatal("expected only a single aggregate")
+	if len(aggregates) != 2 {
+		t.Fatal("expected two aggregates")
 	}
-	aggregate := aggregates[0]
 
 	expectedAggregrate := AggregateMetadata{
 		Keyspace:      "gocql_test",
@@ -2338,8 +2337,12 @@ func TestAggregateMetadata(t *testing.T) {
 		expectedAggregrate.InitCond = string([]byte{0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 8, 0, 0, 0, 0, 0, 0, 0, 0})
 	}
 
-	if !reflect.DeepEqual(aggregate, expectedAggregrate) {
-		t.Fatalf("aggregate is %+v, but expected %+v", aggregate, expectedAggregrate)
+	if !reflect.DeepEqual(aggregates[0], expectedAggregrate) {
+		t.Fatalf("aggregate 'average' is %+v, but expected %+v", aggregates[0], expectedAggregrate)
+	}
+	expectedAggregrate.Name = "average2"
+	if !reflect.DeepEqual(aggregates[1], expectedAggregrate) {
+		t.Fatalf("aggregate 'average2' is %+v, but expected %+v", aggregates[1], expectedAggregrate)
 	}
 }
 
@@ -2486,7 +2489,17 @@ func TestKeyspaceMetadata(t *testing.T) {
 
 	aggregate, found := keyspaceMetadata.Aggregates["average"]
 	if !found {
-		t.Fatal("failed to find the aggreate in metadata")
+		t.Fatal("failed to find the aggregate 'average' in metadata")
+	}
+	if aggregate.FinalFunc.Name != "avgfinal" {
+		t.Fatalf("expected final function %s, but got %s", "avgFinal", aggregate.FinalFunc.Name)
+	}
+	if aggregate.StateFunc.Name != "avgstate" {
+		t.Fatalf("expected state function %s, but got %s", "avgstate", aggregate.StateFunc.Name)
+	}
+	aggregate, found = keyspaceMetadata.Aggregates["average2"]
+	if !found {
+		t.Fatal("failed to find the aggregate 'average2' in metadata")
 	}
 	if aggregate.FinalFunc.Name != "avgfinal" {
 		t.Fatalf("expected final function %s, but got %s", "avgFinal", aggregate.FinalFunc.Name)
