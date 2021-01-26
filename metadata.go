@@ -347,9 +347,9 @@ func compileMetadata(
 		keyspace.UserTypes[types[i].Name] = &types[i]
 	}
 	keyspace.MaterializedViews = make(map[string]*MaterializedViewMetadata, len(materializedViews))
-	for _, materializedView := range materializedViews {
-		materializedView.BaseTable = keyspace.Tables[materializedView.baseTableName]
-		keyspace.MaterializedViews[materializedView.Name] = &materializedView
+	for i, _ := range materializedViews {
+		materializedViews[i].BaseTable = keyspace.Tables[materializedViews[i].baseTableName]
+		keyspace.MaterializedViews[materializedViews[i].Name] = &materializedViews[i]
 	}
 
 	// add columns from the schema data
