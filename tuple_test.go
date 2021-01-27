@@ -280,6 +280,11 @@ func TestTuple_NestedCollection(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+
+			resVal := reflect.ValueOf(res).Elem().Interface()
+			if !reflect.DeepEqual(test.val, resVal) {
+				t.Fatalf("unmarshaled value not equal to the original value: expected %#v, got %#v", test.val, resVal)
+			}
 		})
 	}
 }
