@@ -2,6 +2,7 @@ package gocql
 
 import (
 	"context"
+	"errors"
 	"time"
 )
 
@@ -92,7 +93,13 @@ func (q *queryExecutor) do(ctx context.Context, qry ExecutableQuery) *Iter {
 	var iter *Iter
 	for selectedHost != nil {
 		host := selectedHost.Info()
-		if host == nil || !host.IsUp() {
+		if host == nil {
+			selectedHost = hostIter()
+			continue
+		}
+
+		if !host.IsUp() {
+			selectedHost.Mark(errors.New("executor: host is not up"))
 			selectedHost = hostIter()
 			continue
 		}
