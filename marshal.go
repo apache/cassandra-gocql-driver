@@ -2035,7 +2035,7 @@ func unmarshalTuple(info TypeInfo, data []byte, value interface{}) error {
 		for i, elem := range tuple.Elems {
 			// each element inside data is a [bytes]
 			var p []byte
-			if len(data) > 4 {
+			if len(data) >= 4 {
 				p, data = readBytes(data)
 			}
 			err := Unmarshal(elem, p, v[i])
@@ -2064,7 +2064,7 @@ func unmarshalTuple(info TypeInfo, data []byte, value interface{}) error {
 
 		for i, elem := range tuple.Elems {
 			var p []byte
-			if len(data) > 4 {
+			if len(data) >= 4 {
 				p, data = readBytes(data)
 			}
 
@@ -2098,7 +2098,7 @@ func unmarshalTuple(info TypeInfo, data []byte, value interface{}) error {
 
 		for i, elem := range tuple.Elems {
 			var p []byte
-			if len(data) > 4 {
+			if len(data) >= 4 {
 				p, data = readBytes(data)
 			}
 
