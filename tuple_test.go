@@ -288,3 +288,61 @@ func TestTuple_NestedCollection(t *testing.T) {
 		})
 	}
 }
+
+func TestTuple_NullableNestedCollection(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+	if session.cfg.ProtoVersion < protoVersion3 {
+		t.Skip("tuple types are only available of proto>=3")
+	}
+
+	err := createTable(session, `CREATE TABLE gocql_test.nested_tuples_with_nulls(
+		id int,
+		val list<frozen<tuple<text, text>>>,
+
+		primary key(id))`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	type typ struct {
+		A *string
+		B *string
+	}
+
+	ptrStr := func(s string) *string {
+		ret := new(string)
+		*ret = s
+		return ret
+	}
+
+	tests := []struct {
+		name string
+		val  interface{}
+	}{
+		{name: "slice", val: [][]*string{{ptrStr("1"), nil}, {nil, ptrStr("2")}}},
+		{name: "array", val: [][2]*string{{ptrStr("1"), nil}, {nil, ptrStr("2")}}},
+		{name: "struct", val: []typ{{ptrStr("1"), nil}, {nil, ptrStr("2")}}},
+	}
+
+	for i, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if err := session.Query(`INSERT INTO nested_tuples_with_nulls (id, val) VALUES (?, ?);`, i, test.val).Exec(); err != nil {
+				t.Fatal(err)
+			}
+
+			rv := reflect.ValueOf(test.val)
+			res := reflect.New(rv.Type()).Interface()
+
+			err = session.Query(`SELECT val FROM nested_tuples_with_nulls WHERE id=?`, i).Scan(res)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			resVal := reflect.ValueOf(res).Elem().Interface()
+			if !reflect.DeepEqual(test.val, resVal) {
+				t.Fatalf("unmarshaled value not equal to the original value: expected %#v, got %#v", test.val, resVal)
+			}
+		})
+	}
+}

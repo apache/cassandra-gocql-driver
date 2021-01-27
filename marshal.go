@@ -2075,7 +2075,11 @@ func unmarshalTuple(info TypeInfo, data []byte, value interface{}) error {
 
 			switch rv.Field(i).Kind() {
 			case reflect.Ptr:
-				rv.Field(i).Set(reflect.ValueOf(v))
+				if p != nil {
+					rv.Field(i).Set(reflect.ValueOf(v))
+				} else {
+					rv.Field(i).Set(reflect.Zero(reflect.TypeOf(v)))
+				}
 			default:
 				rv.Field(i).Set(reflect.ValueOf(v).Elem())
 			}
@@ -2105,7 +2109,11 @@ func unmarshalTuple(info TypeInfo, data []byte, value interface{}) error {
 
 			switch rv.Index(i).Kind() {
 			case reflect.Ptr:
-				rv.Index(i).Set(reflect.ValueOf(v))
+				if p != nil {
+					rv.Index(i).Set(reflect.ValueOf(v))
+				} else {
+					rv.Index(i).Set(reflect.Zero(reflect.TypeOf(v)))
+				}
 			default:
 				rv.Index(i).Set(reflect.ValueOf(v).Elem())
 			}
