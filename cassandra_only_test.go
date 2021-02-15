@@ -14,51 +14,6 @@ import (
 	"time"
 )
 
-func TestAggregateMetadata(t *testing.T) {
-	session := createSession(t)
-	defer session.Close()
-	createAggregate(t, session)
-
-	aggregates, err := getAggregatesMetadata(session, "gocql_test")
-	if err != nil {
-		t.Fatalf("failed to query aggregate metadata with err: %v", err)
-	}
-	if aggregates == nil {
-		t.Fatal("failed to query aggregate metadata, nil returned")
-	}
-	if len(aggregates) != 1 {
-		t.Fatal("expected only a single aggregate")
-	}
-	aggregate := aggregates[0]
-
-	expectedAggregrate := AggregateMetadata{
-		Keyspace:      "gocql_test",
-		Name:          "average",
-		ArgumentTypes: []TypeInfo{NativeType{typ: TypeInt}},
-		InitCond:      "(0, 0)",
-		ReturnType:    NativeType{typ: TypeDouble},
-		StateType: TupleTypeInfo{
-			NativeType: NativeType{typ: TypeTuple},
-
-			Elems: []TypeInfo{
-				NativeType{typ: TypeInt},
-				NativeType{typ: TypeBigInt},
-			},
-		},
-		stateFunc: "avgstate",
-		finalFunc: "avgfinal",
-	}
-
-	// In this case cassandra is returning a blob
-	if flagCassVersion.Before(3, 0, 0) {
-		expectedAggregrate.InitCond = string([]byte{0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 8, 0, 0, 0, 0, 0, 0, 0, 0})
-	}
-
-	if !reflect.DeepEqual(aggregate, expectedAggregrate) {
-		t.Fatalf("aggregate is %+v, but expected %+v", aggregate, expectedAggregrate)
-	}
-}
-
 func TestDiscoverViaProxy(t *testing.T) {
 	// This (complicated) test tests that when the driver is given an initial host
 	// that is infact a proxy it discovers the rest of the ring behind the proxy
@@ -178,163 +133,6 @@ func TestDiscoverViaProxy(t *testing.T) {
 		}
 	}
 	mu.Unlock()
-}
-
-func TestFunctionMetadata(t *testing.T) {
-	session := createSession(t)
-	defer session.Close()
-	createFunctions(t, session)
-
-	functions, err := getFunctionsMetadata(session, "gocql_test")
-	if err != nil {
-		t.Fatalf("failed to query function metadata with err: %v", err)
-	}
-	if functions == nil {
-		t.Fatal("failed to query function metadata, nil returned")
-	}
-	if len(functions) != 2 {
-		t.Fatal("expected two functions")
-	}
-	avgState := functions[1]
-	avgFinal := functions[0]
-
-	avgStateBody := "if (val !=null) {state.setInt(0, state.getInt(0)+1); state.setLong(1, state.getLong(1)+val.intValue());}return state;"
-	expectedAvgState := FunctionMetadata{
-		Keyspace: "gocql_test",
-		Name:     "avgstate",
-		ArgumentTypes: []TypeInfo{
-			TupleTypeInfo{
-				NativeType: NativeType{typ: TypeTuple},
-
-				Elems: []TypeInfo{
-					NativeType{typ: TypeInt},
-					NativeType{typ: TypeBigInt},
-				},
-			},
-			NativeType{typ: TypeInt},
-		},
-		ArgumentNames: []string{"state", "val"},
-		ReturnType: TupleTypeInfo{
-			NativeType: NativeType{typ: TypeTuple},
-
-			Elems: []TypeInfo{
-				NativeType{typ: TypeInt},
-				NativeType{typ: TypeBigInt},
-			},
-		},
-		CalledOnNullInput: true,
-		Language:          "java",
-		Body:              avgStateBody,
-	}
-	if !reflect.DeepEqual(avgState, expectedAvgState) {
-		t.Fatalf("function is %+v, but expected %+v", avgState, expectedAvgState)
-	}
-
-	finalStateBody := "double r = 0; if (state.getInt(0) == 0) return null; r = state.getLong(1); r/= state.getInt(0); return Double.valueOf(r);"
-	expectedAvgFinal := FunctionMetadata{
-		Keyspace: "gocql_test",
-		Name:     "avgfinal",
-		ArgumentTypes: []TypeInfo{
-			TupleTypeInfo{
-				NativeType: NativeType{typ: TypeTuple},
-
-				Elems: []TypeInfo{
-					NativeType{typ: TypeInt},
-					NativeType{typ: TypeBigInt},
-				},
-			},
-		},
-		ArgumentNames:     []string{"state"},
-		ReturnType:        NativeType{typ: TypeDouble},
-		CalledOnNullInput: true,
-		Language:          "java",
-		Body:              finalStateBody,
-	}
-	if !reflect.DeepEqual(avgFinal, expectedAvgFinal) {
-		t.Fatalf("function is %+v, but expected %+v", avgFinal, expectedAvgFinal)
-	}
-}
-
-// Integration test of querying and composition the keyspace metadata
-func TestKeyspaceMetadata(t *testing.T) {
-	session := createSession(t)
-	defer session.Close()
-
-	if err := createTable(session, "CREATE TABLE gocql_test.test_metadata (first_id int, second_id int, third_id int, PRIMARY KEY (first_id, second_id))"); err != nil {
-		t.Fatalf("failed to create table with error '%v'", err)
-	}
-	createAggregate(t, session)
-	createViews(t, session)
-
-	if err := session.Query("CREATE INDEX index_metadata ON test_metadata ( third_id )").Exec(); err != nil {
-		t.Fatalf("failed to create index with err: %v", err)
-	}
-
-	keyspaceMetadata, err := session.KeyspaceMetadata("gocql_test")
-	if err != nil {
-		t.Fatalf("failed to query keyspace metadata with err: %v", err)
-	}
-	if keyspaceMetadata == nil {
-		t.Fatal("expected the keyspace metadata to not be nil, but it was nil")
-	}
-	if keyspaceMetadata.Name != session.cfg.Keyspace {
-		t.Fatalf("Expected the keyspace name to be %s but was %s", session.cfg.Keyspace, keyspaceMetadata.Name)
-	}
-	if len(keyspaceMetadata.Tables) == 0 {
-		t.Errorf("Expected tables but there were none")
-	}
-
-	tableMetadata, found := keyspaceMetadata.Tables["test_metadata"]
-	if !found {
-		t.Fatalf("failed to find the test_metadata table metadata")
-	}
-
-	if len(tableMetadata.PartitionKey) != 1 {
-		t.Errorf("expected partition key length of 1, but was %d", len(tableMetadata.PartitionKey))
-	}
-	for i, column := range tableMetadata.PartitionKey {
-		if column == nil {
-			t.Errorf("partition key column metadata at index %d was nil", i)
-		}
-	}
-	if tableMetadata.PartitionKey[0].Name != "first_id" {
-		t.Errorf("Expected the first partition key column to be 'first_id' but was '%s'", tableMetadata.PartitionKey[0].Name)
-	}
-	if len(tableMetadata.ClusteringColumns) != 1 {
-		t.Fatalf("expected clustering columns length of 1, but was %d", len(tableMetadata.ClusteringColumns))
-	}
-	for i, column := range tableMetadata.ClusteringColumns {
-		if column == nil {
-			t.Fatalf("clustering column metadata at index %d was nil", i)
-		}
-	}
-	if tableMetadata.ClusteringColumns[0].Name != "second_id" {
-		t.Errorf("Expected the first clustering column to be 'second_id' but was '%s'", tableMetadata.ClusteringColumns[0].Name)
-	}
-	thirdColumn, found := tableMetadata.Columns["third_id"]
-	if !found {
-		t.Fatalf("Expected a column definition for 'third_id'")
-	}
-	if !session.useSystemSchema && thirdColumn.Index.Name != "index_metadata" {
-		// TODO(zariel): scan index info from system_schema
-		t.Errorf("Expected column index named 'index_metadata' but was '%s'", thirdColumn.Index.Name)
-	}
-
-	aggregate, found := keyspaceMetadata.Aggregates["average"]
-	if !found {
-		t.Fatal("failed to find the aggreate in metadata")
-	}
-	if aggregate.FinalFunc.Name != "avgfinal" {
-		t.Fatalf("expected final function %s, but got %s", "avgFinal", aggregate.FinalFunc.Name)
-	}
-	if aggregate.StateFunc.Name != "avgstate" {
-		t.Fatalf("expected state function %s, but got %s", "avgstate", aggregate.StateFunc.Name)
-	}
-
-	_, found = keyspaceMetadata.Views["basicview"]
-	if !found {
-		t.Fatal("failed to find the view in metadata")
-	}
 }
 
 func TestLexicalUUIDType(t *testing.T) {
@@ -642,5 +440,324 @@ func TestViewMetadata(t *testing.T) {
 
 	if !reflect.DeepEqual(views[0], expectedView) {
 		t.Fatalf("view is %+v, but expected %+v", views[0], expectedView)
+	}
+}
+
+func TestMaterializedViewMetadata(t *testing.T) {
+	if flagCassVersion.Before(3, 0, 0) {
+		return
+	}
+	session := createSession(t)
+	defer session.Close()
+	createMaterializedViews(t, session)
+
+	materializedViews, err := getMaterializedViewsMetadata(session, "gocql_test")
+	if err != nil {
+		t.Fatalf("failed to query view metadata with err: %v", err)
+	}
+	if materializedViews == nil {
+		t.Fatal("failed to query view metadata, nil returned")
+	}
+	if len(materializedViews) != 2 {
+		t.Fatal("expected two views")
+	}
+	expectedView1 := MaterializedViewMetadata{
+		Keyspace:                "gocql_test",
+		Name:                    "view_view",
+		baseTableName:           "view_table",
+		BloomFilterFpChance:     0.01,
+		Caching:                 map[string]string{"keys": "ALL", "rows_per_partition": "NONE"},
+		Comment:                 "",
+		Compaction:              map[string]string{"class": "org.apache.cassandra.db.compaction.SizeTieredCompactionStrategy", "max_threshold": "32", "min_threshold": "4"},
+		Compression:             map[string]string{"chunk_length_in_kb": "64", "class": "org.apache.cassandra.io.compress.LZ4Compressor"},
+		CrcCheckChance:          1,
+		DcLocalReadRepairChance: 0.1,
+		DefaultTimeToLive:       0,
+		Extensions:              map[string]string{},
+		GcGraceSeconds:          864000,
+		IncludeAllColumns:       false, MaxIndexInterval: 2048, MemtableFlushPeriodInMs: 0, MinIndexInterval: 128, ReadRepairChance: 0,
+		SpeculativeRetry: "99PERCENTILE",
+	}
+	expectedView2 := MaterializedViewMetadata{
+		Keyspace:                "gocql_test",
+		Name:                    "view_view2",
+		baseTableName:           "view_table2",
+		BloomFilterFpChance:     0.01,
+		Caching:                 map[string]string{"keys": "ALL", "rows_per_partition": "NONE"},
+		Comment:                 "",
+		Compaction:              map[string]string{"class": "org.apache.cassandra.db.compaction.SizeTieredCompactionStrategy", "max_threshold": "32", "min_threshold": "4"},
+		Compression:             map[string]string{"chunk_length_in_kb": "64", "class": "org.apache.cassandra.io.compress.LZ4Compressor"},
+		CrcCheckChance:          1,
+		DcLocalReadRepairChance: 0.1,
+		DefaultTimeToLive:       0,
+		Extensions:              map[string]string{},
+		GcGraceSeconds:          864000,
+		IncludeAllColumns:       false, MaxIndexInterval: 2048, MemtableFlushPeriodInMs: 0, MinIndexInterval: 128, ReadRepairChance: 0,
+		SpeculativeRetry: "99PERCENTILE",
+	}
+
+	expectedView1.BaseTableId = materializedViews[0].BaseTableId
+	expectedView1.Id = materializedViews[0].Id
+	if !reflect.DeepEqual(materializedViews[0], expectedView1) {
+		t.Fatalf("materialized view is %+v, but expected %+v", materializedViews[0], expectedView1)
+	}
+	expectedView2.BaseTableId = materializedViews[1].BaseTableId
+	expectedView2.Id = materializedViews[1].Id
+	if !reflect.DeepEqual(materializedViews[1], expectedView2) {
+		t.Fatalf("materialized view is %+v, but expected %+v", materializedViews[1], expectedView2)
+	}
+}
+
+func TestAggregateMetadata(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+	createAggregate(t, session)
+
+	aggregates, err := getAggregatesMetadata(session, "gocql_test")
+	if err != nil {
+		t.Fatalf("failed to query aggregate metadata with err: %v", err)
+	}
+	if aggregates == nil {
+		t.Fatal("failed to query aggregate metadata, nil returned")
+	}
+	if len(aggregates) != 2 {
+		t.Fatal("expected two aggregates")
+	}
+
+	expectedAggregrate := AggregateMetadata{
+		Keyspace:      "gocql_test",
+		Name:          "average",
+		ArgumentTypes: []TypeInfo{NativeType{typ: TypeInt}},
+		InitCond:      "(0, 0)",
+		ReturnType:    NativeType{typ: TypeDouble},
+		StateType: TupleTypeInfo{
+			NativeType: NativeType{typ: TypeTuple},
+
+			Elems: []TypeInfo{
+				NativeType{typ: TypeInt},
+				NativeType{typ: TypeBigInt},
+			},
+		},
+		stateFunc: "avgstate",
+		finalFunc: "avgfinal",
+	}
+
+	// In this case cassandra is returning a blob
+	if flagCassVersion.Before(3, 0, 0) {
+		expectedAggregrate.InitCond = string([]byte{0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 8, 0, 0, 0, 0, 0, 0, 0, 0})
+	}
+
+	if !reflect.DeepEqual(aggregates[0], expectedAggregrate) {
+		t.Fatalf("aggregate 'average' is %+v, but expected %+v", aggregates[0], expectedAggregrate)
+	}
+	expectedAggregrate.Name = "average2"
+	if !reflect.DeepEqual(aggregates[1], expectedAggregrate) {
+		t.Fatalf("aggregate 'average2' is %+v, but expected %+v", aggregates[1], expectedAggregrate)
+	}
+}
+
+func TestFunctionMetadata(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+	createFunctions(t, session)
+
+	functions, err := getFunctionsMetadata(session, "gocql_test")
+	if err != nil {
+		t.Fatalf("failed to query function metadata with err: %v", err)
+	}
+	if functions == nil {
+		t.Fatal("failed to query function metadata, nil returned")
+	}
+	if len(functions) != 2 {
+		t.Fatal("expected two functions")
+	}
+	avgState := functions[1]
+	avgFinal := functions[0]
+
+	avgStateBody := "if (val !=null) {state.setInt(0, state.getInt(0)+1); state.setLong(1, state.getLong(1)+val.intValue());}return state;"
+	expectedAvgState := FunctionMetadata{
+		Keyspace: "gocql_test",
+		Name:     "avgstate",
+		ArgumentTypes: []TypeInfo{
+			TupleTypeInfo{
+				NativeType: NativeType{typ: TypeTuple},
+
+				Elems: []TypeInfo{
+					NativeType{typ: TypeInt},
+					NativeType{typ: TypeBigInt},
+				},
+			},
+			NativeType{typ: TypeInt},
+		},
+		ArgumentNames: []string{"state", "val"},
+		ReturnType: TupleTypeInfo{
+			NativeType: NativeType{typ: TypeTuple},
+
+			Elems: []TypeInfo{
+				NativeType{typ: TypeInt},
+				NativeType{typ: TypeBigInt},
+			},
+		},
+		CalledOnNullInput: true,
+		Language:          "java",
+		Body:              avgStateBody,
+	}
+	if !reflect.DeepEqual(avgState, expectedAvgState) {
+		t.Fatalf("function is %+v, but expected %+v", avgState, expectedAvgState)
+	}
+
+	finalStateBody := "double r = 0; if (state.getInt(0) == 0) return null; r = state.getLong(1); r/= state.getInt(0); return Double.valueOf(r);"
+	expectedAvgFinal := FunctionMetadata{
+		Keyspace: "gocql_test",
+		Name:     "avgfinal",
+		ArgumentTypes: []TypeInfo{
+			TupleTypeInfo{
+				NativeType: NativeType{typ: TypeTuple},
+
+				Elems: []TypeInfo{
+					NativeType{typ: TypeInt},
+					NativeType{typ: TypeBigInt},
+				},
+			},
+		},
+		ArgumentNames:     []string{"state"},
+		ReturnType:        NativeType{typ: TypeDouble},
+		CalledOnNullInput: true,
+		Language:          "java",
+		Body:              finalStateBody,
+	}
+	if !reflect.DeepEqual(avgFinal, expectedAvgFinal) {
+		t.Fatalf("function is %+v, but expected %+v", avgFinal, expectedAvgFinal)
+	}
+}
+
+// Integration test of querying and composition the keyspace metadata
+func TestKeyspaceMetadata(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+
+	if err := createTable(session, "CREATE TABLE gocql_test.test_metadata (first_id int, second_id int, third_id int, PRIMARY KEY (first_id, second_id))"); err != nil {
+		t.Fatalf("failed to create table with error '%v'", err)
+	}
+	createAggregate(t, session)
+	createViews(t, session)
+	createMaterializedViews(t, session)
+
+	if err := session.Query("CREATE INDEX index_metadata ON test_metadata ( third_id )").Exec(); err != nil {
+		t.Fatalf("failed to create index with err: %v", err)
+	}
+
+	keyspaceMetadata, err := session.KeyspaceMetadata("gocql_test")
+	if err != nil {
+		t.Fatalf("failed to query keyspace metadata with err: %v", err)
+	}
+	if keyspaceMetadata == nil {
+		t.Fatal("expected the keyspace metadata to not be nil, but it was nil")
+	}
+	if keyspaceMetadata.Name != session.cfg.Keyspace {
+		t.Fatalf("Expected the keyspace name to be %s but was %s", session.cfg.Keyspace, keyspaceMetadata.Name)
+	}
+	if len(keyspaceMetadata.Tables) == 0 {
+		t.Errorf("Expected tables but there were none")
+	}
+
+	tableMetadata, found := keyspaceMetadata.Tables["test_metadata"]
+	if !found {
+		t.Fatalf("failed to find the test_metadata table metadata")
+	}
+
+	if len(tableMetadata.PartitionKey) != 1 {
+		t.Errorf("expected partition key length of 1, but was %d", len(tableMetadata.PartitionKey))
+	}
+	for i, column := range tableMetadata.PartitionKey {
+		if column == nil {
+			t.Errorf("partition key column metadata at index %d was nil", i)
+		}
+	}
+	if tableMetadata.PartitionKey[0].Name != "first_id" {
+		t.Errorf("Expected the first partition key column to be 'first_id' but was '%s'", tableMetadata.PartitionKey[0].Name)
+	}
+	if len(tableMetadata.ClusteringColumns) != 1 {
+		t.Fatalf("expected clustering columns length of 1, but was %d", len(tableMetadata.ClusteringColumns))
+	}
+	for i, column := range tableMetadata.ClusteringColumns {
+		if column == nil {
+			t.Fatalf("clustering column metadata at index %d was nil", i)
+		}
+	}
+	if tableMetadata.ClusteringColumns[0].Name != "second_id" {
+		t.Errorf("Expected the first clustering column to be 'second_id' but was '%s'", tableMetadata.ClusteringColumns[0].Name)
+	}
+	thirdColumn, found := tableMetadata.Columns["third_id"]
+	if !found {
+		t.Fatalf("Expected a column definition for 'third_id'")
+	}
+	if !session.useSystemSchema && thirdColumn.Index.Name != "index_metadata" {
+		// TODO(zariel): scan index info from system_schema
+		t.Errorf("Expected column index named 'index_metadata' but was '%s'", thirdColumn.Index.Name)
+	}
+
+	aggregate, found := keyspaceMetadata.Aggregates["average"]
+	if !found {
+		t.Fatal("failed to find the aggregate 'average' in metadata")
+	}
+	if aggregate.FinalFunc.Name != "avgfinal" {
+		t.Fatalf("expected final function %s, but got %s", "avgFinal", aggregate.FinalFunc.Name)
+	}
+	if aggregate.StateFunc.Name != "avgstate" {
+		t.Fatalf("expected state function %s, but got %s", "avgstate", aggregate.StateFunc.Name)
+	}
+	aggregate, found = keyspaceMetadata.Aggregates["average2"]
+	if !found {
+		t.Fatal("failed to find the aggregate 'average2' in metadata")
+	}
+	if aggregate.FinalFunc.Name != "avgfinal" {
+		t.Fatalf("expected final function %s, but got %s", "avgFinal", aggregate.FinalFunc.Name)
+	}
+	if aggregate.StateFunc.Name != "avgstate" {
+		t.Fatalf("expected state function %s, but got %s", "avgstate", aggregate.StateFunc.Name)
+	}
+
+	_, found = keyspaceMetadata.Views["basicview"]
+	if !found {
+		t.Fatal("failed to find the view in metadata")
+	}
+	_, found = keyspaceMetadata.UserTypes["basicview"]
+	if !found {
+		t.Fatal("failed to find the types in metadata")
+	}
+	textType := TypeText
+	if flagCassVersion.Before(3, 0, 0) {
+		textType = TypeVarchar
+	}
+	expectedType := UserTypeMetadata{
+		Keyspace:   "gocql_test",
+		Name:       "basicview",
+		FieldNames: []string{"birthday", "nationality", "weight", "height"},
+		FieldTypes: []TypeInfo{
+			NativeType{typ: TypeTimestamp},
+			NativeType{typ: textType},
+			NativeType{typ: textType},
+			NativeType{typ: textType},
+		},
+	}
+	if !reflect.DeepEqual(*keyspaceMetadata.UserTypes["basicview"], expectedType) {
+		t.Fatalf("type is %+v, but expected %+v", keyspaceMetadata.UserTypes["basicview"], expectedType)
+	}
+	if flagCassVersion.Major >= 3 {
+		materializedView, found := keyspaceMetadata.MaterializedViews["view_view"]
+		if !found {
+			t.Fatal("failed to find materialized view view_view in metadata")
+		}
+		if materializedView.BaseTable.Name != "view_table" {
+			t.Fatalf("expected name: %s, materialized view base table name: %s", "view_table", materializedView.BaseTable.Name)
+		}
+		materializedView, found = keyspaceMetadata.MaterializedViews["view_view2"]
+		if !found {
+			t.Fatal("failed to find materialized view view_view2 in metadata")
+		}
+		if materializedView.BaseTable.Name != "view_table2" {
+			t.Fatalf("expected name: %s, materialized view base table name: %s", "view_table2", materializedView.BaseTable.Name)
+		}
 	}
 }
