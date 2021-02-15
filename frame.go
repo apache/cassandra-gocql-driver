@@ -857,7 +857,7 @@ func (w *writePrepareFrame) writeFrame(f *framer, streamID int) error {
 		if f.proto > protoVersion4 {
 			flags |= flagWithPreparedKeyspace
 		} else {
-			panic(fmt.Errorf("The keyspace can only be set with protocol 5 or higher"))
+			panic(fmt.Errorf("the keyspace can only be set with protocol 5 or higher"))
 		}
 	}
 	if f.proto > protoVersion4 {
@@ -1511,7 +1511,7 @@ func (f *framer) writeQueryParams(opts *queryParams) {
 		if f.proto > protoVersion4 {
 			flags |= flagWithKeyspace
 		} else {
-			panic(fmt.Errorf("The keyspace can only be set with protocol 5 or higher"))
+			panic(fmt.Errorf("the keyspace can only be set with protocol 5 or higher"))
 		}
 	}
 
