@@ -6,6 +6,9 @@ Please answer these questions before submitting your issue. Thanks!
 ### What version of Gocql are you using?
 
 
+### What version of Go are you using?
+
+
 ### What did you do?
 
 

@@ -195,9 +195,23 @@ func createMaterializedViews(t *testing.T, session *Session) {
     		    PRIMARY KEY (userid));`).Exec(); err != nil {
 		t.Fatalf("failed to create materialized view with err: %v", err)
 	}
+	if err := session.Query(`CREATE TABLE IF NOT EXISTS gocql_test.view_table2 (
+		    userid text,
+		    year int,
+		    month int,
+    		    PRIMARY KEY (userid));`).Exec(); err != nil {
+		t.Fatalf("failed to create materialized view with err: %v", err)
+	}
 	if err := session.Query(`CREATE MATERIALIZED VIEW IF NOT EXISTS gocql_test.view_view AS
 		   SELECT year, month, userid
 		   FROM gocql_test.view_table
+		   WHERE year IS NOT NULL AND month IS NOT NULL AND userid IS NOT NULL
+		   PRIMARY KEY (userid, year);`).Exec(); err != nil {
+		t.Fatalf("failed to create materialized view with err: %v", err)
+	}
+	if err := session.Query(`CREATE MATERIALIZED VIEW IF NOT EXISTS gocql_test.view_view2 AS
+		   SELECT year, month, userid
+		   FROM gocql_test.view_table2
 		   WHERE year IS NOT NULL AND month IS NOT NULL AND userid IS NOT NULL
 		   PRIMARY KEY (userid, year);`).Exec(); err != nil {
 		t.Fatalf("failed to create materialized view with err: %v", err)
@@ -228,6 +242,15 @@ func createAggregate(t *testing.T, session *Session) {
 	createFunctions(t, session)
 	if err := session.Query(`
 		CREATE OR REPLACE AGGREGATE gocql_test.average(int)
+		SFUNC avgState
+		STYPE tuple<int,bigint>
+		FINALFUNC avgFinal
+		INITCOND (0,0);
+	`).Exec(); err != nil {
+		t.Fatalf("failed to create aggregate with err: %v", err)
+	}
+	if err := session.Query(`
+		CREATE OR REPLACE AGGREGATE gocql_test.average2(int)
 		SFUNC avgState
 		STYPE tuple<int,bigint>
 		FINALFUNC avgFinal
