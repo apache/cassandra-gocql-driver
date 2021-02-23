@@ -546,7 +546,7 @@ func (s *Session) querySharded(
 				-1,
 			)
 			query = strings.Replace(query, "?,)", "?)", -1)
-			queries = append(queries, s.Query(query, keys[i-QuerySizeMaximum:i]))
+			queries = append(queries, s.Query(query, keys[i-QuerySizeMaximum:i]...))
 			numberOfPage--
 		}
 		if len(keys)%QuerySizeMaximum > 0 {
@@ -557,7 +557,7 @@ func (s *Session) querySharded(
 				-1,
 			)
 			query = strings.Replace(query, "?,)", "?)", -1)
-			queries = append(queries, s.Query(query, keys[i:]))
+			queries = append(queries, s.Query(query, keys[i:]...))
 		}
 	}
 	return queries
