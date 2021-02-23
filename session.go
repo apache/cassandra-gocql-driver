@@ -553,7 +553,7 @@ func (s *Session) querySharded(
 			query := strings.Replace(
 				stmt,
 				_placeholder,
-				"("+strings.Repeat("?,", i-len(keys))+")",
+				"("+strings.Repeat("?,", len(keys)-i)+")",
 				-1,
 			)
 			query = strings.Replace(query, "?,)", "?)", -1)
