@@ -532,9 +532,20 @@ func (s *Session) querySharded(
 		)
 		query = strings.Replace(query, "?,)", "?)", -1)
 
-		queries = append(queries, s.Query(query, keys...))
+		numberOfPage := len(keys) / QuerySizeMaximum
+		if numberOfPage == 0 {
+			return append(queries, s.Query(query, keys...))
+		}
+		i := 0
+		for numberOfPage > 0 {
+			i += QuerySizeMaximum
+			queries = append(queries, s.Query(query, keys[i-QuerySizeMaximum:i]))
+			numberOfPage--
+		}
+		if len(keys)%QuerySizeMaximum > 0 {
+			queries = append(queries, s.Query(query, keys[i:]))
+		}
 	}
-
 	return queries
 }
 
@@ -2301,3 +2312,4 @@ func NewErrProtocol(format string, args ...interface{}) error {
 // BatchSizeMaximum is the maximum number of statements a batch operation can have.
 // This limit is set by cassandra and could change in the future.
 const BatchSizeMaximum = 65535
+const QuerySizeMaximum = 100
