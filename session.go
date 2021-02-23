@@ -524,25 +524,40 @@ func (s *Session) querySharded(
 		}
 
 		// TODO(cmc): cache these?
-		query := strings.Replace(
-			stmt,
-			_placeholder,
-			"("+strings.Repeat("?,", len(keys))+")",
-			-1,
-		)
-		query = strings.Replace(query, "?,)", "?)", -1)
 
 		numberOfPage := len(keys) / QuerySizeMaximum
 		if numberOfPage == 0 {
+			query := strings.Replace(
+				stmt,
+				_placeholder,
+				"("+strings.Repeat("?,", len(keys))+")",
+				-1,
+			)
+			query = strings.Replace(query, "?,)", "?)", -1)
 			return append(queries, s.Query(query, keys...))
 		}
 		i := 0
 		for numberOfPage > 0 {
 			i += QuerySizeMaximum
+			query := strings.Replace(
+				stmt,
+				_placeholder,
+				"("+strings.Repeat("?,", QuerySizeMaximum)+")",
+				-1,
+			)
+			query = strings.Replace(query, "?,)", "?)", -1)
 			queries = append(queries, s.Query(query, keys[i-QuerySizeMaximum:i]))
 			numberOfPage--
 		}
+		fmt.Println(i)
 		if len(keys)%QuerySizeMaximum > 0 {
+			query := strings.Replace(
+				stmt,
+				_placeholder,
+				"("+strings.Repeat("?,", i-len(keys))+")",
+				-1,
+			)
+			query = strings.Replace(query, "?,)", "?)", -1)
 			queries = append(queries, s.Query(query, keys[i:]))
 		}
 	}
