@@ -530,7 +530,7 @@ func (s *Session) querySharded(
 			query := strings.Replace(
 				stmt,
 				_placeholder,
-				"("+strings.Repeat("?,", 1)+")",
+				"("+strings.Repeat("?,", len(keys))+")",
 				-1,
 			)
 			query = strings.Replace(query, "?,)", "?)", -1)
@@ -542,7 +542,7 @@ func (s *Session) querySharded(
 			query := strings.Replace(
 				stmt,
 				_placeholder,
-				"("+strings.Repeat("?,", 1)+")",
+				"("+strings.Repeat("?,", QuerySizeMaximum)+")",
 				-1,
 			)
 			query = strings.Replace(query, "?,)", "?)", -1)
@@ -553,7 +553,7 @@ func (s *Session) querySharded(
 			query := strings.Replace(
 				stmt,
 				_placeholder,
-				"("+strings.Repeat("?,", 1)+")",
+				"("+strings.Repeat("?,", i-len(keys))+")",
 				-1,
 			)
 			query = strings.Replace(query, "?,)", "?)", -1)
