@@ -530,7 +530,7 @@ func (s *Session) querySharded(
 			query := strings.Replace(
 				stmt,
 				_placeholder,
-				"("+strings.Repeat("?,", len(keys))+")",
+				"("+strings.Repeat("?,", 1)+")",
 				-1,
 			)
 			query = strings.Replace(query, "?,)", "?)", -1)
@@ -542,19 +542,18 @@ func (s *Session) querySharded(
 			query := strings.Replace(
 				stmt,
 				_placeholder,
-				"("+strings.Repeat("?,", QuerySizeMaximum)+")",
+				"("+strings.Repeat("?,", 1)+")",
 				-1,
 			)
 			query = strings.Replace(query, "?,)", "?)", -1)
 			queries = append(queries, s.Query(query, keys[i-QuerySizeMaximum:i]))
 			numberOfPage--
 		}
-		fmt.Println(i)
 		if len(keys)%QuerySizeMaximum > 0 {
 			query := strings.Replace(
 				stmt,
 				_placeholder,
-				"("+strings.Repeat("?,", i-len(keys))+")",
+				"("+strings.Repeat("?,", 1)+")",
 				-1,
 			)
 			query = strings.Replace(query, "?,)", "?)", -1)
