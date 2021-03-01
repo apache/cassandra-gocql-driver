@@ -372,7 +372,7 @@ func (iter *Iter) SliceMap() ([]map[string]interface{}, error) {
 //	iter := session.Query(`SELECT * FROM mytable`).Iter()
 //	for {
 //		// New map each iteration
-//		row = make(map[string]interface{})
+//		row := make(map[string]interface{})
 //		if !iter.MapScan(row) {
 //			break
 //		}
