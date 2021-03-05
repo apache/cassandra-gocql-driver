@@ -11,6 +11,24 @@ import (
 	"time"
 )
 
+const (
+	DefaultCQLVersion = "3.0.0"
+	DefaultClusterTimeout = 600 * time.Millisecond
+	DefaultClusterConnectTimeout = 600 * time.Millisecond
+	DefaultPort = 9042
+	DefaultNumConns = 2
+	// TODO DefaultConsistentcy - should we use a global var and document it should not be mutated?
+	// TODO defaultMaxPreparedStmts should be made public
+	DefaultMaxRoutingKeyInfo = 1000
+	DefaultPageSize = 5000
+	DefaultTimestamp = true
+	DefaultMaxWaitSchemaAgreement = 60 * time.Second,
+	DefaultReconnectInterval = 60 * time.Second,
+	// TODO DefaultConvictionPolicy - should we use a global var and document it should not be mutated?
+	// TODO DefaultReconnectionPolicy - should we use a global var and document it should not be mutated?
+	DefaultWriteCoalesceWaitTime = 200 * time.Microsecond,
+)
+
 // PoolConfig configures the connection pool used by the driver, it defaults to
 // using a round-robin host selection policy and a round-robin connection selection
 // policy for each host.
@@ -169,21 +187,21 @@ type Dialer interface {
 func NewCluster(hosts ...string) *ClusterConfig {
 	cfg := &ClusterConfig{
 		Hosts:                  hosts,
-		CQLVersion:             "3.0.0",
-		Timeout:                600 * time.Millisecond,
-		ConnectTimeout:         600 * time.Millisecond,
-		Port:                   9042,
-		NumConns:               2,
+		CQLVersion:             DefaultCQLVersion,
+		Timeout:                DefaultClusterTimeout,
+		ConnectTimeout:         DefaultClusterConnectTimeout,
+		Port:                   DefaultPort,
+		NumConns:               DefaultNumConns,
 		Consistency:            Quorum,
 		MaxPreparedStmts:       defaultMaxPreparedStmts,
-		MaxRoutingKeyInfo:      1000,
-		PageSize:               5000,
-		DefaultTimestamp:       true,
-		MaxWaitSchemaAgreement: 60 * time.Second,
-		ReconnectInterval:      60 * time.Second,
+		MaxRoutingKeyInfo:      DefaultMaxRoutingKeyInfo,
+		PageSize:               DefaultPageSize,
+		DefaultTimestamp:       DefaultTimestamp,
+		MaxWaitSchemaAgreement: DefaultMaxWaitSchemaAgreement,
+		ReconnectInterval:      DefaultReconnectInterval,
 		ConvictionPolicy:       &SimpleConvictionPolicy{},
 		ReconnectionPolicy:     &ConstantReconnectionPolicy{MaxRetries: 3, Interval: 1 * time.Second},
-		WriteCoalesceWaitTime:  200 * time.Microsecond,
+		WriteCoalesceWaitTime:  DefaultWriteCoalesceWaitTime,
 	}
 	return cfg
 }
