@@ -711,10 +711,7 @@ func (c *Conn) recv(ctx context.Context) error {
 }
 
 func (c *Conn) releaseStream(call *callReq) {
-	if call.timer != nil {
-		call.timer.Stop()
-	}
-
+	call.stopTimer()
 	c.streams.Clear(call.streamID)
 }
 
@@ -731,7 +728,36 @@ type callReq struct {
 	timeout  chan struct{} // indicates to recv() that a call has timedout
 	streamID int           // current stream in use
 
+	// mu protects fields below.
+	mu sync.Mutex
+	// timer for timeout, protected by mu.
 	timer *time.Timer
+	// stoppedTimer is true after stopping the timer, protected by mu.
+	stoppedTimer bool
+}
+
+func (c *callReq) startTimer(timeout time.Duration) <-chan time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.stoppedTimer {
+		return nil
+	}
+	c.timer = time.NewTimer(timeout)
+	return c.timer.C
+}
+
+func (c *callReq) stopTimer() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.stoppedTimer {
+		return
+	}
+	c.stoppedTimer = true
+	if c.timer == nil {
+		return
+	}
+	c.timer.Stop()
+	c.timer = nil
 }
 
 type deadlineWriter struct {
@@ -923,20 +949,8 @@ func (c *Conn) exec(ctx context.Context, req frameWriter, tracer Tracer) (*frame
 
 	var timeoutCh <-chan time.Time
 	if c.timeout > 0 {
-		if call.timer == nil {
-			call.timer = time.NewTimer(0)
-			<-call.timer.C
-		} else {
-			if !call.timer.Stop() {
-				select {
-				case <-call.timer.C:
-				default:
-				}
-			}
-		}
-
-		call.timer.Reset(c.timeout)
-		timeoutCh = call.timer.C
+		timeoutCh = call.startTimer(c.timeout)
+		defer call.stopTimer()
 	}
 
 	var ctxDone <-chan struct{}
