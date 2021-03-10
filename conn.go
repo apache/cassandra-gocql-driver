@@ -719,7 +719,7 @@ func (c *Conn) releaseStream(call *callReq) {
 }
 
 func (c *Conn) handleTimeout() {
-	if TimeoutLimit > 0 && atomic.AddInt64(&c.timeouts, 1) > TimeoutLimit {
+	if TimeoutLimit > 0 && atomic.AddInt64(&c.timeout, 1) > TimeoutLimit {
 		c.closeWithError(ErrTooManyTimeouts)
 	}
 }
