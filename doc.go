@@ -24,7 +24,7 @@
 //
 //  cluster.Keyspace = "example"
 //  cluster.Consistency = gocql.Quorum
-//  cluster.ProtocolVersion = 4
+//  cluster.ProtoVersion = 4
 //
 // The driver tries to automatically detect the protocol version to use if not set, but you might want to set the
 // protocol version explicitly, as it's not defined which version will be used in certain situations (for example
