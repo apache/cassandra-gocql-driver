@@ -34,6 +34,8 @@ go:
   - 1.15.x
   - 1.16.x
 
+go_import_path: github.com/gocql/gocql
+
 install:
   - ./install_test_deps.sh $TRAVIS_REPO_SLUG
   - cd ../..

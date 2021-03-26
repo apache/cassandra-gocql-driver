@@ -285,8 +285,6 @@ func (c *controlConn) setupConn(conn *Conn) error {
 	}
 
 	c.conn.Store(ch)
-	c.session.handleNodeUp(host.ConnectAddress(), host.Port(), false)
-
 	return nil
 }
 
@@ -452,6 +450,8 @@ func (c *controlConn) query(statement string, values ...interface{}) (iter *Iter
 
 	for {
 		iter = c.withConn(func(conn *Conn) *Iter {
+			// we want to keep the query on the control connection
+			q.conn = conn
 			return conn.executeQuery(context.TODO(), q)
 		})
 

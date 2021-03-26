@@ -853,6 +853,51 @@ func (d *dcAwareRR) Pick(q ExecutableQuery) NextHost {
 	return roundRobbin(int(nextStartOffset), d.localHosts.get(), d.remoteHosts.get())
 }
 
+// ReadyPolicy defines a policy for when a HostSelectionPolicy can be used. After
+// each host connects during session initialization, the Ready method will be
+// called. If you only need a single Host to be up you can wrap a
+// HostSelectionPolicy policy with SingleHostReadyPolicy.
+type ReadyPolicy interface {
+	Ready() bool
+}
+
+// SingleHostReadyPolicy wraps a HostSelectionPolicy and returns Ready after a
+// single host has been added via HostUp
+func SingleHostReadyPolicy(p HostSelectionPolicy) *singleHostReadyPolicy {
+	return &singleHostReadyPolicy{
+		HostSelectionPolicy: p,
+	}
+}
+
+type singleHostReadyPolicy struct {
+	HostSelectionPolicy
+	ready    bool
+	readyMux sync.Mutex
+}
+
+func (s *singleHostReadyPolicy) HostUp(host *HostInfo) {
+	s.HostSelectionPolicy.HostUp(host)
+
+	s.readyMux.Lock()
+	s.ready = true
+	s.readyMux.Unlock()
+}
+
+func (s *singleHostReadyPolicy) Ready() bool {
+	s.readyMux.Lock()
+	ready := s.ready
+	s.readyMux.Unlock()
+	if !ready {
+		return false
+	}
+
+	// in case the wrapped policy is also a ReadyPolicy, defer to that
+	if rdy, ok := s.HostSelectionPolicy.(ReadyPolicy); ok {
+		return rdy.Ready()
+	}
+	return true
+}
+
 // ConvictionPolicy interface is used by gocql to determine if a host should be
 // marked as DOWN based on the error and host info
 type ConvictionPolicy interface {
