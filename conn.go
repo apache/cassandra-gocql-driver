@@ -535,7 +535,7 @@ func (c *Conn) closeWithError(err error) {
 			// we need to send the error to all waiting queries, put the state
 			// of this conn into not active so that it can not execute any queries.
 			select {
-			case req.resp <- err:
+			case req.resp <- callResp{err: err}:
 			case <-req.timeout:
 			}
 			if req.streamObserverContext != nil {
@@ -709,14 +709,16 @@ func (c *Conn) recv(ctx context.Context) error {
 	call, ok := c.calls[head.stream]
 	delete(c.calls, head.stream)
 	c.mu.Unlock()
-	if call == nil || call.framer == nil || !ok {
+	if call == nil || !ok {
 		c.logger.Printf("gocql: received response for stream which has no handler: header=%v\n", head)
 		return c.discardFrame(head)
 	} else if head.stream != call.streamID {
 		panic(fmt.Sprintf("call has incorrect streamID: got %d expected %d", call.streamID, head.stream))
 	}
 
-	err = call.framer.readFrame(c, &head)
+	framer := newFramer(c.compressor, c.version)
+
+	err = framer.readFrame(c, &head)
 	if err != nil {
 		// only net errors should cause the connection to be closed. Though
 		// cassandra returning corrupt frames will be returned here as well.
@@ -728,7 +730,7 @@ func (c *Conn) recv(ctx context.Context) error {
 	// we either, return a response to the caller, the caller timedout, or the
 	// connection has closed. Either way we should never block indefinatly here
 	select {
-	case call.resp <- err:
+	case call.resp <- callResp{framer: framer, err: err}:
 	case <-call.timeout:
 		c.releaseStream(call)
 	case <-ctx.Done():
@@ -760,10 +762,9 @@ func (c *Conn) handleTimeout() {
 }
 
 type callReq struct {
-	// could use a waitgroup but this allows us to do timeouts on the read/send
-	resp     chan error
-	framer   *framer
-	timeout  chan struct{} // indicates to recv() that a call has timedout
+	// resp will receive the frame that was sent as a response to this stream.
+	resp     chan callResp
+	timeout  chan struct{} // indicates to recv() that a call has timed out
 	streamID int           // current stream in use
 
 	timer *time.Timer
@@ -774,6 +775,14 @@ type callReq struct {
 	// streamObserverEndOnce ensures that either StreamAbandoned or StreamFinished is called,
 	// but not both.
 	streamObserverEndOnce sync.Once
+}
+
+type callResp struct {
+	// framer is the response frame.
+	// May be nil if err is not nil.
+	framer *framer
+	// err is error encountered, if any.
+	err error
 }
 
 type deadlineWriter struct {
@@ -927,10 +936,9 @@ func (c *Conn) exec(ctx context.Context, req frameBuilder, tracer Tracer) (*fram
 	framer := newFramer(c.compressor, c.version)
 
 	call := &callReq{
-		framer:   framer,
 		timeout:  make(chan struct{}),
 		streamID: stream,
-		resp:     make(chan error),
+		resp:     make(chan callResp),
 	}
 
 	if c.streamObserver != nil {
@@ -1005,9 +1013,9 @@ func (c *Conn) exec(ctx context.Context, req frameBuilder, tracer Tracer) (*fram
 	}
 
 	select {
-	case err := <-call.resp:
+	case resp := <-call.resp:
 		close(call.timeout)
-		if err != nil {
+		if resp.err != nil {
 			if !c.Closed() {
 				// if the connection is closed then we cant release the stream,
 				// this is because the request is still outstanding and we have
@@ -1015,8 +1023,21 @@ func (c *Conn) exec(ctx context.Context, req frameBuilder, tracer Tracer) (*fram
 				// connection to close.
 				c.releaseStream(call)
 			}
-			return nil, err
+			return nil, resp.err
 		}
+		// dont release the stream if detect a timeout as another request can reuse
+		// that stream and get a response for the old request, which we have no
+		// easy way of detecting.
+		//
+		// Ensure that the stream is not released if there are potentially outstanding
+		// requests on the stream to prevent nil pointer dereferences in recv().
+		defer c.releaseStream(call)
+
+		if v := resp.framer.header.version.version(); v != c.version {
+			return nil, NewErrProtocol("unexpected protocol version in response: got %d expected %d", v, c.version)
+		}
+
+		return resp.framer, nil
 	case <-timeoutCh:
 		close(call.timeout)
 		c.handleTimeout()
@@ -1027,20 +1048,6 @@ func (c *Conn) exec(ctx context.Context, req frameBuilder, tracer Tracer) (*fram
 	case <-c.ctx.Done():
 		return nil, ErrConnectionClosed
 	}
-
-	// dont release the stream if detect a timeout as another request can reuse
-	// that stream and get a response for the old request, which we have no
-	// easy way of detecting.
-	//
-	// Ensure that the stream is not released if there are potentially outstanding
-	// requests on the stream to prevent nil pointer dereferences in recv().
-	defer c.releaseStream(call)
-
-	if v := framer.header.version.version(); v != c.version {
-		return nil, NewErrProtocol("unexpected protocol version in response: got %d expected %d", v, c.version)
-	}
-
-	return framer, nil
 }
 
 // ObservedStream observes a single request/response stream.

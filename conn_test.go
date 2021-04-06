@@ -672,7 +672,7 @@ func TestStream0(t *testing.T) {
 	f := newFramer(nil, protoVersion4)
 	f.writeHeader(0, opResult, 0)
 	f.writeInt(resultKindVoid)
-	f.wbuf[0] |= 0x80
+	f.buf[0] |= 0x80
 	if err := f.finish(); err != nil {
 		t.Fatal(err)
 	}
@@ -1157,12 +1157,13 @@ func (srv *TestServer) errorLocked(err interface{}) {
 	srv.t.Error(err)
 }
 
-func (srv *TestServer) process(conn net.Conn, f *framer) {
-	head := f.header
+func (srv *TestServer) process(conn net.Conn, reqFrame *framer) {
+	head := reqFrame.header
 	if head == nil {
 		srv.errorLocked("process frame with a nil header")
 		return
 	}
+	respFrame := newFramer(nil, reqFrame.proto)
 
 	switch head.op {
 	case opStartup:
@@ -1174,12 +1175,12 @@ func (srv *TestServer) process(conn net.Conn, f *framer) {
 				return
 			}
 		}
-		f.writeHeader(0, opReady, head.stream)
+		respFrame.writeHeader(0, opReady, head.stream)
 	case opOptions:
-		f.writeHeader(0, opSupported, head.stream)
-		f.writeShort(0)
+		respFrame.writeHeader(0, opSupported, head.stream)
+		respFrame.writeShort(0)
 	case opQuery:
-		query := f.readLongString()
+		query := reqFrame.readLongString()
 		first := query
 		if n := strings.Index(query, " "); n > 0 {
 			first = first[:n]
@@ -1187,64 +1188,65 @@ func (srv *TestServer) process(conn net.Conn, f *framer) {
 		switch strings.ToLower(first) {
 		case "kill":
 			atomic.AddInt64(&srv.nKillReq, 1)
-			f.writeHeader(0, opError, head.stream)
-			f.writeInt(0x1001)
-			f.writeString("query killed")
+			respFrame.writeHeader(0, opError, head.stream)
+			respFrame.writeInt(0x1001)
+			respFrame.writeString("query killed")
 		case "use":
-			f.writeInt(resultKindKeyspace)
-			f.writeString(strings.TrimSpace(query[3:]))
+			respFrame.writeInt(resultKindKeyspace)
+			respFrame.writeString(strings.TrimSpace(query[3:]))
 		case "void":
-			f.writeHeader(0, opResult, head.stream)
-			f.writeInt(resultKindVoid)
+			respFrame.writeHeader(0, opResult, head.stream)
+			respFrame.writeInt(resultKindVoid)
 		case "timeout":
 			<-srv.ctx.Done()
 			return
 		case "slow":
 			go func() {
-				f.writeHeader(0, opResult, head.stream)
-				f.writeInt(resultKindVoid)
-				f.wbuf[0] = srv.protocol | 0x80
+				respFrame.writeHeader(0, opResult, head.stream)
+				respFrame.writeInt(resultKindVoid)
+				respFrame.buf[0] = srv.protocol | 0x80
 				select {
 				case <-srv.ctx.Done():
 					return
 				case <-time.After(50 * time.Millisecond):
-					f.finish()
+					respFrame.finish()
+					respFrame.writeTo(conn)
 				}
 			}()
 			return
 		case "speculative":
 			atomic.AddInt64(&srv.nKillReq, 1)
 			if atomic.LoadInt64(&srv.nKillReq) > 3 {
-				f.writeHeader(0, opResult, head.stream)
-				f.writeInt(resultKindVoid)
-				f.writeString("speculative query success on the node " + srv.Address)
+				respFrame.writeHeader(0, opResult, head.stream)
+				respFrame.writeInt(resultKindVoid)
+				respFrame.writeString("speculative query success on the node " + srv.Address)
 			} else {
-				f.writeHeader(0, opError, head.stream)
-				f.writeInt(0x1001)
-				f.writeString("speculative error")
+				respFrame.writeHeader(0, opError, head.stream)
+				respFrame.writeInt(0x1001)
+				respFrame.writeString("speculative error")
 				rand.Seed(time.Now().UnixNano())
 				<-time.After(time.Millisecond * 120)
 			}
 		default:
-			f.writeHeader(0, opResult, head.stream)
-			f.writeInt(resultKindVoid)
+			respFrame.writeHeader(0, opResult, head.stream)
+			respFrame.writeInt(resultKindVoid)
 		}
 	case opError:
-		f.writeHeader(0, opError, head.stream)
-		f.wbuf = append(f.wbuf, f.rbuf...)
+		respFrame.writeHeader(0, opError, head.stream)
+		respFrame.buf = append(respFrame.buf, reqFrame.buf...)
 	default:
-		f.writeHeader(0, opError, head.stream)
-		f.writeInt(0)
-		f.writeString("not supported")
+		respFrame.writeHeader(0, opError, head.stream)
+		respFrame.writeInt(0)
+		respFrame.writeString("not supported")
 	}
 
-	f.wbuf[0] = srv.protocol | 0x80
+	respFrame.buf[0] = srv.protocol | 0x80
 
-	if err := f.finish(); err != nil {
+	if err := respFrame.finish(); err != nil {
 		srv.errorLocked(err)
 	}
 
-	if err := f.writeTo(conn); err != nil {
+	if err := respFrame.writeTo(conn); err != nil {
 		srv.errorLocked(err)
 	}
 }
