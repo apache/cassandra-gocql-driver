@@ -1,6 +1,7 @@
 // Copyright (c) 2012 The gocql Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
+//go:build all || unit
 // +build all unit
 
 package gocql
@@ -668,11 +669,14 @@ func TestStream0(t *testing.T) {
 	const expErr = "gocql: received unexpected frame on stream 0"
 
 	var buf bytes.Buffer
-	f := newFramer(nil, &buf, nil, protoVersion4)
+	f := newFramer(nil, protoVersion4)
 	f.writeHeader(0, opResult, 0)
 	f.writeInt(resultKindVoid)
 	f.wbuf[0] |= 0x80
-	if err := f.finishWrite(); err != nil {
+	if err := f.finish(); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.writeTo(&buf); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1115,7 +1119,7 @@ func (srv *TestServer) serve() {
 					srv.onRecv(framer)
 				}
 
-				go srv.process(framer)
+				go srv.process(conn, framer)
 			}
 		}(conn)
 	}
@@ -1153,7 +1157,7 @@ func (srv *TestServer) errorLocked(err interface{}) {
 	srv.t.Error(err)
 }
 
-func (srv *TestServer) process(f *framer) {
+func (srv *TestServer) process(conn net.Conn, f *framer) {
 	head := f.header
 	if head == nil {
 		srv.errorLocked("process frame with a nil header")
@@ -1204,7 +1208,7 @@ func (srv *TestServer) process(f *framer) {
 				case <-srv.ctx.Done():
 					return
 				case <-time.After(50 * time.Millisecond):
-					f.finishWrite()
+					f.finish()
 				}
 			}()
 			return
@@ -1236,7 +1240,11 @@ func (srv *TestServer) process(f *framer) {
 
 	f.wbuf[0] = srv.protocol | 0x80
 
-	if err := f.finishWrite(); err != nil {
+	if err := f.finish(); err != nil {
+		srv.errorLocked(err)
+	}
+
+	if err := f.writeTo(conn); err != nil {
 		srv.errorLocked(err)
 	}
 }
@@ -1247,9 +1255,9 @@ func (srv *TestServer) readFrame(conn net.Conn) (*framer, error) {
 	if err != nil {
 		return nil, err
 	}
-	framer := newFramer(conn, conn, nil, srv.protocol)
+	framer := newFramer(nil, srv.protocol)
 
-	err = framer.readFrame(&head)
+	err = framer.readFrame(conn, &head)
 	if err != nil {
 		return nil, err
 	}

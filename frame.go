@@ -364,9 +364,6 @@ type FrameHeaderObserver interface {
 
 // a framer is responsible for reading, writing and parsing frames on a single stream
 type framer struct {
-	r io.Reader
-	w io.Writer
-
 	proto byte
 	// flags are for outgoing flags, enabling compression and tracing etc
 	flags    byte
@@ -388,7 +385,7 @@ type framer struct {
 	customPayload map[string][]byte
 }
 
-func newFramer(r io.Reader, w io.Writer, compressor Compressor, version byte) *framer {
+func newFramer(compressor Compressor, version byte) *framer {
 	f := &framer{
 		wbuf:       make([]byte, defaultBufSize),
 		readBuffer: make([]byte, defaultBufSize),
@@ -413,10 +410,8 @@ func newFramer(r io.Reader, w io.Writer, compressor Compressor, version byte) *f
 	f.flags = flags
 	f.headSize = headSize
 
-	f.r = r
 	f.rbuf = f.readBuffer[:0]
 
-	f.w = w
 	f.wbuf = f.wbuf[:0]
 
 	f.header = nil
@@ -488,12 +483,12 @@ func (f *framer) payload() {
 }
 
 // reads a frame form the wire into the framers buffer
-func (f *framer) readFrame(head *frameHeader) error {
+func (f *framer) readFrame(r io.Reader, head *frameHeader) error {
 	if head.length < 0 {
 		return fmt.Errorf("frame body length can not be less than 0: %d", head.length)
 	} else if head.length > maxFrameSize {
 		// need to free up the connection to be used again
-		_, err := io.CopyN(ioutil.Discard, f.r, int64(head.length))
+		_, err := io.CopyN(ioutil.Discard, r, int64(head.length))
 		if err != nil {
 			return fmt.Errorf("error whilst trying to discard frame with invalid length: %v", err)
 		}
@@ -508,7 +503,7 @@ func (f *framer) readFrame(head *frameHeader) error {
 	}
 
 	// assume the underlying reader takes care of timeouts and retries
-	n, err := io.ReadFull(f.r, f.rbuf)
+	n, err := io.ReadFull(r, f.rbuf)
 	if err != nil {
 		return fmt.Errorf("unable to read frame body: read %d/%d bytes: %v", n, head.length, err)
 	}
@@ -750,7 +745,7 @@ func (f *framer) setLength(length int) {
 	f.wbuf[p+3] = byte(length)
 }
 
-func (f *framer) finishWrite() error {
+func (f *framer) finish() error {
 	if len(f.wbuf) > maxFrameSize {
 		// huge app frame, lets remove it so it doesn't bloat the heap
 		f.wbuf = make([]byte, defaultBufSize)
@@ -773,12 +768,12 @@ func (f *framer) finishWrite() error {
 	length := len(f.wbuf) - f.headSize
 	f.setLength(length)
 
-	_, err := f.w.Write(f.wbuf)
-	if err != nil {
-		return err
-	}
-
 	return nil
+}
+
+func (f *framer) writeTo(w io.Writer) error {
+	_, err := w.Write(f.wbuf)
+	return err
 }
 
 func (f *framer) readTrace() {
@@ -819,11 +814,11 @@ func (w writeStartupFrame) String() string {
 	return fmt.Sprintf("[startup opts=%+v]", w.opts)
 }
 
-func (w *writeStartupFrame) writeFrame(f *framer, streamID int) error {
+func (w *writeStartupFrame) buildFrame(f *framer, streamID int) error {
 	f.writeHeader(f.flags&^flagCompress, opStartup, streamID)
 	f.writeStringMap(w.opts)
 
-	return f.finishWrite()
+	return f.finish()
 }
 
 type writePrepareFrame struct {
@@ -832,7 +827,7 @@ type writePrepareFrame struct {
 	customPayload map[string][]byte
 }
 
-func (w *writePrepareFrame) writeFrame(f *framer, streamID int) error {
+func (w *writePrepareFrame) buildFrame(f *framer, streamID int) error {
 	if len(w.customPayload) > 0 {
 		f.payload()
 	}
@@ -855,7 +850,7 @@ func (w *writePrepareFrame) writeFrame(f *framer, streamID int) error {
 		f.writeString(w.keyspace)
 	}
 
-	return f.finishWrite()
+	return f.finish()
 }
 
 func (f *framer) readTypeInfo() TypeInfo {
@@ -1413,14 +1408,14 @@ func (a *writeAuthResponseFrame) String() string {
 	return fmt.Sprintf("[auth_response data=%q]", a.data)
 }
 
-func (a *writeAuthResponseFrame) writeFrame(framer *framer, streamID int) error {
+func (a *writeAuthResponseFrame) buildFrame(framer *framer, streamID int) error {
 	return framer.writeAuthResponseFrame(streamID, a.data)
 }
 
 func (f *framer) writeAuthResponseFrame(streamID int, data []byte) error {
 	f.writeHeader(f.flags, opAuthResponse, streamID)
 	f.writeBytes(data)
-	return f.finishWrite()
+	return f.finish()
 }
 
 type queryValues struct {
@@ -1558,7 +1553,7 @@ func (w *writeQueryFrame) String() string {
 	return fmt.Sprintf("[query statement=%q params=%v]", w.statement, w.params)
 }
 
-func (w *writeQueryFrame) writeFrame(framer *framer, streamID int) error {
+func (w *writeQueryFrame) buildFrame(framer *framer, streamID int) error {
 	return framer.writeQueryFrame(streamID, w.statement, &w.params, w.customPayload)
 }
 
@@ -1571,16 +1566,16 @@ func (f *framer) writeQueryFrame(streamID int, statement string, params *queryPa
 	f.writeLongString(statement)
 	f.writeQueryParams(params)
 
-	return f.finishWrite()
+	return f.finish()
 }
 
-type frameWriter interface {
-	writeFrame(framer *framer, streamID int) error
+type frameBuilder interface {
+	buildFrame(framer *framer, streamID int) error
 }
 
 type frameWriterFunc func(framer *framer, streamID int) error
 
-func (f frameWriterFunc) writeFrame(framer *framer, streamID int) error {
+func (f frameWriterFunc) buildFrame(framer *framer, streamID int) error {
 	return f(framer, streamID)
 }
 
@@ -1596,7 +1591,7 @@ func (e *writeExecuteFrame) String() string {
 	return fmt.Sprintf("[execute id=% X params=%v]", e.preparedID, &e.params)
 }
 
-func (e *writeExecuteFrame) writeFrame(fr *framer, streamID int) error {
+func (e *writeExecuteFrame) buildFrame(fr *framer, streamID int) error {
 	return fr.writeExecuteFrame(streamID, e.preparedID, &e.params, &e.customPayload)
 }
 
@@ -1622,7 +1617,7 @@ func (f *framer) writeExecuteFrame(streamID int, preparedID []byte, params *quer
 		f.writeConsistency(params.consistency)
 	}
 
-	return f.finishWrite()
+	return f.finish()
 }
 
 // TODO: can we replace BatchStatemt with batchStatement? As they prety much
@@ -1647,7 +1642,7 @@ type writeBatchFrame struct {
 	customPayload map[string][]byte
 }
 
-func (w *writeBatchFrame) writeFrame(framer *framer, streamID int) error {
+func (w *writeBatchFrame) buildFrame(framer *framer, streamID int) error {
 	return framer.writeBatchFrame(streamID, w, w.customPayload)
 }
 
@@ -1725,25 +1720,25 @@ func (f *framer) writeBatchFrame(streamID int, w *writeBatchFrame, customPayload
 		}
 	}
 
-	return f.finishWrite()
+	return f.finish()
 }
 
 type writeOptionsFrame struct{}
 
-func (w *writeOptionsFrame) writeFrame(framer *framer, streamID int) error {
+func (w *writeOptionsFrame) buildFrame(framer *framer, streamID int) error {
 	return framer.writeOptionsFrame(streamID, w)
 }
 
 func (f *framer) writeOptionsFrame(stream int, _ *writeOptionsFrame) error {
 	f.writeHeader(f.flags&^flagCompress, opOptions, stream)
-	return f.finishWrite()
+	return f.finish()
 }
 
 type writeRegisterFrame struct {
 	events []string
 }
 
-func (w *writeRegisterFrame) writeFrame(framer *framer, streamID int) error {
+func (w *writeRegisterFrame) buildFrame(framer *framer, streamID int) error {
 	return framer.writeRegisterFrame(streamID, w)
 }
 
@@ -1751,7 +1746,7 @@ func (f *framer) writeRegisterFrame(streamID int, w *writeRegisterFrame) error {
 	f.writeHeader(f.flags, opRegister, streamID)
 	f.writeStringList(w.events)
 
-	return f.finishWrite()
+	return f.finish()
 }
 
 func (f *framer) readByte() byte {

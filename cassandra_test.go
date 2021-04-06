@@ -2731,7 +2731,7 @@ func TestNegativeStream(t *testing.T) {
 	const stream = -50
 	writer := frameWriterFunc(func(f *framer, streamID int) error {
 		f.writeHeader(0, opOptions, stream)
-		return f.finishWrite()
+		return f.finish()
 	})
 
 	frame, err := conn.exec(context.Background(), writer, nil)
