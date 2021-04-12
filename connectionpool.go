@@ -113,6 +113,7 @@ func connConfig(cfg *ClusterConfig) (*ConnConfig, error) {
 		Authenticator:   cfg.Authenticator,
 		AuthProvider:    cfg.AuthProvider,
 		Keepalive:       cfg.SocketKeepalive,
+		Logger:          cfg.logger(),
 		tlsConfig:       tlsConfig,
 		disableCoalesce: tlsConfig != nil, // write coalescing doesn't work with framing on top of TCP like in TLS.
 	}, nil
@@ -273,7 +274,8 @@ type hostConnPool struct {
 	closed  bool
 	filling bool
 
-	pos uint32
+	pos    uint32
+	logger StdLogger
 }
 
 func (h *hostConnPool) String() string {
@@ -296,6 +298,7 @@ func newHostConnPool(session *Session, host *HostInfo, port, size int,
 		conns:    make([]*Conn, 0, size),
 		filling:  false,
 		closed:   false,
+		logger:   session.logger,
 	}
 
 	// the pool is not filled or connected
@@ -463,11 +466,11 @@ func (pool *hostConnPool) logConnectErr(err error) {
 		// connection refused
 		// these are typical during a node outage so avoid log spam.
 		if gocqlDebug {
-			Logger.Printf("unable to dial %q: %v\n", pool.host.ConnectAddress(), err)
+			pool.logger.Printf("unable to dial %q: %v\n", pool.host.ConnectAddress(), err)
 		}
 	} else if err != nil {
 		// unexpected error
-		Logger.Printf("error: failed to connect to %s due to error: %v", pool.addr, err)
+		pool.logger.Printf("error: failed to connect to %s due to error: %v", pool.addr, err)
 	}
 }
 
@@ -534,7 +537,7 @@ func (pool *hostConnPool) connect() (err error) {
 			}
 		}
 		if gocqlDebug {
-			Logger.Printf("connection failed %q: %v, reconnecting with %T\n",
+			pool.logger.Printf("connection failed %q: %v, reconnecting with %T\n",
 				pool.host.ConnectAddress(), err, reconnectionPolicy)
 		}
 		time.Sleep(reconnectionPolicy.GetInterval(i))

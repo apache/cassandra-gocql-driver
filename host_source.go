@@ -544,7 +544,7 @@ func (r *ringDescriber) getClusterPeerInfo() ([]*HostInfo, error) {
 			return nil, err
 		} else if !isValidPeer(host) {
 			// If it's not a valid peer
-			Logger.Printf("Found invalid peer '%s' "+
+			r.session.logger.Printf("Found invalid peer '%s' "+
 				"Likely due to a gossip or snitch issue, this host will be ignored", host)
 			continue
 		}

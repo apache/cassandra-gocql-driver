@@ -177,7 +177,7 @@ func (c *controlConn) shuffleDial(endpoints []*HostInfo) (*Conn, error) {
 			return conn, nil
 		}
 
-		Logger.Printf("gocql: unable to dial control conn %v:%v: %v\n", host.ConnectAddress(), host.Port(), err)
+		c.session.logger.Printf("gocql: unable to dial control conn %v:%v: %v\n", host.ConnectAddress(), host.Port(), err)
 	}
 
 	return nil, err
@@ -372,7 +372,7 @@ func (c *controlConn) reconnect(refreshring bool) {
 
 	if err := c.setupConn(newConn); err != nil {
 		newConn.Close()
-		Logger.Printf("gocql: control unable to register events: %v\n", err)
+		c.session.logger.Printf("gocql: control unable to register events: %v\n", err)
 		return
 	}
 
@@ -456,7 +456,7 @@ func (c *controlConn) query(statement string, values ...interface{}) (iter *Iter
 		})
 
 		if gocqlDebug && iter.err != nil {
-			Logger.Printf("control: error executing %q: %v\n", statement, iter.err)
+			c.session.logger.Printf("control: error executing %q: %v\n", statement, iter.err)
 		}
 
 		q.AddAttempts(1, c.getConn().host)

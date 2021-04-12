@@ -15,7 +15,7 @@ func TestEventDebounce(t *testing.T) {
 	debouncer := newEventDebouncer("testDebouncer", func(events []frame) {
 		defer wg.Done()
 		eventsSeen += len(events)
-	})
+	}, &defaultLogger{})
 	defer debouncer.stop()
 
 	for i := 0; i < eventCount; i++ {
