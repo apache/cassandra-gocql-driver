@@ -49,7 +49,8 @@ func TestGetHosts(t *testing.T) {
 	assertTrue(t, "len(partitioner) != 0", len(partitioner) != 0)
 }
 
-//TestRingDiscovery makes sure that you can autodiscover other cluster members when you seed a cluster config with just one node
+// TestRingDiscovery makes sure that you can autodiscover other cluster members
+// when you seed a cluster config with just one node
 func TestRingDiscovery(t *testing.T) {
 	clusterHosts := getClusterHosts()
 	cluster := createCluster()
@@ -74,6 +75,30 @@ func TestRingDiscovery(t *testing.T) {
 		}
 		t.Errorf("Expected a cluster size of %d, but actual size was %d", *clusterSize, size)
 	}
+}
+
+// TestHostFilter ensures that host filtering works even when we discover hosts
+func TestHostFilter(t *testing.T) {
+	clusterHosts := getClusterHosts()
+	if len(clusterHosts) < 2 {
+		t.Skip("skipping because we don't have 2 or more hosts")
+	}
+	cluster := createCluster()
+	rr := RoundRobinHostPolicy().(*roundRobinHostPolicy)
+	cluster.PoolConfig.HostSelectionPolicy = rr
+	// we'll filter out the second host
+	filtered := clusterHosts[1]
+	cluster.Hosts = clusterHosts[:1]
+	cluster.HostFilter = HostFilterFunc(func(host *HostInfo) bool {
+		if host.ConnectAddress().String() == filtered {
+			return false
+		}
+		return true
+	})
+	session := createSessionFromCluster(cluster, t)
+	defer session.Close()
+
+	assertEqual(t, "len(rr.hosts.get()) != 0", len(clusterHosts)-1, len(rr.hosts.get()))
 }
 
 func TestWriteFailure(t *testing.T) {

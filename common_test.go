@@ -153,26 +153,6 @@ func createSession(tb testing.TB, opts ...func(config *ClusterConfig)) *Session 
 	return createSessionFromCluster(cluster, tb)
 }
 
-// createTestSession is hopefully moderately useful in actual unit tests
-func createTestSession() *Session {
-	config := NewCluster()
-	config.NumConns = 1
-	config.Timeout = 0
-	config.DisableInitialHostLookup = true
-	config.IgnorePeerAddr = true
-	config.PoolConfig.HostSelectionPolicy = RoundRobinHostPolicy()
-	session := &Session{
-		cfg: *config,
-		connCfg: &ConnConfig{
-			Timeout:   10 * time.Millisecond,
-			Keepalive: 0,
-		},
-		policy: config.PoolConfig.HostSelectionPolicy,
-	}
-	session.pool = config.PoolConfig.buildPool(session)
-	return session
-}
-
 func createViews(t *testing.T, session *Session) {
 	if err := session.Query(`
 		CREATE TYPE IF NOT EXISTS gocql_test.basicView (
@@ -195,9 +175,23 @@ func createMaterializedViews(t *testing.T, session *Session) {
     		    PRIMARY KEY (userid));`).Exec(); err != nil {
 		t.Fatalf("failed to create materialized view with err: %v", err)
 	}
+	if err := session.Query(`CREATE TABLE IF NOT EXISTS gocql_test.view_table2 (
+		    userid text,
+		    year int,
+		    month int,
+    		    PRIMARY KEY (userid));`).Exec(); err != nil {
+		t.Fatalf("failed to create materialized view with err: %v", err)
+	}
 	if err := session.Query(`CREATE MATERIALIZED VIEW IF NOT EXISTS gocql_test.view_view AS
 		   SELECT year, month, userid
 		   FROM gocql_test.view_table
+		   WHERE year IS NOT NULL AND month IS NOT NULL AND userid IS NOT NULL
+		   PRIMARY KEY (userid, year);`).Exec(); err != nil {
+		t.Fatalf("failed to create materialized view with err: %v", err)
+	}
+	if err := session.Query(`CREATE MATERIALIZED VIEW IF NOT EXISTS gocql_test.view_view2 AS
+		   SELECT year, month, userid
+		   FROM gocql_test.view_table2
 		   WHERE year IS NOT NULL AND month IS NOT NULL AND userid IS NOT NULL
 		   PRIMARY KEY (userid, year);`).Exec(); err != nil {
 		t.Fatalf("failed to create materialized view with err: %v", err)
@@ -228,6 +222,15 @@ func createAggregate(t *testing.T, session *Session) {
 	createFunctions(t, session)
 	if err := session.Query(`
 		CREATE OR REPLACE AGGREGATE gocql_test.average(int)
+		SFUNC avgState
+		STYPE tuple<int,bigint>
+		FINALFUNC avgFinal
+		INITCOND (0,0);
+	`).Exec(); err != nil {
+		t.Fatalf("failed to create aggregate with err: %v", err)
+	}
+	if err := session.Query(`
+		CREATE OR REPLACE AGGREGATE gocql_test.average2(int)
 		SFUNC avgState
 		STYPE tuple<int,bigint>
 		FINALFUNC avgFinal
@@ -268,12 +271,5 @@ func assertNil(t *testing.T, description string, actual interface{}) {
 	t.Helper()
 	if actual != nil {
 		t.Fatalf("expected %s to be (nil) but was (%+v) instead", description, actual)
-	}
-}
-
-func assertNotNil(t *testing.T, description string, actual interface{}) {
-	t.Helper()
-	if actual == nil {
-		t.Fatalf("expected %s not to be (nil)", description)
 	}
 }
