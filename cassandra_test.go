@@ -1909,9 +1909,8 @@ func TestBatchObserve(t *testing.T) {
 		if stmt != fmt.Sprintf(`INSERT INTO batch_observe_table (id,other) VALUES (?,%d)`, i) {
 			t.Fatal("unexpected query", stmt)
 		}
-		if observedBatch.observedValues[i] != []interface{}{i} {
-			t.Fatal("expecting bound value '%v', got %q", []interface{}{i}, observedBatch.observedEntries[i])
-		}
+
+		assertDeepEqual(t, "observed value", []interface{}{i}, observedBatch.observedValues[i])
 	}
 }
 
