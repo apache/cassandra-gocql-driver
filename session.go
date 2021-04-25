@@ -1030,6 +1030,7 @@ func (q *Query) attempt(keyspace string, end, start time.Time, iter *Iter, host 
 		q.observer.ObserveQuery(q.Context(), ObservedQuery{
 			Keyspace:  keyspace,
 			Statement: q.stmt,
+			Values:    q.values,
 			Start:     start,
 			End:       end,
 			Rows:      iter.numRows,
@@ -1804,13 +1805,17 @@ func (b *Batch) attempt(keyspace string, end, start time.Time, iter *Iter, host 
 	}
 
 	statements := make([]string, len(b.Entries))
+	values := make([][]interface{}, len(b.Entries))
+
 	for i, entry := range b.Entries {
 		statements[i] = entry.Stmt
+		values[i] = entry.Args
 	}
 
 	b.observer.ObserveBatch(b.Context(), ObservedBatch{
 		Keyspace:   keyspace,
 		Statements: statements,
+		Values:     values,
 		Start:      start,
 		End:        end,
 		// Rows not used in batch observations // TODO - might be able to support it when using BatchCAS
@@ -2014,6 +2019,10 @@ type ObservedQuery struct {
 	Keyspace  string
 	Statement string
 
+	// Values holds a slice of bound values for the query.
+	// Do not modify the values here, they are shared with multiple goroutines.
+	Values []interface{}
+
 	Start time.Time // time immediately before the query was called
 	End   time.Time // time immediately after the query returned
 
@@ -2050,6 +2059,11 @@ type QueryObserver interface {
 type ObservedBatch struct {
 	Keyspace   string
 	Statements []string
+
+	// Values holds a slice of bound values for each statement.
+	// Values[i] are bound values passed to Statements[i].
+	// Do not modify the values here, they are shared with multiple goroutines.
+	Values [][]interface{}
 
 	Start time.Time // time immediately before the batch query was called
 	End   time.Time // time immediately after the batch query returned
