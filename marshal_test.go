@@ -96,6 +96,13 @@ var marshalTests = []struct {
 		UnmarshalError("unable to parse UUID: UUIDs must be exactly 16 bytes long"),
 	},
 	{
+		NativeType{proto: 2, typ: TypeTimeUUID},
+		[]byte{0x3d, 0xcd, 0x98, 0x0, 0xf3, 0xd9, 0x11, 0xbf, 0x86, 0xd4, 0xb8, 0xe8, 0x56, 0x2c, 0xc, 0xd0},
+		[16]byte{0x3d, 0xcd, 0x98, 0x0, 0xf3, 0xd9, 0x11, 0xbf, 0x86, 0xd4, 0xb8, 0xe8, 0x56, 0x2c, 0xc, 0xd0},
+		nil,
+		nil,
+	},
+	{
 		NativeType{proto: 2, typ: TypeInt},
 		[]byte("\x00\x00\x00\x00"),
 		0,
@@ -1543,8 +1550,6 @@ func (c *CustomString) UnmarshalCQL(info TypeInfo, data []byte) error {
 }
 
 type MyString string
-
-type MyInt int
 
 var typeLookupTest = []struct {
 	TypeName     string

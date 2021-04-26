@@ -70,6 +70,7 @@ type Unmarshaler interface {
 //  list, set                   | map[X]struct{}     |
 //  map                         | map[X]Y            |
 //  uuid, timeuuid              | gocql.UUID         |
+//  uuid, timeuuid              | [16]byte           | raw UUID bytes
 //  uuid, timeuuid              | []byte             | raw UUID bytes, length must be 16 bytes
 //  uuid, timeuuid              | string             | hex representation, see ParseUUID
 //  varint                      | integer types      |
@@ -1778,6 +1779,8 @@ func marshalUUID(info TypeInfo, value interface{}) ([]byte, error) {
 		return nil, nil
 	case UUID:
 		return val.Bytes(), nil
+	case [16]byte:
+		return val[:], nil
 	case []byte:
 		if len(val) != 16 {
 			return nil, marshalErrorf("can not marshal []byte %d bytes long into %s, must be exactly 16 bytes long", len(val), info)

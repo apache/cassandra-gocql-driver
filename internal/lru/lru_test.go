@@ -21,16 +21,6 @@ import (
 	"testing"
 )
 
-type simpleStruct struct {
-	int
-	string
-}
-
-type complexStruct struct {
-	int
-	simpleStruct
-}
-
 var getTests = []struct {
 	name       string
 	keyToAdd   string
