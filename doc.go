@@ -24,7 +24,7 @@
 //
 //  cluster.Keyspace = "example"
 //  cluster.Consistency = gocql.Quorum
-//  cluster.ProtocolVersion = 4
+//  cluster.ProtoVersion = 4
 //
 // The driver tries to automatically detect the protocol version to use if not set, but you might want to set the
 // protocol version explicitly, as it's not defined which version will be used in certain situations (for example
@@ -65,9 +65,19 @@
 // To use TLS, set the ClusterConfig.SslOpts field. SslOptions embeds *tls.Config so you can set that directly.
 // There are also helpers to load keys/certificates from files.
 //
-// Warning: Due to backward-compatibility reasons, the tls.Config's InsecureSkipVerify is set to
-// !SslOptions.EnableHostVerification, so by default host verification is disabled. Most users using TLS should set
-// SslOptions.EnableHostVerification to true.
+// Warning: Due to historical reasons, the SslOptions is insecure by default, so you need to set EnableHostVerification
+// to true if no Config is set. Most users should set SslOptions.Config to a *tls.Config.
+// SslOptions and Config.InsecureSkipVerify interact as follows:
+//
+//  Config.InsecureSkipVerify | EnableHostVerification | Result
+//  Config is nil             | false                  | do not verify host
+//  Config is nil             | true                   | verify host
+//  false                     | false                  | verify host
+//  true                      | false                  | do not verify host
+//  false                     | true                   | verify host
+//  true                      | true                   | verify host
+//
+// For example:
 //
 //  cluster := gocql.NewCluster("192.168.1.1", "192.168.1.2", "192.168.1.3")
 //  cluster.SslOpts = &gocql.SslOptions{
