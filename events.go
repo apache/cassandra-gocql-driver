@@ -199,9 +199,7 @@ func (s *Session) addNewNode(ip net.IP, port int) {
 	hostInfo = s.ring.addOrUpdate(hostInfo)
 
 	if !s.cfg.filterHost(hostInfo) {
-		// we let the pool call handleNodeUp to change the host state
-		s.pool.addHost(hostInfo)
-		s.policy.AddHost(hostInfo)
+		s.startPoolFill(hostInfo)
 	}
 
 	if s.control != nil && !s.cfg.IgnorePeerAddr {
@@ -262,6 +260,27 @@ func (s *Session) handleNodeUp(eventIp net.IP, eventPort int) {
 	if host == nil {
 		s.addNewNode(ip, port)
 		return
+	}
+
+	if s.cfg.filterHost(host) {
+		return
+	}
+
+	if d := host.Version().nodeUpDelay(); d > 0 {
+		time.Sleep(d)
+	}
+	s.startPoolFill(host)
+}
+
+func (s *Session) startPoolFill(host *HostInfo) {
+	// we let the pool call handleNodeConnected to change the host state
+	s.pool.addHost(host)
+	s.policy.AddHost(host)
+}
+
+func (s *Session) handleNodeConnected(host *HostInfo) {
+	if gocqlDebug {
+		s.logger.Printf("gocql: Session.handleNodeConnected: %s:%d\n", host.ConnectAddress(), host.Port())
 	}
 
 	host.setState(NodeUp)
