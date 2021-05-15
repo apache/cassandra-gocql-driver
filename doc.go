@@ -89,6 +89,23 @@
 //  }
 //  defer session.Close()
 //
+// Data-center awareness and query routing
+//
+// To route queries to local DC first, use DCAwareRoundRobinPolicy. For example, if the datacenter you
+// want to primarily connect is called dc1 (as configured in the database):
+//
+//  cluster := gocql.NewCluster("192.168.1.1", "192.168.1.2", "192.168.1.3")
+//  cluster.PoolConfig.HostSelectionPolicy = gocql.DCAwareRoundRobinPolicy("dc1")
+//
+// The driver can route queries to nodes that hold data replicas based on partition key (preferring local DC).
+//
+//  cluster := gocql.NewCluster("192.168.1.1", "192.168.1.2", "192.168.1.3")
+//  cluster.PoolConfig.HostSelectionPolicy = gocql.TokenAwareHostPolicy(gocql.DCAwareRoundRobinPolicy("dc1"))
+//
+// Note that TokenAwareHostPolicy can take options such as gocql.ShuffleReplicas and gocql.NonLocalReplicasFallback.
+//
+// We recommend running with a token aware host policy in production for maximum performance.
+//
 // Executing queries
 //
 // Create queries with Session.Query. Query values must not be reused between different executions and must not be
