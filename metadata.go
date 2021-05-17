@@ -30,18 +30,32 @@ type KeyspaceMetadata struct {
 
 // schema metadata for a table (a.k.a. column family)
 type TableMetadata struct {
-	Keyspace          string
-	Name              string
-	KeyValidator      string
-	Comparator        string
-	DefaultValidator  string
-	KeyAliases        []string
-	ColumnAliases     []string
-	ValueAlias        string
-	PartitionKey      []*ColumnMetadata
-	ClusteringColumns []*ColumnMetadata
-	Columns           map[string]*ColumnMetadata
-	OrderedColumns    []string
+	Keyspace                string
+	Name                    string
+	KeyValidator            string
+	Comparator              string
+	DefaultValidator        string
+	KeyAliases              []string
+	ColumnAliases           []string
+	ValueAlias              string
+	PartitionKey            []*ColumnMetadata
+	ClusteringColumns       []*ColumnMetadata
+	Columns                 map[string]*ColumnMetadata
+	OrderedColumns          []string
+	BloomFilterFpChance     float64
+	Caching                 map[string]string
+	Comment                 string
+	Compaction              map[string]string
+	Compression             map[string]string
+	CrcCheckChance          float64
+	DcLocalReadRepairChance float64
+	DefaultTimeToLive       int
+	GcGraceSeconds          int
+	MaxIndexInterval        int
+	MemtableFlushPeriodInMs int
+	MinIndexInterval        int
+	ReadRepairChance        float64
+	SpeculativeRetry        string
 }
 
 // schema metadata for a column
@@ -617,7 +631,21 @@ func getTableMetadata(session *Session, keyspaceName string) ([]TableMetadata, e
 	if session.useSystemSchema { // Cassandra 3.x+
 		stmt = `
 		SELECT
-			table_name
+			table_name,
+			bloom_filter_fp_chance,
+			caching,
+			comment,
+			compaction,
+			compression,
+			crc_check_chance,
+			dclocal_read_repair_chance,
+			default_time_to_live,
+			gc_grace_seconds,
+			max_index_interval,
+			memtable_flush_period_in_ms,
+			min_index_interval,
+			read_repair_chance,
+			speculative_retry
 		FROM system_schema.tables
 		WHERE keyspace_name = ?`
 
@@ -625,7 +653,21 @@ func getTableMetadata(session *Session, keyspaceName string) ([]TableMetadata, e
 			iter.Close()
 			stmt = `
 				SELECT
-					view_name
+					view_name,
+					bloom_filter_fp_chance,
+					caching,
+					comment,
+					compaction,
+					compression,
+					crc_check_chance,
+					dclocal_read_repair_chance,
+					default_time_to_live,
+					gc_grace_seconds,
+					max_index_interval,
+					memtable_flush_period_in_ms,
+					min_index_interval,
+					read_repair_chance,
+					speculative_retry
 				FROM system_schema.views
 				WHERE keyspace_name = ?`
 			iter = session.control.query(stmt, keyspaceName)
@@ -635,12 +677,42 @@ func getTableMetadata(session *Session, keyspaceName string) ([]TableMetadata, e
 		scan = func(iter *Iter, table *TableMetadata) bool {
 			r := iter.Scan(
 				&table.Name,
+				&table.BloomFilterFpChance,
+				&table.Caching,
+				&table.Comment,
+				&table.Compaction,
+				&table.Compression,
+				&table.CrcCheckChance,
+				&table.DcLocalReadRepairChance,
+				&table.DefaultTimeToLive,
+				&table.GcGraceSeconds,
+				&table.MaxIndexInterval,
+				&table.MemtableFlushPeriodInMs,
+				&table.MinIndexInterval,
+				&table.ReadRepairChance,
+				&table.SpeculativeRetry,
 			)
 			if !r {
 				iter = switchIter()
 				if iter != nil {
 					switchIter = func() *Iter { return nil }
-					r = iter.Scan(&table.Name)
+					r = iter.Scan(
+						&table.Name,
+						&table.BloomFilterFpChance,
+						&table.Caching,
+						&table.Comment,
+						&table.Compaction,
+						&table.Compression,
+						&table.CrcCheckChance,
+						&table.DcLocalReadRepairChance,
+						&table.DefaultTimeToLive,
+						&table.GcGraceSeconds,
+						&table.MaxIndexInterval,
+						&table.MemtableFlushPeriodInMs,
+						&table.MinIndexInterval,
+						&table.ReadRepairChance,
+						&table.SpeculativeRetry,
+					)
 				}
 			}
 			return r

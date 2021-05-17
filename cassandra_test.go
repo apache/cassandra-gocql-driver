@@ -2011,7 +2011,27 @@ func TestGetTableMetadata(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 
-	if err := createTable(session, "CREATE TABLE gocql_test.test_table_metadata (first_id int, second_id int, third_id int, PRIMARY KEY (first_id, second_id))"); err != nil {
+	// Create table with non-default settings so that they can be validated later; The table settings used here
+	// represent the lowest common denominator among versions of Cassandra this test is run against (so that the
+	// CREATE will succeed), but they are only validated when testing against versions of Cassandra >= 3.0.0
+	if err := createTable(session, `
+		CREATE TABLE gocql_test.test_table_metadata (
+			first_id int,
+			second_id int,
+			third_id int,
+			PRIMARY KEY (first_id, second_id)
+		) WITH bloom_filter_fp_chance = 0.02
+			AND caching = {'keys': 'ALL', 'rows_per_partition': '10'}
+			AND comment = 'test comment'
+			AND compaction = {'class': 'org.apache.cassandra.db.compaction.SizeTieredCompactionStrategy', 'max_threshold': '32', 'min_threshold': '8'}
+			AND dclocal_read_repair_chance = 0.2
+			AND default_time_to_live = 3600
+			AND gc_grace_seconds = 86400
+			AND max_index_interval = 4096
+			AND memtable_flush_period_in_ms = 5
+			AND min_index_interval = 256
+			AND read_repair_chance = 0.2
+			AND speculative_retry = 'NONE'`); err != nil {
 		t.Fatalf("failed to create table with error '%v'", err)
 	}
 
@@ -2092,6 +2112,30 @@ func TestGetTableMetadata(t *testing.T) {
 	}
 	if testTable.ValueAlias != "" {
 		t.Errorf("Expected value alias '' but was '%s'", testTable.ValueAlias)
+	}
+
+	// Table configuration settings are only assigned when Cassandra >= 3.0.0
+	if session.useSystemSchema {
+		if rows, ok := testTable.Caching["rows_per_partition"]; ok {
+			assertEqual(t, "caching rows_per_partition", rows, "10")
+		} else {
+			t.Errorf("Expected a 'rows_per_partition' key in the caching configuration (%+v)", testTable.Caching)
+		}
+		if min, ok := testTable.Compaction["min_threshold"]; ok {
+			assertEqual(t, "compaction min_threshold", min, "8")
+		} else {
+			t.Errorf("Expected a 'min_threshold' key in the compaction configuration (%+v)", testTable.Compaction)
+		}
+		assertEqual(t, "bloom_filter_fp_chance", 0.02, testTable.BloomFilterFpChance)
+		assertEqual(t, "comment", "test comment", testTable.Comment)
+		assertEqual(t, "dclocal_read_repair_chance", 0.2, testTable.DcLocalReadRepairChance)
+		assertEqual(t, "default_time_to_live", 3600, testTable.DefaultTimeToLive)
+		assertEqual(t, "gc_grace_seconds", 86400, testTable.GcGraceSeconds)
+		assertEqual(t, "max_index_interval", 4096, testTable.MaxIndexInterval)
+		assertEqual(t, "memtable_flush_period_in_ms", 5, testTable.MemtableFlushPeriodInMs)
+		assertEqual(t, "min_index_interval", 256, testTable.MinIndexInterval)
+		assertEqual(t, "read_repair_chance", 0.2, testTable.ReadRepairChance)
+		assertEqual(t, "speculative_retry", "NONE", testTable.SpeculativeRetry)
 	}
 }
 

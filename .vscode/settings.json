@@ -1,0 +1,5 @@
+{
+    "gopls": {
+        "build.buildFlags": ["-tags=all"]
+    }
+}
