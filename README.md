@@ -56,6 +56,8 @@ Configuration
 In order to make shard-awareness work, token aware host selection policy has to be enabled.
 Please make sure that the gocql configuration has `PoolConfig.HostSelectionPolicy` properly set like in the example below. 
 
+__When working with a Scylla cluster, `PoolConfig.NumConns` option has no effect - the driver opens one connection for each shard and completely ignores this option.__
+
 ```go
 c := gocql.NewCluster(hosts...)
 
@@ -70,6 +72,9 @@ c.PoolConfig.HostSelectionPolicy = gocql.TokenAwareHostPolicy(fallback)
 if localDC != "" {
 	c.Consistency = gocql.LocalQuorum
 }
+
+// When working with a Scylla cluster the driver always opens one connection per shard, so `NumConns` is ignored.
+// c.NumConns = 4
 ```
 
 ### Shard-aware port
