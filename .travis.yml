@@ -21,14 +21,25 @@ env:
   matrix:
     - CASS=2.1.21
       AUTH=true
+      COMPRESSOR=snappy
     - CASS=2.2.14
       AUTH=true
+      COMPRESSOR=snappy
     - CASS=2.2.14
       AUTH=false
+      COMPRESSOR=snappy
+    - CASS=2.2.14
+      AUTH=false
+      COMPRESSOR=lz4
     - CASS=3.0.18
       AUTH=false
+      COMPRESSOR=snappy
     - CASS=3.11.4
       AUTH=false
+      COMPRESSOR=snappy
+    - CASS=3.11.4
+      AUTH=false
+      COMPRESSOR=lz4
 
 go:
   - 1.15.x
@@ -44,7 +55,7 @@ install:
 
 script:
   - set -e
-  - PATH=$PATH:$HOME/.local/bin bash integration.sh $CASS $AUTH
+  - PATH=$PATH:$HOME/.local/bin bash integration.sh $CASS $AUTH $COMPRESSOR
   - go vet .
 
 notifications:
