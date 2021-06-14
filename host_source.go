@@ -412,10 +412,11 @@ func checkSystemSchema(control *controlConn) (bool, error) {
 
 // Given a map that represents a row from either system.local or system.peers
 // return as much information as we can in *HostInfo
-func (s *Session) hostInfoFromMap(row map[string]interface{}, host *HostInfo) (*HostInfo, error) {
+func (s *Session) hostInfoFromMap(row map[string]interface{}, connAddr net.IP, connPort int) (*HostInfo, error) {
 	const assertErrorMsg = "Assertion failed for %s"
 	var ok bool
 
+	host := HostInfo{connectAddress: connAddr, port: connPort}
 	// Default to our connected port if the cluster doesn't have port information
 	for key, value := range row {
 		switch key {
@@ -516,7 +517,7 @@ func (s *Session) hostInfoFromMap(row map[string]interface{}, host *HostInfo) (*
 	host.connectAddress = ip
 	host.port = port
 
-	return host, nil
+	return &host, nil
 }
 
 // Ask the control node for host info on all it's known peers
@@ -539,7 +540,7 @@ func (r *ringDescriber) getClusterPeerInfo() ([]*HostInfo, error) {
 
 	for _, row := range rows {
 		// extract all available info about the peer
-		host, err := r.session.hostInfoFromMap(row, &HostInfo{port: r.session.cfg.Port})
+		host, err := r.session.hostInfoFromMap(row, nil, r.session.cfg.Port)
 		if err != nil {
 			return nil, err
 		} else if !isValidPeer(host) {
@@ -601,7 +602,7 @@ func (r *ringDescriber) getHostInfo(ip net.IP, port int) (*HostInfo, error) {
 		}
 
 		for _, row := range rows {
-			h, err := r.session.hostInfoFromMap(row, &HostInfo{port: port})
+			h, err := r.session.hostInfoFromMap(row, nil, port)
 			if err != nil {
 				return nil, err
 			}

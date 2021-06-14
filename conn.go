@@ -1435,7 +1435,7 @@ func (c *Conn) awaitSchemaAgreement(ctx context.Context) (err error) {
 		}
 
 		for _, row := range rows {
-			host, err := c.session.hostInfoFromMap(row, &HostInfo{connectAddress: c.host.ConnectAddress(), port: c.session.cfg.Port})
+			host, err := c.session.hostInfoFromMap(row, c.host.ConnectAddress(), c.session.cfg.Port)
 			if err != nil {
 				goto cont
 			}
@@ -1495,7 +1495,7 @@ func (c *Conn) localHostInfo(ctx context.Context) (*HostInfo, error) {
 	port := c.conn.RemoteAddr().(*net.TCPAddr).Port
 
 	// TODO(zariel): avoid doing this here
-	host, err := c.session.hostInfoFromMap(row, &HostInfo{connectAddress: c.host.connectAddress, port: port})
+	host, err := c.session.hostInfoFromMap(row, c.host.connectAddress, port)
 	if err != nil {
 		return nil, err
 	}
