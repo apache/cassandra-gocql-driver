@@ -770,8 +770,8 @@ type dcAwareRR struct {
 }
 
 // DCAwareRoundRobinPolicy is a host selection policies which will prioritize and
-// return hosts which are in the local datacentre before returning hosts in all
-// other datercentres
+// return hosts which are in the local datacenter before returning hosts in all
+// other datacenters
 func DCAwareRoundRobinPolicy(localDC string) HostSelectionPolicy {
 	return &dcAwareRR{local: localDC}
 }
@@ -848,6 +848,61 @@ func roundRobbin(shift int, hosts ...[]*HostInfo) NextHost {
 func (d *dcAwareRR) Pick(q ExecutableQuery) NextHost {
 	nextStartOffset := atomic.AddUint64(&d.lastUsedHostIdx, 1)
 	return roundRobbin(int(nextStartOffset), d.localHosts.get(), d.remoteHosts.get())
+}
+
+type rackAwareRRHostPolicy struct {
+	datacenter      string
+	rack            string
+	rackHosts       cowHostList
+	datacenterHosts cowHostList
+	otherHosts      cowHostList
+	lastUsedHostIdx uint64
+}
+
+// RackAwareRRHostPolicy is a host selection policy that prioritizes hosts from
+// the local rack over the hosts from the local datacenter over all other hosts.
+func RackAwareRRHostPolicy(datacenter, rack string) HostSelectionPolicy {
+	return &rackAwareRRHostPolicy{datacenter: datacenter, rack: rack}
+}
+
+func (d *rackAwareRRHostPolicy) Init(*Session)                       {}
+func (d *rackAwareRRHostPolicy) KeyspaceChanged(KeyspaceUpdateEvent) {}
+func (d *rackAwareRRHostPolicy) SetPartitioner(p string)             {}
+
+func (d *rackAwareRRHostPolicy) IsLocal(host *HostInfo) bool {
+	return host.DataCenter() == d.datacenter && host.Rack() == d.rack
+}
+
+func (d *rackAwareRRHostPolicy) AddHost(host *HostInfo) {
+	if host.DataCenter() == d.datacenter {
+		if host.Rack() == d.rack {
+			d.rackHosts.add(host)
+			return
+		}
+		d.datacenterHosts.add(host)
+		return
+	}
+	d.otherHosts.add(host)
+}
+
+func (d *rackAwareRRHostPolicy) RemoveHost(host *HostInfo) {
+	if host.DataCenter() == d.datacenter {
+		if host.Rack() == d.rack {
+			d.rackHosts.remove(host.ConnectAddress())
+			return
+		}
+		d.datacenterHosts.remove(host.ConnectAddress())
+		return
+	}
+	d.otherHosts.remove(host.ConnectAddress())
+}
+
+func (d *rackAwareRRHostPolicy) HostUp(host *HostInfo)   { d.AddHost(host) }
+func (d *rackAwareRRHostPolicy) HostDown(host *HostInfo) { d.RemoveHost(host) }
+
+func (d *rackAwareRRHostPolicy) Pick(q ExecutableQuery) NextHost {
+	nextStartOffset := atomic.AddUint64(&d.lastUsedHostIdx, 1)
+	return roundRobbin(int(nextStartOffset), d.rackHosts.get(), d.datacenterHosts.get(), d.otherHosts.get())
 }
 
 // ReadyPolicy defines a policy for when a HostSelectionPolicy can be used. After
