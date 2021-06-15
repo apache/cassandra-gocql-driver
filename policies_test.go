@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/hailocab/go-hostpool"
+	"github.com/stretchr/testify/require"
 )
 
 // Tests of the round-robin host selection policy implementation
@@ -618,4 +619,135 @@ func TestHostPolicy_TokenAware_NetworkStrategy(t *testing.T) {
 	iterCheck(t, iter, "5")
 	iterCheck(t, iter, "6")
 	iterCheck(t, iter, "8")
+}
+
+func TestHostPolicy_RackAwareRR_IsLocal(t *testing.T) {
+	p := RackAwareRRHostPolicy("dc2", "rack2")
+
+	require.False(t, p.IsLocal(&HostInfo{dataCenter: "dc1", rack: "rack1"}))
+	require.False(t, p.IsLocal(&HostInfo{dataCenter: "dc1", rack: "rack2"}))
+	require.False(t, p.IsLocal(&HostInfo{dataCenter: "dc2", rack: "rack1"}))
+	require.True(t, p.IsLocal(&HostInfo{dataCenter: "dc2", rack: "rack2"}))
+}
+
+// Hosts from the same rack are preferred.
+func TestHostPolicy_RackAwareRR_SameRack(t *testing.T) {
+	p := RackAwareRRHostPolicy("dc2", "rack2")
+
+	hosts := []*HostInfo{
+		{hostId: "1", connectAddress: net.ParseIP("10.0.0.1"), dataCenter: "dc1", rack: "rack1"},
+		{hostId: "2", connectAddress: net.ParseIP("10.0.0.2"), dataCenter: "dc1", rack: "rack2"},
+		{hostId: "3", connectAddress: net.ParseIP("10.0.0.3"), dataCenter: "dc1", rack: "rack2"},
+		{hostId: "4", connectAddress: net.ParseIP("10.0.0.4"), dataCenter: "dc2", rack: "rack1"},
+		{hostId: "5", connectAddress: net.ParseIP("10.0.0.5"), dataCenter: "dc2", rack: "rack2"},
+		{hostId: "6", connectAddress: net.ParseIP("10.0.0.6"), dataCenter: "dc2", rack: "rack2"},
+		{hostId: "7", connectAddress: net.ParseIP("10.0.0.7"), dataCenter: "dc3", rack: "rack1"},
+		{hostId: "8", connectAddress: net.ParseIP("10.0.0.8"), dataCenter: "dc3", rack: "rack2"},
+		{hostId: "9", connectAddress: net.ParseIP("10.0.0.9"), dataCenter: "dc3", rack: "rack2"},
+	}
+	for _, host := range hosts {
+		p.AddHost(host)
+	}
+
+	got := make(map[string]bool, len(hosts))
+	order := make([]*HostInfo, 0, len(hosts))
+
+	// Make sure the same host is not returned twice.
+	it := p.Pick(nil)
+	for h := it(); h != nil; h = it() {
+		id := h.Info().hostId
+		require.NotNilf(t, got[id], "got duplicate host %s", id)
+		got[id] = true
+		order = append(order, h.Info())
+	}
+	// Make sure all available hosts has been offered.
+	require.Len(t, order, len(hosts))
+
+	require.Equal(t, "dc2", order[0].DataCenter())
+	require.Equal(t, "dc2", order[1].DataCenter())
+	require.Equal(t, "dc2", order[2].DataCenter())
+	require.NotEqual(t, "dc2", order[3].DataCenter())
+
+	require.Equal(t, "rack2", order[0].Rack())
+	require.Equal(t, "rack2", order[1].Rack())
+	require.NotEqual(t, "rack2", order[2].Rack())
+}
+
+// If there are no hosts in the same rack then hosts from the same datacenter
+// are preferred.
+func TestHostPolicy_RackAwareRR_SameDatacenter(t *testing.T) {
+	p := RackAwareRRHostPolicy("dc2", "rack2")
+
+	hosts := []*HostInfo{
+		{hostId: "1", connectAddress: net.ParseIP("10.0.0.1"), dataCenter: "dc1", rack: "rack1"},
+		{hostId: "2", connectAddress: net.ParseIP("10.0.0.2"), dataCenter: "dc1", rack: "rack2"},
+		{hostId: "3", connectAddress: net.ParseIP("10.0.0.3"), dataCenter: "dc1", rack: "rack2"},
+		{hostId: "4", connectAddress: net.ParseIP("10.0.0.4"), dataCenter: "dc2", rack: "rack1"},
+		{hostId: "5", connectAddress: net.ParseIP("10.0.0.5"), dataCenter: "dc2", rack: "rack4"},
+		{hostId: "6", connectAddress: net.ParseIP("10.0.0.6"), dataCenter: "dc2", rack: "rack4"},
+		{hostId: "7", connectAddress: net.ParseIP("10.0.0.7"), dataCenter: "dc3", rack: "rack1"},
+		{hostId: "8", connectAddress: net.ParseIP("10.0.0.8"), dataCenter: "dc3", rack: "rack2"},
+		{hostId: "9", connectAddress: net.ParseIP("10.0.0.9"), dataCenter: "dc3", rack: "rack2"},
+	}
+	for _, host := range hosts {
+		p.AddHost(host)
+	}
+
+	got := make(map[string]bool, len(hosts))
+	order := make([]*HostInfo, 0, len(hosts))
+
+	// Make sure the same host is not returned twice.
+	it := p.Pick(nil)
+	for h := it(); h != nil; h = it() {
+		id := h.Info().hostId
+		require.NotNilf(t, got[id], "got duplicate host %s", id)
+		got[id] = true
+		order = append(order, h.Info())
+	}
+	// Make sure all available hosts has been offered.
+	require.Len(t, order, len(hosts))
+
+	require.Equal(t, "dc2", order[0].DataCenter())
+	require.Equal(t, "dc2", order[1].DataCenter())
+	require.Equal(t, "dc2", order[2].DataCenter())
+	require.NotEqual(t, "dc2", order[3].DataCenter())
+
+	require.NotEqual(t, "rack2", order[0].Rack())
+}
+
+// If there are no hosts from the same datacenter, then the exact order of
+// other hosts does not matter.
+func TestHostPolicy_RackAwareRR_Remote(t *testing.T) {
+	p := RackAwareRRHostPolicy("dc2", "rack2")
+
+	hosts := []*HostInfo{
+		{hostId: "1", connectAddress: net.ParseIP("10.0.0.1"), dataCenter: "dc1", rack: "rack1"},
+		{hostId: "2", connectAddress: net.ParseIP("10.0.0.2"), dataCenter: "dc1", rack: "rack2"},
+		{hostId: "3", connectAddress: net.ParseIP("10.0.0.3"), dataCenter: "dc1", rack: "rack2"},
+		{hostId: "4", connectAddress: net.ParseIP("10.0.0.4"), dataCenter: "dc4", rack: "rack1"},
+		{hostId: "5", connectAddress: net.ParseIP("10.0.0.5"), dataCenter: "dc4", rack: "rack2"},
+		{hostId: "6", connectAddress: net.ParseIP("10.0.0.6"), dataCenter: "dc4", rack: "rack2"},
+		{hostId: "7", connectAddress: net.ParseIP("10.0.0.7"), dataCenter: "dc3", rack: "rack1"},
+		{hostId: "8", connectAddress: net.ParseIP("10.0.0.8"), dataCenter: "dc3", rack: "rack2"},
+		{hostId: "9", connectAddress: net.ParseIP("10.0.0.9"), dataCenter: "dc3", rack: "rack2"},
+	}
+	for _, host := range hosts {
+		p.AddHost(host)
+	}
+
+	got := make(map[string]bool, len(hosts))
+	order := make([]*HostInfo, 0, len(hosts))
+
+	// Make sure the same host is not returned twice.
+	it := p.Pick(nil)
+	for h := it(); h != nil; h = it() {
+		id := h.Info().hostId
+		require.NotNilf(t, got[id], "got duplicate host %s", id)
+		got[id] = true
+		order = append(order, h.Info())
+	}
+	// Make sure all available hosts has been offered.
+	require.Len(t, order, len(hosts))
+
+	require.NotEqual(t, "dc2", order[0].DataCenter())
 }
