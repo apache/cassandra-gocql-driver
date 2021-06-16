@@ -176,7 +176,10 @@ type Conn struct {
 
 	streams *streams.IDGenerator
 	mu      sync.Mutex
-	calls   map[int]*callReq
+	// calls stores a map from stream ID to callReq.
+	// This map is protected by mu.
+	// calls should not be used when closed is true, calls is set to nil when closed=true.
+	calls map[int]*callReq
 
 	errorHandler ConnErrorHandler
 	compressor   Compressor
@@ -189,7 +192,9 @@ type Conn struct {
 
 	session *Session
 
-	closed int32
+	// true if connection close process for the connection started.
+	// closed is protected by mu.
+	closed bool
 	ctx    context.Context
 	cancel context.CancelFunc
 
@@ -533,30 +538,42 @@ func (s *startupCoordinator) authenticateHandshake(ctx context.Context, authFram
 }
 
 func (c *Conn) closeWithError(err error) {
-	if !atomic.CompareAndSwapInt32(&c.closed, 0, 1) {
+	if c == nil {
 		return
 	}
 
-	// we should attempt to deliver the error back to the caller if it
-	// exists
-	if err != nil {
-		c.mu.Lock()
-		for _, req := range c.calls {
-			// we need to send the error to all waiting queries, put the state
-			// of this conn into not active so that it can not execute any queries.
-			select {
-			case req.resp <- callResp{err: err}:
-			case <-req.timeout:
-			}
-			if req.streamObserverContext != nil {
-				req.streamObserverEndOnce.Do(func() {
-					req.streamObserverContext.StreamAbandoned(ObservedStream{
-						Host: c.host,
-					})
-				})
-			}
-		}
+	c.mu.Lock()
+	if c.closed {
 		c.mu.Unlock()
+		return
+	}
+	c.closed = true
+
+	var callsToClose map[int]*callReq
+
+	// We should attempt to deliver the error back to the caller if it
+	// exists. However, don't block c.mu while we are delivering the
+	// error to outstanding calls.
+	if err != nil {
+		callsToClose = c.calls
+		// It is safe to change c.calls to nil. Nobody should use it after c.closed is set to true.
+		c.calls = nil
+	}
+	c.mu.Unlock()
+
+	for _, req := range callsToClose {
+		// we need to send the error to all waiting queries.
+		select {
+		case req.resp <- callResp{err: err}:
+		case <-req.timeout:
+		}
+		if req.streamObserverContext != nil {
+			req.streamObserverEndOnce.Do(func() {
+				req.streamObserverContext.StreamAbandoned(ObservedStream{
+					Host: c.host,
+				})
+			})
+		}
 	}
 
 	// if error was nil then unblock the quit channel
@@ -716,6 +733,10 @@ func (c *Conn) recv(ctx context.Context) error {
 	}
 
 	c.mu.Lock()
+	if c.closed {
+		c.mu.Unlock()
+		return ErrConnectionClosed
+	}
 	call, ok := c.calls[head.stream]
 	delete(c.calls, head.stream)
 	c.mu.Unlock()
@@ -1002,6 +1023,24 @@ func (w *writeCoalescer) flush(resultChans []chan<- writeResult, buffers net.Buf
 	}
 }
 
+// addCall attempts to add a call to c.calls.
+// It fails with error if the connection already started closing or if a call for the given stream
+// already exists.
+func (c *Conn) addCall(call *callReq) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.closed {
+		return ErrConnectionClosed
+	}
+	existingCall := c.calls[call.streamID]
+	if existingCall != nil {
+		return fmt.Errorf("attempting to use stream already in use: %d -> %d", call.streamID,
+			existingCall.streamID)
+	}
+	c.calls[call.streamID] = call
+	return nil
+}
+
 func (c *Conn) exec(ctx context.Context, req frameBuilder, tracer Tracer) (*framer, error) {
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		return nil, ctxErr
@@ -1026,15 +1065,8 @@ func (c *Conn) exec(ctx context.Context, req frameBuilder, tracer Tracer) (*fram
 		call.streamObserverContext = c.streamObserver.StreamContext(ctx)
 	}
 
-	c.mu.Lock()
-	existingCall := c.calls[stream]
-	if existingCall == nil {
-		c.calls[stream] = call
-	}
-	c.mu.Unlock()
-
-	if existingCall != nil {
-		return nil, fmt.Errorf("attempting to use stream already in use: %d -> %d", stream, existingCall.streamID)
+	if err := c.addCall(call); err != nil {
+		return nil, err
 	}
 
 	if tracer != nil {
@@ -1052,7 +1084,9 @@ func (c *Conn) exec(ctx context.Context, req frameBuilder, tracer Tracer) (*fram
 		// We failed to serialize the frame into a buffer.
 		// This should not affect the connection as we didn't write anything. We just free the current call.
 		c.mu.Lock()
-		delete(c.calls, call.streamID)
+		if !c.closed {
+			delete(c.calls, call.streamID)
+		}
 		c.mu.Unlock()
 		// We need to release the stream after we remove the call from c.calls, otherwise the existingCall != nil
 		// check above could fail.
@@ -1066,7 +1100,9 @@ func (c *Conn) exec(ctx context.Context, req frameBuilder, tracer Tracer) (*fram
 			// We have not started to write this frame.
 			// Release the stream as no response can come from the server on the stream.
 			c.mu.Lock()
-			delete(c.calls, call.streamID)
+			if !c.closed {
+				delete(c.calls, call.streamID)
+			}
 			c.mu.Unlock()
 			// We need to release the stream after we remove the call from c.calls, otherwise the existingCall != nil
 			// check above could fail.
@@ -1463,7 +1499,9 @@ func (c *Conn) Pick(qry *Query) *Conn {
 }
 
 func (c *Conn) Closed() bool {
-	return atomic.LoadInt32(&c.closed) == 1
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.closed
 }
 
 func (c *Conn) Address() string {
