@@ -604,7 +604,6 @@ func (t *tokenAwareHostPolicy) Pick(qry ExecutableQuery) NextHost {
 		}
 
 		if fallbackIter == nil {
-			// fallback
 			fallbackIter = t.fallback.Pick(qry)
 		}
 
@@ -1023,6 +1022,8 @@ type SpeculativeExecutionPolicy interface {
 }
 
 type NonSpeculativeExecution struct{}
+
+var nonSpeculativeExecution NonSpeculativeExecution
 
 func (sp NonSpeculativeExecution) Attempts() int        { return 0 } // No additional attempts
 func (sp NonSpeculativeExecution) Delay() time.Duration { return 1 } // The delay. Must be positive to be used in a ticker.
