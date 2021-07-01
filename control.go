@@ -395,6 +395,10 @@ func (c *controlConn) HandleError(conn *Conn, err error, closed bool) {
 		return
 	}
 
+	if atomic.LoadInt32(&c.started) == -1 {
+		return
+	}
+
 	oldConn := c.getConn()
 
 	// If connection has long gone, and not been attempted for awhile,
