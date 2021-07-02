@@ -1327,7 +1327,7 @@ func (c *Conn) executeBatch(ctx context.Context, batch *Batch) *Iter {
 		b := &req.statements[i]
 
 		if len(entry.Args) > 0 || entry.binding != nil {
-			info, err := c.prepareStatement(batch.Context(), entry.Stmt, nil)
+			info, err := c.prepareStatement(batch.Context(), entry.Stmt, batch.trace)
 			if err != nil {
 				return &Iter{err: err}
 			}
@@ -1369,8 +1369,7 @@ func (c *Conn) executeBatch(ctx context.Context, batch *Batch) *Iter {
 		}
 	}
 
-	// TODO: should batch support tracing?
-	framer, err := c.exec(batch.Context(), req, nil)
+	framer, err := c.exec(batch.Context(), req, batch.trace)
 	if err != nil {
 		return &Iter{err: err}
 	}
@@ -1378,6 +1377,10 @@ func (c *Conn) executeBatch(ctx context.Context, batch *Batch) *Iter {
 	resp, err := framer.parseFrame()
 	if err != nil {
 		return &Iter{err: err, framer: framer}
+	}
+
+	if len(framer.traceID) > 0 && batch.trace != nil {
+		batch.trace.Trace(framer.traceID)
 	}
 
 	switch x := resp.(type) {

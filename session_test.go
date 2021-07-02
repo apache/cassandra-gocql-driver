@@ -236,6 +236,12 @@ func TestBatchBasicAPI(t *testing.T) {
 		t.Fatalf("expected batch.GetConsistency() to return 'One', got '%s'", b.GetConsistency())
 	}
 
+	trace := &traceWriter{}
+	b.Trace(trace)
+	if b.trace != trace {
+		t.Fatalf("expected batch.Trace to be '%v', got '%v'", trace, b.trace)
+	}
+
 	// Test batch.Query()
 	b.Query("test", 1)
 	if b.Entries[0].Stmt != "test" {
