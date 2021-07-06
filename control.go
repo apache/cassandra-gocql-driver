@@ -339,6 +339,9 @@ func (c *controlConn) registerEvents(conn *Conn) error {
 }
 
 func (c *controlConn) reconnect(refreshring bool) {
+	if atomic.LoadInt32(&c.state) == controlConnClosing {
+		return
+	}
 	if !atomic.CompareAndSwapInt32(&c.reconnecting, 0, 1) {
 		return
 	}
