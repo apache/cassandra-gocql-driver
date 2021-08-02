@@ -1634,6 +1634,7 @@ type Batch struct {
 	cancelBatch           func()
 	keyspace              string
 	metrics               *queryMetrics
+	routingKey            []byte
 }
 
 // NewBatch creates a new batch operation without defaults from the cluster
@@ -2169,3 +2170,115 @@ func NewErrProtocol(format string, args ...interface{}) error {
 // BatchSizeMaximum is the maximum number of statements a batch operation can have.
 // This limit is set by cassandra and could change in the future.
 const BatchSizeMaximum = 65535
+
+// PartitionedBatch helps to partition batches by host using tokenAwareHostPolicy
+type PartitionedBatch struct {
+	session     *Session
+	statement   string
+	tokenRing   *tokenRing
+	batchTyp    BatchType
+	batches     map[string]*Batch
+	idempotent  bool
+	consistency Consistency
+}
+
+func (s *Session) NewPartitionedBatch(statement string, typ BatchType, idempotent bool, consistency Consistency) (*PartitionedBatch, error) {
+
+	// partitioned batch useless for other host policies
+	p, ok := s.policy.(*tokenAwareHostPolicy)
+	if !ok {
+		return nil, errors.New("tokenAwareHostPolicy should be used as HostSelectionPolicy for current session")
+	}
+
+	return &PartitionedBatch{
+		session:     s,
+		statement:   statement,
+		tokenRing:   p.tokenRing.Load().(*tokenRing),
+		batchTyp:    typ,
+		batches:     make(map[string]*Batch),
+		idempotent:  idempotent,
+		consistency: consistency,
+	}, nil
+}
+
+const emptyHostID = "emptyHostID"
+
+func (b *PartitionedBatch) Query(args ...interface{}) error {
+	routingKey, err := b.getRoutingKey(context.Background(), b.statement, args...)
+	if err != nil {
+		return err
+	}
+
+	hostID := emptyHostID
+	if host, _ := b.tokenRing.GetHostForPartitionKey(routingKey); host != nil {
+		hostID = host.HostID()
+	}
+
+	batch, ok := b.batches[hostID]
+	if !ok {
+		batch = b.session.NewBatch(b.batchTyp)
+		batch.routingKey = routingKey
+		batch.SetConsistency(b.consistency)
+		batch.IsIdempotent()
+		b.batches[hostID] = batch
+	}
+
+	batch.Query(b.statement, args...)
+	if b.idempotent {
+		batch.Entries[len(batch.Entries)-1].Idempotent = b.idempotent
+	}
+	return nil
+}
+
+// Batches return batch object for future execution. You can execute it in parallel or consequentially
+func (b *PartitionedBatch) Batches() (batches []*Batch) {
+	for _, v := range b.batches {
+		batches = append(batches, v)
+	}
+	return
+}
+
+// TODO remove duplicates
+func (b *PartitionedBatch) getRoutingKey(ctx context.Context, stmt string, args ...interface{}) ([]byte, error) {
+	routingKeyInfo, err := b.session.routingKeyInfo(ctx, stmt)
+	if err != nil {
+		return nil, err
+	}
+
+	if routingKeyInfo == nil {
+		return nil, nil
+	}
+
+	if len(routingKeyInfo.indexes) == 1 {
+		// single column routing key
+		routingKey, err := Marshal(
+			routingKeyInfo.types[0],
+			args[routingKeyInfo.indexes[0]],
+		)
+		if err != nil {
+			return nil, err
+		}
+		return routingKey, nil
+	}
+
+	routingKeyBuffer := make([]byte, 0, 256)
+
+	// composite routing key
+	buf := bytes.NewBuffer(routingKeyBuffer)
+	for i := range routingKeyInfo.indexes {
+		encoded, err := Marshal(
+			routingKeyInfo.types[i],
+			args[routingKeyInfo.indexes[i]],
+		)
+		if err != nil {
+			return nil, err
+		}
+		lenBuf := []byte{0x00, 0x00}
+		binary.BigEndian.PutUint16(lenBuf, uint16(len(encoded)))
+		buf.Write(lenBuf)
+		buf.Write(encoded)
+		buf.WriteByte(0x00)
+	}
+	routingKey := buf.Bytes()
+	return routingKey, nil
+}
