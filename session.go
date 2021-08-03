@@ -70,8 +70,15 @@ type Session struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
-	closeMu  sync.RWMutex
+	// sessionStateMu protects isClosed and isInitialized.
+	sessionStateMu sync.RWMutex
+	// isClosed is true once Session.Close is called.
 	isClosed bool
+	// isInitialized is true once Session.init succeeds.
+	// you can use initialized() to read the value.
+	isInitialized bool
+
+	logger StdLogger
 }
 
 var queryPool = &sync.Pool{
@@ -80,14 +87,14 @@ var queryPool = &sync.Pool{
 	},
 }
 
-func addrsToHosts(addrs []string, defaultPort int) ([]*HostInfo, error) {
+func addrsToHosts(addrs []string, defaultPort int, logger StdLogger) ([]*HostInfo, error) {
 	var hosts []*HostInfo
 	for _, hostport := range addrs {
 		resolvedHosts, err := hostInfo(hostport, defaultPort)
 		if err != nil {
 			// Try other hosts if unable to resolve DNS name
 			if _, ok := err.(*net.DNSError); ok {
-				Logger.Printf("gocql: dns error: %v\n", err)
+				logger.Printf("gocql: dns error: %v\n", err)
 				continue
 			}
 			return nil, err
@@ -125,6 +132,7 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 		connectObserver: cfg.ConnectObserver,
 		ctx:             ctx,
 		cancel:          cancel,
+		logger:          cfg.logger(),
 	}
 
 	// Close created resources on error otherwise they'll leak
@@ -137,8 +145,8 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 
 	s.schemaDescriber = newSchemaDescriber(s)
 
-	s.nodeEvents = newEventDebouncer("NodeEvents", s.handleNodeEvent)
-	s.schemaEvents = newEventDebouncer("SchemaEvents", s.handleSchemaEvent)
+	s.nodeEvents = newEventDebouncer("NodeEvents", s.handleNodeEvent, s.logger)
+	s.schemaEvents = newEventDebouncer("SchemaEvents", s.handleSchemaEvent, s.logger)
 
 	s.routingKeyInfoCache.lru = lru.New(cfg.MaxRoutingKeyInfo)
 
@@ -185,7 +193,7 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 }
 
 func (s *Session) init() error {
-	hosts, err := addrsToHosts(s.cfg.Hosts, s.cfg.Port)
+	hosts, err := addrsToHosts(s.cfg.Hosts, s.cfg.Port, s.logger)
 	if err != nil {
 		return err
 	}
@@ -321,6 +329,10 @@ func (s *Session) init() error {
 		s.policy.KeyspaceChanged(KeyspaceUpdateEvent{Keyspace: s.cfg.Keyspace})
 	}
 
+	s.sessionStateMu.Lock()
+	s.isInitialized = true
+	s.sessionStateMu.Unlock()
+
 	return nil
 }
 
@@ -354,14 +366,14 @@ func (s *Session) reconnectDownedHosts(intv time.Duration) {
 				for _, h := range hosts {
 					buf.WriteString("[" + h.ConnectAddress().String() + ":" + h.State().String() + "]")
 				}
-				Logger.Println(buf.String())
+				s.logger.Println(buf.String())
 			}
 
 			for _, h := range hosts {
 				if h.IsUp() {
 					continue
 				}
-				// we let the pool call handleNodeUp to change the host state
+				// we let the pool call handleNodeConnected to change the host state
 				s.pool.addHost(h)
 			}
 		case <-s.ctx.Done():
@@ -446,8 +458,8 @@ func (s *Session) Bind(stmt string, b func(q *QueryInfo) ([]interface{}, error))
 // operation.
 func (s *Session) Close() {
 
-	s.closeMu.Lock()
-	defer s.closeMu.Unlock()
+	s.sessionStateMu.Lock()
+	defer s.sessionStateMu.Unlock()
 	if s.isClosed {
 		return
 	}
@@ -475,10 +487,17 @@ func (s *Session) Close() {
 }
 
 func (s *Session) Closed() bool {
-	s.closeMu.RLock()
+	s.sessionStateMu.RLock()
 	closed := s.isClosed
-	s.closeMu.RUnlock()
+	s.sessionStateMu.RUnlock()
 	return closed
+}
+
+func (s *Session) initialized() bool {
+	s.sessionStateMu.RLock()
+	initialized := s.isInitialized
+	s.sessionStateMu.RUnlock()
+	return initialized
 }
 
 func (s *Session) executeQuery(qry *Query) (it *Iter) {
@@ -1671,6 +1690,7 @@ type Batch struct {
 	CustomPayload         map[string][]byte
 	rt                    RetryPolicy
 	spec                  SpeculativeExecutionPolicy
+	trace                 Tracer
 	observer              BatchObserver
 	session               *Session
 	serialCons            Consistency
@@ -1704,6 +1724,7 @@ func (s *Session) NewBatch(typ BatchType) *Batch {
 		Type:             typ,
 		rt:               s.cfg.RetryPolicy,
 		serialCons:       s.cfg.SerialConsistency,
+		trace:            s.trace,
 		observer:         s.batchObserver,
 		session:          s,
 		Cons:             s.cons,
@@ -1716,6 +1737,13 @@ func (s *Session) NewBatch(typ BatchType) *Batch {
 
 	s.mu.RUnlock()
 	return batch
+}
+
+// Trace enables tracing of this batch. Look at the documentation of the
+// Tracer interface to learn more about tracing.
+func (b *Batch) Trace(trace Tracer) *Batch {
+	b.trace = trace
+	return b
 }
 
 // Observer enables batch-level observer on this batch.

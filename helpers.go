@@ -130,38 +130,38 @@ func getCassandraBaseType(name string) Type {
 	}
 }
 
-func getCassandraType(name string) TypeInfo {
+func getCassandraType(name string, logger StdLogger) TypeInfo {
 	if strings.HasPrefix(name, "frozen<") {
-		return getCassandraType(strings.TrimPrefix(name[:len(name)-1], "frozen<"))
+		return getCassandraType(strings.TrimPrefix(name[:len(name)-1], "frozen<"), logger)
 	} else if strings.HasPrefix(name, "set<") {
 		return CollectionType{
 			NativeType: NativeType{typ: TypeSet},
-			Elem:       getCassandraType(strings.TrimPrefix(name[:len(name)-1], "set<")),
+			Elem:       getCassandraType(strings.TrimPrefix(name[:len(name)-1], "set<"), logger),
 		}
 	} else if strings.HasPrefix(name, "list<") {
 		return CollectionType{
 			NativeType: NativeType{typ: TypeList},
-			Elem:       getCassandraType(strings.TrimPrefix(name[:len(name)-1], "list<")),
+			Elem:       getCassandraType(strings.TrimPrefix(name[:len(name)-1], "list<"), logger),
 		}
 	} else if strings.HasPrefix(name, "map<") {
 		names := splitCompositeTypes(strings.TrimPrefix(name[:len(name)-1], "map<"))
 		if len(names) != 2 {
-			Logger.Printf("Error parsing map type, it has %d subelements, expecting 2\n", len(names))
+			logger.Printf("Error parsing map type, it has %d subelements, expecting 2\n", len(names))
 			return NativeType{
 				typ: TypeCustom,
 			}
 		}
 		return CollectionType{
 			NativeType: NativeType{typ: TypeMap},
-			Key:        getCassandraType(names[0]),
-			Elem:       getCassandraType(names[1]),
+			Key:        getCassandraType(names[0], logger),
+			Elem:       getCassandraType(names[1], logger),
 		}
 	} else if strings.HasPrefix(name, "tuple<") {
 		names := splitCompositeTypes(strings.TrimPrefix(name[:len(name)-1], "tuple<"))
 		types := make([]TypeInfo, len(names))
 
 		for i, name := range names {
-			types[i] = getCassandraType(name)
+			types[i] = getCassandraType(name, logger)
 		}
 
 		return TupleTypeInfo{

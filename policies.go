@@ -6,7 +6,6 @@ package gocql
 
 //This file will be the future home for more policies
 
-
 import (
 	"context"
 	"errors"
@@ -216,11 +215,6 @@ func (d *DowngradingConsistencyRetryPolicy) Attempt(q RetryableQuery) bool {
 		return false
 	} else if currentAttempt > 0 {
 		q.SetConsistency(d.ConsistencyLevelsToTry[currentAttempt-1])
-		if gocqlDebug {
-			Logger.Printf("%T: set consistency to %q\n",
-				d,
-				d.ConsistencyLevelsToTry[currentAttempt-1])
-		}
 	}
 	return true
 }
@@ -397,11 +391,14 @@ type tokenAwareHostPolicy struct {
 	hosts       cowHostList
 	partitioner string
 	metadata    atomic.Value // *clusterMeta
+
+	logger StdLogger
 }
 
 func (t *tokenAwareHostPolicy) Init(s *Session) {
 	t.getKeyspaceMetadata = s.KeyspaceMetadata
 	t.getKeyspaceName = func() string { return s.cfg.Keyspace }
+	t.logger = s.logger
 }
 
 func (t *tokenAwareHostPolicy) IsLocal(host *HostInfo) bool {
@@ -424,7 +421,7 @@ func (t *tokenAwareHostPolicy) updateReplicas(meta *clusterMeta, keyspace string
 
 	ks, err := t.getKeyspaceMetadata(keyspace)
 	if err == nil {
-		strat := getStrategy(ks)
+		strat := getStrategy(ks, t.logger)
 		if strat != nil {
 			if meta != nil && meta.tokenRing != nil {
 				newReplicas[keyspace] = strat.replicaMap(meta.tokenRing)
@@ -449,7 +446,7 @@ func (t *tokenAwareHostPolicy) SetPartitioner(partitioner string) {
 		t.fallback.SetPartitioner(partitioner)
 		t.partitioner = partitioner
 		meta := t.getMetadataForUpdate()
-		meta.resetTokenRing(t.partitioner, t.hosts.get())
+		meta.resetTokenRing(t.partitioner, t.hosts.get(), t.logger)
 		t.updateReplicas(meta, t.getKeyspaceName())
 		t.metadata.Store(meta)
 	}
@@ -459,7 +456,7 @@ func (t *tokenAwareHostPolicy) AddHost(host *HostInfo) {
 	t.mu.Lock()
 	if t.hosts.add(host) {
 		meta := t.getMetadataForUpdate()
-		meta.resetTokenRing(t.partitioner, t.hosts.get())
+		meta.resetTokenRing(t.partitioner, t.hosts.get(), t.logger)
 		t.updateReplicas(meta, t.getKeyspaceName())
 		t.metadata.Store(meta)
 	}
@@ -476,7 +473,7 @@ func (t *tokenAwareHostPolicy) AddHosts(hosts []*HostInfo) {
 	}
 
 	meta := t.getMetadataForUpdate()
-	meta.resetTokenRing(t.partitioner, t.hosts.get())
+	meta.resetTokenRing(t.partitioner, t.hosts.get(), t.logger)
 	t.updateReplicas(meta, t.getKeyspaceName())
 	t.metadata.Store(meta)
 
@@ -491,7 +488,7 @@ func (t *tokenAwareHostPolicy) RemoveHost(host *HostInfo) {
 	t.mu.Lock()
 	if t.hosts.remove(host.ConnectAddress()) {
 		meta := t.getMetadataForUpdate()
-		meta.resetTokenRing(t.partitioner, t.hosts.get())
+		meta.resetTokenRing(t.partitioner, t.hosts.get(), t.logger)
 		t.updateReplicas(meta, t.getKeyspaceName())
 		t.metadata.Store(meta)
 	}
@@ -531,7 +528,7 @@ func (t *tokenAwareHostPolicy) getMetadataForUpdate() *clusterMeta {
 
 // resetTokenRing creates a new tokenRing.
 // It must be called with t.mu locked.
-func (m *clusterMeta) resetTokenRing(partitioner string, hosts []*HostInfo) {
+func (m *clusterMeta) resetTokenRing(partitioner string, hosts []*HostInfo, logger StdLogger) {
 	if partitioner == "" {
 		// partitioner not yet set
 		return
@@ -540,7 +537,7 @@ func (m *clusterMeta) resetTokenRing(partitioner string, hosts []*HostInfo) {
 	// create a new token ring
 	tokenRing, err := newTokenRing(partitioner, hosts)
 	if err != nil {
-		Logger.Printf("Unable to update the token ring due to error: %s", err)
+		logger.Printf("Unable to update the token ring due to error: %s", err)
 		return
 	}
 

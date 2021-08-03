@@ -16,6 +16,7 @@ func TestSessionAPI(t *testing.T) {
 		cfg:    *cfg,
 		cons:   Quorum,
 		policy: RoundRobinHostPolicy(),
+		logger: cfg.logger(),
 	}
 
 	s.pool = cfg.PoolConfig.buildPool(s)
@@ -194,8 +195,9 @@ func TestBatchBasicAPI(t *testing.T) {
 	cfg := &ClusterConfig{RetryPolicy: &SimpleRetryPolicy{NumRetries: 2}}
 
 	s := &Session{
-		cfg:  *cfg,
-		cons: Quorum,
+		cfg:    *cfg,
+		cons:   Quorum,
+		logger: cfg.logger(),
 	}
 	defer s.Close()
 
@@ -242,6 +244,12 @@ func TestBatchBasicAPI(t *testing.T) {
 	b.Cons = One
 	if b.GetConsistency() != One {
 		t.Fatalf("expected batch.GetConsistency() to return 'One', got '%s'", b.GetConsistency())
+	}
+
+	trace := &traceWriter{}
+	b.Trace(trace)
+	if b.trace != trace {
+		t.Fatalf("expected batch.Trace to be '%v', got '%v'", trace, b.trace)
 	}
 
 	// Test batch.Query()

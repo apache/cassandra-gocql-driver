@@ -16,6 +16,7 @@ import (
 // from metadata schema queries (see getKeyspaceMetadata, getTableMetadata, and getColumnMetadata)
 func TestCompileMetadata(t *testing.T) {
 	// V1 tests - these are all based on real examples from the integration test ccm cluster
+	log := &defaultLogger{}
 	keyspace := &KeyspaceMetadata{
 		Name: "V1Keyspace",
 	}
@@ -97,7 +98,7 @@ func TestCompileMetadata(t *testing.T) {
 		{Keyspace: "V1Keyspace", Table: "peers", Kind: ColumnRegular, Name: "schema_version", ComponentIndex: 0, Validator: "org.apache.cassandra.db.marshal.UUIDType"},
 		{Keyspace: "V1Keyspace", Table: "peers", Kind: ColumnRegular, Name: "tokens", ComponentIndex: 0, Validator: "org.apache.cassandra.db.marshal.SetType(org.apache.cassandra.db.marshal.UTF8Type)"},
 	}
-	compileMetadata(1, keyspace, tables, columns, nil, nil, nil, nil)
+	compileMetadata(1, keyspace, tables, columns, nil, nil, nil, nil, log)
 	assertKeyspaceMetadata(
 		t,
 		keyspace,
@@ -378,7 +379,7 @@ func TestCompileMetadata(t *testing.T) {
 			Validator: "org.apache.cassandra.db.marshal.UTF8Type",
 		},
 	}
-	compileMetadata(2, keyspace, tables, columns, nil, nil, nil, nil)
+	compileMetadata(2, keyspace, tables, columns, nil, nil, nil, nil, log)
 	assertKeyspaceMetadata(
 		t,
 		keyspace,
@@ -677,7 +678,8 @@ func assertParseNonCompositeType(
 	typeExpected assertTypeInfo,
 ) {
 
-	result := parseType(def)
+	log := &defaultLogger{}
+	result := parseType(def, log)
 	if len(result.reversed) != 1 {
 		t.Errorf("%s expected %d reversed values but there were %d", def, 1, len(result.reversed))
 	}
@@ -707,7 +709,8 @@ func assertParseCompositeType(
 	collectionsExpected map[string]assertTypeInfo,
 ) {
 
-	result := parseType(def)
+	log := &defaultLogger{}
+	result := parseType(def, log)
 	if len(result.reversed) != len(typesExpected) {
 		t.Errorf("%s expected %d reversed values but there were %d", def, len(typesExpected), len(result.reversed))
 	}

@@ -151,10 +151,6 @@ func newTestSession(proto protoVersion, addresses ...string) (*Session, error) {
 
 func TestDNSLookupConnected(t *testing.T) {
 	log := &testLogger{}
-	Logger = log
-	defer func() {
-		Logger = &defaultLogger{}
-	}()
 
 	// Override the defaul DNS resolver and restore at the end
 	failDNS = true
@@ -164,6 +160,7 @@ func TestDNSLookupConnected(t *testing.T) {
 	defer srv.Stop()
 
 	cluster := NewCluster("cassandra1.invalid", srv.Address, "cassandra2.invalid")
+	cluster.Logger = log
 	cluster.ProtoVersion = int(defaultProto)
 	cluster.disableControlConn = true
 
@@ -181,16 +178,13 @@ func TestDNSLookupConnected(t *testing.T) {
 
 func TestDNSLookupError(t *testing.T) {
 	log := &testLogger{}
-	Logger = log
-	defer func() {
-		Logger = &defaultLogger{}
-	}()
 
 	// Override the defaul DNS resolver and restore at the end
 	failDNS = true
 	defer func() { failDNS = false }()
 
 	cluster := NewCluster("cassandra1.invalid", "cassandra2.invalid")
+	cluster.Logger = log
 	cluster.ProtoVersion = int(defaultProto)
 	cluster.disableControlConn = true
 
@@ -213,10 +207,6 @@ func TestDNSLookupError(t *testing.T) {
 func TestStartupTimeout(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	log := &testLogger{}
-	Logger = log
-	defer func() {
-		Logger = &defaultLogger{}
-	}()
 
 	srv := NewTestServer(t, defaultProto, ctx)
 	defer srv.Stop()
@@ -226,6 +216,7 @@ func TestStartupTimeout(t *testing.T) {
 
 	startTime := time.Now()
 	cluster := NewCluster(srv.Address)
+	cluster.Logger = log
 	cluster.ProtoVersion = int(defaultProto)
 	cluster.disableControlConn = true
 	// Set very long query connection timeout
@@ -323,13 +314,14 @@ func TestCancel(t *testing.T) {
 type testQueryObserver struct {
 	metrics map[string]*hostMetrics
 	verbose bool
+	logger  StdLogger
 }
 
 func (o *testQueryObserver) ObserveQuery(ctx context.Context, q ObservedQuery) {
 	host := q.Host.ConnectAddress().String()
 	o.metrics[host] = q.Metrics
 	if o.verbose {
-		Logger.Printf("Observed query %q. Returned %v rows, took %v on host %q with %v attempts and total latency %v. Error: %q\n",
+		o.logger.Printf("Observed query %q. Returned %v rows, took %v on host %q with %v attempts and total latency %v. Error: %q\n",
 			q.Statement, q.Rows, q.End.Sub(q.Start), host, q.Metrics.Attempts, q.Metrics.TotalLatency, q.Err)
 	}
 }
@@ -383,9 +375,7 @@ func TestQueryRetry(t *testing.T) {
 
 func TestQueryMultinodeWithMetrics(t *testing.T) {
 	log := &testLogger{}
-	Logger = log
 	defer func() {
-		Logger = &defaultLogger{}
 		os.Stdout.WriteString(log.String())
 	}()
 
@@ -412,7 +402,7 @@ func TestQueryMultinodeWithMetrics(t *testing.T) {
 
 	// 1 retry per host
 	rt := &SimpleRetryPolicy{NumRetries: 3}
-	observer := &testQueryObserver{metrics: make(map[string]*hostMetrics), verbose: false}
+	observer := &testQueryObserver{metrics: make(map[string]*hostMetrics), verbose: false, logger: log}
 	qry := db.Query("kill").RetryPolicy(rt).Observer(observer)
 	if err := qry.Exec(); err == nil {
 		t.Fatalf("expected error")
@@ -460,9 +450,7 @@ func (t *testRetryPolicy) GetRetryType(err error) RetryType {
 
 func TestSpeculativeExecution(t *testing.T) {
 	log := &testLogger{}
-	Logger = log
 	defer func() {
-		Logger = &defaultLogger{}
 		os.Stdout.WriteString(log.String())
 	}()
 
@@ -689,6 +677,7 @@ func TestStream0(t *testing.T) {
 	conn := &Conn{
 		r:       bufio.NewReader(&buf),
 		streams: streams.New(protoVersion4),
+		logger:  &defaultLogger{},
 	}
 
 	err := conn.recv(context.Background())

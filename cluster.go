@@ -160,6 +160,10 @@ type ClusterConfig struct {
 	// your network nor disable shard-aware port on your nodes.
 	DisableShardAwarePort bool
 
+	// Logger for this ClusterConfig.
+	// If not specified, defaults to the global gocql.Logger.
+	Logger StdLogger
+
 	// internal config for testing
 	disableControlConn bool
 }
@@ -199,6 +203,13 @@ func NewCluster(hosts ...string) *ClusterConfig {
 	return cfg
 }
 
+func (cfg *ClusterConfig) logger() StdLogger {
+	if cfg.Logger == nil {
+		return Logger
+	}
+	return cfg.Logger
+}
+
 // CreateSession initializes the cluster based on this config and returns a
 // session object that can be used to interact with the database.
 func (cfg *ClusterConfig) CreateSession() (*Session, error) {
@@ -215,7 +226,7 @@ func (cfg *ClusterConfig) translateAddressPort(addr net.IP, port int) (net.IP, i
 	}
 	newAddr, newPort := cfg.AddressTranslator.Translate(addr, port)
 	if gocqlDebug {
-		Logger.Printf("gocql: translating address '%v:%d' to '%v:%d'", addr, port, newAddr, newPort)
+		cfg.logger().Printf("gocql: translating address '%v:%d' to '%v:%d'", addr, port, newAddr, newPort)
 	}
 	return newAddr, newPort
 }
