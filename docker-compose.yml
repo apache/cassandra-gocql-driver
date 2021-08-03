@@ -9,22 +9,6 @@ services:
       public:
         ipv4_address: 192.168.100.11
 
-  node_2:
-    image: ${SCYLLA_IMAGE}
-    privileged: true
-    command: --smp 2 --memory 512M --seeds 192.168.100.11 --overprovisioned 1
-    networks:
-      public:
-        ipv4_address: 192.168.100.12
-
-#  node_3:
-#    image: ${SCYLLA_IMAGE}
-#    privileged: true
-#    command: --smp 2 --memory 512M --seeds 192.168.100.11
-#    networks:
-#      public:
-#        ipv4_address: 192.168.100.13
-
 networks:
   public:
     driver: bridge

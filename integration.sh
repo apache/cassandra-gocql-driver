@@ -7,9 +7,6 @@ readonly SCYLLA_IMAGE=${SCYLLA_IMAGE}
 
 set -eu -o pipefail
 
-# Static IPs from docker-compose.yml
-scylla_liveset="192.168.100.11,192.168.100.12"
-
 function scylla_up() {
   local -r exec="docker-compose exec -T"
 
@@ -40,10 +37,11 @@ function scylla_restart() {
 
 scylla_restart
 
-readonly clusterSize=2
+readonly clusterSize=1
+readonly scylla_liveset="192.168.100.11"
 readonly cversion="3.11.4"
 readonly proto=4
-readonly args="-gocql.timeout=60s -proto=${proto} -rf=3 -clusterSize=${clusterSize} -autowait=2000ms -compressor=snappy -gocql.cversion=${cversion} -cluster=${scylla_liveset}"
+readonly args="-gocql.timeout=60s -proto=${proto} -rf=${clusterSize} -clusterSize=${clusterSize} -autowait=2000ms -compressor=snappy -gocql.cversion=${cversion} -cluster=${scylla_liveset}"
 
 echo "==> Running $* tests with args: ${args}"
 go test -timeout=5m -race -tags="$*" ${args} ./...
