@@ -33,12 +33,14 @@ const (
 
 func TestApprove(t *testing.T) {
 	tests := map[bool]bool{
-		approve("org.apache.cassandra.auth.PasswordAuthenticator"):          true,
-		approve("com.instaclustr.cassandra.auth.SharedSecretAuthenticator"): true,
-		approve("com.datastax.bdp.cassandra.auth.DseAuthenticator"):         true,
-		approve("io.aiven.cassandra.auth.AivenAuthenticator"):               true,
-		approve("com.amazon.helenus.auth.HelenusAuthenticator"):             true,
-		approve("com.apache.cassandra.auth.FakeAuthenticator"):              false,
+		approve("org.apache.cassandra.auth.PasswordAuthenticator", []string{}):                                          true,
+		approve("com.instaclustr.cassandra.auth.SharedSecretAuthenticator", []string{}):                                 true,
+		approve("com.datastax.bdp.cassandra.auth.DseAuthenticator", []string{}):                                         true,
+		approve("io.aiven.cassandra.auth.AivenAuthenticator", []string{}):                                               true,
+		approve("com.amazon.helenus.auth.HelenusAuthenticator", []string{}):                                             true,
+		approve("com.apache.cassandra.auth.FakeAuthenticator", []string{}):                                              false,
+		approve("com.apache.cassandra.auth.FakeAuthenticator", nil):                                                     false,
+		approve("com.apache.cassandra.auth.FakeAuthenticator", []string{"com.apache.cassandra.auth.FakeAuthenticator"}): true,
 	}
 	for k, v := range tests {
 		if k != v {
