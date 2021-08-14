@@ -35,8 +35,11 @@ var (
 	}
 )
 
-func approve(authenticator string, dynamicApprovedAuthenticators []string) bool {
-	approvedAuthenticators := append(dynamicApprovedAuthenticators, defaultApprovedAuthenticators...)
+// approve the authenticator with the list of allowed authenticators or default list if approvedAuthenticators is empty.
+func approve(authenticator string, approvedAuthenticators []string) bool {
+	if len(approvedAuthenticators) == 0 {
+		approvedAuthenticators = defaultApprovedAuthenticators
+	}
 	for _, s := range approvedAuthenticators {
 		if authenticator == s {
 			return true
