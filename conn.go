@@ -244,8 +244,7 @@ func (s *Session) dialWithoutObserver(ctx context.Context, host *HostInfo, cfg *
 		dialer = d
 	}
 
-	addr := host.HostnameAndPort()
-	conn, err := dialer.DialContext(ctx, "tcp", addr)
+	conn, err := dialer.DialContext(ctx, "tcp", host.connectAddressAndPort())
 	if err != nil {
 		return nil, err
 	}
@@ -254,14 +253,9 @@ func (s *Session) dialWithoutObserver(ctx context.Context, host *HostInfo, cfg *
 		// be modified after being used.
 		tlsConfig := cfg.tlsConfig
 		if !tlsConfig.InsecureSkipVerify && tlsConfig.ServerName == "" {
-			colonPos := strings.LastIndex(addr, ":")
-			if colonPos == -1 {
-				colonPos = len(addr)
-			}
-			hostname := addr[:colonPos]
 			// clone config to avoid modifying the shared one.
 			tlsConfig = tlsConfig.Clone()
-			tlsConfig.ServerName = hostname
+			tlsConfig.ServerName = host.hostName()
 		}
 		tconn := tls.Client(conn, tlsConfig)
 		if err := tconn.Handshake(); err != nil {

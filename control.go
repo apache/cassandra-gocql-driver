@@ -148,7 +148,7 @@ func hostInfo(addr string, defaultPort int) ([]*HostInfo, error) {
 	}
 
 	for _, ip := range ips {
-		hosts = append(hosts, &HostInfo{hostname: ip.String(), connectAddress: ip, port: port})
+		hosts = append(hosts, &HostInfo{hostname: host, connectAddress: ip, port: port})
 	}
 
 	return hosts, nil

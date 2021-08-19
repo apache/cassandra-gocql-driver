@@ -367,10 +367,18 @@ func (h *HostInfo) IsUp() bool {
 }
 
 func (h *HostInfo) HostnameAndPort() string {
+	return net.JoinHostPort(h.hostName(), strconv.Itoa(h.port))
+}
+
+func (h *HostInfo) hostName() string {
 	if h.hostname == "" {
 		h.hostname = h.ConnectAddress().String()
 	}
-	return net.JoinHostPort(h.hostname, strconv.Itoa(h.port))
+	return h.hostname
+}
+
+func (h *HostInfo) connectAddressAndPort() string {
+	return net.JoinHostPort(h.ConnectAddress().String(), strconv.Itoa(h.port))
 }
 
 func (h *HostInfo) String() string {
