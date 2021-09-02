@@ -166,6 +166,7 @@ type ClusterConfig struct {
 
 	// internal config for testing
 	disableControlConn bool
+	disableInit        bool
 }
 
 type Dialer interface {

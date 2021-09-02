@@ -193,6 +193,10 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 }
 
 func (s *Session) init() error {
+	if s.cfg.disableInit {
+		return nil
+	}
+
 	hosts, err := addrsToHosts(s.cfg.Hosts, s.cfg.Port, s.logger)
 	if err != nil {
 		return err
