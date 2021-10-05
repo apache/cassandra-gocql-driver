@@ -1,4 +1,5 @@
-//+build all unit
+//go:build all || unit
+// +build all unit
 
 package gocql
 
@@ -2191,5 +2192,31 @@ func BenchmarkUnmarshalUUID(b *testing.B) {
 		if err := unmarshalUUID(ti, src, &dst); err != nil {
 			b.Fatal(err)
 		}
+	}
+}
+
+func TestUnmarshalUDT(t *testing.T) {
+	info := UDTTypeInfo{
+		NativeType: NativeType{proto: 4, typ: TypeUDT},
+		Name:       "myudt",
+		KeySpace:   "myks",
+		Elements: []UDTField{
+			{
+				Name: "first",
+				Type: NativeType{proto: 4, typ: TypeAscii},
+			},
+			{
+				Name: "second",
+				Type: NativeType{proto: 4, typ: TypeSmallInt},
+			},
+		},
+	}
+	data := []byte("\x00\x00\x00\x0f\x00\x00\x00\x05Hello\x00\x00\x00\x02\x00\x2a")
+	value := map[string]interface{}{}
+	expectedErr := UnmarshalError("can not unmarshal into non-pointer map[string]interface {}")
+
+	if err := Unmarshal(info, data, value); err != expectedErr {
+		t.Errorf("(%v=>%T): %#v returned error %#v, want %#v.",
+			info, value, value, err, expectedErr)
 	}
 }

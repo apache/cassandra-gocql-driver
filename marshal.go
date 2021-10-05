@@ -2291,7 +2291,11 @@ func unmarshalUDT(info TypeInfo, data []byte, value interface{}) error {
 		return nil
 	}
 
-	k := reflect.ValueOf(value).Elem()
+	rv := reflect.ValueOf(value)
+	if rv.Kind() != reflect.Ptr {
+		return unmarshalErrorf("can not unmarshal into non-pointer %T", value)
+	}
+	k := rv.Elem()
 	if k.Kind() != reflect.Struct || !k.IsValid() {
 		return unmarshalErrorf("cannot unmarshal %s into %T", info, value)
 	}
