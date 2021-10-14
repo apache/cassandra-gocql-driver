@@ -399,7 +399,7 @@ func checkSystemSchema(control *controlConn) (bool, error) {
 	iter := control.query("SELECT * FROM system_schema.keyspaces")
 	if err := iter.err; err != nil {
 		if errf, ok := err.(*errorFrame); ok {
-			if errf.code == errSyntax {
+			if errf.code == ErrCodeSyntax {
 				return false, nil
 			}
 		}

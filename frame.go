@@ -590,7 +590,7 @@ func (f *framer) parseErrorFrame() frame {
 	}
 
 	switch code {
-	case errUnavailable:
+	case ErrCodeUnavailable:
 		cl := f.readConsistency()
 		required := f.readInt()
 		alive := f.readInt()
@@ -600,7 +600,7 @@ func (f *framer) parseErrorFrame() frame {
 			Required:    required,
 			Alive:       alive,
 		}
-	case errWriteTimeout:
+	case ErrCodeWriteTimeout:
 		cl := f.readConsistency()
 		received := f.readInt()
 		blockfor := f.readInt()
@@ -612,7 +612,7 @@ func (f *framer) parseErrorFrame() frame {
 			BlockFor:    blockfor,
 			WriteType:   writeType,
 		}
-	case errReadTimeout:
+	case ErrCodeReadTimeout:
 		cl := f.readConsistency()
 		received := f.readInt()
 		blockfor := f.readInt()
@@ -624,7 +624,7 @@ func (f *framer) parseErrorFrame() frame {
 			BlockFor:    blockfor,
 			DataPresent: dataPresent,
 		}
-	case errAlreadyExists:
+	case ErrCodeAlreadyExists:
 		ks := f.readString()
 		table := f.readString()
 		return &RequestErrAlreadyExists{
@@ -632,13 +632,13 @@ func (f *framer) parseErrorFrame() frame {
 			Keyspace:   ks,
 			Table:      table,
 		}
-	case errUnprepared:
+	case ErrCodeUnprepared:
 		stmtId := f.readShortBytes()
 		return &RequestErrUnprepared{
 			errorFrame:  errD,
 			StatementId: copyBytes(stmtId), // defensively copy
 		}
-	case errReadFailure:
+	case ErrCodeReadFailure:
 		res := &RequestErrReadFailure{
 			errorFrame: errD,
 		}
@@ -654,7 +654,7 @@ func (f *framer) parseErrorFrame() frame {
 		res.DataPresent = f.readByte() != 0
 
 		return res
-	case errWriteFailure:
+	case ErrCodeWriteFailure:
 		res := &RequestErrWriteFailure{
 			errorFrame: errD,
 		}
@@ -669,7 +669,7 @@ func (f *framer) parseErrorFrame() frame {
 		}
 		res.WriteType = f.readString()
 		return res
-	case errFunctionFailure:
+	case ErrCodeFunctionFailure:
 		res := &RequestErrFunctionFailure{
 			errorFrame: errD,
 		}
@@ -678,14 +678,14 @@ func (f *framer) parseErrorFrame() frame {
 		res.ArgTypes = f.readStringList()
 		return res
 
-	case errCDCWriteFailure:
+	case ErrCodeCDCWriteFailure:
 		res := &RequestErrCDCWriteFailure{
 			errorFrame: errD,
 		}
 		return res
 
-	case errInvalid, errBootstrapping, errConfig, errCredentials, errOverloaded,
-		errProtocol, errServer, errSyntax, errTruncate, errUnauthorized:
+	case ErrCodeInvalid, ErrCodeBootstrapping, ErrCodeConfig, ErrCodeCredentials, ErrCodeOverloaded,
+		ErrCodeProtocol, ErrCodeServer, ErrCodeSyntax, ErrCodeTruncate, ErrCodeUnauthorized:
 		// TODO(zariel): we should have some distinct types for these errors
 		return errD
 	default:
