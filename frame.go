@@ -683,7 +683,14 @@ func (f *framer) parseErrorFrame() frame {
 			errorFrame: errD,
 		}
 		return res
-
+	case ErrCodeCASWriteUnknown:
+		res := &RequestErrCASWriteUnknown{
+			errorFrame: errD,
+		}
+		res.Consistency = f.readConsistency()
+		res.Received = f.readInt()
+		res.BlockFor = f.readInt()
+		return res
 	case ErrCodeInvalid, ErrCodeBootstrapping, ErrCodeConfig, ErrCodeCredentials, ErrCodeOverloaded,
 		ErrCodeProtocol, ErrCodeServer, ErrCodeSyntax, ErrCodeTruncate, ErrCodeUnauthorized:
 		// TODO(zariel): we should have some distinct types for these errors

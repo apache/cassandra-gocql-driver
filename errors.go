@@ -57,6 +57,10 @@ const (
 	//
 	// See https://github.com/apache/cassandra/blob/7337fc0/doc/native_protocol_v5.spec#L1386
 	ErrCodeCDCWriteFailure = 0x1600
+	// ErrCodeCASWriteUnknown indicates only partially completed CAS operation.
+	//
+	// See https://github.com/apache/cassandra/blob/7337fc0/doc/native_protocol_v5.spec#L1387-L1397
+	ErrCodeCASWriteUnknown = 0x1700
 	// ErrCodeSyntax indicates the syntax error in the query.
 	//
 	// See https://github.com/apache/cassandra/blob/7337fc0/doc/native_protocol_v5.spec#L1399
@@ -181,4 +185,14 @@ type RequestErrFunctionFailure struct {
 	Keyspace string
 	Function string
 	ArgTypes []string
+}
+
+// RequestErrCASWriteUnknown is distinct error for ErrCodeCasWriteUnknown.
+//
+// See https://github.com/apache/cassandra/blob/7337fc0/doc/native_protocol_v5.spec#L1387-L1397
+type RequestErrCASWriteUnknown struct {
+	errorFrame
+	Consistency Consistency
+	Received    int
+	BlockFor    int
 }
