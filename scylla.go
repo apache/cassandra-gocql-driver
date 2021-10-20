@@ -296,9 +296,26 @@ func (p *scyllaConnPicker) Pick(t token) *Conn {
 	if c := p.conns[idx]; c != nil {
 		// We have this shard's connection
 		// so let's give it to the caller.
-		return c
+		// But only if it's not loaded too much and load is well distributed.
+		return p.maybeReplaceWithLessBusyConnection(c)
 	}
 	return p.leastBusyConn()
+}
+
+func (p *scyllaConnPicker) maybeReplaceWithLessBusyConnection(c *Conn) *Conn {
+	if !isHeavyLoaded(c) {
+		return c
+	}
+	alternative := p.leastBusyConn()
+	if alternative == nil || alternative.AvailableStreams() * 120 > c.AvailableStreams() * 100 {
+		return c
+	} else {
+		return alternative
+	}
+}
+
+func isHeavyLoaded(c *Conn) bool {
+    return c.streams.NumStreams / 2 > c.AvailableStreams();
 }
 
 func (p *scyllaConnPicker) leastBusyConn() *Conn {
