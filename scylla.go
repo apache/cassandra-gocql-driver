@@ -283,7 +283,7 @@ func (p *scyllaConnPicker) Pick(t token) *Conn {
 	}
 
 	if t == nil {
-		return p.randomConn()
+		return p.leastBusyConn()
 	}
 
 	mmt, ok := t.(int64Token)
@@ -298,17 +298,25 @@ func (p *scyllaConnPicker) Pick(t token) *Conn {
 		// so let's give it to the caller.
 		return c
 	}
-	return p.randomConn()
+	return p.leastBusyConn()
 }
 
-func (p *scyllaConnPicker) randomConn() *Conn {
+func (p *scyllaConnPicker) leastBusyConn() *Conn {
+	var (
+		leastBusyConn    *Conn
+		streamsAvailable int
+	)
 	idx := int(atomic.AddUint64(&p.pos, 1))
-	for i := 0; i < len(p.conns); i++ {
+	// find the conn which has the most available streams, this is racy
+	for i := range p.conns {
 		if conn := p.conns[(idx+i)%len(p.conns)]; conn != nil {
-			return conn
+			if streams := conn.AvailableStreams(); streams > streamsAvailable {
+				leastBusyConn = conn
+				streamsAvailable = streams
+			}
 		}
 	}
-	return nil
+	return leastBusyConn
 }
 
 func (p *scyllaConnPicker) shardOf(token int64Token) int {
