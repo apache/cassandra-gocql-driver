@@ -13,15 +13,40 @@ import (
 	"sync"
 )
 
+// FunctionKey identifies a function.
+type FunctionKey struct {
+	// Name of the function.
+	Name string
+	// ArgumentTypes is a list of cql type strings, separated with zero byte.
+	ArgumentTypes string
+}
+
+func (fk FunctionKey) String() string {
+	return fmt.Sprintf("%s(%s)", fk.Name, strings.ReplaceAll(fk.ArgumentTypes, "\x00", ", "))
+}
+
 // schema metadata for a keyspace
 type KeyspaceMetadata struct {
+	// Name of the keyspace.
 	Name            string
 	DurableWrites   bool
 	StrategyClass   string
 	StrategyOptions map[string]interface{}
 	Tables          map[string]*TableMetadata
-	Functions       map[string]*FunctionMetadata
-	Aggregates      map[string]*AggregateMetadata
+	// Functions describes functions keyed by name.
+	// Deprecated: Functions have primary key composed of name and argument types, so this field can only expose
+	// one variant of a function. Use FunctionsV2 instead.
+	Functions map[string]*FunctionMetadata
+	// FunctionsV2 describes functions keyed by name and argument types.
+	FunctionsV2 map[FunctionKey]*FunctionMetadata
+	// Aggregates describes aggregate functions keyed by name.
+	// Deprecated: Functions have primary key composed of name and argument types, so this field can only expose
+	// one variant of an aggregate function. AggregateMetadata cannot describe an aggregate without final function,
+	// which is optional, so aggregates without a final function are omitted in AggregateMetadata.
+	// Use AggregatesV2 instead.
+	Aggregates map[string]*AggregateMetadata
+	// Aggregates describes aggregate functions keyed by name and argument types.
+	AggregatesV2 map[FunctionKey]*AggregateMetadataV2
 	// Deprecated: use the MaterializedViews field for views and UserTypes field for udts instead.
 	Views             map[string]*ViewMetadata
 	MaterializedViews map[string]*MaterializedViewMetadata
@@ -68,6 +93,8 @@ type FunctionMetadata struct {
 	CalledOnNullInput bool
 	Language          string
 	ReturnType        TypeInfo
+
+	rawArgumentTypes []string
 }
 
 // AggregateMetadata holds metadata for aggregate constructs
@@ -80,9 +107,29 @@ type AggregateMetadata struct {
 	ReturnType    TypeInfo
 	StateFunc     FunctionMetadata
 	StateType     TypeInfo
+}
 
-	stateFunc string
-	finalFunc string
+// AggregateMetadataV2 holds metadata for aggregate constructs.
+type AggregateMetadataV2 struct {
+	// Keyspace is name of the keyspace where the aggregate function is defined.
+	Keyspace string
+	// Name of the aggregate function.
+	Name string
+	// ArgumentTypes describes arguments of the function.
+	ArgumentTypes []TypeInfo
+	// FinalFunc is a function that is called with last state value as its arguments after all rows are processed.
+	// FinalFunc is optional, so the field is nil when no final function is defined for the aggregate.
+	FinalFunc *FunctionMetadata
+
+	InitCond   string
+	ReturnType TypeInfo
+	StateFunc  FunctionMetadata
+	StateType  TypeInfo
+
+	rawArgumentTypes []string
+	rawStateType     string
+	stateFunc        string
+	finalFunc        string
 }
 
 // ViewMetadata holds the metadata for views.
@@ -299,6 +346,10 @@ func (s *schemaDescriber) refreshSchema(keyspaceName string) error {
 	return nil
 }
 
+func joinArgumentTypes(elems []string) string {
+	return strings.Join(elems, "\x00")
+}
+
 // "compiles" derived information about keyspace, table, and column metadata
 // for a keyspace from the basic queried metadata objects returned by
 // getKeyspaceMetadata, getTableMetadata, and getColumnMetadata respectively;
@@ -310,7 +361,7 @@ func compileMetadata(
 	tables []TableMetadata,
 	columns []ColumnMetadata,
 	functions []FunctionMetadata,
-	aggregates []AggregateMetadata,
+	aggregates []AggregateMetadataV2,
 	views []ViewMetadata,
 	materializedViews []MaterializedViewMetadata,
 	logger StdLogger,
@@ -322,14 +373,67 @@ func compileMetadata(
 		keyspace.Tables[tables[i].Name] = &tables[i]
 	}
 	keyspace.Functions = make(map[string]*FunctionMetadata, len(functions))
+	keyspace.FunctionsV2 = make(map[FunctionKey]*FunctionMetadata, len(functions))
 	for i := range functions {
+		key := FunctionKey{
+			Name:          functions[i].Name,
+			ArgumentTypes: joinArgumentTypes(functions[i].rawArgumentTypes),
+		}
+		keyspace.FunctionsV2[key] = &functions[i]
 		keyspace.Functions[functions[i].Name] = &functions[i]
 	}
 	keyspace.Aggregates = make(map[string]*AggregateMetadata, len(aggregates))
-	for i, _ := range aggregates {
-		aggregates[i].FinalFunc = *keyspace.Functions[aggregates[i].finalFunc]
-		aggregates[i].StateFunc = *keyspace.Functions[aggregates[i].stateFunc]
-		keyspace.Aggregates[aggregates[i].Name] = &aggregates[i]
+	keyspace.AggregatesV2 = make(map[FunctionKey]*AggregateMetadataV2, len(aggregates))
+	for i := range aggregates {
+		aggregateKey := FunctionKey{
+			Name:          aggregates[i].Name,
+			ArgumentTypes: joinArgumentTypes(aggregates[i].rawArgumentTypes),
+		}
+		stateArguments := make([]string, 1+len(aggregates[i].rawArgumentTypes))
+		stateArguments[0] = aggregates[i].rawStateType
+		copy(stateArguments[1:], aggregates[i].rawArgumentTypes)
+		stateFuncKey := FunctionKey{
+			Name:          aggregates[i].stateFunc,
+			ArgumentTypes: joinArgumentTypes(stateArguments),
+		}
+		stateFunc := keyspace.FunctionsV2[stateFuncKey]
+		if stateFunc == nil {
+			// This should not happen as Cassandra checks the references server-side.
+			logger.Printf("aggregate %q references missing state function %q", aggregateKey, stateFuncKey)
+			continue
+		}
+		aggregates[i].StateFunc = *stateFunc
+
+		if aggregates[i].finalFunc != "" {
+			finalFuncKey := FunctionKey{
+				Name:          aggregates[i].finalFunc,
+				ArgumentTypes: aggregates[i].rawStateType,
+			}
+			finalFunc := keyspace.FunctionsV2[finalFuncKey]
+			if finalFunc == nil {
+				// This should not happen as Cassandra checks the references server-side.
+				logger.Printf("aggregate %q references missing final function %q", aggregateKey, finalFuncKey)
+				continue
+			}
+			aggregates[i].FinalFunc = finalFunc
+		}
+
+		keyspace.AggregatesV2[aggregateKey] = &aggregates[i]
+
+		if aggregates[i].FinalFunc == nil {
+			continue
+		}
+
+		keyspace.Aggregates[aggregates[i].Name] = &AggregateMetadata{
+			Keyspace:      aggregates[i].Keyspace,
+			Name:          aggregates[i].Name,
+			ArgumentTypes: aggregates[i].ArgumentTypes,
+			FinalFunc:     *aggregates[i].FinalFunc,
+			InitCond:      aggregates[i].InitCond,
+			ReturnType:    aggregates[i].ReturnType,
+			StateFunc:     aggregates[i].StateFunc,
+			StateType:     aggregates[i].StateType,
+		}
 	}
 	keyspace.Views = make(map[string]*ViewMetadata, len(views))
 	for i := range views {
@@ -1071,10 +1175,9 @@ func getFunctionsMetadata(session *Session, keyspaceName string) ([]FunctionMeta
 	rows := session.control.query(stmt, keyspaceName).Scanner()
 	for rows.Next() {
 		function := FunctionMetadata{Keyspace: keyspaceName}
-		var argumentTypes []string
 		var returnType string
 		err := rows.Scan(&function.Name,
-			&argumentTypes,
+			&function.rawArgumentTypes,
 			&function.ArgumentNames,
 			&function.Body,
 			&function.CalledOnNullInput,
@@ -1085,8 +1188,8 @@ func getFunctionsMetadata(session *Session, keyspaceName string) ([]FunctionMeta
 			return nil, err
 		}
 		function.ReturnType = getTypeInfo(returnType, session.logger)
-		function.ArgumentTypes = make([]TypeInfo, len(argumentTypes))
-		for i, argumentType := range argumentTypes {
+		function.ArgumentTypes = make([]TypeInfo, len(function.rawArgumentTypes))
+		for i, argumentType := range function.rawArgumentTypes {
 			function.ArgumentTypes[i] = getTypeInfo(argumentType, session.logger)
 		}
 		functions = append(functions, function)
@@ -1099,7 +1202,7 @@ func getFunctionsMetadata(session *Session, keyspaceName string) ([]FunctionMeta
 	return functions, nil
 }
 
-func getAggregatesMetadata(session *Session, keyspaceName string) ([]AggregateMetadata, error) {
+func getAggregatesMetadata(session *Session, keyspaceName string) ([]AggregateMetadataV2, error) {
 	if session.cfg.ProtoVersion == protoVersion1 || !session.hasAggregatesAndFunctions {
 		return nil, nil
 	}
@@ -1122,29 +1225,27 @@ func getAggregatesMetadata(session *Session, keyspaceName string) ([]AggregateMe
 		FROM %s
 		WHERE keyspace_name = ?`, tableName)
 
-	var aggregates []AggregateMetadata
+	var aggregates []AggregateMetadataV2
 
 	rows := session.control.query(stmt, keyspaceName).Scanner()
 	for rows.Next() {
-		aggregate := AggregateMetadata{Keyspace: keyspaceName}
-		var argumentTypes []string
+		aggregate := AggregateMetadataV2{Keyspace: keyspaceName}
 		var returnType string
-		var stateType string
 		err := rows.Scan(&aggregate.Name,
-			&argumentTypes,
+			&aggregate.rawArgumentTypes,
 			&aggregate.finalFunc,
 			&aggregate.InitCond,
 			&returnType,
 			&aggregate.stateFunc,
-			&stateType,
+			&aggregate.rawStateType,
 		)
 		if err != nil {
 			return nil, err
 		}
 		aggregate.ReturnType = getTypeInfo(returnType, session.logger)
-		aggregate.StateType = getTypeInfo(stateType, session.logger)
-		aggregate.ArgumentTypes = make([]TypeInfo, len(argumentTypes))
-		for i, argumentType := range argumentTypes {
+		aggregate.StateType = getTypeInfo(aggregate.rawStateType, session.logger)
+		aggregate.ArgumentTypes = make([]TypeInfo, len(aggregate.rawArgumentTypes))
+		for i, argumentType := range aggregate.rawArgumentTypes {
 			aggregate.ArgumentTypes[i] = getTypeInfo(argumentType, session.logger)
 		}
 		aggregates = append(aggregates, aggregate)

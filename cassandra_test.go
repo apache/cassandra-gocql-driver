@@ -2318,12 +2318,14 @@ func TestAggregateMetadata(t *testing.T) {
 		t.Fatal("expected two aggregates")
 	}
 
-	expectedAggregrate := AggregateMetadata{
-		Keyspace:      "gocql_test",
-		Name:          "average",
-		ArgumentTypes: []TypeInfo{NativeType{typ: TypeInt}},
-		InitCond:      "(0, 0)",
-		ReturnType:    NativeType{typ: TypeDouble},
+	expectedAggregrate := AggregateMetadataV2{
+		Keyspace:         "gocql_test",
+		Name:             "average",
+		rawArgumentTypes: []string{"int"},
+		ArgumentTypes:    []TypeInfo{NativeType{typ: TypeInt}},
+		InitCond:         "(0, 0)",
+		ReturnType:       NativeType{typ: TypeDouble},
+		rawStateType:     "frozen<tuple<int, bigint>>",
 		StateType: TupleTypeInfo{
 			NativeType: NativeType{typ: TypeTuple},
 
@@ -2345,6 +2347,15 @@ func TestAggregateMetadata(t *testing.T) {
 		t.Fatalf("aggregate 'average' is %+v, but expected %+v", aggregates[0], expectedAggregrate)
 	}
 	expectedAggregrate.Name = "average2"
+	expectedAggregrate.finalFunc = ""
+	expectedAggregrate.ReturnType = TupleTypeInfo{
+		NativeType: NativeType{typ: TypeTuple},
+
+		Elems: []TypeInfo{
+			NativeType{typ: TypeInt},
+			NativeType{typ: TypeBigInt},
+		},
+	}
 	if !reflect.DeepEqual(aggregates[1], expectedAggregrate) {
 		t.Fatalf("aggregate 'average2' is %+v, but expected %+v", aggregates[1], expectedAggregrate)
 	}
@@ -2372,6 +2383,10 @@ func TestFunctionMetadata(t *testing.T) {
 	expectedAvgState := FunctionMetadata{
 		Keyspace: "gocql_test",
 		Name:     "avgstate",
+		rawArgumentTypes: []string{
+			"frozen<tuple<int, bigint>>",
+			"int",
+		},
 		ArgumentTypes: []TypeInfo{
 			TupleTypeInfo{
 				NativeType: NativeType{typ: TypeTuple},
@@ -2402,8 +2417,9 @@ func TestFunctionMetadata(t *testing.T) {
 
 	finalStateBody := "double r = 0; if (state.getInt(0) == 0) return null; r = state.getLong(1); r/= state.getInt(0); return Double.valueOf(r);"
 	expectedAvgFinal := FunctionMetadata{
-		Keyspace: "gocql_test",
-		Name:     "avgfinal",
+		Keyspace:         "gocql_test",
+		Name:             "avgfinal",
+		rawArgumentTypes: []string{"frozen<tuple<int, bigint>>"},
 		ArgumentTypes: []TypeInfo{
 			TupleTypeInfo{
 				NativeType: NativeType{typ: TypeTuple},
@@ -2493,7 +2509,7 @@ func TestKeyspaceMetadata(t *testing.T) {
 
 	aggregate, found := keyspaceMetadata.Aggregates["average"]
 	if !found {
-		t.Fatal("failed to find the aggregate 'average' in metadata")
+		t.Fatal("failed to find the aggregate 'average' in Aggregates")
 	}
 	if aggregate.FinalFunc.Name != "avgfinal" {
 		t.Fatalf("expected final function %s, but got %s", "avgFinal", aggregate.FinalFunc.Name)
@@ -2501,14 +2517,28 @@ func TestKeyspaceMetadata(t *testing.T) {
 	if aggregate.StateFunc.Name != "avgstate" {
 		t.Fatalf("expected state function %s, but got %s", "avgstate", aggregate.StateFunc.Name)
 	}
-	aggregate, found = keyspaceMetadata.Aggregates["average2"]
+	aggregateV2, found := keyspaceMetadata.AggregatesV2[FunctionKey{Name: "average", ArgumentTypes: "int"}]
 	if !found {
-		t.Fatal("failed to find the aggregate 'average2' in metadata")
+		t.Fatal("failed to find the aggregate 'average' in AggregatesV2")
 	}
-	if aggregate.FinalFunc.Name != "avgfinal" {
+	if aggregateV2.FinalFunc.Name != "avgfinal" {
 		t.Fatalf("expected final function %s, but got %s", "avgFinal", aggregate.FinalFunc.Name)
 	}
-	if aggregate.StateFunc.Name != "avgstate" {
+	if aggregateV2.StateFunc.Name != "avgstate" {
+		t.Fatalf("expected state function %s, but got %s", "avgstate", aggregate.StateFunc.Name)
+	}
+	aggregate, found = keyspaceMetadata.Aggregates["average2"]
+	if found {
+		t.Fatal("aggregate 'average2' should not be in Aggregates")
+	}
+	aggregateV2, found = keyspaceMetadata.AggregatesV2[FunctionKey{Name: "average2", ArgumentTypes: "int"}]
+	if !found {
+		t.Fatal("failed to find the aggregate 'average2' in AggregatesV2")
+	}
+	if aggregateV2.FinalFunc != nil {
+		t.Fatalf("expected final function nil, but got %s", aggregate.FinalFunc.Name)
+	}
+	if aggregateV2.StateFunc.Name != "avgstate" {
 		t.Fatalf("expected state function %s, but got %s", "avgstate", aggregate.StateFunc.Name)
 	}
 

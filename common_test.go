@@ -233,7 +233,6 @@ func createAggregate(t *testing.T, session *Session) {
 		CREATE OR REPLACE AGGREGATE gocql_test.average2(int)
 		SFUNC avgState
 		STYPE tuple<int,bigint>
-		FINALFUNC avgFinal
 		INITCOND (0,0);
 	`).Exec(); err != nil {
 		t.Fatalf("failed to create aggregate with err: %v", err)
