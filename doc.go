@@ -106,6 +106,15 @@
 //
 // We recommend running with a token aware host policy in production for maximum performance.
 //
+// The driver can only use token-aware routing for queries where all partition key columns are query parameters.
+// For example, instead of
+//
+//  session.Query("select value from mytable where pk1 = 'abc' AND pk2 = ?", "def")
+//
+// use
+//
+//  session.Query("select value from mytable where pk1 = ? AND pk2 = ?", "abc", "def")
+//
 // Executing queries
 //
 // Create queries with Session.Query. Query values must not be reused between different executions and must not be

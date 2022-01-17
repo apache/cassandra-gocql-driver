@@ -24,7 +24,7 @@ import (
 )
 
 var (
-	approvedAuthenticators = [...]string{
+	defaultApprovedAuthenticators = []string{
 		"org.apache.cassandra.auth.PasswordAuthenticator",
 		"com.instaclustr.cassandra.auth.SharedSecretAuthenticator",
 		"com.datastax.bdp.cassandra.auth.DseAuthenticator",
@@ -37,7 +37,11 @@ var (
 	}
 )
 
-func approve(authenticator string) bool {
+// approve the authenticator with the list of allowed authenticators or default list if approvedAuthenticators is empty.
+func approve(authenticator string, approvedAuthenticators []string) bool {
+	if len(approvedAuthenticators) == 0 {
+		approvedAuthenticators = defaultApprovedAuthenticators
+	}
 	for _, s := range approvedAuthenticators {
 		if authenticator == s {
 			return true
@@ -62,12 +66,13 @@ type Authenticator interface {
 }
 
 type PasswordAuthenticator struct {
-	Username string
-	Password string
+	Username              string
+	Password              string
+	AllowedAuthenticators []string
 }
 
 func (p PasswordAuthenticator) Challenge(req []byte) ([]byte, Authenticator, error) {
-	if !approve(string(req)) {
+	if !approve(string(req), p.AllowedAuthenticators) {
 		return nil, nil, fmt.Errorf("unexpected authenticator %q", req)
 	}
 	resp := make([]byte, 2+len(p.Username)+len(p.Password))
