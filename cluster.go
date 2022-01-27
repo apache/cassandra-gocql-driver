@@ -17,6 +17,8 @@ import (
 type PoolConfig struct {
 	// HostSelectionPolicy sets the policy for selecting which host to use for a
 	// given query (default: RoundRobinHostPolicy())
+	// It is not supported to use a single HostSelectionPolicy in multiple sessions
+	// (even if you close the old session before using in a new session).
 	HostSelectionPolicy HostSelectionPolicy
 }
 
