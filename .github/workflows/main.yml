@@ -1,0 +1,69 @@
+name: Build
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  build:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions/setup-go@v2
+      - uses: actions/cache@v2
+        id: gomod-cache
+        with:
+          path: ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('go.mod') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+      - run: go vet
+      - name: Run unit tests
+        run: go test -tags unit -race
+  integration-cassandra:
+    name: Integration Tests with Cassandra
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        cassandra_version: [3.0.24, 3.11.10, 4.0-rc1]
+        auth: ["false"]
+        compressor: ["snappy"]
+        include:
+          - cassandra_version: 3.11.10
+            auth: "true"
+            compressor: "snappy"
+          - cassandra_version: 3.11.10
+            auth: "false"
+            compressor: "lz4"
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions/setup-go@v2
+      - uses: actions/cache@v2
+        id: gomod-cache
+        with:
+          path: ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('go.mod') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+      - uses: actions/cache@v2
+        id: ccm-cache
+        with:
+          path: ~/.ccm/repository
+          key: ${{ runner.os }}-ccm-${{ matrix.cassandra_version }}
+          restore-keys: |
+            ${{ runner.os }}-ccm-
+      - name: Add loopback aliases
+        shell: bash
+        run: |
+          sudo ifconfig lo0 alias 127.0.0.2 up
+          sudo ifconfig lo0 alias 127.0.0.3 up
+          sudo ifconfig lo0 alias 127.0.0.4 up
+          sudo ifconfig lo0 alias 127.0.0.5 up
+          sudo ifconfig lo0 alias 127.0.0.6 up
+
+      - run: ./install_test_deps.sh
+      - run: PATH=$PATH:$HOME/.local/bin bash integration.sh "${{ matrix.cassandra_version }}" "${{ matrix.auth }}" "${{ matrix.compressor }}"
