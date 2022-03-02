@@ -287,6 +287,16 @@ func (n *networkTopology) replicaMap(tokenRing *tokenRing) tokenRingReplicas {
 	}
 
 	if dcsWithReplicas == len(dcRacks) && len(replicaRing) != len(tokens) {
+		m := map[string]struct{}{}
+		for _, t := range tokens {
+			id := t.host.HostID()
+			if _, ok := m[id]; !ok {
+				m[id] = struct{}{}
+				Logger.Printf("gocql: token map %s", t.host)
+			}
+		}
+		Logger.Printf("gocql: token map RF=%v", n.dcs)
+
 		panic(fmt.Sprintf("token map different size to token ring: got %d expected %d", len(replicaRing), len(tokens)))
 	}
 
