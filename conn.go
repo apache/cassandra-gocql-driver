@@ -328,7 +328,7 @@ func (c *Conn) init(ctx context.Context) error {
 
 	// dont coalesce startup frames
 	if c.session.cfg.WriteCoalesceWaitTime > 0 && !c.cfg.disableCoalesce {
-		c.w = newWriteCoalescer(c.conn, c.timeout, c.session.cfg.WriteCoalesceWaitTime, ctx.Done())
+		c.w = newWriteCoalescer(ctx, c.conn, c.timeout, c.session.cfg.WriteCoalesceWaitTime)
 	}
 
 	go c.serve(ctx)
@@ -767,22 +767,22 @@ func (c *deadlineWriter) Write(p []byte) (int, error) {
 	return c.w.Write(p)
 }
 
-func newWriteCoalescer(conn net.Conn, timeout time.Duration, d time.Duration, quit <-chan struct{}) *writeCoalescer {
+func newWriteCoalescer(ctx context.Context, conn net.Conn, timeout time.Duration, d time.Duration) *writeCoalescer {
 	wc := &writeCoalescer{
 		writeCh: make(chan struct{}), // TODO: could this be sync?
 		cond:    sync.NewCond(&sync.Mutex{}),
 		c:       conn,
-		quit:    quit,
+		quit:    make(chan struct{}),
 		timeout: timeout,
 	}
-	go wc.writeFlusher(d)
+	go wc.writeFlusher(ctx, d)
 	return wc
 }
 
 type writeCoalescer struct {
 	c net.Conn
 
-	quit    <-chan struct{}
+	quit    chan struct{}
 	writeCh chan struct{}
 	running bool
 
@@ -825,10 +825,18 @@ func (w *writeCoalescer) stop() {
 	w.cond.L.Lock()
 	defer w.cond.L.Unlock()
 
+	if w.writeCh == nil {
+		return
+	}
+
 	w.flushLocked()
 	// nil the channel out sends block forever on it
 	// instead of closing which causes a send on closed channel
 	// panic.
+
+	w.quit <- struct{}{}
+	close(w.quit)
+
 	w.writeCh = nil
 }
 
@@ -859,7 +867,7 @@ func (w *writeCoalescer) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-func (w *writeCoalescer) writeFlusher(interval time.Duration) {
+func (w *writeCoalescer) writeFlusher(ctx context.Context, interval time.Duration) {
 	timer := time.NewTimer(interval)
 	defer timer.Stop()
 	defer w.stop()
@@ -872,6 +880,8 @@ func (w *writeCoalescer) writeFlusher(interval time.Duration) {
 		// wait for a write to start the flush loop
 		select {
 		case <-w.writeCh:
+		case <-ctx.Done():
+			return
 		case <-w.quit:
 			return
 		}
@@ -879,6 +889,8 @@ func (w *writeCoalescer) writeFlusher(interval time.Duration) {
 		timer.Reset(interval)
 
 		select {
+		case <-ctx.Done():
+			return
 		case <-w.quit:
 			return
 		case <-timer.C:
