@@ -5,6 +5,7 @@ package gocql
 
 import (
 	"bytes"
+	"encoding/binary"
 	"math"
 	"math/big"
 	"net"
@@ -2211,7 +2212,10 @@ func TestUnmarshalUDT(t *testing.T) {
 			},
 		},
 	}
-	data := []byte("\x00\x00\x00\x0f\x00\x00\x00\x05Hello\x00\x00\x00\x02\x00\x2a")
+	data := bytesWithLength( // UDT
+		bytesWithLength([]byte("Hello")),    // first
+		bytesWithLength([]byte("\x00\x2a")), // second
+	)
 	value := map[string]interface{}{}
 	expectedErr := UnmarshalError("can not unmarshal into non-pointer map[string]interface {}")
 
@@ -2219,4 +2223,24 @@ func TestUnmarshalUDT(t *testing.T) {
 		t.Errorf("(%v=>%T): %#v returned error %#v, want %#v.",
 			info, value, value, err, expectedErr)
 	}
+}
+
+// bytesWithLength concatenates all data slices and prepends the total length as uint32.
+// The length does not count the size of the uint32 used for writing the size.
+func bytesWithLength(data ...[]byte) []byte {
+	totalLen := 0
+	for i := range data {
+		totalLen += len(data[i])
+	}
+	if totalLen > math.MaxUint32 {
+		panic("total length overflows")
+	}
+	ret := make([]byte, totalLen+4)
+	binary.BigEndian.PutUint32(ret[:4], uint32(totalLen))
+	buf := ret[4:]
+	for i := range data {
+		n := copy(buf, data[i])
+		buf = buf[n:]
+	}
+	return ret
 }
