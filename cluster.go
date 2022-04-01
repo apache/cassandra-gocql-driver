@@ -48,6 +48,7 @@ type ClusterConfig struct {
 	ProtoVersion       int
 	Timeout            time.Duration                            // connection timeout (default: 600ms)
 	ConnectTimeout     time.Duration                            // initial connection timeout, used during initial dial to server (default: 600ms)
+	WriteTimeout       time.Duration                            // timeout for writing a query. defaults to Timeout if not specified.
 	Port               int                                      // port (default: 9042)
 	Keyspace           string                                   // initial keyspace (optional)
 	NumConns           int                                      // number of connections per host (default: 2)

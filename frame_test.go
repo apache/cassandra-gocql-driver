@@ -35,16 +35,14 @@ func TestFuzzBugs(t *testing.T) {
 	for i, test := range tests {
 		t.Logf("test %d input: %q", i, test)
 
-		var bw bytes.Buffer
-
 		r := bytes.NewReader(test)
 		head, err := readHeader(r, make([]byte, 9))
 		if err != nil {
 			continue
 		}
 
-		framer := newFramer(r, &bw, nil, byte(head.version))
-		err = framer.readFrame(&head)
+		framer := newFramer(nil, byte(head.version))
+		err = framer.readFrame(r, &head)
 		if err != nil {
 			continue
 		}
@@ -64,12 +62,11 @@ func TestFrameWriteTooLong(t *testing.T) {
 		t.Skip("skipping test in travis due to memory pressure with the race detecor")
 	}
 
-	w := &bytes.Buffer{}
-	framer := newFramer(nil, w, nil, 2)
+	framer := newFramer(nil, 2)
 
 	framer.writeHeader(0, opStartup, 1)
 	framer.writeBytes(make([]byte, maxFrameSize+1))
-	err := framer.finishWrite()
+	err := framer.finish()
 	if err != ErrFrameTooBig {
 		t.Fatalf("expected to get %v got %v", ErrFrameTooBig, err)
 	}
@@ -85,7 +82,7 @@ func TestFrameReadTooLong(t *testing.T) {
 	// write a new header right after this frame to verify that we can read it
 	r.Write([]byte{0x02, 0x00, 0x00, byte(opReady), 0x00, 0x00, 0x00, 0x00})
 
-	framer := newFramer(r, nil, nil, 2)
+	framer := newFramer(nil, 2)
 
 	head := frameHeader{
 		version: 2,
@@ -93,7 +90,7 @@ func TestFrameReadTooLong(t *testing.T) {
 		length:  r.Len() - 8,
 	}
 
-	err := framer.readFrame(&head)
+	err := framer.readFrame(r, &head)
 	if err != ErrFrameTooBig {
 		t.Fatalf("expected to get %v got %v", ErrFrameTooBig, err)
 	}
