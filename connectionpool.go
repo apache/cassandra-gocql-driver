@@ -432,13 +432,7 @@ func (pool *hostConnPool) fill() {
 
 		if err != nil {
 			// probably unreachable host
-			pool.fillingStopped(true)
-
-			// this is call with the connection pool mutex held, this call will
-			// then recursively try to lock it again. FIXME
-			if pool.session.cfg.ConvictionPolicy.AddFailure(err, pool.host) {
-				go pool.session.handleNodeDown(pool.host.ConnectAddress(), pool.port)
-			}
+			pool.fillingStopped(err)
 			return
 		}
 		// notify the session that this node is connected
@@ -453,7 +447,7 @@ func (pool *hostConnPool) fill() {
 		err := pool.connectMany(fillCount)
 
 		// mark the end of filling
-		pool.fillingStopped(err != nil)
+		pool.fillingStopped(err)
 
 		if err == nil && startCount > 0 {
 			// notify the session that this node is connected again
@@ -467,17 +461,20 @@ func (pool *hostConnPool) logConnectErr(err error) {
 		// connection refused
 		// these are typical during a node outage so avoid log spam.
 		if gocqlDebug {
-			pool.logger.Printf("unable to dial %q: %v\n", pool.host.ConnectAddress(), err)
+			pool.logger.Printf("gocql: unable to dial %q: %v\n", pool.host.ConnectAddress(), err)
 		}
 	} else if err != nil {
 		// unexpected error
-		pool.logger.Printf("error: failed to connect to %s due to error: %v", pool.addr, err)
+		pool.logger.Printf("gocql: error: failed to connect to %s due to error: %v", pool.addr, err)
 	}
 }
 
 // transition back to a not-filling state.
-func (pool *hostConnPool) fillingStopped(hadError bool) {
-	if hadError {
+func (pool *hostConnPool) fillingStopped(err error) {
+	if err != nil {
+		if gocqlDebug {
+			pool.logger.Printf("gocql: filling stopped %q: %v\n", pool.host.ConnectAddress(), err)
+		}
 		// wait for some time to avoid back-to-back filling
 		// this provides some time between failed attempts
 		// to fill the pool for the host to recover
@@ -486,7 +483,21 @@ func (pool *hostConnPool) fillingStopped(hadError bool) {
 
 	pool.mu.Lock()
 	pool.filling = false
+	count := len(pool.conns)
+	host := pool.host
+	port := pool.port
 	pool.mu.Unlock()
+
+	// if we errored and the size is now zero, make sure the host is marked as down
+	// see https://github.com/gocql/gocql/issues/1614
+	if gocqlDebug {
+		pool.logger.Printf("gocql: conns of pool after stopped %q: %v\n", host.ConnectAddress(), count)
+	}
+	if err != nil && count == 0 {
+		if pool.session.cfg.ConvictionPolicy.AddFailure(err, host) {
+			pool.session.handleNodeDown(host.ConnectAddress(), port)
+		}
+	}
 }
 
 // connectMany creates new connections concurrent.
@@ -538,7 +549,7 @@ func (pool *hostConnPool) connect() (err error) {
 			}
 		}
 		if gocqlDebug {
-			pool.logger.Printf("connection failed %q: %v, reconnecting with %T\n",
+			pool.logger.Printf("gocql: connection failed %q: %v, reconnecting with %T\n",
 				pool.host.ConnectAddress(), err, reconnectionPolicy)
 		}
 		time.Sleep(reconnectionPolicy.GetInterval(i))
@@ -585,6 +596,10 @@ func (pool *hostConnPool) HandleError(conn *Conn, err error, closed bool) {
 	if pool.closed {
 		// pool closed
 		return
+	}
+
+	if gocqlDebug {
+		pool.logger.Printf("gocql: pool connection error %q: %v\n", conn.addr, err)
 	}
 
 	// find the connection index
