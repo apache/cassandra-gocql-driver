@@ -32,3 +32,31 @@ func TestIdentityAddressTranslator_HostProvided(t *testing.T) {
 	}
 	assertEqual(t, "translated port", 9042, port)
 }
+
+func TestHostIdentityAddressTranslator_NilAddrAndZeroPort(t *testing.T) {
+	var tr HostAddressTranslator = HostIdentityTranslator()
+	hostIP := net.ParseIP("")
+	if hostIP != nil {
+		t.Errorf("expected host ip to be (nil) but was (%+v) instead", hostIP)
+	}
+
+	addr, port := tr.Translate(hostIP, 0, &HostInfo{})
+	if addr != nil {
+		t.Errorf("expected translated host to be (nil) but was (%+v) instead", addr)
+	}
+	assertEqual(t, "translated port", 0, port)
+}
+
+func TestHostIdentityAddressTranslator_HostProvided(t *testing.T) {
+	var tr HostAddressTranslator = HostIdentityTranslator()
+	hostIP := net.ParseIP("10.1.2.3")
+	if hostIP == nil {
+		t.Error("expected host ip not to be (nil)")
+	}
+
+	addr, port := tr.Translate(hostIP, 9042, &HostInfo{})
+	if !hostIP.Equal(addr) {
+		t.Errorf("expected translated addr to be (%+v) but was (%+v) instead", hostIP, addr)
+	}
+	assertEqual(t, "translated port", 9042, port)
+}

@@ -84,7 +84,12 @@ type ClusterConfig struct {
 
 	// AddressTranslator will translate addresses found on peer discovery and/or
 	// node change events.
+	// Deprecated: Use HostAddressTranslator
 	AddressTranslator AddressTranslator
+
+	// HostAddressTranslator will translate addresses found on peer discovery and/or
+	// node change events.
+	HostAddressTranslator HostAddressTranslator
 
 	// If IgnorePeerAddr is true and the address in system.peers does not match
 	// the supplied host by either initial hosts or discovered via events then the
@@ -210,11 +215,19 @@ func (cfg *ClusterConfig) CreateSession() (*Session, error) {
 	return NewSession(*cfg)
 }
 
-// translateAddressPort is a helper method that will use the given AddressTranslator
-// if defined, to translate the given address and port into a possibly new address
-// and port, If no AddressTranslator or if an error occurs, the given address and
-// port will be returned.
-func (cfg *ClusterConfig) translateAddressPort(addr net.IP, port int) (net.IP, int) {
+// translateAddressPort is a helper method that will use the given
+// HostAddressTranslator or AddressTranslator, if defined, to translate the given
+// address and port into a possibly new address and port, If no
+// HostAddressTranslator orAddressTranslator or if an error occurs, the given
+// address and port will be returned.
+func (cfg *ClusterConfig) translateAddressPort(addr net.IP, port int, host *HostInfo) (net.IP, int) {
+	if cfg.HostAddressTranslator != nil {
+		newAddr, newPort := cfg.HostAddressTranslator.Translate(addr, port, host)
+		if gocqlDebug {
+			cfg.logger().Printf("gocql: translating address '%v:%d' to '%v:%d'", addr, port, newAddr, newPort)
+		}
+		return newAddr, newPort
+	}
 	if cfg.AddressTranslator == nil || len(addr) == 0 {
 		return addr, port
 	}

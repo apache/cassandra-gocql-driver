@@ -226,7 +226,9 @@ func (s *Session) init() error {
 					filteredHosts = append(filteredHosts, host)
 				}
 			}
-			hosts = append(hosts, filteredHosts...)
+			// we replace filteredHosts because we might've done translation on the IPs
+			// compared to the original addresses that were sent
+			hosts = filteredHosts
 		}
 	}
 
@@ -513,7 +515,7 @@ func (s *Session) executeQuery(qry *Query) (it *Iter) {
 func (s *Session) removeHost(h *HostInfo) {
 	s.policy.RemoveHost(h)
 	s.pool.removeHost(h.ConnectAddress())
-	s.ring.removeHost(h.ConnectAddress())
+	s.ring.removeIP(h.ConnectAddress())
 }
 
 // KeyspaceMetadata returns the schema metadata for the keyspace specified. Returns an error if the keyspace does not exist.

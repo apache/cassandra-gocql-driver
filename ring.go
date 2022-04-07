@@ -39,6 +39,16 @@ func (r *ring) rrHost() *HostInfo {
 func (r *ring) getHost(ip net.IP) *HostInfo {
 	r.mu.RLock()
 	host := r.hosts[ip.String()]
+	// if we didn't find it by connect address, search by peer address in case it
+	// was translated
+	if host == nil {
+		for i := range r.hosts {
+			if r.hosts[i].Peer().Equal(ip) {
+				host = r.hosts[i]
+				break
+			}
+		}
+	}
 	r.mu.RUnlock()
 	return host
 }
@@ -92,7 +102,7 @@ func (r *ring) addHostIfMissing(host *HostInfo) (*HostInfo, bool) {
 	return existing, ok
 }
 
-func (r *ring) removeHost(ip net.IP) bool {
+func (r *ring) removeIP(ip net.IP) bool {
 	r.mu.Lock()
 	if r.hosts == nil {
 		r.hosts = make(map[string]*HostInfo)
@@ -102,7 +112,7 @@ func (r *ring) removeHost(ip net.IP) bool {
 	_, ok := r.hosts[k]
 	if ok {
 		for i, host := range r.hostList {
-			if host.ConnectAddress().Equal(ip) {
+			if host.EqualIP(ip) {
 				r.hostList = append(r.hostList[:i], r.hostList[i+1:]...)
 				break
 			}

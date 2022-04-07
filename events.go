@@ -190,26 +190,16 @@ func (s *Session) handleNodeEvent(frames []frame) {
 	}
 }
 
-func (s *Session) addNewNode(ip net.IP, port int) {
-	// Get host info and apply any filters to the host
-	hostInfo, err := s.hostSource.getHostInfo(ip, port)
-	if err != nil {
-		s.logger.Printf("gocql: events: unable to fetch host info for (%s:%d): %v\n", ip, port, err)
-		return
-	} else if hostInfo == nil {
-		// ignore if it's null because we couldn't find it
-		return
-	}
-
-	if t := hostInfo.Version().nodeUpDelay(); t > 0 {
+func (s *Session) addNewNode(host *HostInfo) {
+	if t := host.Version().nodeUpDelay(); t > 0 {
 		time.Sleep(t)
 	}
 
 	// should this handle token moving?
-	hostInfo = s.ring.addOrUpdate(hostInfo)
+	host = s.ring.addOrUpdate(host)
 
-	if !s.cfg.filterHost(hostInfo) {
-		s.startPoolFill(hostInfo)
+	if !s.cfg.filterHost(host) {
+		s.startPoolFill(host)
 	}
 
 	if s.control != nil && !s.cfg.IgnorePeerAddr {
@@ -223,15 +213,27 @@ func (s *Session) handleNewNode(ip net.IP, port int) {
 		s.logger.Printf("gocql: Session.handleNewNode: %s:%d\n", ip.String(), port)
 	}
 
-	ip, port = s.cfg.translateAddressPort(ip, port)
-
 	// if we already have the host and it's already up, then do nothing
 	host := s.ring.getHost(ip)
 	if host != nil && host.IsUp() {
 		return
 	}
 
-	s.addNewNode(ip, port)
+	host, err := s.hostSource.getHostInfo(ip, port)
+	if err != nil {
+		s.logger.Printf("gocql: events: unable to fetch host info for (%s:%d): %v\n", ip, port, err)
+		return
+	}
+	if host == nil {
+		s.logger.Printf("gocql: events: unable to find host info for (%s:%d): %v\n", ip, port, err)
+		return
+	}
+	// check again for the host because we might've just translated the IP
+	if host := s.ring.getHost(host.ConnectAddress()); host != nil && host.IsUp() {
+		return
+	}
+
+	s.addNewNode(host)
 }
 
 func (s *Session) handleRemovedNode(ip net.IP, port int) {
@@ -239,14 +241,20 @@ func (s *Session) handleRemovedNode(ip net.IP, port int) {
 		s.logger.Printf("gocql: Session.handleRemovedNode: %s:%d\n", ip.String(), port)
 	}
 
-	ip, port = s.cfg.translateAddressPort(ip, port)
-
-	// we remove all nodes but only add ones which pass the filter
+	// search to see if the host is known
 	host := s.ring.getHost(ip)
 	if host == nil {
-		host = &HostInfo{connectAddress: ip, port: port}
+		host = &HostInfo{connectAddress: ip, port: port, peer: ip}
+		ip, port = s.cfg.translateAddressPort(ip, port, host)
+		host.connectAddress = ip
+		host.port = port
+		if host.invalidConnectAddr() {
+			s.logger.Printf("gocql: host ConnectAddress invalid in handleRemovedNode ip=%v: %v", ip, host)
+			return
+		}
 	}
-	s.ring.removeHost(ip)
+	ip = host.ConnectAddress()
+	s.ring.removeIP(ip)
 
 	host.setState(NodeDown)
 	if !s.cfg.filterHost(host) {
@@ -259,27 +267,32 @@ func (s *Session) handleRemovedNode(ip net.IP, port int) {
 	}
 }
 
-func (s *Session) handleNodeUp(eventIp net.IP, eventPort int) {
+func (s *Session) handleNodeUp(ip net.IP, port int) {
 	if gocqlDebug {
-		s.logger.Printf("gocql: Session.handleNodeUp: %s:%d\n", eventIp.String(), eventPort)
+		s.logger.Printf("gocql: Session.handleNodeUp: %s:%d\n", ip.String(), port)
 	}
 
-	ip, port := s.cfg.translateAddressPort(eventIp, eventPort)
-
+	// if we already have the host and it's already up, then do nothing
 	host := s.ring.getHost(ip)
+	if host != nil && host.IsUp() {
+		return
+	}
+
+	host, err := s.hostSource.getHostInfo(ip, port)
+	if err != nil {
+		s.logger.Printf("gocql: events: unable to fetch host info for (%s:%d): %v\n", ip, port, err)
+		return
+	}
 	if host == nil {
-		s.addNewNode(ip, port)
+		s.logger.Printf("gocql: events: unable to find host info for (%s:%d): %v\n", ip, port, err)
+		return
+	}
+	// check again for the host because we might've just translated the IP
+	if host := s.ring.getHost(host.ConnectAddress()); host != nil && host.IsUp() {
 		return
 	}
 
-	if s.cfg.filterHost(host) {
-		return
-	}
-
-	if d := host.Version().nodeUpDelay(); d > 0 {
-		time.Sleep(d)
-	}
-	s.startPoolFill(host)
+	s.addNewNode(host)
 }
 
 func (s *Session) startPoolFill(host *HostInfo) {
@@ -307,7 +320,14 @@ func (s *Session) handleNodeDown(ip net.IP, port int) {
 
 	host := s.ring.getHost(ip)
 	if host == nil {
-		host = &HostInfo{connectAddress: ip, port: port}
+		host = &HostInfo{connectAddress: ip, port: port, peer: ip}
+		ip, port = s.cfg.translateAddressPort(ip, port, host)
+		host.connectAddress = ip
+		host.port = port
+		if host.invalidConnectAddr() {
+			s.logger.Printf("gocql: host ConnectAddress invalid in handleNodeDown ip=%v: %v", ip, host)
+			return
+		}
 	}
 
 	host.setState(NodeDown)
@@ -315,6 +335,7 @@ func (s *Session) handleNodeDown(ip net.IP, port int) {
 		return
 	}
 
+	ip = host.ConnectAddress()
 	s.policy.HostDown(host)
 	s.pool.hostDown(ip)
 }

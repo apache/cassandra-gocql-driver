@@ -137,8 +137,19 @@ func (h *HostInfo) Equal(host *HostInfo) bool {
 		// prevent rlock reentry
 		return true
 	}
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	host.mu.RLock()
+	defer host.mu.RUnlock()
 
-	return h.ConnectAddress().Equal(host.ConnectAddress())
+	// in case the ConnectAddress was translated check the peer address
+	return (h.peer != nil && h.peer.Equal(host.peer)) || h.connectAddress.Equal(host.connectAddress)
+}
+
+func (h *HostInfo) EqualIP(ip net.IP) bool {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return (h.peer != nil && h.peer.Equal(ip)) || h.connectAddress.Equal(ip)
 }
 
 func (h *HostInfo) Peer() net.IP {
@@ -512,9 +523,20 @@ func (s *Session) hostInfoFromMap(row map[string]interface{}, host *HostInfo) (*
 		// Not sure what the port field will be called until the JIRA issue is complete
 	}
 
-	ip, port := s.cfg.translateAddressPort(host.ConnectAddress(), host.port)
+	// if we are calling this from system.local and not system.peers then there won't
+	// be a peer column but the broadcastAddress is the peer
+	if !validIpAddr(host.peer) && validIpAddr(host.broadcastAddress) {
+		host.peer = host.broadcastAddress
+	}
+
+	ip, port := s.cfg.translateAddressPort(host.ConnectAddress(), host.port, host)
+	host.mu.Lock()
 	host.connectAddress = ip
 	host.port = port
+	host.mu.Unlock()
+	if host.invalidConnectAddr() {
+		return nil, fmt.Errorf("host ConnectAddress invalid ip=%v: %v", ip, host)
+	}
 
 	return host, nil
 }
@@ -586,7 +608,9 @@ func (r *ringDescriber) GetHosts() ([]*HostInfo, string, error) {
 func (r *ringDescriber) getHostInfo(ip net.IP, port int) (*HostInfo, error) {
 	var host *HostInfo
 	iter := r.session.control.withConnHost(func(ch *connHost) *Iter {
-		if ch.host.ConnectAddress().Equal(ip) {
+		// the connect address might've been changed by a translation so check the
+		// peer address as well
+		if ch.host.EqualIP(ip) {
 			host = ch.host
 			return nil
 		}
@@ -606,7 +630,9 @@ func (r *ringDescriber) getHostInfo(ip net.IP, port int) (*HostInfo, error) {
 				return nil, err
 			}
 
-			if h.ConnectAddress().Equal(ip) {
+			// the connect address might've been changed by a translation so check the
+			// peer address as well
+			if h.EqualIP(ip) {
 				host = h
 				break
 			}

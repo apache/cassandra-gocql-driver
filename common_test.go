@@ -246,6 +246,12 @@ func staticAddressTranslator(newAddr net.IP, newPort int) AddressTranslator {
 	})
 }
 
+func staticHostAddressTranslator(newAddr net.IP, newPort int) HostAddressTranslator {
+	return HostAddressTranslatorFunc(func(addr net.IP, port int, host *HostInfo) (net.IP, int) {
+		return newAddr, newPort
+	})
+}
+
 func assertTrue(t *testing.T, description string, value bool) {
 	t.Helper()
 	if !value {
