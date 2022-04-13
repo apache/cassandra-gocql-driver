@@ -262,6 +262,7 @@ type KeyspaceUpdateEvent struct {
 
 // HostSelectionPolicy is an interface for selecting
 // the most appropriate host to execute a given query.
+// HostSelectionPolicy instances cannot be shared between sessions.
 type HostSelectionPolicy interface {
 	HostStateNotifier
 	SetPartitioner
@@ -388,6 +389,13 @@ type tokenAwareHostPolicy struct {
 }
 
 func (t *tokenAwareHostPolicy) Init(s *Session) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.getKeyspaceMetadata != nil {
+		// Init was already called.
+		// See https://github.com/scylladb/gocql/issues/94.
+		panic("sharing token aware host selection policy between sessions is not supported")
+	}
 	t.getKeyspaceMetadata = s.KeyspaceMetadata
 	t.getKeyspaceName = func() string { return s.cfg.Keyspace }
 	t.logger = s.logger
