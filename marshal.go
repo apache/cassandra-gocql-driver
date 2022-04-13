@@ -2071,7 +2071,10 @@ func unmarshalTuple(info TypeInfo, data []byte, value interface{}) error {
 				p, data = readBytes(data)
 			}
 
-			v := elem.New()
+			v, err := elem.NewWithError()
+			if err != nil {
+				return err
+			}
 			if err := Unmarshal(elem, p, v); err != nil {
 				return err
 			}
@@ -2105,7 +2108,10 @@ func unmarshalTuple(info TypeInfo, data []byte, value interface{}) error {
 				p, data = readBytes(data)
 			}
 
-			v := elem.New()
+			v, err := elem.NewWithError()
+			if err != nil {
+				return err
+			}
 			if err := Unmarshal(elem, p, v); err != nil {
 				return err
 			}
@@ -2276,7 +2282,12 @@ func unmarshalUDT(info TypeInfo, data []byte, value interface{}) error {
 				return nil
 			}
 
-			val := reflect.New(goType(e.Type))
+			valType, err := goType(e.Type)
+			if err != nil {
+				return unmarshalErrorf("can not unmarshal %s: %v", info, err)
+			}
+
+			val := reflect.New(valType)
 
 			var p []byte
 			p, data = readBytes(data)
@@ -2358,8 +2369,18 @@ type TypeInfo interface {
 	Custom() string
 
 	// New creates a pointer to an empty version of whatever type
-	// is referenced by the TypeInfo receiver
+	// is referenced by the TypeInfo receiver.
+	//
+	// If there is no corresponding Go type for the CQL type, New panics.
+	//
+	// Deprecated: Use NewWithError instead.
 	New() interface{}
+
+	// NewWithError creates a pointer to an empty version of whatever type
+	// is referenced by the TypeInfo receiver.
+	//
+	// If there is no corresponding Go type for the CQL type, NewWithError returns an error.
+	NewWithError() (interface{}, error)
 }
 
 type NativeType struct {
@@ -2372,8 +2393,20 @@ func NewNativeType(proto byte, typ Type, custom string) NativeType {
 	return NativeType{proto, typ, custom}
 }
 
+func (t NativeType) NewWithError() (interface{}, error) {
+	typ, err := goType(t)
+	if err != nil {
+		return nil, err
+	}
+	return reflect.New(typ).Interface(), nil
+}
+
 func (t NativeType) New() interface{} {
-	return reflect.New(goType(t)).Interface()
+	val, err := t.NewWithError()
+	if err != nil {
+		panic(err.Error())
+	}
+	return val
 }
 
 func (s NativeType) Type() Type {
@@ -2403,8 +2436,20 @@ type CollectionType struct {
 	Elem TypeInfo // only used for TypeMap, TypeList and TypeSet
 }
 
+func (t CollectionType) NewWithError() (interface{}, error) {
+	typ, err := goType(t)
+	if err != nil {
+		return nil, err
+	}
+	return reflect.New(typ).Interface(), nil
+}
+
 func (t CollectionType) New() interface{} {
-	return reflect.New(goType(t)).Interface()
+	val, err := t.NewWithError()
+	if err != nil {
+		panic(err.Error())
+	}
+	return val
 }
 
 func (c CollectionType) String() string {
@@ -2436,8 +2481,20 @@ func (t TupleTypeInfo) String() string {
 	return buf.String()
 }
 
+func (t TupleTypeInfo) NewWithError() (interface{}, error) {
+	typ, err := goType(t)
+	if err != nil {
+		return nil, err
+	}
+	return reflect.New(typ).Interface(), nil
+}
+
 func (t TupleTypeInfo) New() interface{} {
-	return reflect.New(goType(t)).Interface()
+	val, err := t.NewWithError()
+	if err != nil {
+		panic(err.Error())
+	}
+	return val
 }
 
 type UDTField struct {
@@ -2452,8 +2509,20 @@ type UDTTypeInfo struct {
 	Elements []UDTField
 }
 
+func (u UDTTypeInfo) NewWithError() (interface{}, error) {
+	typ, err := goType(u)
+	if err != nil {
+		return nil, err
+	}
+	return reflect.New(typ).Interface(), nil
+}
+
 func (u UDTTypeInfo) New() interface{} {
-	return reflect.New(goType(u)).Interface()
+	val, err := u.NewWithError()
+	if err != nil {
+		panic(err.Error())
+	}
+	return val
 }
 
 func (u UDTTypeInfo) String() string {
