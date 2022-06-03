@@ -129,8 +129,15 @@ type ConnConfig struct {
 	Keepalive      time.Duration
 	Logger         StdLogger
 
-	tlsConfig       *tls.Config
+	tlsConfig       *tls.Config // If using sni (see snihost) then this will be cloned for each new connection since it requires a modification per connection.
 	disableCoalesce bool
+
+	sniConfig *SNIConfig
+}
+
+type SNIConfig struct {
+	SNIProxyAddress string      // Using secure connection bundle SNI. All connections will be to this single host. The server name (node host_id) will be sent in on connection.
+	tlsConfig       *tls.Config // Clone used in connections for tls.
 }
 
 func (c *ConnConfig) logger() StdLogger {
@@ -231,14 +238,16 @@ func (s *Session) dial(ctx context.Context, host *HostInfo, connConfig *ConnConf
 //
 // dialWithoutObserver does not notify the connection observer, so you most probably want to call dial() instead.
 func (s *Session) dialWithoutObserver(ctx context.Context, host *HostInfo, cfg *ConnConfig, errorHandler ConnErrorHandler) (*Conn, error) {
-	ip := host.ConnectAddress()
-	port := host.port
 
 	// TODO(zariel): remove these
-	if !validIpAddr(ip) {
-		panic(fmt.Sprintf("host missing connect ip address: %v", ip))
-	} else if port == 0 {
-		panic(fmt.Sprintf("host missing port: %v", port))
+	if cfg.sniConfig == nil {
+		ip := host.ConnectAddress()
+		port := host.port
+		if !validIpAddr(ip) {
+			panic(fmt.Sprintf("host missing connect ip address: %v", ip))
+		} else if port == 0 {
+			panic(fmt.Sprintf("host missing port: %v", port))
+		}
 	}
 
 	dialer := cfg.Dialer
@@ -252,8 +261,14 @@ func (s *Session) dialWithoutObserver(ctx context.Context, host *HostInfo, cfg *
 		dialer = d
 	}
 
-	addr := host.HostnameAndPort()
-	conn, err := dialer.DialContext(ctx, "tcp", addr)
+	var hostname string
+	if cfg.sniConfig == nil {
+		hostname = host.HostnameAndPort()
+	} else {
+		hostname = cfg.sniConfig.SNIProxyAddress
+	}
+
+	conn, err := dialer.DialContext(ctx, "tcp", hostname)
 	if err != nil {
 		return nil, err
 	}
@@ -262,16 +277,23 @@ func (s *Session) dialWithoutObserver(ctx context.Context, host *HostInfo, cfg *
 		// be modified after being used.
 		tlsConfig := cfg.tlsConfig
 		if !tlsConfig.InsecureSkipVerify && tlsConfig.ServerName == "" {
-			colonPos := strings.LastIndex(addr, ":")
+			colonPos := strings.LastIndex(hostname, ":")
 			if colonPos == -1 {
-				colonPos = len(addr)
+				colonPos = len(hostname)
 			}
-			hostname := addr[:colonPos]
+			hostname := hostname[:colonPos]
 			// clone config to avoid modifying the shared one.
 			tlsConfig = tlsConfig.Clone()
 			tlsConfig.ServerName = hostname
 		}
-		tconn := tls.Client(conn, tlsConfig)
+		var tlscfg *tls.Config
+		if cfg.sniConfig == nil {
+			tlscfg = cfg.tlsConfig
+		} else {
+			tlscfg = cfg.tlsConfig.Clone()
+			tlscfg.ServerName = host.HostID()
+		}
+		tconn := tls.Client(conn, tlscfg)
 		if err := tconn.Handshake(); err != nil {
 			conn.Close()
 			return nil, err

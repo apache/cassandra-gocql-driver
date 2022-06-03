@@ -89,14 +89,17 @@ type policyConnPool struct {
 	endpoints []string
 }
 
-func connConfig(cfg *ClusterConfig) (*ConnConfig, error) {
+func connConfig(cfg *ClusterConfig, sniConfig *SNIConfig) (*ConnConfig, error) {
 	var (
 		err       error
 		tlsConfig *tls.Config
 	)
 
-	// TODO(zariel): move tls config setup into session init.
-	if cfg.SslOpts != nil {
+	// TODO(zariel): move tls config setup into session init
+	if sniConfig != nil {
+		// These will completely replace any incoming ssl opts because the secure connection bundle overrides these.
+		tlsConfig = sniConfig.tlsConfig
+	} else if cfg.SslOpts != nil {
 		tlsConfig, err = setupTLSConfig(cfg.SslOpts)
 		if err != nil {
 			return nil, err
@@ -117,6 +120,7 @@ func connConfig(cfg *ClusterConfig) (*ConnConfig, error) {
 		Logger:          cfg.logger(),
 		tlsConfig:       tlsConfig,
 		disableCoalesce: tlsConfig != nil, // write coalescing doesn't work with framing on top of TCP like in TLS.
+		sniConfig:       sniConfig,
 	}, nil
 }
 

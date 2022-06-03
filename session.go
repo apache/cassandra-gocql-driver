@@ -5,13 +5,22 @@
 package gocql
 
 import (
+	"archive/zip"
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net"
+	"net/http"
+	"os"
+	"path"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -68,6 +77,8 @@ type Session struct {
 
 	cfg ClusterConfig
 
+	sniConfig *SNIConfig
+
 	ctx    context.Context
 	cancel context.CancelFunc
 
@@ -82,26 +93,54 @@ type Session struct {
 	logger StdLogger
 }
 
+type secureBundleConfig struct {
+	Host               string `json:"host"`
+	Port               int    `json:"port"`
+	Keyspace           string `json:"keyspace"`
+	KeyStorePassword   string `json:"keyStorePassword"`
+	TrustStorePassword string `json:"trustStorePassword"`
+	PfxCertPassword    string `json:"pfxCertPassword"`
+}
+
+type secureBundleMetadata struct {
+	Version     int         `json:"version"`
+	Region      string      `json:"region"`
+	ContactInfo contactInfo `json:"contact_info"`
+}
+
+type contactInfo struct {
+	Type            string   `json:"type"`
+	LocalDC         string   `json:"localDC"`
+	ContactPoints   []string `json:"contact_points"`
+	SNIProxyAddress string   `json:"sni_proxy_address"`
+}
+
 var queryPool = &sync.Pool{
 	New: func() interface{} {
 		return new(Query)
 	},
 }
 
-func addrsToHosts(addrs []string, defaultPort int, logger StdLogger) ([]*HostInfo, error) {
+func addrsToHosts(addrs []string, defaultPort int, sniConfig *SNIConfig, logger StdLogger) ([]*HostInfo, error) {
 	var hosts []*HostInfo
-	for _, hostport := range addrs {
-		resolvedHosts, err := hostInfo(hostport, defaultPort)
-		if err != nil {
-			// Try other hosts if unable to resolve DNS name
-			if _, ok := err.(*net.DNSError); ok {
-				logger.Printf("gocql: dns error: %v\n", err)
-				continue
+	if sniConfig == nil {
+		for _, hostport := range addrs {
+			resolvedHosts, err := hostInfo(hostport, defaultPort)
+			if err != nil {
+				// Try other hosts if unable to resolve DNS name
+				if _, ok := err.(*net.DNSError); ok {
+					Logger.Printf("gocql: dns error: %v\n", err)
+					continue
+				}
+				return nil, err
 			}
-			return nil, err
+			hosts = append(hosts, resolvedHosts...)
 		}
-
-		hosts = append(hosts, resolvedHosts...)
+	} else {
+		// SNI - therefor the addrs are really Cassandrea node host_ids and not resolvable ip addresses.
+		for _, contact := range addrs {
+			hosts = append(hosts, &HostInfo{hostId: contact})
+		}
 	}
 	if len(hosts) == 0 {
 		return nil, errors.New("failed to resolve any of the provided hostnames")
@@ -111,14 +150,117 @@ func addrsToHosts(addrs []string, defaultPort int, logger StdLogger) ([]*HostInf
 
 // NewSession wraps an existing Node.
 func NewSession(cfg ClusterConfig) (*Session, error) {
-	// Check that hosts in the ClusterConfig is not empty
-	if len(cfg.Hosts) < 1 {
+
+	// Not able to support DisableInitialHostLookup and secure bundle because the generated hosts are not resolvable
+	// They hosts can only be resolved by getting the host lookup data.
+	if cfg.DisableInitialHostLookup && cfg.SecureConnectBundleFilename != "" {
+		return nil, ErrDisableInitialHostLookupNotAllowed
+	}
+
+	// Check that hosts in the ClusterConfig is not empty. If SecureConnectBudndle hosts are not expected
+	if len(cfg.Hosts) < 1 && cfg.SecureConnectBundleFilename == "" {
 		return nil, ErrNoHosts
 	}
 
 	// Check that either Authenticator is set or AuthProvider, not both
 	if cfg.Authenticator != nil && cfg.AuthProvider != nil {
 		return nil, errors.New("Can't use both Authenticator and AuthProvider in cluster config.")
+	}
+
+	if cfg.SecureConnectBundleFilename != "" {
+		// 1. Unzip the secure bundle.
+		r, err := zip.OpenReader(cfg.SecureConnectBundleFilename)
+		if err != nil {
+			return nil, err
+		}
+		defer r.Close()
+		// 2. Put in temp directory (the following MUST BE FILES for this to work.
+
+		//    a) 'cert' file
+		//    b) 'key' file
+		//    c) 'ca.crt' file
+		dir, err := ioutil.TempDir("", "securezip")
+		if err != nil {
+			return nil, err
+		}
+		defer os.RemoveAll(dir) // the files are only needed until we create the tlsConfig, at that point they have been read in and processed, so not needed any longer and can be deleted at end of method.
+
+		// add each file from bundle to the directory
+		for _, f := range r.File {
+			fpath := filepath.Join(dir, f.Name)
+
+			// Make File
+			if err = os.MkdirAll(filepath.Dir(fpath), os.ModePerm); err != nil {
+				return nil, err
+			}
+
+			outFile, err := os.OpenFile(fpath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, f.Mode())
+			if err != nil {
+				return nil, err
+			}
+
+			rc, err := f.Open()
+			if err != nil {
+				return nil, err
+			}
+
+			_, err = io.Copy(outFile, rc)
+			outFile.Close()
+			rc.Close()
+			if err != nil {
+				return nil, err
+			}
+		}
+		// 3. Create a SNIConfig{} object into s.sniConfig, and set.
+		//    sniConfig.SSLOpts to
+		//      SslOptions{
+		//        CertPath: "cert",
+		//        KeyPath: "key",
+		//        CaPath:" "ca.crt"
+		//        EnableHostVerification: true,
+		//    }
+		// 4. Load the 'config.json' file as json into a map[string]interface{}
+		file, err := os.Open(path.Join(dir, "config.json")) // For read access.
+		if err != nil {
+			return nil, err
+		}
+		// read the opened jsonFile as a byte array.
+		byteValue, _ := ioutil.ReadAll(file)
+		file.Close()
+
+		// parse json file
+		config := secureBundleConfig{}
+		_ = json.Unmarshal(byteValue, &config)
+		// 5. Create url: "https://<config.json["host"]:config.json["port"]>/metadata
+		metadataURL := fmt.Sprintf("https://%s:%s/metadata", config.Host, strconv.Itoa(config.Port))
+		// 6. tlsConfig, err := setupTLSConfig(&sniConfig.SSLOpts)
+		//    if err != nil {
+		//      return nil, err
+		//    }
+		tlsConfig, err := setupTLSConfig(&SslOptions{
+			CertPath:               path.Join(dir, "cert"),
+			KeyPath:                path.Join(dir, "key"),
+			CaPath:                 path.Join(dir, "ca.crt"),
+			EnableHostVerification: true,
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		sniConfig := &SNIConfig{
+			tlsConfig: tlsConfig.Clone(),
+		}
+		sniConfig.tlsConfig.InsecureSkipVerify = true // Must use this because server name set by sni will not match certificate. Next stmt will validate certs.
+
+		// 7. Call the url and use the tlsConfig when making call. This is required to validate the certificates.
+		metadata, err := getSecureBundleMetadata(metadataURL, tlsConfig)
+		if err != nil {
+			return nil, err
+		}
+		// 8. Gather the "data" need the sniProxyHost to be put into sniConfig.SNIProxyAddress (host:port) returned from the metadata.
+		sniConfig.SNIProxyAddress = metadata.ContactInfo.SNIProxyAddress
+		// 10. set contact_hosts into a string array into hosts, replacing incoming
+		cfg.Hosts = metadata.ContactInfo.ContactPoints
 	}
 
 	// TODO: we should take a context in here at some point
@@ -165,7 +307,7 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 	s.streamObserver = cfg.StreamObserver
 
 	//Check the TLS Config before trying to connect to anything external
-	connCfg, err := connConfig(&s.cfg)
+	connCfg, err := connConfig(&s.cfg, s.sniConfig)
 	if err != nil {
 		//TODO: Return a typed error
 		return nil, fmt.Errorf("gocql: unable to create session: %v", err)
@@ -188,7 +330,7 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 }
 
 func (s *Session) init() error {
-	hosts, err := addrsToHosts(s.cfg.Hosts, s.cfg.Port, s.logger)
+	hosts, err := addrsToHosts(s.cfg.Hosts, s.cfg.Port, s.sniConfig, s.logger)
 	if err != nil {
 		return err
 	}
@@ -226,7 +368,27 @@ func (s *Session) init() error {
 					filteredHosts = append(filteredHosts, host)
 				}
 			}
-			hosts = append(hosts, filteredHosts...)
+			if s.sniConfig == nil {
+				hosts = append(hosts, filteredHosts...)
+			} else {
+				// with secure connection we need to replace the old that match by host id with new host into final host list,
+				// otherwise we would get duplicates. The new host is complete with needed hostinfo.
+				// Filter out original with same hostid and replace with new one. All that weren't matched will remain in list.
+				var newFinalHosts []*HostInfo
+				for _, host := range hosts {
+					found := false
+					for _, filteredHost := range filteredHosts {
+						if host.HostID() == filteredHost.HostID() {
+							found = true
+							newFinalHosts = append(newFinalHosts, filteredHost)
+						}
+					}
+					if !found {
+						newFinalHosts = append(newFinalHosts, host)
+					}
+				}
+				hosts = newFinalHosts
+			}
 		}
 	}
 
@@ -329,6 +491,31 @@ func (s *Session) init() error {
 	s.sessionStateMu.Unlock()
 
 	return nil
+}
+
+func getSecureBundleMetadata(endpoint string, tlsConfig *tls.Config) (*secureBundleMetadata, error) {
+
+	var client = &http.Client{
+		Timeout: 10 * time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig: tlsConfig,
+		},
+	}
+	var metadata secureBundleMetadata
+
+	resp, err := client.Get(endpoint)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode > 299 {
+		// err := utils.NewError(resp.StatusCode, msg)
+		// return nil, err
+	}
+
+	json.NewDecoder(resp.Body).Decode(&metadata)
+
+	return &metadata, nil
 }
 
 // AwaitSchemaAgreement will wait until schema versions across all nodes in the
