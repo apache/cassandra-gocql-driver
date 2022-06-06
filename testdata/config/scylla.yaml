@@ -1,0 +1,10 @@
+native_transport_port_ssl: 9142
+native_transport_port: 9042
+native_shard_aware_transport_port: 19042
+native_shard_aware_transport_port_ssl: 19142
+client_encryption_options:
+  enabled: true
+  certificate: /etc/scylla/db.crt
+  keyfile: /etc/scylla/db.key
+  truststore: /etc/scylla/ca.crt
+  require_client_auth: true

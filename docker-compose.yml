@@ -8,7 +8,19 @@ services:
     networks:
       public:
         ipv4_address: 192.168.100.11
-
+    volumes:
+    - type: bind
+      source: ./testdata/config/scylla.yaml
+      target: /etc/scylla/scylla.yaml
+    - type: bind
+      source: ./testdata/pki/ca.crt
+      target: /etc/scylla/ca.crt
+    - type: bind
+      source: ./testdata/pki/cassandra.crt
+      target: /etc/scylla/db.crt
+    - type: bind
+      source: ./testdata/pki/cassandra.key
+      target: /etc/scylla/db.key
 networks:
   public:
     driver: bridge

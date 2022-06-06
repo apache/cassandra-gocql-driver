@@ -40,6 +40,7 @@ func getClusterHosts() []string {
 
 func addSslOptions(cluster *ClusterConfig) *ClusterConfig {
 	if *flagRunSslTest {
+		cluster.Port = 9142
 		cluster.SslOpts = &SslOptions{
 			CertPath:               "testdata/pki/gocql.crt",
 			KeyPath:                "testdata/pki/gocql.key",
