@@ -47,9 +47,9 @@ func (p *preparedLRU) execIfMissing(key string, fn func(lru *lru.Cache) *infligh
 	return fn(p.lru), false
 }
 
-func (p *preparedLRU) keyFor(addr, keyspace, statement string) string {
+func (p *preparedLRU) keyFor(hostID, keyspace, statement string) string {
 	// TODO: we should just use a struct for the key in the map
-	return addr + keyspace + statement
+	return hostID + keyspace + statement
 }
 
 func (p *preparedLRU) evictPreparedID(key string, id []byte) {

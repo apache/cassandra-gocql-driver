@@ -8,7 +8,7 @@ import (
 func TestRing_AddHostIfMissing_Missing(t *testing.T) {
 	ring := &ring{}
 
-	host := &HostInfo{connectAddress: net.IPv4(1, 1, 1, 1)}
+	host := &HostInfo{hostId: MustRandomUUID().String(), connectAddress: net.IPv4(1, 1, 1, 1)}
 	h1, ok := ring.addHostIfMissing(host)
 	if ok {
 		t.Fatal("host was reported as already existing")
@@ -22,10 +22,10 @@ func TestRing_AddHostIfMissing_Missing(t *testing.T) {
 func TestRing_AddHostIfMissing_Existing(t *testing.T) {
 	ring := &ring{}
 
-	host := &HostInfo{connectAddress: net.IPv4(1, 1, 1, 1)}
+	host := &HostInfo{hostId: MustRandomUUID().String(), connectAddress: net.IPv4(1, 1, 1, 1)}
 	ring.addHostIfMissing(host)
 
-	h2 := &HostInfo{connectAddress: net.IPv4(1, 1, 1, 1)}
+	h2 := &HostInfo{hostId: host.hostId, connectAddress: net.IPv4(2, 2, 2, 2)}
 
 	h1, ok := ring.addHostIfMissing(h2)
 	if !ok {
