@@ -8,7 +8,9 @@ require (
 	github.com/hailocab/go-hostpool v0.0.0-20160125115350-e80d13ce29ed
 	github.com/kr/pretty v0.1.0 // indirect
 	github.com/stretchr/testify v1.3.0 // indirect
+	golang.org/x/net v0.0.0-20220526153639-5463443f8c37
 	gopkg.in/inf.v0 v0.9.1
+	sigs.k8s.io/yaml v1.3.0
 )
 
 go 1.13

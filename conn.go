@@ -1526,9 +1526,8 @@ func (c *Conn) localHostInfo(ctx context.Context) (*HostInfo, error) {
 	}
 
 	port := c.conn.RemoteAddr().(*net.TCPAddr).Port
-
 	// TODO(zariel): avoid doing this here
-	host, err := c.session.hostInfoFromMap(row, &HostInfo{connectAddress: c.host.connectAddress, port: port})
+	host, err := c.session.hostInfoFromMap(row, &HostInfo{hostname: c.host.connectAddress.String(), connectAddress: c.host.connectAddress, port: port})
 	if err != nil {
 		return nil, err
 	}

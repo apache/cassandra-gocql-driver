@@ -264,6 +264,7 @@ func NewCluster(hosts ...string) *ClusterConfig {
 		ReconnectionPolicy:     &ConstantReconnectionPolicy{MaxRetries: 3, Interval: 1 * time.Second},
 		WriteCoalesceWaitTime:  200 * time.Microsecond,
 	}
+
 	return cfg
 }
 

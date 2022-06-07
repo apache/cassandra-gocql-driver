@@ -416,6 +416,16 @@ func (h *HostInfo) HostnameAndPort() string {
 	return net.JoinHostPort(h.hostname, strconv.Itoa(h.port))
 }
 
+func (h *HostInfo) Hostname() string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.hostname == "" {
+		addr, _ := h.connectAddressLocked()
+		h.hostname = addr.String()
+	}
+	return h.hostname
+}
+
 func (h *HostInfo) String() string {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
@@ -684,6 +694,8 @@ func (r *ringDescriber) getHostInfo(hostID UUID) (*HostInfo, error) {
 
 	if host == nil {
 		return nil, errors.New("unable to fetch host info: invalid control connection")
+	} else if host.invalidConnectAddr() {
+		return nil, fmt.Errorf("host ConnectAddress invalid ip=%v: %v", host.connectAddress, host)
 	}
 
 	return host, nil
