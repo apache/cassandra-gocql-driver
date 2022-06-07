@@ -96,6 +96,14 @@ func UUIDFromBytes(input []byte) (UUID, error) {
 	return u, nil
 }
 
+func MustRandomUUID() UUID {
+	uuid, err := RandomUUID()
+	if err != nil {
+		panic(err)
+	}
+	return uuid
+}
+
 // RandomUUID generates a totally random UUID (version 4) as described in
 // RFC 4122.
 func RandomUUID() (UUID, error) {

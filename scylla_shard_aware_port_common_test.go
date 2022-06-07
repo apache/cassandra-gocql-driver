@@ -1,3 +1,4 @@
+//go:build integration || unit
 // +build integration unit
 
 package gocql
@@ -52,8 +53,11 @@ func testShardAwarePortNoReconnections(t *testing.T, makeCluster makeClusterTest
 
 			hosts := sess.ring.allHosts()
 			for _, host := range hosts {
-				t.Logf("checking host %s", host.hostname)
-				hostPool, _ := sess.pool.getPool(host)
+				t.Logf("checking host %q hostID: %q", host.hostname, host.hostId)
+				hostPool, ok := sess.pool.getPool(host)
+				if !ok {
+					t.Fatalf("host %q not found in session connection pool", host.HostID())
+				}
 
 				shardAwarePort := getShardAwarePort(hostPool, useTLS)
 				if shardAwarePort == 0 {

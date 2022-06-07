@@ -84,8 +84,6 @@ type policyConnPool struct {
 
 	mu            sync.RWMutex
 	hostConnPools map[string]*hostConnPool
-
-	endpoints []string
 }
 
 func connConfig(cfg *ClusterConfig) (*ConnConfig, error) {
@@ -150,9 +148,6 @@ func newPolicyConnPool(session *Session) *policyConnPool {
 		hostConnPools: map[string]*hostConnPool{},
 	}
 
-	pool.endpoints = make([]string, len(session.cfg.Hosts))
-	copy(pool.endpoints, session.cfg.Hosts)
-
 	return pool
 }
 
@@ -161,8 +156,8 @@ func (p *policyConnPool) SetHosts(hosts []*HostInfo) {
 	defer p.mu.Unlock()
 
 	toRemove := make(map[string]struct{})
-	for addr := range p.hostConnPools {
-		toRemove[addr] = struct{}{}
+	for hostID := range p.hostConnPools {
+		toRemove[hostID] = struct{}{}
 	}
 
 	pools := make(chan *hostConnPool)
@@ -172,10 +167,10 @@ func (p *policyConnPool) SetHosts(hosts []*HostInfo) {
 			// don't create a connection pool for a down host
 			continue
 		}
-		ip := host.ConnectAddress().String()
-		if _, exists := p.hostConnPools[ip]; exists {
+		hostID := host.HostID()
+		if _, exists := p.hostConnPools[hostID]; exists {
 			// still have this host, so don't remove it
-			delete(toRemove, ip)
+			delete(toRemove, hostID)
 			continue
 		}
 
@@ -198,7 +193,7 @@ func (p *policyConnPool) SetHosts(hosts []*HostInfo) {
 		createCount--
 		if pool.Size() > 0 {
 			// add pool only if there a connections available
-			p.hostConnPools[string(pool.host.ConnectAddress())] = pool
+			p.hostConnPools[pool.host.HostID()] = pool
 		}
 	}
 
@@ -221,9 +216,9 @@ func (p *policyConnPool) Size() int {
 }
 
 func (p *policyConnPool) getPool(host *HostInfo) (pool *hostConnPool, ok bool) {
-	ip := host.ConnectAddress().String()
+	hostID := host.HostID()
 	p.mu.RLock()
-	pool, ok = p.hostConnPools[ip]
+	pool, ok = p.hostConnPools[hostID]
 	p.mu.RUnlock()
 	return
 }
@@ -240,9 +235,9 @@ func (p *policyConnPool) Close() {
 }
 
 func (p *policyConnPool) addHost(host *HostInfo) {
-	ip := host.ConnectAddress().String()
+	hostID := host.HostID()
 	p.mu.Lock()
-	pool, ok := p.hostConnPools[ip]
+	pool, ok := p.hostConnPools[hostID]
 	if !ok {
 		pool = newHostConnPool(
 			p.session,
@@ -252,32 +247,25 @@ func (p *policyConnPool) addHost(host *HostInfo) {
 			p.keyspace,
 		)
 
-		p.hostConnPools[ip] = pool
+		p.hostConnPools[hostID] = pool
 	}
 	p.mu.Unlock()
 
 	pool.fill()
 }
 
-func (p *policyConnPool) removeHost(ip net.IP) {
-	k := ip.String()
+func (p *policyConnPool) removeHost(hostID string) {
 	p.mu.Lock()
-	pool, ok := p.hostConnPools[k]
+	pool, ok := p.hostConnPools[hostID]
 	if !ok {
 		p.mu.Unlock()
 		return
 	}
 
-	delete(p.hostConnPools, k)
+	delete(p.hostConnPools, hostID)
 	p.mu.Unlock()
 
 	go pool.Close()
-}
-
-func (p *policyConnPool) hostDown(ip net.IP) {
-	// TODO(zariel): mark host as down so we can try to connect to it later, for
-	// now just treat it has removed.
-	p.removeHost(ip)
 }
 
 // hostConnPool is a connection pool for a single host.
@@ -285,8 +273,6 @@ func (p *policyConnPool) hostDown(ip net.IP) {
 type hostConnPool struct {
 	session  *Session
 	host     *HostInfo
-	port     int
-	addr     string
 	size     int
 	keyspace string
 	// protection for connPicker, closed, filling
@@ -312,8 +298,6 @@ func newHostConnPool(session *Session, host *HostInfo, port, size int,
 	pool := &hostConnPool{
 		session:    session,
 		host:       host,
-		port:       port,
-		addr:       (&net.TCPAddr{IP: host.ConnectAddress(), Port: host.Port()}).String(),
 		size:       size,
 		keyspace:   keyspace,
 		connPicker: nopConnPicker{},
@@ -419,7 +403,7 @@ func (pool *hostConnPool) fill() {
 			// this is call with the connection pool mutex held, this call will
 			// then recursively try to lock it again. FIXME
 			if pool.session.cfg.ConvictionPolicy.AddFailure(err, pool.host) {
-				go pool.session.handleNodeDown(pool.host.ConnectAddress(), pool.port)
+				go pool.session.handleNodeDown(pool.host.ConnectAddress(), pool.host.Port())
 			}
 			return
 		}
@@ -451,11 +435,11 @@ func (pool *hostConnPool) logConnectErr(err error) {
 		// connection refused
 		// these are typical during a node outage so avoid log spam.
 		if gocqlDebug {
-			pool.logger.Printf("unable to dial %q: %v\n", pool.host.ConnectAddress(), err)
+			pool.logger.Printf("unable to dial %q: %v\n", pool.host, err)
 		}
 	} else if err != nil {
 		// unexpected error
-		pool.logger.Printf("error: failed to connect to %s due to error: %v", pool.addr, err)
+		pool.logger.Printf("error: failed to connect to %q due to error: %v", pool.host, err)
 	}
 }
 

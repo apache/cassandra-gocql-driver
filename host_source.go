@@ -178,6 +178,22 @@ func (h *HostInfo) connectAddressLocked() (net.IP, string) {
 	return net.IPv4zero, "invalid"
 }
 
+// nodeToNodeAddress returns address broadcasted between node to nodes.
+// It's either `broadcast_address` if host info is read from system.local or `peer` if read from system.peers.
+// This IP address is also part of CQL Event emitted on topology/status changes,
+// but does not uniquely identify the node in case multiple nodes use the same IP address.
+func (h *HostInfo) nodeToNodeAddress() net.IP {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+
+	if validIpAddr(h.broadcastAddress) {
+		return h.broadcastAddress
+	} else if validIpAddr(h.peer) {
+		return h.peer
+	}
+	return net.IPv4zero
+}
+
 // Returns the address that should be used to connect to the host.
 // If you wish to override this, use an AddressTranslator or
 // use a HostFilter to SetConnectAddress()
@@ -255,6 +271,12 @@ func (h *HostInfo) HostID() string {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	return h.hostId
+}
+
+func (h *HostInfo) SetHostID(hostID string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.hostId = hostID
 }
 
 func (h *HostInfo) WorkLoad() string {
@@ -628,44 +650,40 @@ func (r *ringDescriber) GetHosts() ([]*HostInfo, string, error) {
 }
 
 // Given an ip/port return HostInfo for the specified ip/port
-func (r *ringDescriber) getHostInfo(ip net.IP, port int) (*HostInfo, error) {
+func (r *ringDescriber) getHostInfo(hostID UUID) (*HostInfo, error) {
 	var host *HostInfo
-	iter := r.session.control.withConnHost(func(ch *connHost) *Iter {
-		if ch.host.ConnectAddress().Equal(ip) {
-			host = ch.host
-			return nil
-		}
+	for _, table := range []string{"system.peers", "system.local"} {
+		iter := r.session.control.withConnHost(func(ch *connHost) *Iter {
+			if ch.host.HostID() == hostID.String() {
+				host = ch.host
+				return nil
+			}
 
-		return ch.conn.query(context.TODO(), "SELECT * FROM system.peers")
-	})
+			return ch.conn.query(context.TODO(), fmt.Sprintf("SELECT * FROM %s", table))
+		})
 
-	if iter != nil {
-		rows, err := iter.SliceMap()
-		if err != nil {
-			return nil, err
-		}
-
-		for _, row := range rows {
-			h, err := r.session.hostInfoFromMap(row, &HostInfo{port: port})
+		if iter != nil {
+			rows, err := iter.SliceMap()
 			if err != nil {
 				return nil, err
 			}
 
-			if h.ConnectAddress().Equal(ip) {
-				host = h
-				break
-			}
-		}
+			for _, row := range rows {
+				h, err := r.session.hostInfoFromMap(row, &HostInfo{port: r.session.cfg.Port})
+				if err != nil {
+					return nil, err
+				}
 
-		if host == nil {
-			return nil, errors.New("host not found in peers table")
+				if h.HostID() == hostID.String() {
+					host = h
+					break
+				}
+			}
 		}
 	}
 
 	if host == nil {
 		return nil, errors.New("unable to fetch host info: invalid control connection")
-	} else if host.invalidConnectAddr() {
-		return nil, fmt.Errorf("host ConnectAddress invalid ip=%v: %v", ip, host)
 	}
 
 	return host, nil
@@ -694,7 +712,7 @@ func (r *ringDescriber) refreshRing() error {
 		} else {
 			host.update(h)
 		}
-		delete(prevHosts, h.ConnectAddress().String())
+		delete(prevHosts, h.HostID())
 	}
 
 	// TODO(zariel): it may be worth having a mutex covering the overall ring state

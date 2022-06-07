@@ -1,3 +1,4 @@
+//go:build all || cassandra || scylla
 // +build all cassandra scylla
 
 package gocql
@@ -1369,7 +1370,7 @@ func injectInvalidPreparedStatement(t *testing.T, session *Session, table string
 	conn := getRandomConn(t, session)
 
 	flight := new(inflightPrepare)
-	key := session.stmtsLRU.keyFor(conn.addr, "", stmt)
+	key := session.stmtsLRU.keyFor(conn.host.HostID(), "", stmt)
 	session.stmtsLRU.add(key, flight)
 
 	flight.preparedStatment = &preparedStatment{
@@ -1536,28 +1537,28 @@ func TestPrepare_PreparedCacheEviction(t *testing.T) {
 	}
 
 	// Walk through all the configured hosts and test cache retention and eviction
-	for _, host := range session.cfg.Hosts {
-		_, ok := session.stmtsLRU.lru.Get(session.stmtsLRU.keyFor(host+":9042", session.cfg.Keyspace, "SELECT id,mod FROM prepcachetest WHERE id = 0"))
+	for _, host := range session.ring.hosts {
+		_, ok := session.stmtsLRU.lru.Get(session.stmtsLRU.keyFor(host.HostID(), session.cfg.Keyspace, "SELECT id,mod FROM prepcachetest WHERE id = 0"))
 		if ok {
 			t.Errorf("expected first select to be purged but was in cache for host=%q", host)
 		}
 
-		_, ok = session.stmtsLRU.lru.Get(session.stmtsLRU.keyFor(host+":9042", session.cfg.Keyspace, "SELECT id,mod FROM prepcachetest WHERE id = 1"))
+		_, ok = session.stmtsLRU.lru.Get(session.stmtsLRU.keyFor(host.HostID(), session.cfg.Keyspace, "SELECT id,mod FROM prepcachetest WHERE id = 1"))
 		if !ok {
 			t.Errorf("exepected second select to be in cache for host=%q", host)
 		}
 
-		_, ok = session.stmtsLRU.lru.Get(session.stmtsLRU.keyFor(host+":9042", session.cfg.Keyspace, "INSERT INTO prepcachetest (id,mod) VALUES (?, ?)"))
+		_, ok = session.stmtsLRU.lru.Get(session.stmtsLRU.keyFor(host.HostID(), session.cfg.Keyspace, "INSERT INTO prepcachetest (id,mod) VALUES (?, ?)"))
 		if !ok {
 			t.Errorf("expected insert to be in cache for host=%q", host)
 		}
 
-		_, ok = session.stmtsLRU.lru.Get(session.stmtsLRU.keyFor(host+":9042", session.cfg.Keyspace, "UPDATE prepcachetest SET mod = ? WHERE id = ?"))
+		_, ok = session.stmtsLRU.lru.Get(session.stmtsLRU.keyFor(host.HostID(), session.cfg.Keyspace, "UPDATE prepcachetest SET mod = ? WHERE id = ?"))
 		if !ok {
 			t.Errorf("expected update to be in cached for host=%q", host)
 		}
 
-		_, ok = session.stmtsLRU.lru.Get(session.stmtsLRU.keyFor(host+":9042", session.cfg.Keyspace, "DELETE FROM prepcachetest WHERE id = ?"))
+		_, ok = session.stmtsLRU.lru.Get(session.stmtsLRU.keyFor(host.HostID(), session.cfg.Keyspace, "DELETE FROM prepcachetest WHERE id = ?"))
 		if !ok {
 			t.Errorf("expected delete to be cached for host=%q", host)
 		}
