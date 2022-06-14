@@ -123,6 +123,7 @@ type ConnConfig struct {
 	WriteTimeout   time.Duration
 	ConnectTimeout time.Duration
 	Dialer         Dialer
+	HostDialer     HostDialer
 	Compressor     Compressor
 	Authenticator  Authenticator
 	AuthProvider   func(h *HostInfo) (Authenticator, error)
@@ -231,52 +232,9 @@ func (s *Session) dial(ctx context.Context, host *HostInfo, connConfig *ConnConf
 //
 // dialWithoutObserver does not notify the connection observer, so you most probably want to call dial() instead.
 func (s *Session) dialWithoutObserver(ctx context.Context, host *HostInfo, cfg *ConnConfig, errorHandler ConnErrorHandler) (*Conn, error) {
-	ip := host.ConnectAddress()
-	port := host.port
-
-	// TODO(zariel): remove these
-	if !validIpAddr(ip) {
-		panic(fmt.Sprintf("host missing connect ip address: %v", ip))
-	} else if port == 0 {
-		panic(fmt.Sprintf("host missing port: %v", port))
-	}
-
-	dialer := cfg.Dialer
-	if dialer == nil {
-		d := &net.Dialer{
-			Timeout: cfg.ConnectTimeout,
-		}
-		if cfg.Keepalive > 0 {
-			d.KeepAlive = cfg.Keepalive
-		}
-		dialer = d
-	}
-
-	addr := host.HostnameAndPort()
-	conn, err := dialer.DialContext(ctx, "tcp", addr)
+	dialedHost, err := cfg.HostDialer.DialHost(ctx, host)
 	if err != nil {
 		return nil, err
-	}
-	if cfg.tlsConfig != nil {
-		// the TLS config is safe to be reused by connections but it must not
-		// be modified after being used.
-		tlsConfig := cfg.tlsConfig
-		if !tlsConfig.InsecureSkipVerify && tlsConfig.ServerName == "" {
-			colonPos := strings.LastIndex(addr, ":")
-			if colonPos == -1 {
-				colonPos = len(addr)
-			}
-			hostname := addr[:colonPos]
-			// clone config to avoid modifying the shared one.
-			tlsConfig = tlsConfig.Clone()
-			tlsConfig.ServerName = hostname
-		}
-		tconn := tls.Client(conn, tlsConfig)
-		if err := tconn.Handshake(); err != nil {
-			conn.Close()
-			return nil, err
-		}
-		conn = tconn
 	}
 
 	writeTimeout := cfg.Timeout
@@ -286,12 +244,12 @@ func (s *Session) dialWithoutObserver(ctx context.Context, host *HostInfo, cfg *
 
 	ctx, cancel := context.WithCancel(ctx)
 	c := &Conn{
-		conn:          conn,
-		r:             bufio.NewReader(conn),
+		conn:          dialedHost.Conn,
+		r:             bufio.NewReader(dialedHost.Conn),
 		cfg:           cfg,
 		calls:         make(map[int]*callReq),
 		version:       uint8(cfg.ProtoVersion),
-		addr:          conn.RemoteAddr().String(),
+		addr:          dialedHost.Conn.RemoteAddr().String(),
 		errorHandler:  errorHandler,
 		compressor:    cfg.Compressor,
 		session:       s,
@@ -299,7 +257,7 @@ func (s *Session) dialWithoutObserver(ctx context.Context, host *HostInfo, cfg *
 		host:          host,
 		frameObserver: s.frameObserver,
 		w: &deadlineContextWriter{
-			w:         conn,
+			w:         dialedHost.Conn,
 			timeout:   writeTimeout,
 			semaphore: make(chan struct{}, 1),
 			quit:      make(chan struct{}),
@@ -311,7 +269,7 @@ func (s *Session) dialWithoutObserver(ctx context.Context, host *HostInfo, cfg *
 		writeTimeout:   writeTimeout,
 	}
 
-	if err := c.init(ctx); err != nil {
+	if err := c.init(ctx, dialedHost); err != nil {
 		cancel()
 		c.Close()
 		return nil, err
@@ -320,7 +278,7 @@ func (s *Session) dialWithoutObserver(ctx context.Context, host *HostInfo, cfg *
 	return c, nil
 }
 
-func (c *Conn) init(ctx context.Context) error {
+func (c *Conn) init(ctx context.Context, dialedHost *DialedHost) error {
 	if c.session.cfg.AuthProvider != nil {
 		var err error
 		c.auth, err = c.cfg.AuthProvider(c.host)
@@ -344,7 +302,7 @@ func (c *Conn) init(ctx context.Context) error {
 	c.timeout = c.cfg.Timeout
 
 	// dont coalesce startup frames
-	if c.session.cfg.WriteCoalesceWaitTime > 0 && !c.cfg.disableCoalesce {
+	if c.session.cfg.WriteCoalesceWaitTime > 0 && !c.cfg.disableCoalesce && !dialedHost.DisableCoalesce {
 		c.w = newWriteCoalescer(c.conn, c.writeTimeout, c.session.cfg.WriteCoalesceWaitTime, ctx.Done())
 	}
 

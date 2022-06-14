@@ -91,32 +91,52 @@ type policyConnPool struct {
 
 func connConfig(cfg *ClusterConfig) (*ConnConfig, error) {
 	var (
-		err       error
-		tlsConfig *tls.Config
+		err        error
+		hostDialer HostDialer
 	)
 
-	// TODO(zariel): move tls config setup into session init.
-	if cfg.SslOpts != nil {
-		tlsConfig, err = setupTLSConfig(cfg.SslOpts)
-		if err != nil {
-			return nil, err
+	hostDialer = cfg.HostDialer
+	if hostDialer == nil {
+		var tlsConfig *tls.Config
+
+		// TODO(zariel): move tls config setup into session init.
+		if cfg.SslOpts != nil {
+			tlsConfig, err = setupTLSConfig(cfg.SslOpts)
+			if err != nil {
+				return nil, err
+			}
+		}
+
+		dialer := cfg.Dialer
+		if dialer == nil {
+			d := &net.Dialer{
+				Timeout: cfg.ConnectTimeout,
+			}
+			if cfg.SocketKeepalive > 0 {
+				d.KeepAlive = cfg.SocketKeepalive
+			}
+			dialer = d
+		}
+
+		hostDialer = &defaultHostDialer{
+			dialer:    dialer,
+			tlsConfig: tlsConfig,
 		}
 	}
 
 	return &ConnConfig{
-		ProtoVersion:    cfg.ProtoVersion,
-		CQLVersion:      cfg.CQLVersion,
-		Timeout:         cfg.Timeout,
-		WriteTimeout:    cfg.WriteTimeout,
-		ConnectTimeout:  cfg.ConnectTimeout,
-		Dialer:          cfg.Dialer,
-		Compressor:      cfg.Compressor,
-		Authenticator:   cfg.Authenticator,
-		AuthProvider:    cfg.AuthProvider,
-		Keepalive:       cfg.SocketKeepalive,
-		Logger:          cfg.logger(),
-		tlsConfig:       tlsConfig,
-		disableCoalesce: tlsConfig != nil, // write coalescing doesn't work with framing on top of TCP like in TLS.
+		ProtoVersion:   cfg.ProtoVersion,
+		CQLVersion:     cfg.CQLVersion,
+		Timeout:        cfg.Timeout,
+		WriteTimeout:   cfg.WriteTimeout,
+		ConnectTimeout: cfg.ConnectTimeout,
+		Dialer:         cfg.Dialer,
+		HostDialer:     hostDialer,
+		Compressor:     cfg.Compressor,
+		Authenticator:  cfg.Authenticator,
+		AuthProvider:   cfg.AuthProvider,
+		Keepalive:      cfg.SocketKeepalive,
+		Logger:         cfg.logger(),
 	}, nil
 }
 
