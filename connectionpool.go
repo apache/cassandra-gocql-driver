@@ -85,8 +85,6 @@ type policyConnPool struct {
 
 	mu            sync.RWMutex
 	hostConnPools map[string]*hostConnPool
-
-	endpoints []string
 }
 
 func connConfig(cfg *ClusterConfig) (*ConnConfig, error) {
@@ -129,9 +127,6 @@ func newPolicyConnPool(session *Session) *policyConnPool {
 		keyspace:      session.cfg.Keyspace,
 		hostConnPools: map[string]*hostConnPool{},
 	}
-
-	pool.endpoints = make([]string, len(session.cfg.Hosts))
-	copy(pool.endpoints, session.cfg.Hosts)
 
 	return pool
 }
