@@ -131,6 +131,9 @@ type HostInfo struct {
 	state                      nodeState
 	schemaVersion              string
 	tokens                     []string
+
+	scyllaShardAwarePort    uint16
+	scyllaShardAwarePortTLS uint16
 }
 
 func (h *HostInfo) Equal(host *HostInfo) bool {
@@ -399,6 +402,29 @@ func (h *HostInfo) String() string {
 		h.hostname, h.connectAddress, h.peer, h.rpcAddress, h.broadcastAddress, h.preferredIP,
 		connectAddr, source,
 		h.port, h.dataCenter, h.rack, h.hostId, h.version, h.state, len(h.tokens))
+}
+
+func (h *HostInfo) setScyllaSupported(s scyllaSupported) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.scyllaShardAwarePort = s.shardAwarePort
+	h.scyllaShardAwarePortTLS = s.shardAwarePortSSL
+}
+
+// ScyllaShardAwarePort returns the shard aware port of this host.
+// Returns zero if the shard aware port is not known.
+func (h *HostInfo) ScyllaShardAwarePort() uint16 {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return h.scyllaShardAwarePort
+}
+
+// ScyllaShardAwarePortTLS returns the TLS-enabled shard aware port of this host.
+// Returns zero if the shard aware port is not known.
+func (h *HostInfo) ScyllaShardAwarePortTLS() uint16 {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return h.scyllaShardAwarePortTLS
 }
 
 // Polls system.peers at a specific interval to find new hosts

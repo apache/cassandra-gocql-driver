@@ -13,7 +13,10 @@ type ConnPicker interface {
 	Size() (int, int)
 	Close()
 
-	GetCustomDialer() Dialer
+	// NextShard returns the shardID to connect to.
+	// nrShard specifies how many shards the host has.
+	// If nrShards is zero, the caller shouldn't use shard-aware port.
+	NextShard() (shardID, nrShards int)
 }
 
 type defaultConnPicker struct {
@@ -92,8 +95,8 @@ func (p *defaultConnPicker) Put(conn *Conn) {
 	p.mu.Unlock()
 }
 
-func (*defaultConnPicker) GetCustomDialer() Dialer {
-	return nil
+func (*defaultConnPicker) NextShard() (shardID, nrShards int) {
+	return 0, 0
 }
 
 // nopConnPicker is a no-operation implementation of ConnPicker, it's used when
@@ -121,6 +124,6 @@ func (nopConnPicker) Size() (int, int) {
 func (nopConnPicker) Close() {
 }
 
-func (nopConnPicker) GetCustomDialer() Dialer {
-	return nil
+func (nopConnPicker) NextShard() (shardID, nrShards int) {
+	return 0, 0
 }

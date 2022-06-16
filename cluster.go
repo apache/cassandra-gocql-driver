@@ -53,6 +53,7 @@ type ClusterConfig struct {
 	Timeout time.Duration
 
 	// Initial connection timeout, used during initial dial to server (default: 600ms)
+	// ConnectTimeout is used to set up the default dialer and is ignored if Dialer or HostDialer is provided.
 	ConnectTimeout time.Duration
 
 	// Port used when dialing.
@@ -93,6 +94,7 @@ type ClusterConfig struct {
 	ReconnectionPolicy ReconnectionPolicy
 
 	// The keepalive period to use, enabled if > 0 (default: 0)
+	// SocketKeepalive is used to set up the default dialer and is ignored if Dialer or HostDialer is provided.
 	SocketKeepalive time.Duration
 
 	// Maximum cache size for prepared statements globally for gocql.
@@ -111,6 +113,8 @@ type ClusterConfig struct {
 	// Default: unset
 	SerialConsistency SerialConsistency
 
+	// SslOpts configures TLS use when HostDialer is not set.
+	// SslOpts is ignored if HostDialer is set.
 	SslOpts *SslOptions
 
 	// Sends a client side timestamp for all requests which overrides the timestamp at which it arrives at the server.
@@ -199,7 +203,14 @@ type ClusterConfig struct {
 
 	// Dialer will be used to establish all connections created for this Cluster.
 	// If not provided, a default dialer configured with ConnectTimeout will be used.
+	// Dialer is ignored if HostDialer is provided.
 	Dialer Dialer
+
+	// HostDialer will be used to establish all connections for this Cluster.
+	// Unlike Dialer, HostDialer is responsible for setting up the entire connection, including the TLS session.
+	// To support shard-aware port, HostDialer should implement ShardDialer.
+	// If not provided, Dialer will be used instead.
+	HostDialer HostDialer
 
 	// DisableShardAwarePort will prevent the driver from connecting to Scylla's shard-aware port,
 	// even if there are nodes in the cluster that support it.

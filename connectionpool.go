@@ -90,31 +90,53 @@ type policyConnPool struct {
 
 func connConfig(cfg *ClusterConfig) (*ConnConfig, error) {
 	var (
-		err       error
-		tlsConfig *tls.Config
+		err        error
+		hostDialer HostDialer
 	)
 
-	// TODO(zariel): move tls config setup into session init.
-	if cfg.SslOpts != nil {
-		tlsConfig, err = setupTLSConfig(cfg.SslOpts)
-		if err != nil {
-			return nil, err
+	hostDialer = cfg.HostDialer
+	var tlsConfig *tls.Config
+	if hostDialer == nil {
+		// TODO(zariel): move tls config setup into session init.
+		if cfg.SslOpts != nil {
+			tlsConfig, err = setupTLSConfig(cfg.SslOpts)
+			if err != nil {
+				return nil, err
+			}
+		}
+
+		dialer := cfg.Dialer
+		if dialer == nil {
+			d := &net.Dialer{
+				Timeout: cfg.ConnectTimeout,
+			}
+			if cfg.SocketKeepalive > 0 {
+				d.KeepAlive = cfg.SocketKeepalive
+			}
+			dialer = d
+		}
+
+		hostDialer = &scyllaDialer{
+			dialer:    dialer,
+			logger:    cfg.logger(),
+			tlsConfig: tlsConfig,
+			cfg:       cfg,
 		}
 	}
 
 	return &ConnConfig{
-		ProtoVersion:    cfg.ProtoVersion,
-		CQLVersion:      cfg.CQLVersion,
-		Timeout:         cfg.Timeout,
-		ConnectTimeout:  cfg.ConnectTimeout,
-		Dialer:          cfg.Dialer,
-		Compressor:      cfg.Compressor,
-		Authenticator:   cfg.Authenticator,
-		AuthProvider:    cfg.AuthProvider,
-		Keepalive:       cfg.SocketKeepalive,
-		Logger:          cfg.logger(),
-		tlsConfig:       tlsConfig,
-		disableCoalesce: tlsConfig != nil, // write coalescing doesn't work with framing on top of TCP like in TLS.
+		ProtoVersion:   cfg.ProtoVersion,
+		CQLVersion:     cfg.CQLVersion,
+		Timeout:        cfg.Timeout,
+		ConnectTimeout: cfg.ConnectTimeout,
+		Dialer:         cfg.Dialer,
+		HostDialer:     hostDialer,
+		Compressor:     cfg.Compressor,
+		Authenticator:  cfg.Authenticator,
+		AuthProvider:   cfg.AuthProvider,
+		Keepalive:      cfg.SocketKeepalive,
+		Logger:         cfg.logger(),
+		tlsConfig:      tlsConfig,
 	}, nil
 }
 
@@ -297,7 +319,7 @@ func newHostConnPool(session *Session, host *HostInfo, port, size int,
 		connPicker: nopConnPicker{},
 		filling:    false,
 		closed:     false,
-		logger:   session.logger,
+		logger:     session.logger,
 	}
 
 	// the pool is not filled or connected
@@ -483,11 +505,8 @@ func (pool *hostConnPool) connectMany(count int) error {
 // create a new connection to the host and add it to the pool
 func (pool *hostConnPool) connect() (err error) {
 	pool.mu.Lock()
-	dialer := pool.connPicker.GetCustomDialer()
+	shardID, nrShards := pool.connPicker.NextShard()
 	pool.mu.Unlock()
-	if dialer == nil {
-		dialer = pool.session.cfg.Dialer
-	}
 
 	// TODO: provide a more robust connection retry mechanism, we should also
 	// be able to detect hosts that come up by trying to connect to downed ones.
@@ -495,7 +514,7 @@ func (pool *hostConnPool) connect() (err error) {
 	var conn *Conn
 	reconnectionPolicy := pool.session.cfg.ReconnectionPolicy
 	for i := 0; i < reconnectionPolicy.GetMaxRetries(); i++ {
-		conn, err = pool.session.connectWithDialer(pool.session.ctx, pool.host, pool, dialer)
+		conn, err = pool.session.connectShard(pool.session.ctx, pool.host, pool, shardID, nrShards)
 		if err == nil {
 			break
 		}
