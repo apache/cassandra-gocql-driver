@@ -446,8 +446,8 @@ var marshalTests = []struct {
 		},
 		bytes.Join([][]byte{
 			[]byte("\x00\x01\xFF\xFF"),
-			bytes.Repeat([]byte("X"), 65535)}, []byte("")),
-		[]string{strings.Repeat("X", 65535)},
+			bytes.Repeat([]byte("X"), math.MaxUint16)}, []byte("")),
+		[]string{strings.Repeat("X", math.MaxUint16)},
 		nil,
 		nil,
 	},
@@ -459,11 +459,11 @@ var marshalTests = []struct {
 		},
 		bytes.Join([][]byte{
 			[]byte("\x00\x01\xFF\xFF"),
-			bytes.Repeat([]byte("X"), 65535),
+			bytes.Repeat([]byte("X"), math.MaxUint16),
 			[]byte("\xFF\xFF"),
-			bytes.Repeat([]byte("Y"), 65535)}, []byte("")),
+			bytes.Repeat([]byte("Y"), math.MaxUint16)}, []byte("")),
 		map[string]string{
-			strings.Repeat("X", 65535): strings.Repeat("Y", 65535),
+			strings.Repeat("X", math.MaxUint16): strings.Repeat("Y", math.MaxUint16),
 		},
 		nil,
 		nil,
@@ -1475,12 +1475,12 @@ func TestMarshalVarint(t *testing.T) {
 	}
 }
 
-func equalStringSlice(leftList, rightList []string) bool {
+func equalStringPointerSlice(leftList, rightList []*string) bool {
 	if len(leftList) != len(rightList) {
 		return false
 	}
 	for index := range leftList {
-		if rightList[index] != leftList[index] {
+		if !reflect.DeepEqual(rightList[index], leftList[index]) {
 			return false
 		}
 	}
@@ -1488,42 +1488,105 @@ func equalStringSlice(leftList, rightList []string) bool {
 }
 
 func TestMarshalList(t *testing.T) {
-	typeInfo := CollectionType{
+	typeInfoV2 := CollectionType{
 		NativeType: NativeType{proto: 2, typ: TypeList},
 		Elem:       NativeType{proto: 2, typ: TypeVarchar},
 	}
+	typeInfoV3 := CollectionType{
+		NativeType: NativeType{proto: 3, typ: TypeList},
+		Elem:       NativeType{proto: 3, typ: TypeVarchar},
+	}
 
-	sourceLists := [][]string{
-		{"valueA"},
-		{"valueA", "valueB"},
-		{"valueB"},
+	type tc struct {
+		typeInfo CollectionType
+		input    []*string
+		expected []*string
+	}
+
+	valueA := "valueA"
+	valueB := "valueB"
+	valueEmpty := ""
+	testCases := []tc{
+		{
+			typeInfo: typeInfoV2,
+			input:    []*string{&valueA},
+			expected: []*string{&valueA},
+		},
+		{
+			typeInfo: typeInfoV2,
+			input:    []*string{&valueA, &valueB},
+			expected: []*string{&valueA, &valueB},
+		},
+		{
+			typeInfo: typeInfoV2,
+			input:    []*string{&valueA, &valueEmpty, &valueB},
+			expected: []*string{&valueA, &valueEmpty, &valueB},
+		},
+		{
+			typeInfo: typeInfoV2,
+			input:    []*string{&valueEmpty},
+			expected: []*string{&valueEmpty},
+		},
+		{
+			// nil values are marshalled to empty values for protocol < 3
+			typeInfo: typeInfoV2,
+			input:    []*string{nil},
+			expected: []*string{&valueEmpty},
+		},
+		{
+			typeInfo: typeInfoV2,
+			input:    []*string{&valueA, nil, &valueB},
+			expected: []*string{&valueA, &valueEmpty, &valueB},
+		},
+		{
+			typeInfo: typeInfoV3,
+			input:    []*string{&valueEmpty},
+			expected: []*string{&valueEmpty},
+		},
+		{
+			typeInfo: typeInfoV3,
+			input:    []*string{nil},
+			expected: []*string{nil},
+		},
+		{
+			typeInfo: typeInfoV3,
+			input:    []*string{&valueA, nil, &valueB},
+			expected: []*string{&valueA, nil, &valueB},
+		},
 	}
 
 	listDatas := [][]byte{}
-
-	for _, list := range sourceLists {
-		listData, marshalErr := Marshal(typeInfo, list)
+	for _, c := range testCases {
+		listData, marshalErr := Marshal(c.typeInfo, c.input)
 		if nil != marshalErr {
-			t.Errorf("Error marshal %+v of type %+v: %s", list, typeInfo, marshalErr)
+			t.Errorf("Error marshal %+v of type %+v: %s", c.input, c.typeInfo, marshalErr)
 		}
 		listDatas = append(listDatas, listData)
 	}
 
-	outputLists := [][]string{}
+	outputLists := [][]*string{}
 
-	var outputList []string
+	var outputList []*string
 
-	for _, listData := range listDatas {
-		if unmarshalErr := Unmarshal(typeInfo, listData, &outputList); nil != unmarshalErr {
+	for i, listData := range listDatas {
+		if unmarshalErr := Unmarshal(testCases[i].typeInfo, listData, &outputList); nil != unmarshalErr {
 			t.Error(unmarshalErr)
+		}
+		resultList := []interface{}{}
+		for i := range outputList {
+			if outputList[i] != nil {
+				resultList = append(resultList, *outputList[i])
+			} else {
+				resultList = append(resultList, nil)
+			}
 		}
 		outputLists = append(outputLists, outputList)
 	}
 
-	for index, sourceList := range sourceLists {
+	for index, c := range testCases {
 		outputList := outputLists[index]
-		if !equalStringSlice(sourceList, outputList) {
-			t.Errorf("Lists %+v not equal to lists %+v, but should", sourceList, outputList)
+		if !equalStringPointerSlice(c.expected, outputList) {
+			t.Errorf("Lists %+v not equal to lists %+v, but should", c.expected, outputList)
 		}
 	}
 }

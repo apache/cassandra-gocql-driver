@@ -1562,7 +1562,12 @@ func marshalList(info TypeInfo, value interface{}) ([]byte, error) {
 			if err != nil {
 				return nil, err
 			}
-			if err := writeCollectionSize(listInfo, len(item), buf); err != nil {
+			itemLen := len(item)
+			// Set the value to null for supported protocols
+			if item == nil && listInfo.proto > protoVersion2 {
+				itemLen = -1
+			}
+			if err := writeCollectionSize(listInfo, itemLen, buf); err != nil {
 				return nil, err
 			}
 			buf.Write(item)
@@ -1587,7 +1592,7 @@ func readCollectionSize(info CollectionType, data []byte) (size, read int, err e
 		if len(data) < 4 {
 			return 0, 0, unmarshalErrorf("unmarshal list: unexpected eof")
 		}
-		size = int(data[0])<<24 | int(data[1])<<16 | int(data[2])<<8 | int(data[3])
+		size = int(int32(data[0])<<24 | int32(data[1])<<16 | int32(data[2])<<8 | int32(data[3]))
 		read = 4
 	} else {
 		if len(data) < 2 {
@@ -1646,10 +1651,12 @@ func unmarshalList(info TypeInfo, data []byte, value interface{}) error {
 			if len(data) < m {
 				return unmarshalErrorf("unmarshal list: unexpected eof")
 			}
-			if err := Unmarshal(listInfo.Elem, data[:m], rv.Index(i).Addr().Interface()); err != nil {
-				return err
+			if m >= 0 {
+				if err := Unmarshal(listInfo.Elem, data[:m], rv.Index(i).Addr().Interface()); err != nil {
+					return err
+				}
+				data = data[m:]
 			}
-			data = data[m:]
 		}
 		return nil
 	}
