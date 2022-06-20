@@ -1928,6 +1928,41 @@ func TestUnmarshalTuple(t *testing.T) {
 	})
 }
 
+func TestMarshalUDTMap(t *testing.T) {
+	typeInfo := UDTTypeInfo{NativeType{proto: 3, typ: TypeUDT}, "", "xyz", []UDTField{
+		{Name: "x", Type: NativeType{proto: 3, typ: TypeInt}},
+		{Name: "y", Type: NativeType{proto: 3, typ: TypeInt}},
+		{Name: "z", Type: NativeType{proto: 3, typ: TypeInt}},
+	}}
+
+	t.Run("partially bound", func(t *testing.T) {
+		value := map[string]interface{}{
+			"y": 2,
+			"z": 3,
+		}
+		me := MarshalError(`marshal missing map key "x"`)
+		if _, err := Marshal(typeInfo, value); err != me {
+			t.Errorf("got error %#v, want %#v", err, me)
+		}
+	})
+	t.Run("fully bound", func(t *testing.T) {
+		value := map[string]interface{}{
+			"x": 1,
+			"y": 2,
+			"z": 3,
+		}
+		expected := []byte("\x00\x00\x00\x04\x00\x00\x00\x01\x00\x00\x00\x04\x00\x00\x00\x02\x00\x00\x00\x04\x00\x00\x00\x03")
+
+		data, err := Marshal(typeInfo, value)
+		if err != nil {
+			t.Errorf("got error %#v", err)
+		}
+		if !bytes.Equal(data, expected) {
+			t.Errorf("got error %x", data)
+		}
+	})
+}
+
 func TestMarshalNil(t *testing.T) {
 	types := []Type{
 		TypeAscii,

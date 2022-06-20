@@ -2178,7 +2178,7 @@ func marshalUDT(info TypeInfo, value interface{}) ([]byte, error) {
 		for _, e := range udt.Elements {
 			val, ok := v[e.Name]
 			if !ok {
-				continue
+				return nil, marshalErrorf("marshal missing map key %q", e.Name)
 			}
 
 			data, err := Marshal(e.Type, val)
