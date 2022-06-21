@@ -39,7 +39,7 @@ jobs:
       fail-fast: false
       matrix:
         go: [ '1.17', '1.18' ]
-        cassandra_version: [ '3.0.24', '3.11.10' ]
+        cassandra_version: [ '3.0.27', '3.11.13' ]
         auth: [ "false" ]
         compressor: [ "snappy" ]
         tags: [ "cassandra", "integration", "ccm" ]
@@ -112,7 +112,7 @@ jobs:
       fail-fast: false
       matrix:
         go: [ 1.17, 1.18 ]
-        cassandra_version: [ 3.11.10 ]
+        cassandra_version: [ 3.11.13 ]
         compressor: [ "snappy" ]
         tags: [ "integration" ]
 
