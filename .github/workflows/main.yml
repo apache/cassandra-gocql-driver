@@ -161,6 +161,7 @@ jobs:
           rm -rf $HOME/.ccm/test/node1/data/system_auth
 
           export JVM_EXTRA_OPTS=" -Dcassandra.test.fail_writes_ks=test -Dcassandra.custom_query_handler_class=org.apache.cassandra.cql3.CustomPayloadMirroringQueryHandler"
+          export JAVA_TOOL_OPTIONS=" -Dcom.sun.jndi.rmiURLParsing=legacy"
 
           ccm start --wait-for-binary-proto
           ccm status
