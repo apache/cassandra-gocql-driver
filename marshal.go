@@ -1562,7 +1562,12 @@ func marshalList(info TypeInfo, value interface{}) ([]byte, error) {
 			if err != nil {
 				return nil, err
 			}
-			if err := writeCollectionSize(listInfo, len(item), buf); err != nil {
+			itemLen := len(item)
+			// Set the value to null for supported protocols
+			if item == nil && listInfo.proto > protoVersion2 {
+				itemLen = -1
+			}
+			if err := writeCollectionSize(listInfo, itemLen, buf); err != nil {
 				return nil, err
 			}
 			buf.Write(item)
@@ -1587,7 +1592,7 @@ func readCollectionSize(info CollectionType, data []byte) (size, read int, err e
 		if len(data) < 4 {
 			return 0, 0, unmarshalErrorf("unmarshal list: unexpected eof")
 		}
-		size = int(data[0])<<24 | int(data[1])<<16 | int(data[2])<<8 | int(data[3])
+		size = int(int32(data[0])<<24 | int32(data[1])<<16 | int32(data[2])<<8 | int32(data[3]))
 		read = 4
 	} else {
 		if len(data) < 2 {
@@ -1646,10 +1651,16 @@ func unmarshalList(info TypeInfo, data []byte, value interface{}) error {
 			if len(data) < m {
 				return unmarshalErrorf("unmarshal list: unexpected eof")
 			}
-			if err := Unmarshal(listInfo.Elem, data[:m], rv.Index(i).Addr().Interface()); err != nil {
+
+			// In case m < 0, the value is null, and unmarshalData should be nil.
+			var unmarshalData []byte
+			if m >= 0 {
+				unmarshalData = data[:m]
+				data = data[m:]
+			}
+			if err := Unmarshal(listInfo.Elem, unmarshalData, rv.Index(i).Addr().Interface()); err != nil {
 				return err
 			}
-			data = data[m:]
 		}
 		return nil
 	}
@@ -1692,7 +1703,12 @@ func marshalMap(info TypeInfo, value interface{}) ([]byte, error) {
 		if err != nil {
 			return nil, err
 		}
-		if err := writeCollectionSize(mapInfo, len(item), buf); err != nil {
+		itemLen := len(item)
+		// Set the key to null for supported protocols
+		if item == nil && mapInfo.proto > protoVersion2 {
+			itemLen = -1
+		}
+		if err := writeCollectionSize(mapInfo, itemLen, buf); err != nil {
 			return nil, err
 		}
 		buf.Write(item)
@@ -1701,7 +1717,12 @@ func marshalMap(info TypeInfo, value interface{}) ([]byte, error) {
 		if err != nil {
 			return nil, err
 		}
-		if err := writeCollectionSize(mapInfo, len(item), buf); err != nil {
+		itemLen = len(item)
+		// Set the value to null for supported protocols
+		if item == nil && mapInfo.proto > protoVersion2 {
+			itemLen = -1
+		}
+		if err := writeCollectionSize(mapInfo, itemLen, buf); err != nil {
 			return nil, err
 		}
 		buf.Write(item)
@@ -1744,10 +1765,16 @@ func unmarshalMap(info TypeInfo, data []byte, value interface{}) error {
 			return unmarshalErrorf("unmarshal map: unexpected eof")
 		}
 		key := reflect.New(t.Key())
-		if err := Unmarshal(mapInfo.Key, data[:m], key.Interface()); err != nil {
+
+		// In case m < 0, the key is null, and unmarshalData should be nil.
+		var unmarshalData []byte
+		if m >= 0 {
+			unmarshalData = data[:m]
+			data = data[m:]
+		}
+		if err := Unmarshal(mapInfo.Key, unmarshalData, key.Interface()); err != nil {
 			return err
 		}
-		data = data[m:]
 
 		m, p, err = readCollectionSize(mapInfo, data)
 		if err != nil {
@@ -1758,10 +1785,16 @@ func unmarshalMap(info TypeInfo, data []byte, value interface{}) error {
 			return unmarshalErrorf("unmarshal map: unexpected eof")
 		}
 		val := reflect.New(t.Elem())
-		if err := Unmarshal(mapInfo.Elem, data[:m], val.Interface()); err != nil {
+
+		// In case m < 0, the value is null, and unmarshalData should be nil.
+		unmarshalData = nil
+		if m >= 0 {
+			unmarshalData = data[:m]
+			data = data[m:]
+		}
+		if err := Unmarshal(mapInfo.Elem, unmarshalData, val.Interface()); err != nil {
 			return err
 		}
-		data = data[m:]
 
 		rv.SetMapIndex(key.Elem(), val.Elem())
 	}
