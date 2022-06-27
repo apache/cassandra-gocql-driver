@@ -877,7 +877,7 @@ type Query struct {
 
 	disableAutoPage bool
 
-	// getKeyspace is field so that it can be overriden in tests
+	// getKeyspace is field so that it can be overridden in tests
 	getKeyspace func() string
 
 	// used by control conn queries to prevent triggering a write to systems
@@ -898,10 +898,10 @@ func (q *Query) defaultsFromSession() {
 	q.serialCons = s.cfg.SerialConsistency
 	q.defaultTimestamp = s.cfg.DefaultTimestamp
 	q.idempotent = s.cfg.DefaultIdempotence
-	q.metrics = &queryMetrics{m: make(map[string]*hostMetrics)}
-
-	q.spec = &NonSpeculativeExecution{}
 	s.mu.RUnlock()
+
+	q.metrics = &queryMetrics{m: make(map[string]*hostMetrics)}
+	q.spec = &nonSpeculativeExecution
 }
 
 // Statement returns the statement that was used to generate this query.
