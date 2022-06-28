@@ -1620,7 +1620,7 @@ func (c *Conn) query(ctx context.Context, statement string, values ...interface{
 
 func (c *Conn) awaitSchemaAgreement(ctx context.Context) (err error) {
 	const (
-		peerSchemas  = "SELECT * FROM system.peers"
+		peerSchemasTemplate = "SELECT * FROM %s"
 		localSchemas = "SELECT schema_version FROM system.local WHERE key='local'"
 	)
 
@@ -1628,8 +1628,11 @@ func (c *Conn) awaitSchemaAgreement(ctx context.Context) (err error) {
 	var schemaVersion string
 
 	endDeadline := time.Now().Add(c.session.cfg.MaxWaitSchemaAgreement)
+
+	queryString := fmt.Sprintf(peerSchemasTemplate, peersTableName(c.host.version))
+
 	for time.Now().Before(endDeadline) {
-		iter := c.query(ctx, peerSchemas)
+		iter := c.query(ctx, queryString)
 
 		versions = make(map[string]struct{})
 
