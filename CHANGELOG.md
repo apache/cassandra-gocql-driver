@@ -6,6 +6,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+This release improves support for connecting through proxies and some improvements when using Cassandra 4.0 or later.
+
+### Added
+- HostDialer interface now allows customizing connection including TLS setup per host.
+
+### Changed
+- The driver now uses `host_id` instead of connect address to identify nodes.
+- gocql reads `system.peers_v2` instead of `system.peers` when connected to Cassandra 4.0 or later and
+  populates `HostInfo.Port` using the native port.
+
+### Fixed
+- Data race in `HostInfo.HostnameAndPort()`.
+
 ## [1.1.0] - 2022-04-29
 
 ### Added
