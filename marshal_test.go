@@ -2003,9 +2003,29 @@ func TestMarshalUDTMap(t *testing.T) {
 			"y": 2,
 			"z": 3,
 		}
-		me := MarshalError(`marshal missing map key "x"`)
-		if _, err := Marshal(typeInfo, value); err != me {
-			t.Errorf("got error %#v, want %#v", err, me)
+		expected := []byte("\xff\xff\xff\xff\x00\x00\x00\x04\x00\x00\x00\x02\x00\x00\x00\x04\x00\x00\x00\x03")
+
+		data, err := Marshal(typeInfo, value)
+		if err != nil {
+			t.Errorf("got error %#v", err)
+		}
+		if !bytes.Equal(data, expected) {
+			t.Errorf("got value %x", data)
+		}
+	})
+	t.Run("partially bound from the beginning", func(t *testing.T) {
+		value := map[string]interface{}{
+			"x": 1,
+			"y": 2,
+		}
+		expected := []byte("\x00\x00\x00\x04\x00\x00\x00\x01\x00\x00\x00\x04\x00\x00\x00\x02\xff\xff\xff\xff")
+
+		data, err := Marshal(typeInfo, value)
+		if err != nil {
+			t.Errorf("got error %#v", err)
+		}
+		if !bytes.Equal(data, expected) {
+			t.Errorf("got value %x", data)
 		}
 	})
 	t.Run("fully bound", func(t *testing.T) {
@@ -2021,7 +2041,76 @@ func TestMarshalUDTMap(t *testing.T) {
 			t.Errorf("got error %#v", err)
 		}
 		if !bytes.Equal(data, expected) {
-			t.Errorf("got error %x", data)
+			t.Errorf("got value %x", data)
+		}
+	})
+}
+
+func TestMarshalUDTStruct(t *testing.T) {
+	typeInfo := UDTTypeInfo{NativeType{proto: 3, typ: TypeUDT}, "", "xyz", []UDTField{
+		{Name: "x", Type: NativeType{proto: 3, typ: TypeInt}},
+		{Name: "y", Type: NativeType{proto: 3, typ: TypeInt}},
+		{Name: "z", Type: NativeType{proto: 3, typ: TypeInt}},
+	}}
+
+	type xyzStruct struct {
+		X int32 `cql:"x"`
+		Y int32 `cql:"y"`
+		Z int32 `cql:"z"`
+	}
+	type xyStruct struct {
+		X int32 `cql:"x"`
+		Y int32 `cql:"y"`
+	}
+	type yzStruct struct {
+		Y int32 `cql:"y"`
+		Z int32 `cql:"z"`
+	}
+
+	t.Run("partially bound", func(t *testing.T) {
+		value := yzStruct{
+			Y: 2,
+			Z: 3,
+		}
+		expected := []byte("\xff\xff\xff\xff\x00\x00\x00\x04\x00\x00\x00\x02\x00\x00\x00\x04\x00\x00\x00\x03")
+
+		data, err := Marshal(typeInfo, value)
+		if err != nil {
+			t.Errorf("got error %#v", err)
+		}
+		if !bytes.Equal(data, expected) {
+			t.Errorf("got value %x", data)
+		}
+	})
+	t.Run("partially bound from the beginning", func(t *testing.T) {
+		value := xyStruct{
+			X: 1,
+			Y: 2,
+		}
+		expected := []byte("\x00\x00\x00\x04\x00\x00\x00\x01\x00\x00\x00\x04\x00\x00\x00\x02\xff\xff\xff\xff")
+
+		data, err := Marshal(typeInfo, value)
+		if err != nil {
+			t.Errorf("got error %#v", err)
+		}
+		if !bytes.Equal(data, expected) {
+			t.Errorf("got value %x", data)
+		}
+	})
+	t.Run("fully bound", func(t *testing.T) {
+		value := xyzStruct{
+			X: 1,
+			Y: 2,
+			Z: 3,
+		}
+		expected := []byte("\x00\x00\x00\x04\x00\x00\x00\x01\x00\x00\x00\x04\x00\x00\x00\x02\x00\x00\x00\x04\x00\x00\x00\x03")
+
+		data, err := Marshal(typeInfo, value)
+		if err != nil {
+			t.Errorf("got error %#v", err)
+		}
+		if !bytes.Equal(data, expected) {
+			t.Errorf("got value %x", data)
 		}
 	})
 }
