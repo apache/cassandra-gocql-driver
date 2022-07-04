@@ -6,18 +6,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+### Changed
+
+### Fixed
+
+## [1.2.0] - 2022-07-07
+
 This release improves support for connecting through proxies and some improvements when using Cassandra 4.0 or later.
 
 ### Added
-- HostDialer interface now allows customizing connection including TLS setup per host.
+- HostDialer interface now allows customizing connection including TLS setup per host. (#1629)
 
 ### Changed
-- The driver now uses `host_id` instead of connect address to identify nodes.
+- The driver now uses `host_id` instead of connect address to identify nodes. (#1632)
 - gocql reads `system.peers_v2` instead of `system.peers` when connected to Cassandra 4.0 or later and
-  populates `HostInfo.Port` using the native port.
+  populates `HostInfo.Port` using the native port. (#1635)
 
 ### Fixed
-- Data race in `HostInfo.HostnameAndPort()`.
+- Data race in `HostInfo.HostnameAndPort()`. (#1631)
+- Handling of nils when marshaling/unmarshaling lists and maps. (#1630)
+- Silent data corruption in case a map was serialized into UDT and some fields in the UDT were not present in the map.
+  The driver now correctly writes nulls instead of shifting fields. (#1626, #1639)
 
 ## [1.1.0] - 2022-04-29
 
