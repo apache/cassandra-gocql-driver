@@ -39,7 +39,7 @@ jobs:
       fail-fast: false
       matrix:
         go: [ '1.17', '1.18' ]
-        cassandra_version: [ '3.0.27', '3.11.13' ]
+        cassandra_version: [ '3.11.13', '4.0.4' ]
         auth: [ "false" ]
         compressor: [ "snappy" ]
         tags: [ "cassandra", "integration", "ccm" ]
@@ -90,7 +90,7 @@ jobs:
           ccm node1 nodetool status
 
           proto=4
-          if [[ $version == 3.*.* ]]; then
+          if [[ $version == 4.*.* ]]; then
               proto=5
           fi
 
@@ -112,7 +112,7 @@ jobs:
       fail-fast: false
       matrix:
         go: [ 1.17, 1.18 ]
-        cassandra_version: [ 3.11.13 ]
+        cassandra_version: [ 4.0.4 ]
         compressor: [ "snappy" ]
         tags: [ "integration" ]
 
