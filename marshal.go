@@ -2210,13 +2210,15 @@ func marshalUDT(info TypeInfo, value interface{}) ([]byte, error) {
 		var buf []byte
 		for _, e := range udt.Elements {
 			val, ok := v[e.Name]
-			if !ok {
-				return nil, marshalErrorf("marshal missing map key %q", e.Name)
-			}
 
-			data, err := Marshal(e.Type, val)
-			if err != nil {
-				return nil, err
+			var data []byte
+
+			if ok {
+				var err error
+				data, err = Marshal(e.Type, val)
+				if err != nil {
+					return nil, err
+				}
 			}
 
 			buf = appendBytes(buf, data)
