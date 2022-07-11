@@ -271,7 +271,7 @@ func isNullableValue(value interface{}) bool {
 }
 
 func isNullData(info TypeInfo, data []byte) bool {
-	return data == nil
+	return len(data) == 0
 }
 
 func unmarshalNullable(info TypeInfo, data []byte, value interface{}) error {
