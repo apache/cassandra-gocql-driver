@@ -105,13 +105,13 @@ func connConfig(cfg *ClusterConfig) (*ConnConfig, error) {
 
 		dialer := cfg.Dialer
 		if dialer == nil {
-			d := &net.Dialer{
+			d := net.Dialer{
 				Timeout: cfg.ConnectTimeout,
 			}
 			if cfg.SocketKeepalive > 0 {
 				d.KeepAlive = cfg.SocketKeepalive
 			}
-			dialer = d
+			dialer = &ScyllaShardAwareDialer{d}
 		}
 
 		hostDialer = &scyllaDialer{
