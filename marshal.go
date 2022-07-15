@@ -1749,11 +1749,14 @@ func unmarshalMap(info TypeInfo, data []byte, value interface{}) error {
 		rv.Set(reflect.Zero(t))
 		return nil
 	}
-	rv.Set(reflect.MakeMap(t))
 	n, p, err := readCollectionSize(mapInfo, data)
 	if err != nil {
 		return err
 	}
+	if n < 0 {
+		return unmarshalErrorf("negative map size %d", n)
+	}
+	rv.Set(reflect.MakeMapWithSize(t, n))
 	data = data[p:]
 	for i := 0; i < n; i++ {
 		m, p, err := readCollectionSize(mapInfo, data)
