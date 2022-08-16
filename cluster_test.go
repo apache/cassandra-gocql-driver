@@ -32,6 +32,13 @@ func TestNewCluster_WithHosts(t *testing.T) {
 	assertEqual(t, "cluster config host 0", "addr1", cfg.Hosts[0])
 	assertEqual(t, "cluster config host 1", "addr2", cfg.Hosts[1])
 }
+func TestNewCluster_WithHostPortString(t *testing.T) {
+	cfg := NewCluster("addr1:9142", "addr2:9142")
+	assertEqual(t, "cluster config hosts length", 2, len(cfg.Hosts))
+	assertEqual(t, "cluster config host 0", "addr1:9142", cfg.Hosts[0])
+	assertEqual(t, "cluster config host 1", "addr2:9142", cfg.Hosts[1])
+	assertEqual(t, "cluster port", 9142, cfg.Port)
+}
 
 func TestClusterConfig_translateAddressAndPort_NilTranslator(t *testing.T) {
 	cfg := NewCluster()
