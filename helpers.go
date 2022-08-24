@@ -446,10 +446,3 @@ func LookupIP(host string) ([]net.IP, error) {
 	return net.LookupIP(host)
 
 }
-
-func peersTableName(version cassVersion) string {
-	if version.AtLeast(4, 0, 0) {
-		return "system.peers_v2"
-	}
-	return "system.peers"
-}
