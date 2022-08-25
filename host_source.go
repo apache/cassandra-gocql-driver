@@ -561,8 +561,7 @@ func (r *ringDescriber) getClusterPeerInfo() ([]*HostInfo, error) {
 	var hosts []*HostInfo
 	iter := r.session.control.withConnHost(func(ch *connHost) *Iter {
 		hosts = append(hosts, ch.host)
-		return ch.conn.query(context.TODO(),
-			fmt.Sprintf("SELECT * FROM %s", peersTableName(ch.host.version)))
+		return ch.conn.querySystemPeers(context.TODO(), ch.host.version)
 	})
 
 	if iter == nil {
@@ -631,8 +630,7 @@ func (r *ringDescriber) getHostInfo(hostID UUID) (*HostInfo, error) {
 			}
 
 			if table == "system.peers" {
-				return ch.conn.query(context.TODO(),
-					fmt.Sprintf("SELECT * from %s", peersTableName(ch.host.version)))
+				return ch.conn.querySystemPeers(context.TODO(), ch.host.version)
 			} else {
 				return ch.conn.query(context.TODO(), fmt.Sprintf("SELECT * FROM %s", table))
 			}

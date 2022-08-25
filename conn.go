@@ -190,6 +190,7 @@ type Conn struct {
 	version         uint8
 	currentKeyspace string
 	host            *HostInfo
+	isSchemaV2      bool
 
 	session *Session
 
@@ -255,6 +256,7 @@ func (s *Session) dialWithoutObserver(ctx context.Context, host *HostInfo, cfg *
 		session:       s,
 		streams:       streams.New(cfg.ProtoVersion),
 		host:          host,
+		isSchemaV2:    true, // Try using "system.peers_v2" until proven otherwise
 		frameObserver: s.frameObserver,
 		w: &deadlineContextWriter{
 			w:         dialedHost.Conn,
@@ -1618,21 +1620,47 @@ func (c *Conn) query(ctx context.Context, statement string, values ...interface{
 	return c.executeQuery(ctx, q)
 }
 
-func (c *Conn) awaitSchemaAgreement(ctx context.Context) (err error) {
+func (c *Conn) querySystemPeers(ctx context.Context, version cassVersion) *Iter {
 	const (
-		peerSchemasTemplate = "SELECT * FROM %s"
-		localSchemas = "SELECT schema_version FROM system.local WHERE key='local'"
+		peerSchema    = "SELECT * FROM system.peers"
+		peerV2Schemas = "SELECT * FROM system.peers_v2"
 	)
+
+	c.mu.Lock()
+	isSchemaV2 := c.isSchemaV2
+	c.mu.Unlock()
+
+	if version.AtLeast(4, 0, 0) && isSchemaV2 {
+		// Try "system.peers_v2" and fallback to "system.peers" if it's not found
+		iter := c.query(ctx, peerV2Schemas)
+
+		err := iter.checkErrAndNotFound()
+		if err != nil {
+			if errFrame, ok := err.(errorFrame); ok && errFrame.code == ErrCodeInvalid { // system.peers_v2 not found, try system.peers
+				c.mu.Lock()
+				c.isSchemaV2 = false
+				c.mu.Unlock()
+				return c.query(ctx, peerSchema)
+			} else {
+				return iter
+			}
+		}
+		return iter
+	} else {
+		return c.query(ctx, peerSchema)
+	}
+}
+
+func (c *Conn) awaitSchemaAgreement(ctx context.Context) (err error) {
+	const localSchemas = "SELECT schema_version FROM system.local WHERE key='local'"
 
 	var versions map[string]struct{}
 	var schemaVersion string
 
 	endDeadline := time.Now().Add(c.session.cfg.MaxWaitSchemaAgreement)
 
-	queryString := fmt.Sprintf(peerSchemasTemplate, peersTableName(c.host.version))
-
 	for time.Now().Before(endDeadline) {
-		iter := c.query(ctx, queryString)
+		iter := c.querySystemPeers(ctx, c.host.version)
 
 		versions = make(map[string]struct{})
 
