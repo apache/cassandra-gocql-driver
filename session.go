@@ -1547,7 +1547,10 @@ func (iter *Iter) Scan(dest ...interface{}) bool {
 // custom QueryHandlers running in your C* cluster.
 // See https://datastax.github.io/java-driver/manual/custom_payloads/
 func (iter *Iter) GetCustomPayload() map[string][]byte {
-	return iter.framer.customPayload
+	if iter.framer != nil {
+		return iter.framer.customPayload
+	}
+	return nil
 }
 
 // Warnings returns any warnings generated if given in the response from Cassandra.
