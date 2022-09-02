@@ -12,6 +12,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [1.2.1] - 2022-09-02
+
+### Changed
+
+- GetCustomPayload now returns nil instead of panicking in case of query error. (#1385)
+
+### Fixed
+
+- Nil pointer dereference in events.go when handling node removal. (#1652)
+- Reading peers from DataStax Enterprise clusters. This was a regression in 1.2.0. (#1646)
+- Unmarshaling maps did not pre-allocate the map. (#1642)
+
 ## [1.2.0] - 2022-07-07
 
 This release improves support for connecting through proxies and some improvements when using Cassandra 4.0 or later.
