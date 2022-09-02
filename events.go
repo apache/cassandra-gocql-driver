@@ -240,8 +240,8 @@ func (s *Session) handleRemovedNode(ip net.IP, port int) {
 
 	// we remove all nodes but only add ones which pass the filter
 	host, ok := s.ring.getHostByIP(ip.String())
-	hostID := host.HostID()
 	if ok {
+		hostID := host.HostID()
 		s.ring.removeHost(hostID)
 
 		host.setState(NodeDown)
