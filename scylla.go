@@ -217,7 +217,6 @@ type scyllaConnPicker struct {
 	nrShards               int
 	msbIgnore              uint64
 	pos                    uint64
-	dialer                 Dialer
 	lastAttemptedShard     int
 	shardAwarePortDisabled bool
 
@@ -254,27 +253,11 @@ func newScyllaConnPicker(conn *Conn) *scyllaConnPicker {
 		shardAwareAddress:      shardAwareAddress,
 		nrShards:               conn.scyllaSupported.nrShards,
 		msbIgnore:              conn.scyllaSupported.msbIgnore,
-		dialer:                 makeDialerForScyllaConnPicker(conn),
 		lastAttemptedShard:     0,
 		shardAwarePortDisabled: conn.session.cfg.DisableShardAwarePort,
 
 		disableShardAwarePortUntil: new(atomic.Value),
 	}
-}
-
-func makeDialerForScyllaConnPicker(conn *Conn) Dialer {
-	cfg := conn.session.connCfg
-	dialer := cfg.Dialer
-	if dialer == nil {
-		d := &ScyllaShardAwareDialer{}
-		d.Timeout = cfg.ConnectTimeout
-		if cfg.Keepalive > 0 {
-			d.KeepAlive = cfg.Keepalive
-		}
-		dialer = d
-	}
-
-	return dialer
 }
 
 func (p *scyllaConnPicker) Pick(t token) *Conn {
