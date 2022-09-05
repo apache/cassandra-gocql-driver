@@ -48,11 +48,11 @@ function run_tests() {
 		proto=2
 	elif [[ $version == 2.1.* ]]; then
 		proto=3
-	elif [[ $version == 2.2.* || $version == 3.0.* ]]; then
+	elif [[ $version == 2.2.* || $version == 3.*.* ]]; then
 		proto=4
 		ccm updateconf 'enable_user_defined_functions: true'
 		export JVM_EXTRA_OPTS=" -Dcassandra.test.fail_writes_ks=test -Dcassandra.custom_query_handler_class=org.apache.cassandra.cql3.CustomPayloadMirroringQueryHandler"
-	elif [[ $version == 3.*.* ]]; then
+	elif [[ $version == 4.*.* ]]; then
 		proto=5
 		ccm updateconf 'enable_user_defined_functions: true'
 		export JVM_EXTRA_OPTS=" -Dcassandra.test.fail_writes_ks=test -Dcassandra.custom_query_handler_class=org.apache.cassandra.cql3.CustomPayloadMirroringQueryHandler"
