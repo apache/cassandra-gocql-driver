@@ -1,3 +1,4 @@
+//go:build all || unit
 // +build all unit
 
 package gocql
@@ -9,8 +10,8 @@ import (
 
 func TestSetupTLSConfig(t *testing.T) {
 	tests := []struct {
-		name string
-		opts *SslOptions
+		name                       string
+		opts                       *SslOptions
 		expectedInsecureSkipVerify bool
 	}{
 		{
@@ -82,4 +83,3 @@ func TestSetupTLSConfig(t *testing.T) {
 		})
 	}
 }
-

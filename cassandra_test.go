@@ -68,7 +68,7 @@ func TestInvalidPeerEntry(t *testing.T) {
 	}
 }
 
-//TestUseStatementError checks to make sure the correct error is returned when the user tries to execute a use statement.
+// TestUseStatementError checks to make sure the correct error is returned when the user tries to execute a use statement.
 func TestUseStatementError(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
@@ -82,7 +82,7 @@ func TestUseStatementError(t *testing.T) {
 	}
 }
 
-//TestInvalidKeyspace checks that an invalid keyspace will return promptly and without a flood of connections
+// TestInvalidKeyspace checks that an invalid keyspace will return promptly and without a flood of connections
 func TestInvalidKeyspace(t *testing.T) {
 	cluster := createCluster()
 	cluster.Keyspace = "invalidKeyspace"
@@ -1190,7 +1190,7 @@ func TestRebindQueryInfo(t *testing.T) {
 	}
 }
 
-//TestStaticQueryInfo makes sure that the application can manually bind query parameters using the simplest possible static binding strategy
+// TestStaticQueryInfo makes sure that the application can manually bind query parameters using the simplest possible static binding strategy
 func TestStaticQueryInfo(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
@@ -1258,7 +1258,7 @@ func upcaseInitial(str string) string {
 	return ""
 }
 
-//TestBoundQueryInfo makes sure that the application can manually bind query parameters using the query meta data supplied at runtime
+// TestBoundQueryInfo makes sure that the application can manually bind query parameters using the query meta data supplied at runtime
 func TestBoundQueryInfo(t *testing.T) {
 
 	session := createSession(t)
@@ -1297,7 +1297,7 @@ func TestBoundQueryInfo(t *testing.T) {
 
 }
 
-//TestBatchQueryInfo makes sure that the application can manually bind query parameters when executing in a batch
+// TestBatchQueryInfo makes sure that the application can manually bind query parameters when executing in a batch
 func TestBatchQueryInfo(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
@@ -1475,7 +1475,7 @@ func TestQueryInfo(t *testing.T) {
 	}
 }
 
-//TestPreparedCacheEviction will make sure that the cache size is maintained
+// TestPreparedCacheEviction will make sure that the cache size is maintained
 func TestPrepare_PreparedCacheEviction(t *testing.T) {
 	const maxPrepared = 4
 
@@ -1614,7 +1614,7 @@ func TestPrepare_PreparedCacheKey(t *testing.T) {
 	}
 }
 
-//TestMarshalFloat64Ptr tests to see that a pointer to a float64 is marshalled correctly.
+// TestMarshalFloat64Ptr tests to see that a pointer to a float64 is marshalled correctly.
 func TestMarshalFloat64Ptr(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
@@ -1628,7 +1628,7 @@ func TestMarshalFloat64Ptr(t *testing.T) {
 	}
 }
 
-//TestMarshalInet tests to see that a pointer to a float64 is marshalled correctly.
+// TestMarshalInet tests to see that a pointer to a float64 is marshalled correctly.
 func TestMarshalInet(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
@@ -1788,7 +1788,7 @@ func TestVarint(t *testing.T) {
 	}
 }
 
-//TestQueryStats confirms that the stats are returning valid data. Accuracy may be questionable.
+// TestQueryStats confirms that the stats are returning valid data. Accuracy may be questionable.
 func TestQueryStats(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
@@ -1817,7 +1817,7 @@ func TestIterHost(t *testing.T) {
 	}
 }
 
-//TestBatchStats confirms that the stats are returning valid data. Accuracy may be questionable.
+// TestBatchStats confirms that the stats are returning valid data. Accuracy may be questionable.
 func TestBatchStats(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
@@ -1915,8 +1915,8 @@ func TestBatchObserve(t *testing.T) {
 	}
 }
 
-//TestNilInQuery tests to see that a nil value passed to a query is handled by Cassandra
-//TODO validate the nil value by reading back the nil. Need to fix Unmarshalling.
+// TestNilInQuery tests to see that a nil value passed to a query is handled by Cassandra
+// TODO validate the nil value by reading back the nil. Need to fix Unmarshalling.
 func TestNilInQuery(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
