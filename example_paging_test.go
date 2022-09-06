@@ -38,7 +38,7 @@ func Example_paging() {
 		scanner := iter.Scanner()
 		for scanner.Next() {
 			var (
-				id int
+				id          int
 				description string
 			)
 			err = scanner.Scan(&id, &description)

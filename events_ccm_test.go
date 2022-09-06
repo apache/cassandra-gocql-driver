@@ -1,4 +1,5 @@
-// +build ccm, ignore
+//go:build (ccm && ignore) || ignore
+// +build ccm,ignore ignore
 
 package gocql
 
