@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-18.04
     strategy:
       matrix:
-        go: [ '1.17', '1.18' ]
+        go: [ '1.18', '1.19' ]
     steps:
       - uses: actions/checkout@v2
       - uses: actions/setup-go@v2
@@ -38,7 +38,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        go: [ '1.17', '1.18' ]
+        go: [ '1.18', '1.19' ]
         cassandra_version: [ '3.0.27', '3.11.13' ]
         auth: [ "false" ]
         compressor: [ "snappy" ]
@@ -111,7 +111,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        go: [ 1.17, 1.18 ]
+        go: [ 1.18, 1.19 ]
         cassandra_version: [ 3.11.13 ]
         compressor: [ "snappy" ]
         tags: [ "integration" ]
