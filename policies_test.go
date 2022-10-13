@@ -619,3 +619,219 @@ func TestHostPolicy_TokenAware_NetworkStrategy(t *testing.T) {
 	iterCheck(t, iter, "6")
 	iterCheck(t, iter, "8")
 }
+
+// Check that each element of toCheck is in valid, and no element appears twice
+func checkList(t *testing.T, msg string, toCheck []string, valid []string) {
+	data := make(map[string]bool)
+	for _, val := range valid {
+		data[val] = false
+	}
+
+	for _, val := range toCheck {
+		seen, exists := data[val]
+		if !exists || seen {
+			t.Fatal(msg)
+		}
+		data[val] = true
+	}
+}
+
+func TestHostPolicy_RackAwareRR(t *testing.T) {
+	p := RackAwareRoundRobinPolicy("local", "b")
+
+	hosts := [...]*HostInfo{
+		{hostId: "0", connectAddress: net.ParseIP("10.0.0.1"), dataCenter: "local", rack: "a"},
+		{hostId: "1", connectAddress: net.ParseIP("10.0.0.2"), dataCenter: "local", rack: "b"},
+		{hostId: "2", connectAddress: net.ParseIP("10.0.0.3"), dataCenter: "remote", rack: "a"},
+		{hostId: "3", connectAddress: net.ParseIP("10.0.0.4"), dataCenter: "remote", rack: "b"},
+	}
+
+	hostsOut := make([]*HostInfo, 0, len(hosts))
+
+	for _, host := range hosts {
+		p.AddHost(host)
+	}
+
+	it := p.Pick(nil)
+	for h := it(); h != nil; h = it() {
+		hostsOut = append(hostsOut, h.Info())
+	}
+
+	if len(hostsOut) != len(hosts) {
+		t.Fatalf("expected %d hosts got %d", len(hosts), len(hostsOut))
+	}
+
+	// Must start with host 1, then host 0
+	if hostsOut[0].hostId != "1" || hostsOut[1].hostId != "0" {
+		t.Fatalf("hosts in wrong order")
+	}
+	// Then 2 or 3 in either order
+	checkList(t, "hosts in wrong order", []string{hostsOut[2].hostId, hostsOut[3].hostId}, []string{"2", "3"})
+}
+
+// Tests of the token-aware host selection policy implementation with a
+// DC & Rack aware round-robin host selection policy fallback
+func TestHostPolicy_TokenAware_RackAware(t *testing.T) {
+	const keyspace = "myKeyspace"
+	policy := TokenAwareHostPolicy(RackAwareRoundRobinPolicy("local", "b"))
+	policyWithFallback := TokenAwareHostPolicy(RackAwareRoundRobinPolicy("local", "b"), NonLocalReplicasFallback())
+
+	policyInternal := policy.(*tokenAwareHostPolicy)
+	policyInternal.getKeyspaceName = func() string { return keyspace }
+	policyInternal.getKeyspaceMetadata = func(ks string) (*KeyspaceMetadata, error) {
+		return nil, errors.New("not initialized")
+	}
+
+	policyWithFallbackInternal := policyWithFallback.(*tokenAwareHostPolicy)
+	policyWithFallbackInternal.getKeyspaceName = policyInternal.getKeyspaceName
+	policyWithFallbackInternal.getKeyspaceMetadata = policyInternal.getKeyspaceMetadata
+
+	query := &Query{}
+	query.getKeyspace = func() string { return keyspace }
+
+	iter := policy.Pick(nil)
+	if iter == nil {
+		t.Fatal("host iterator was nil")
+	}
+	actual := iter()
+	if actual != nil {
+		t.Fatalf("expected nil from iterator, but was %v", actual)
+	}
+
+	// set the hosts
+	hosts := [...]*HostInfo{
+		{hostId: "0", connectAddress: net.IPv4(10, 0, 0, 1), tokens: []string{"05"}, dataCenter: "remote", rack: "a"},
+		{hostId: "1", connectAddress: net.IPv4(10, 0, 0, 2), tokens: []string{"10"}, dataCenter: "remote", rack: "b"},
+		{hostId: "2", connectAddress: net.IPv4(10, 0, 0, 3), tokens: []string{"15"}, dataCenter: "local", rack: "a"},
+		{hostId: "3", connectAddress: net.IPv4(10, 0, 0, 4), tokens: []string{"20"}, dataCenter: "local", rack: "b"},
+		{hostId: "4", connectAddress: net.IPv4(10, 0, 0, 5), tokens: []string{"25"}, dataCenter: "remote", rack: "a"},
+		{hostId: "5", connectAddress: net.IPv4(10, 0, 0, 6), tokens: []string{"30"}, dataCenter: "remote", rack: "b"},
+		{hostId: "6", connectAddress: net.IPv4(10, 0, 0, 7), tokens: []string{"35"}, dataCenter: "local", rack: "a"},
+		{hostId: "7", connectAddress: net.IPv4(10, 0, 0, 8), tokens: []string{"40"}, dataCenter: "local", rack: "b"},
+		{hostId: "8", connectAddress: net.IPv4(10, 0, 0, 9), tokens: []string{"45"}, dataCenter: "remote", rack: "a"},
+		{hostId: "9", connectAddress: net.IPv4(10, 0, 0, 10), tokens: []string{"50"}, dataCenter: "remote", rack: "b"},
+		{hostId: "10", connectAddress: net.IPv4(10, 0, 0, 11), tokens: []string{"55"}, dataCenter: "local", rack: "a"},
+		{hostId: "11", connectAddress: net.IPv4(10, 0, 0, 12), tokens: []string{"60"}, dataCenter: "local", rack: "b"},
+	}
+	for _, host := range hosts {
+		policy.AddHost(host)
+		policyWithFallback.AddHost(host)
+	}
+
+	// the token ring is not setup without the partitioner, but the fallback
+	// should work
+	if actual := policy.Pick(nil)(); actual == nil {
+		t.Fatal("expected to get host from fallback got nil")
+	}
+
+	query.RoutingKey([]byte("30"))
+	if actual := policy.Pick(query)(); actual == nil {
+		t.Fatal("expected to get host from fallback got nil")
+	}
+
+	policy.SetPartitioner("OrderedPartitioner")
+	policyWithFallback.SetPartitioner("OrderedPartitioner")
+
+	policyInternal.getKeyspaceMetadata = func(keyspaceName string) (*KeyspaceMetadata, error) {
+		if keyspaceName != keyspace {
+			return nil, fmt.Errorf("unknown keyspace: %s", keyspaceName)
+		}
+		return &KeyspaceMetadata{
+			Name:          keyspace,
+			StrategyClass: "NetworkTopologyStrategy",
+			StrategyOptions: map[string]interface{}{
+				"class":  "NetworkTopologyStrategy",
+				"local":  2,
+				"remote": 2,
+			},
+		}, nil
+	}
+	policyWithFallbackInternal.getKeyspaceMetadata = policyInternal.getKeyspaceMetadata
+	policy.KeyspaceChanged(KeyspaceUpdateEvent{Keyspace: "myKeyspace"})
+	policyWithFallback.KeyspaceChanged(KeyspaceUpdateEvent{Keyspace: "myKeyspace"})
+
+	// The NetworkTopologyStrategy above should generate the following replicas.
+	// It's handy to have as reference here.
+	assertDeepEqual(t, "replicas", map[string]tokenRingReplicas{
+		"myKeyspace": {
+			{orderedToken("05"), []*HostInfo{hosts[0], hosts[1], hosts[2], hosts[3]}},
+			{orderedToken("10"), []*HostInfo{hosts[1], hosts[2], hosts[3], hosts[4]}},
+			{orderedToken("15"), []*HostInfo{hosts[2], hosts[3], hosts[4], hosts[5]}},
+			{orderedToken("20"), []*HostInfo{hosts[3], hosts[4], hosts[5], hosts[6]}},
+			{orderedToken("25"), []*HostInfo{hosts[4], hosts[5], hosts[6], hosts[7]}},
+			{orderedToken("30"), []*HostInfo{hosts[5], hosts[6], hosts[7], hosts[8]}},
+			{orderedToken("35"), []*HostInfo{hosts[6], hosts[7], hosts[8], hosts[9]}},
+			{orderedToken("40"), []*HostInfo{hosts[7], hosts[8], hosts[9], hosts[10]}},
+			{orderedToken("45"), []*HostInfo{hosts[8], hosts[9], hosts[10], hosts[11]}},
+			{orderedToken("50"), []*HostInfo{hosts[9], hosts[10], hosts[11], hosts[0]}},
+			{orderedToken("55"), []*HostInfo{hosts[10], hosts[11], hosts[0], hosts[1]}},
+			{orderedToken("60"), []*HostInfo{hosts[11], hosts[0], hosts[1], hosts[2]}},
+		},
+	}, policyInternal.getMetadataReadOnly().replicas)
+
+	query.RoutingKey([]byte("23"))
+
+	// now the token ring is configured
+	// Test the policy with fallback
+	iter = policyWithFallback.Pick(query)
+
+	// first should be host with matching token from the local DC & rack
+	iterCheck(t, iter, "7")
+	// next should be host with matching token from local DC and other rack
+	iterCheck(t, iter, "6")
+	// next should be hosts with matching token from other DC, in any order
+	checkList(
+		t,
+		"did not return correct remote hosts",
+		[]string{iter().Info().hostId, iter().Info().hostId},
+		[]string{"4", "5"},
+	)
+	// then the local DC & rack that didn't match the token
+	checkList(
+		t,
+		"did not return correct non-matching rack hosts",
+		[]string{iter().Info().hostId, iter().Info().hostId},
+		[]string{"3", "11"},
+	)
+	// then the local DC & other rack that didn't match the token
+	checkList(
+		t,
+		"did not return correct non-matching DC hosts",
+		[]string{iter().Info().hostId, iter().Info().hostId},
+		[]string{"10", "2"},
+	)
+	// finally, the other DC that didn't match the token
+	checkList(
+		t,
+		"did not return correct non-matching remote hosts",
+		[]string{iter().Info().hostId, iter().Info().hostId, iter().Info().hostId, iter().Info().hostId},
+		[]string{"0", "1", "8", "9"},
+	)
+
+	// Test the policy without fallback
+	iter = policy.Pick(query)
+
+	// first should be host with matching token from the local DC & Rack
+	iterCheck(t, iter, "7")
+	// next should be the other two hosts from local DC & rack
+	checkList(
+		t,
+		"did not return correct rack+DC local hosts",
+		[]string{iter().Info().hostId, iter().Info().hostId},
+		[]string{"3", "11"},
+	)
+	// then the three hosts from the local DC but other rack
+	checkList(
+		t,
+		"did not return correct DC local hosts",
+		[]string{iter().Info().hostId, iter().Info().hostId, iter().Info().hostId},
+		[]string{"2", "6", "10"},
+	)
+	// then the 6 hosts from the other DC
+	checkList(
+		t,
+		"did not return correct remote hosts",
+		[]string{iter().Info().hostId, iter().Info().hostId, iter().Info().hostId},
+		[]string{"0", "1", "4", "5", "7", "8", "9"},
+	)
+}

@@ -642,7 +642,7 @@ func (t *tokenAwareHostPolicy) Pick(qry ExecutableQuery) NextHost {
 				k++
 
 				if k >= len(remote[j]) {
-				j++
+					j++
 					k = 0
 				}
 
@@ -897,6 +897,64 @@ func roundRobbin(shift int, hosts ...[]*HostInfo) NextHost {
 func (d *dcAwareRR) Pick(q ExecutableQuery) NextHost {
 	nextStartOffset := atomic.AddUint64(&d.lastUsedHostIdx, 1)
 	return roundRobbin(int(nextStartOffset), d.localHosts.get(), d.remoteHosts.get())
+}
+
+// RackAwareRoundRobinPolicy is a host selection policies which will prioritize and
+// return hosts which are in the local rack, before hosts in the local datacenter but
+// a different rack, before hosts in all other datercentres
+
+type rackAwareRR struct {
+	localDC         string
+	localRack       string
+	hosts           []cowHostList
+	lastUsedHostIdx uint64
+}
+
+func RackAwareRoundRobinPolicy(localDC string, localRack string) HostSelectionPolicy {
+	hosts := make([]cowHostList, 3)
+	return &rackAwareRR{localDC: localDC, localRack: localRack, hosts: hosts}
+}
+
+func (d *rackAwareRR) Init(*Session)                       {}
+func (d *rackAwareRR) KeyspaceChanged(KeyspaceUpdateEvent) {}
+func (d *rackAwareRR) SetPartitioner(p string)             {}
+
+func (d *rackAwareRR) MaxHostTier() uint {
+	return 2
+}
+
+func (d *rackAwareRR) HostTier(host *HostInfo) uint {
+	if host.DataCenter() == d.localDC {
+		if host.Rack() == d.localRack {
+			return 0
+		} else {
+			return 1
+		}
+	} else {
+		return 2
+	}
+}
+
+func (d *rackAwareRR) IsLocal(host *HostInfo) bool {
+	return d.HostTier(host) == 0
+}
+
+func (d *rackAwareRR) AddHost(host *HostInfo) {
+	dist := d.HostTier(host)
+	d.hosts[dist].add(host)
+}
+
+func (d *rackAwareRR) RemoveHost(host *HostInfo) {
+	dist := d.HostTier(host)
+	d.hosts[dist].remove(host.ConnectAddress())
+}
+
+func (d *rackAwareRR) HostUp(host *HostInfo)   { d.AddHost(host) }
+func (d *rackAwareRR) HostDown(host *HostInfo) { d.RemoveHost(host) }
+
+func (d *rackAwareRR) Pick(q ExecutableQuery) NextHost {
+	nextStartOffset := atomic.AddUint64(&d.lastUsedHostIdx, 1)
+	return roundRobbin(int(nextStartOffset), d.hosts[0].get(), d.hosts[1].get(), d.hosts[2].get())
 }
 
 // ReadyPolicy defines a policy for when a HostSelectionPolicy can be used. After
