@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added a RackAwareRoundRobinPolicy that attempts to keep client->server traffic in the same rack when possible.
+
 ### Changed
 
 - Supported versions of Go that we test against are now Go 1.18 and Go 1.19.
