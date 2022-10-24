@@ -641,9 +641,13 @@ func TestHostPolicy_RackAwareRR(t *testing.T) {
 
 	hosts := [...]*HostInfo{
 		{hostId: "0", connectAddress: net.ParseIP("10.0.0.1"), dataCenter: "local", rack: "a"},
-		{hostId: "1", connectAddress: net.ParseIP("10.0.0.2"), dataCenter: "local", rack: "b"},
-		{hostId: "2", connectAddress: net.ParseIP("10.0.0.3"), dataCenter: "remote", rack: "a"},
-		{hostId: "3", connectAddress: net.ParseIP("10.0.0.4"), dataCenter: "remote", rack: "b"},
+		{hostId: "1", connectAddress: net.ParseIP("10.0.0.2"), dataCenter: "local", rack: "a"},
+		{hostId: "2", connectAddress: net.ParseIP("10.0.0.3"), dataCenter: "local", rack: "b"},
+		{hostId: "3", connectAddress: net.ParseIP("10.0.0.4"), dataCenter: "local", rack: "b"},
+		{hostId: "4", connectAddress: net.ParseIP("10.0.0.5"), dataCenter: "remote", rack: "a"},
+		{hostId: "5", connectAddress: net.ParseIP("10.0.0.6"), dataCenter: "remote", rack: "a"},
+		{hostId: "6", connectAddress: net.ParseIP("10.0.0.7"), dataCenter: "remote", rack: "b"},
+		{hostId: "7", connectAddress: net.ParseIP("10.0.0.8"), dataCenter: "remote", rack: "b"},
 	}
 
 	hostsOut := make([]*HostInfo, 0, len(hosts))
@@ -661,12 +665,27 @@ func TestHostPolicy_RackAwareRR(t *testing.T) {
 		t.Fatalf("expected %d hosts got %d", len(hosts), len(hostsOut))
 	}
 
-	// Must start with host 1, then host 0
-	if hostsOut[0].hostId != "1" || hostsOut[1].hostId != "0" {
-		t.Fatalf("hosts in wrong order")
-	}
-	// Then 2 or 3 in either order
-	checkList(t, "hosts in wrong order", []string{hostsOut[2].hostId, hostsOut[3].hostId}, []string{"2", "3"})
+	// Must start with rack-local hosts
+	checkList(
+		t,
+		"did not return correct rack-local hosts",
+		[]string{hostsOut[0].hostId, hostsOut[1].hostId},
+		[]string{"3", "2"},
+	)
+	// Then dc-local hosts
+	checkList(
+		t,
+		"did not return correct rack-local hosts",
+		[]string{hostsOut[2].hostId, hostsOut[3].hostId},
+		[]string{"0", "1"},
+	)
+	// Then the remote hosts
+	checkList(
+		t,
+		"did not return correct rack-local hosts",
+		[]string{hostsOut[4].hostId, hostsOut[5].hostId, hostsOut[6].hostId, hostsOut[7].hostId},
+		[]string{"4", "5", "6", "7"},
+	)
 }
 
 // Tests of the token-aware host selection policy implementation with a
