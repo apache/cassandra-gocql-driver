@@ -241,7 +241,7 @@ func TestStartupTimeout(t *testing.T) {
 		t.Fatalf("Expected to receive no connections error - got '%s'", err)
 	}
 
-	if !strings.Contains(log.String(), "no response to connection startup within timeout") {
+	if !strings.Contains(log.String(), "no response to connection startup within timeout") && !strings.Contains(log.String(), "no response received from cassandra within timeout period") {
 		t.Fatalf("Expected to receive timeout log message  - got '%s'", log.String())
 	}
 
