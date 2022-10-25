@@ -29,6 +29,20 @@ type Token interface {
 	Less(Token) bool
 }
 
+//TokenRange represents a token range.
+//The start token is exclusive and the end token is inclusive.
+//If WrapsAround is true,
+type TokenRange struct {
+	Start Token
+	End   Token
+}
+
+//WrapsAround returns true if the token range wraps around the highest token value and back to the first token.
+//In that case, all token values greater than Start and all token values less than or equal to End are part of the range.
+func (r *TokenRange) WrapsAround() bool {
+	return !r.Start.Less(r.End)
+}
+
 // murmur3 partitioner and token
 type murmur3Partitioner struct{}
 type murmur3Token int64
@@ -129,7 +143,13 @@ func (ht hostToken) String() string {
 
 // TokenRing is a data structure for organizing the relationship between tokens and hosts
 type TokenRing interface {
+	//GetHostForToken returns the host to which a token belongs
 	GetHostForToken(token Token) (host *HostInfo, endToken Token)
+
+	//GetTokenRanges returns all token ranges in the ring.
+	//All tokens within a range belong to the same host. You can obtain the owner by calling
+	//GetHostForToken with the End token in the range.
+	GetTokenRanges() []TokenRange
 }
 
 // tokenRing is a data structure for organizing the relationship between tokens and hosts
@@ -207,6 +227,26 @@ func (t *tokenRing) String() string {
 	return string(buf.Bytes())
 }
 
+//GetTokenRanges returns all token ranges in the ring.
+//All tokens within a range belong to the same host. You can obtain the owner by calling
+//GetHostForToken with the End token in the range.
+func (t *tokenRing) GetTokenRanges() []TokenRange {
+	if len(t.tokens) == 0 {
+		return nil
+	}
+
+	ranges := make([]TokenRange, 0, len(t.tokens))
+	for i := 0; i+1 < len(t.tokens); i++ {
+		ranges = append(ranges, TokenRange{Start: t.tokens[i].token, End: t.tokens[i+1].token})
+	}
+
+	// wrap around to the first in the ring
+	ranges = append(ranges, TokenRange{Start: t.tokens[len(t.tokens)-1].token, End: t.tokens[0].token})
+
+	return ranges
+}
+
+//GetHostForToken returns the host to which a token belongs
 func (t *tokenRing) GetHostForToken(token Token) (host *HostInfo, endToken Token) {
 	if t == nil || len(t.tokens) == 0 {
 		return nil, nil
