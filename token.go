@@ -19,14 +19,14 @@ import (
 // a token partitioner
 type partitioner interface {
 	Name() string
-	Hash([]byte) token
-	ParseString(string) token
+	Hash([]byte) Token
+	ParseString(string) Token
 }
 
-// a token
-type token interface {
+// Token is a token
+type Token interface {
 	fmt.Stringer
-	Less(token) bool
+	Less(Token) bool
 }
 
 // murmur3 partitioner and token
@@ -37,13 +37,13 @@ func (p murmur3Partitioner) Name() string {
 	return "Murmur3Partitioner"
 }
 
-func (p murmur3Partitioner) Hash(partitionKey []byte) token {
+func (p murmur3Partitioner) Hash(partitionKey []byte) Token {
 	h1 := murmur.Murmur3H1(partitionKey)
 	return murmur3Token(h1)
 }
 
 // murmur3 little-endian, 128-bit hash, but returns only h1
-func (p murmur3Partitioner) ParseString(str string) token {
+func (p murmur3Partitioner) ParseString(str string) Token {
 	val, _ := strconv.ParseInt(str, 10, 64)
 	return murmur3Token(val)
 }
@@ -52,7 +52,7 @@ func (m murmur3Token) String() string {
 	return strconv.FormatInt(int64(m), 10)
 }
 
-func (m murmur3Token) Less(token token) bool {
+func (m murmur3Token) Less(token Token) bool {
 	return m < token.(murmur3Token)
 }
 
@@ -64,12 +64,12 @@ func (p orderedPartitioner) Name() string {
 	return "OrderedPartitioner"
 }
 
-func (p orderedPartitioner) Hash(partitionKey []byte) token {
-	// the partition key is the token
+func (p orderedPartitioner) Hash(partitionKey []byte) Token {
+	// the partition key is the Token
 	return orderedToken(partitionKey)
 }
 
-func (p orderedPartitioner) ParseString(str string) token {
+func (p orderedPartitioner) ParseString(str string) Token {
 	return orderedToken(str)
 }
 
@@ -77,7 +77,7 @@ func (o orderedToken) String() string {
 	return string(o)
 }
 
-func (o orderedToken) Less(token token) bool {
+func (o orderedToken) Less(token Token) bool {
 	return o < token.(orderedToken)
 }
 
@@ -92,7 +92,7 @@ func (r randomPartitioner) Name() string {
 // 2 ** 128
 var maxHashInt, _ = new(big.Int).SetString("340282366920938463463374607431768211456", 10)
 
-func (p randomPartitioner) Hash(partitionKey []byte) token {
+func (p randomPartitioner) Hash(partitionKey []byte) Token {
 	sum := md5.Sum(partitionKey)
 	val := new(big.Int)
 	val.SetBytes(sum[:])
@@ -104,7 +104,7 @@ func (p randomPartitioner) Hash(partitionKey []byte) token {
 	return (*randomToken)(val)
 }
 
-func (p randomPartitioner) ParseString(str string) token {
+func (p randomPartitioner) ParseString(str string) Token {
 	val := new(big.Int)
 	val.SetString(str, 10)
 	return (*randomToken)(val)
@@ -114,12 +114,12 @@ func (r *randomToken) String() string {
 	return (*big.Int)(r).String()
 }
 
-func (r *randomToken) Less(token token) bool {
+func (r *randomToken) Less(token Token) bool {
 	return -1 == (*big.Int)(r).Cmp((*big.Int)(token.(*randomToken)))
 }
 
 type hostToken struct {
-	token token
+	token Token
 	host  *HostInfo
 }
 
@@ -127,7 +127,12 @@ func (ht hostToken) String() string {
 	return fmt.Sprintf("{token=%v host=%v}", ht.token, ht.host.HostID())
 }
 
-// a data structure for organizing the relationship between tokens and hosts
+// TokenRing is a data structure for organizing the relationship between tokens and hosts
+type TokenRing interface {
+	GetHostForToken(token Token) (host *HostInfo, endToken Token)
+}
+
+// tokenRing is a data structure for organizing the relationship between tokens and hosts
 type tokenRing struct {
 	partitioner partitioner
 
@@ -202,7 +207,7 @@ func (t *tokenRing) String() string {
 	return string(buf.Bytes())
 }
 
-func (t *tokenRing) GetHostForToken(token token) (host *HostInfo, endToken token) {
+func (t *tokenRing) GetHostForToken(token Token) (host *HostInfo, endToken Token) {
 	if t == nil || len(t.tokens) == 0 {
 		return nil, nil
 	}

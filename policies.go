@@ -373,16 +373,6 @@ func TokenAwareHostPolicy(fallback HostSelectionPolicy, opts ...func(*tokenAware
 	return p
 }
 
-// clusterMeta holds metadata about cluster topology.
-// It is used inside atomic.Value and shallow copies are used when replacing it,
-// so fields should not be modified in-place. Instead, to modify a field a copy of the field should be made
-// and the pointer in clusterMeta updated to point to the new value.
-type clusterMeta struct {
-	// replicas is map[keyspace]map[token]hosts
-	replicas  map[string]tokenRingReplicas
-	tokenRing *tokenRing
-}
-
 type tokenAwareHostPolicy struct {
 	fallback            HostSelectionPolicy
 	getKeyspaceMetadata func(keyspace string) (*KeyspaceMetadata, error)
@@ -537,25 +527,6 @@ func (t *tokenAwareHostPolicy) getMetadataForUpdate() *clusterMeta {
 		*meta = *metaReadOnly
 	}
 	return meta
-}
-
-// resetTokenRing creates a new tokenRing.
-// It must be called with t.mu locked.
-func (m *clusterMeta) resetTokenRing(partitioner string, hosts []*HostInfo, logger StdLogger) {
-	if partitioner == "" {
-		// partitioner not yet set
-		return
-	}
-
-	// create a new token ring
-	tokenRing, err := newTokenRing(partitioner, hosts)
-	if err != nil {
-		logger.Printf("Unable to update the token ring due to error: %s", err)
-		return
-	}
-
-	// replace the token ring
-	m.tokenRing = tokenRing
 }
 
 func (t *tokenAwareHostPolicy) Pick(qry ExecutableQuery) NextHost {

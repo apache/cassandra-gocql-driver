@@ -133,9 +133,9 @@ func TestRandomToken(t *testing.T) {
 type intToken int
 
 func (i intToken) String() string        { return strconv.Itoa(int(i)) }
-func (i intToken) Less(token token) bool { return i < token.(intToken) }
+func (i intToken) Less(token Token) bool { return i < token.(intToken) }
 
-// Test of the token ring implementation based on example at the start of this
+// Test of the Token ring implementation based on example at the start of this
 // page of documentation:
 // http://www.datastax.com/docs/0.8/cluster_architecture/partitioning
 func TestTokenRing_Int(t *testing.T) {
