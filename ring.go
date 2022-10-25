@@ -126,18 +126,3 @@ func (r *ring) removeHost(hostID string) bool {
 	r.mu.Unlock()
 	return ok
 }
-
-type clusterMetadata struct {
-	mu          sync.RWMutex
-	partitioner string
-}
-
-func (c *clusterMetadata) setPartitioner(partitioner string) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	if c.partitioner != partitioner {
-		// TODO: update other things now
-		c.partitioner = partitioner
-	}
-}

@@ -126,7 +126,9 @@ func (s *Session) handleSchemaEvent(frames []frame) {
 
 func (s *Session) handleKeyspaceChange(keyspace, change string) {
 	s.control.awaitSchemaAgreement()
-	s.policy.KeyspaceChanged(KeyspaceUpdateEvent{Keyspace: keyspace, Change: change})
+	update := KeyspaceUpdateEvent{Keyspace: keyspace, Change: change}
+	s.metaMngr.keyspaceChanged(update)
+	s.policy.KeyspaceChanged(update)
 }
 
 func (s *Session) handleNodeEvent(frames []frame) {
@@ -242,6 +244,7 @@ func (s *Session) handleRemovedNode(ip net.IP, port int) {
 	host, ok := s.ring.getHostByIP(ip.String())
 	if ok {
 		hostID := host.HostID()
+		s.metaMngr.removeHost(host)
 		s.ring.removeHost(hostID)
 
 		host.setState(NodeDown)
@@ -280,6 +283,7 @@ func (s *Session) handleNodeUp(eventIp net.IP, eventPort int) {
 func (s *Session) startPoolFill(host *HostInfo) {
 	// we let the pool call handleNodeConnected to change the host state
 	s.pool.addHost(host)
+	s.metaMngr.addHost(host)
 	s.policy.AddHost(host)
 }
 

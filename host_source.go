@@ -696,7 +696,7 @@ func (r *ringDescriber) refreshRing() error {
 		r.session.removeHost(host)
 	}
 
-	r.session.metadata.setPartitioner(partitioner)
+	r.session.metaMngr.setPartitioner(partitioner)
 	r.session.policy.SetPartitioner(partitioner)
 	return nil
 }

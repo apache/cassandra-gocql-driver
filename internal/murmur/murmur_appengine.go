@@ -1,3 +1,4 @@
+//go:build appengine || s390x
 // +build appengine s390x
 
 package murmur
