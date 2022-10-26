@@ -8,6 +8,8 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"sort"
+	"strings"
 	"testing"
 	"time"
 
@@ -106,8 +108,8 @@ func TestHostPolicy_TokenAware_SimpleStrategy(t *testing.T) {
 	// now the token ring is configured
 	query.RoutingKey([]byte("20"))
 	iter = policy.Pick(query)
-	iterCheck(t, iter, "1")
-	iterCheck(t, iter, "2")
+	expectHosts(t, "hosts[0]", iter, "1")
+	expectHosts(t, "hosts[1]", iter, "2")
 }
 
 // Tests of the host pool host selection policy implementation
@@ -368,15 +370,34 @@ func TestDowngradingConsistencyRetryPolicy(t *testing.T) {
 	}
 }
 
-func iterCheck(t *testing.T, iter NextHost, hostID string) {
+// expectHosts makes sure that the next len(hostIDs) returned from iter is a permutation of hostIDs.
+func expectHosts(t *testing.T, msg string, iter NextHost, hostIDs ...string) {
 	t.Helper()
 
-	host := iter()
-	if host == nil || host.Info() == nil {
-		t.Fatalf("expected hostID %s got nil", hostID)
+	expectedHostIDs := make(map[string]struct{}, len(hostIDs))
+	for i := range hostIDs {
+		expectedHostIDs[hostIDs[i]] = struct{}{}
 	}
-	if host.Info().HostID() != hostID {
-		t.Fatalf("Expected peer %s but was %s", hostID, host.Info().HostID())
+
+	expectedStr := func() string {
+		keys := make([]string, 0, len(expectedHostIDs))
+		for k := range expectedHostIDs {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		return strings.Join(keys, ", ")
+	}
+
+	for len(expectedHostIDs) > 0 {
+		host := iter()
+		if host == nil || host.Info() == nil {
+			t.Fatalf("%s: expected hostID one of {%s}, but got nil", msg, expectedStr())
+		}
+		hostID := host.Info().HostID()
+		if _, ok := expectedHostIDs[hostID]; !ok {
+			t.Fatalf("%s: expected host ID one of {%s}, but got %s", msg, expectedStr(), hostID)
+		}
+		delete(expectedHostIDs, hostID)
 	}
 }
 
@@ -522,7 +543,7 @@ func TestHostPolicy_TokenAware(t *testing.T) {
 	query.RoutingKey([]byte("23"))
 	iter = policy.Pick(query)
 	// first should be host with matching token from the local DC
-	iterCheck(t, iter, "4")
+	expectHosts(t, "matching token from local DC", iter, "4")
 	// next are in non deterministic order
 }
 
@@ -611,13 +632,9 @@ func TestHostPolicy_TokenAware_NetworkStrategy(t *testing.T) {
 	query.RoutingKey([]byte("18"))
 	iter = policy.Pick(query)
 	// first should be hosts with matching token from the local DC
-	iterCheck(t, iter, "4")
-	iterCheck(t, iter, "7")
+	expectHosts(t, "matching token from local DC", iter, "4", "7")
 	// rest should be hosts with matching token from remote DCs
-	iterCheck(t, iter, "3")
-	iterCheck(t, iter, "5")
-	iterCheck(t, iter, "6")
-	iterCheck(t, iter, "8")
+	expectHosts(t, "matching token from remote DCs", iter, "3", "5", "6", "8")
 }
 
 // Check that each element of toCheck is in valid, and no element appears twice
@@ -795,62 +812,27 @@ func TestHostPolicy_TokenAware_RackAware(t *testing.T) {
 	iter = policyWithFallback.Pick(query)
 
 	// first should be host with matching token from the local DC & rack
-	iterCheck(t, iter, "7")
+	expectHosts(t, "matching token from local DC and local rack", iter, "7")
 	// next should be host with matching token from local DC and other rack
-	iterCheck(t, iter, "6")
+	expectHosts(t, "matching token from local DC and non-local rack", iter, "6")
 	// next should be hosts with matching token from other DC, in any order
-	checkList(
-		t,
-		"did not return correct remote hosts",
-		[]string{iter().Info().hostId, iter().Info().hostId},
-		[]string{"4", "5"},
-	)
+	expectHosts(t, "matching token from non-local DC", iter, "4", "5")
 	// then the local DC & rack that didn't match the token
-	checkList(
-		t,
-		"did not return correct non-matching rack hosts",
-		[]string{iter().Info().hostId, iter().Info().hostId},
-		[]string{"3", "11"},
-	)
+	expectHosts(t, "non-matching token from local DC and local rack", iter, "3", "11")
 	// then the local DC & other rack that didn't match the token
-	checkList(
-		t,
-		"did not return correct non-matching DC hosts",
-		[]string{iter().Info().hostId, iter().Info().hostId},
-		[]string{"10", "2"},
-	)
+	expectHosts(t, "non-matching token from local DC and non-local rack", iter, "2", "10")
 	// finally, the other DC that didn't match the token
-	checkList(
-		t,
-		"did not return correct non-matching remote hosts",
-		[]string{iter().Info().hostId, iter().Info().hostId, iter().Info().hostId, iter().Info().hostId},
-		[]string{"0", "1", "8", "9"},
-	)
+	expectHosts(t, "non-matching token from non-local DC", iter, "0", "1", "8", "9")
 
 	// Test the policy without fallback
 	iter = policy.Pick(query)
 
 	// first should be host with matching token from the local DC & Rack
-	iterCheck(t, iter, "7")
+	expectHosts(t, "matching token from local DC and local rack", iter, "7")
 	// next should be the other two hosts from local DC & rack
-	checkList(
-		t,
-		"did not return correct rack+DC local hosts",
-		[]string{iter().Info().hostId, iter().Info().hostId},
-		[]string{"3", "11"},
-	)
+	expectHosts(t, "non-matching token local DC and local rack", iter, "3", "11")
 	// then the three hosts from the local DC but other rack
-	checkList(
-		t,
-		"did not return correct DC local hosts",
-		[]string{iter().Info().hostId, iter().Info().hostId, iter().Info().hostId},
-		[]string{"2", "6", "10"},
-	)
+	expectHosts(t, "local DC, non-local rack", iter, "2", "6", "10")
 	// then the 6 hosts from the other DC
-	checkList(
-		t,
-		"did not return correct remote hosts",
-		[]string{iter().Info().hostId, iter().Info().hostId, iter().Info().hostId},
-		[]string{"0", "1", "4", "5", "7", "8", "9"},
-	)
+	expectHosts(t, "non-local DC", iter, "0", "1", "4", "5", "8", "9")
 }
