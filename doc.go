@@ -115,6 +115,15 @@
 //
 //	session.Query("select value from mytable where pk1 = ? AND pk2 = ?", "abc", "def")
 //
+// # Rack-level awareness
+//
+// The DCAwareRoundRobinPolicy can be replaced with RackAwareRoundRobinPolicy, which takes two parameters, datacenter and rack.
+//
+// Instead of dividing hosts with two tiers (local datacenter and remote datacenters) it divides hosts into three
+// (the local rack, the rest of the local datacenter, and everything else).
+//
+// RackAwareRoundRobinPolicy can be combined with TokenAwareHostPolicy in the same way as DCAwareRoundRobinPolicy.
+//
 // # Executing queries
 //
 // Create queries with Session.Query. Query values must not be reused between different executions and must not be
