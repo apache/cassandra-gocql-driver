@@ -31,7 +31,7 @@ func NewSniHostDialer(connConfig *ConnectionConfig, dialer gocql.Dialer) *SniHos
 func (s *SniHostDialer) DialHost(ctx context.Context, host *gocql.HostInfo) (*gocql.DialedHost, error) {
 	hostID := host.HostID()
 	if len(hostID) == 0 {
-		return s.dialInitialContactPoint(ctx, host)
+		return s.dialInitialContactPoint(ctx)
 	}
 
 	dcName := host.DataCenter()
@@ -77,7 +77,7 @@ func (s *SniHostDialer) DialHost(ctx context.Context, host *gocql.HostInfo) (*go
 	})
 }
 
-func (s *SniHostDialer) dialInitialContactPoint(ctx context.Context, host *gocql.HostInfo) (*gocql.DialedHost, error) {
+func (s *SniHostDialer) dialInitialContactPoint(ctx context.Context) (*gocql.DialedHost, error) {
 	insecureSkipVerify := false
 	for _, dc := range s.connConfig.Datacenters {
 		if dc.InsecureSkipTLSVerify {
@@ -96,8 +96,18 @@ func (s *SniHostDialer) dialInitialContactPoint(ctx context.Context, host *gocql
 		return nil, fmt.Errorf("can't get root CA from configuration: %w", err)
 	}
 
-	return s.connect(ctx, s.dialer, host.HostnameAndPort(), &tls.Config{
-		ServerName:         host.Hostname(),
+	dcConf, err := s.connConfig.GetCurrentDatacenterConfig()
+	if err != nil {
+		return nil, fmt.Errorf("can't get current datacenter config: %w", err)
+	}
+
+	serverName := dcConf.NodeDomain
+	if len(serverName) == 0 {
+		serverName = dcConf.Server
+	}
+
+	return s.connect(ctx, s.dialer, dcConf.Server, &tls.Config{
+		ServerName:         serverName,
 		RootCAs:            ca,
 		InsecureSkipVerify: insecureSkipVerify,
 		Certificates:       []tls.Certificate{*clientCertificate},
