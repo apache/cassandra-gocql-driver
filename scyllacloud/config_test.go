@@ -213,10 +213,252 @@ func TestCloudCluster(t *testing.T) {
 
 			cloudConfig, err := NewCloudCluster(path)
 			if !reflect.DeepEqual(test.expectedError, err) {
-				t.Errorf("expected error %q, got %q", test.expectedError, err)
+				t.Errorf("expected error %#v, got %#v", test.expectedError, err)
 			}
 			if test.verifyClusterConfig != nil {
 				test.verifyClusterConfig(t, cc, cloudConfig)
+			}
+		})
+	}
+}
+
+func TestConnectionConfig_GetCurrentContextConfig(t *testing.T) {
+	tt := []struct {
+		name            string
+		connConfig      *ConnectionConfig
+		expectedContext *Context
+		expectedError   error
+	}{
+		{
+			name: "empty current context",
+			connConfig: &ConnectionConfig{
+				CurrentContext: "",
+			},
+			expectedContext: nil,
+			expectedError:   fmt.Errorf("current context can't be empty"),
+		},
+		{
+			name: "not existing current context",
+			connConfig: &ConnectionConfig{
+				CurrentContext: "not-existing-context",
+			},
+			expectedContext: nil,
+			expectedError:   fmt.Errorf(`context "not-existing-context" does not exists`),
+		},
+		{
+			name: "context from current context is returned",
+			connConfig: &ConnectionConfig{
+				Contexts: map[string]*Context{
+					"default": {
+						AuthInfoName:   "admin",
+						DatacenterName: "us-east-1",
+					},
+				},
+				CurrentContext: "default",
+			},
+			expectedContext: &Context{
+				AuthInfoName:   "admin",
+				DatacenterName: "us-east-1",
+			},
+			expectedError: nil,
+		},
+	}
+
+	for i := range tt {
+		tc := tt[i]
+		t.Run(tc.name, func(t *testing.T) {
+			contextConf, err := tc.connConfig.GetCurrentContextConfig()
+			if !reflect.DeepEqual(tc.expectedError, err) {
+				t.Errorf("expected error %#v, got %#v", tc.expectedError, err)
+			}
+			if !reflect.DeepEqual(tc.expectedContext, contextConf) {
+				t.Errorf("expected context %#v, got %#v", tc.expectedContext, contextConf)
+			}
+		})
+	}
+}
+
+func TestConnectionConfig_GetCurrentAuthInfo(t *testing.T) {
+	tt := []struct {
+		name             string
+		connConfig       *ConnectionConfig
+		expectedAuthInfo *AuthInfo
+		expectedError    error
+	}{
+		{
+			name: "empty current context",
+			connConfig: &ConnectionConfig{
+				CurrentContext: "",
+			},
+			expectedAuthInfo: nil,
+			expectedError:    fmt.Errorf("can't get current context config: %w", fmt.Errorf("current context can't be empty")),
+		},
+		{
+			name: "not existing current context",
+			connConfig: &ConnectionConfig{
+				CurrentContext: "not-existing-context",
+			},
+			expectedAuthInfo: nil,
+			expectedError:    fmt.Errorf("can't get current context config: %w", fmt.Errorf(`context "not-existing-context" does not exists`)),
+		},
+		{
+			name: "empty auth info name in current context",
+			connConfig: &ConnectionConfig{
+				Contexts: map[string]*Context{
+					"default": {
+						AuthInfoName: "",
+					},
+				},
+				CurrentContext: "default",
+			},
+			expectedAuthInfo: nil,
+			expectedError:    fmt.Errorf("authInfo in current context can't be empty"),
+		},
+		{
+			name: "not existing auth info name in current context",
+			connConfig: &ConnectionConfig{
+				Contexts: map[string]*Context{
+					"default": {
+						AuthInfoName: "not-existing-auth-info",
+					},
+				},
+				CurrentContext: "default",
+			},
+			expectedAuthInfo: nil,
+			expectedError:    fmt.Errorf(`authInfo "not-existing-auth-info" does not exists`),
+		},
+		{
+			name: "auth info from current context is returned",
+			connConfig: &ConnectionConfig{
+				AuthInfos: map[string]*AuthInfo{
+					"admin": {
+						ClientCertificatePath: "client-cert-path",
+						ClientKeyPath:         "client-key-path",
+						Username:              "username",
+						Password:              "password",
+					},
+				},
+				Contexts: map[string]*Context{
+					"default": {
+						AuthInfoName: "admin",
+					},
+				},
+				CurrentContext: "default",
+			},
+			expectedAuthInfo: &AuthInfo{
+				ClientCertificatePath: "client-cert-path",
+				ClientKeyPath:         "client-key-path",
+				Username:              "username",
+				Password:              "password",
+			},
+			expectedError: nil,
+		},
+	}
+
+	for i := range tt {
+		tc := tt[i]
+		t.Run(tc.name, func(t *testing.T) {
+			ai, err := tc.connConfig.GetCurrentAuthInfo()
+			if !reflect.DeepEqual(tc.expectedError, err) {
+				t.Errorf("expected error %#v, got %#v", tc.expectedError, err)
+			}
+			if !reflect.DeepEqual(tc.expectedAuthInfo, ai) {
+				t.Errorf("expected authInfo %#v, got %#v", tc.expectedAuthInfo, ai)
+			}
+		})
+	}
+}
+
+func TestConnectionConfig_GetCurrentDatacenterConfig(t *testing.T) {
+	tt := []struct {
+		name               string
+		connConfig         *ConnectionConfig
+		expectedDatacenter *Datacenter
+		expectedError      error
+	}{
+		{
+			name: "empty current context",
+			connConfig: &ConnectionConfig{
+				CurrentContext: "",
+			},
+			expectedDatacenter: nil,
+			expectedError:      fmt.Errorf("can't get current context config: %w", fmt.Errorf("current context can't be empty")),
+		},
+		{
+			name: "not existing current context",
+			connConfig: &ConnectionConfig{
+				CurrentContext: "not-existing-context",
+			},
+			expectedDatacenter: nil,
+			expectedError:      fmt.Errorf("can't get current context config: %w", fmt.Errorf(`context "not-existing-context" does not exists`)),
+		},
+		{
+			name: "empty datacenter name in current context",
+			connConfig: &ConnectionConfig{
+				Contexts: map[string]*Context{
+					"default": {
+						DatacenterName: "",
+					},
+				},
+				CurrentContext: "default",
+			},
+			expectedDatacenter: nil,
+			expectedError:      fmt.Errorf("datacenterName in current context can't be empty"),
+		},
+		{
+			name: "not existing datacenter name in current context",
+			connConfig: &ConnectionConfig{
+				Contexts: map[string]*Context{
+					"default": {
+						DatacenterName: "not-existing-dc",
+					},
+				},
+				CurrentContext: "default",
+			},
+			expectedDatacenter: nil,
+			expectedError:      fmt.Errorf(`datacenter "not-existing-dc" does not exists`),
+		},
+		{
+			name: "datacenter from current context is returned",
+			connConfig: &ConnectionConfig{
+				Datacenters: map[string]*Datacenter{
+					"us-east-1": {
+						CertificateAuthorityPath: "path-to-ca-cert",
+						Server:                   "server",
+						TLSServerName:            "tls-server-name",
+						NodeDomain:               "node-domain",
+						InsecureSkipTLSVerify:    true,
+						ProxyURL:                 "proxy-url",
+					},
+				},
+				Contexts: map[string]*Context{
+					"default": {
+						DatacenterName: "us-east-1",
+					},
+				},
+				CurrentContext: "default",
+			},
+			expectedDatacenter: &Datacenter{
+				CertificateAuthorityPath: "path-to-ca-cert",
+				Server:                   "server",
+				TLSServerName:            "tls-server-name",
+				NodeDomain:               "node-domain",
+				InsecureSkipTLSVerify:    true,
+				ProxyURL:                 "proxy-url",
+			},
+			expectedError: nil,
+		},
+	}
+
+	for i := range tt {
+		tc := tt[i]
+		t.Run(tc.name, func(t *testing.T) {
+			dc, err := tc.connConfig.GetCurrentDatacenterConfig()
+			if !reflect.DeepEqual(tc.expectedError, err) {
+				t.Errorf("expected error %#v, got %#v", tc.expectedError, err)
+			}
+			if !reflect.DeepEqual(tc.expectedDatacenter, dc) {
+				t.Errorf("expected datacenter %v, got %v", tc.expectedDatacenter, dc)
 			}
 		})
 	}

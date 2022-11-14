@@ -170,17 +170,69 @@ func (cc *ConnectionConfig) getDataOrReadFile(data []byte, path string) ([]byte,
 	return data, nil
 }
 
+func (cc *ConnectionConfig) GetCurrentDatacenterConfig() (*Datacenter, error) {
+	contextConf, err := cc.GetCurrentContextConfig()
+	if err != nil {
+		return nil, fmt.Errorf("can't get current context config: %w", err)
+	}
+
+	if len(contextConf.DatacenterName) == 0 {
+		return nil, fmt.Errorf("datacenterName in current context can't be empty")
+	}
+
+	dcConf, ok := cc.Datacenters[contextConf.DatacenterName]
+	if !ok {
+		return nil, fmt.Errorf("datacenter %q does not exists", contextConf.DatacenterName)
+	}
+
+	return dcConf, nil
+}
+
+func (cc *ConnectionConfig) GetCurrentContextConfig() (*Context, error) {
+	if len(cc.CurrentContext) == 0 {
+		return nil, fmt.Errorf("current context can't be empty")
+	}
+
+	contextConf, ok := cc.Contexts[cc.CurrentContext]
+	if !ok {
+		return nil, fmt.Errorf("context %q does not exists", cc.CurrentContext)
+	}
+
+	return contextConf, nil
+}
+
+func (cc *ConnectionConfig) GetCurrentAuthInfo() (*AuthInfo, error) {
+	contextConf, err := cc.GetCurrentContextConfig()
+	if err != nil {
+		return nil, fmt.Errorf("can't get current context config: %w", err)
+	}
+
+	if len(contextConf.AuthInfoName) == 0 {
+		return nil, fmt.Errorf("authInfo in current context can't be empty")
+	}
+
+	authInfo, ok := cc.AuthInfos[contextConf.AuthInfoName]
+	if !ok {
+		return nil, fmt.Errorf("authInfo %q does not exists", contextConf.AuthInfoName)
+	}
+
+	return authInfo, nil
+}
+
 func (cc *ConnectionConfig) GetClientCertificate() (*tls.Certificate, error) {
-	confContext := cc.Contexts[cc.CurrentContext]
-	authInfo := cc.AuthInfos[confContext.AuthInfoName]
+	authInfo, err := cc.GetCurrentAuthInfo()
+	if err != nil {
+		return nil, fmt.Errorf("can't get current auth info: %w", err)
+	}
 
 	clientCert, err := cc.getDataOrReadFile(authInfo.ClientCertificateData, authInfo.ClientCertificatePath)
 	if err != nil {
 		return nil, fmt.Errorf("can't read client certificate: %w", err)
 	}
+
 	clientKey, err := cc.getDataOrReadFile(authInfo.ClientKeyData, authInfo.ClientKeyPath)
 	if err != nil {
-		return nil, fmt.Errorf("can't read client certificate: %w", err)
+		return nil, fmt.Errorf("can't read client key: %w", err)
 	}
 
 	cert, err := tls.X509KeyPair(clientCert, clientKey)
