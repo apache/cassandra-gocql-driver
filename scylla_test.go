@@ -1,11 +1,13 @@
 package gocql
 
 import (
+	"context"
 	"fmt"
 	"math"
 	"runtime"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/gocql/gocql/internal/streams"
 )
@@ -167,6 +169,9 @@ func TestScyllaRandomConnPIcker(t *testing.T) {
 	})
 
 	t.Run("async access of max iterations", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
 		s := &scyllaConnPicker{
 			nrShards:  4,
 			msbIgnore: 12,
@@ -175,26 +180,34 @@ func TestScyllaRandomConnPIcker(t *testing.T) {
 		}
 
 		var wg sync.WaitGroup
+		connCh := make(chan *Conn, 9)
 		for i := 0; i < 3; i++ {
 			wg.Add(1)
-			go pickLoop(t, s, 3, &wg)
+			go func() {
+				defer wg.Done()
+				for i := 0; i < 3; i++ {
+					select {
+					case connCh <- s.Pick(token(nil)):
+					case <-ctx.Done():
+					}
+				}
+			}()
 		}
 		wg.Wait()
+		close(connCh)
 
 		if s.pos != 8 {
 			t.Fatalf("expected position to be 8 | actual %d", s.pos)
 		}
-	})
-}
-
-func pickLoop(t *testing.T, s *scyllaConnPicker, c int, wg *sync.WaitGroup) {
-	t.Helper()
-	for i := 0; i < c; i++ {
-		if s.Pick(token(nil)) == nil {
-			t.Fatal("expected connection")
+		if len(connCh) != 9 {
+			t.Fatalf("expected 9 connection picks, got %d", len(connCh))
 		}
-	}
-	wg.Done()
+		for conn := range connCh {
+			if conn == nil {
+				t.Fatal("expected connection, got nil")
+			}
+		}
+	})
 }
 
 func TestScyllaLWTExtParsing(t *testing.T) {

@@ -24,10 +24,10 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-go-
 
-      - run: go vet
+      - run: go vet ./...
 
       - name: Run unit tests
-        run: go test -tags unit -race
+        run: go test -tags unit -race ./...
 
       - name: Install Docker compose
         env:
