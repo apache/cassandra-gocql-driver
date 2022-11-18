@@ -196,3 +196,28 @@ type RequestErrCASWriteUnknown struct {
 	Received    int
 	BlockFor    int
 }
+
+type OpType uint8
+
+const (
+	OpTypeRead  OpType = 0
+	OpTypeWrite OpType = 1
+)
+
+type RequestErrRateLimitReached struct {
+	errorFrame
+	OpType                OpType
+	RejectedByCoordinator bool
+}
+
+func (e *RequestErrRateLimitReached) String() string {
+	var opType string
+	if e.OpType == OpTypeRead {
+		opType = "Read"
+	} else if e.OpType == OpTypeWrite {
+		opType = "Write"
+	} else {
+		opType = "Other"
+	}
+	return fmt.Sprintf("[request_error_rate_limit_reached OpType=%s RejectedByCoordinator=%t]", opType, e.RejectedByCoordinator)
+}

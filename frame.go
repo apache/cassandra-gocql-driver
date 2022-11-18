@@ -369,7 +369,8 @@ type framer struct {
 
 	customPayload map[string][]byte
 
-	flagLWT int
+	flagLWT               int
+	rateLimitingErrorCode int
 }
 
 func newFramer(r io.Reader, w io.Writer, compressor Compressor, version byte) *framer {
@@ -423,6 +424,17 @@ func newFramerWithExts(r io.Reader, w io.Writer, compressor Compressor, version 
 			return f
 		}
 		f.flagLWT = castedExt.lwtOptMetaBitMask
+	}
+
+	if rateLimitErrorExt := findCQLProtoExtByName(cqlProtoExts, rateLimitError); rateLimitErrorExt != nil {
+		castedExt, ok := rateLimitErrorExt.(*rateLimitExt)
+		if !ok {
+			Logger.Println(
+				fmt.Errorf("Failed to cast CQL protocol extension identified by name %s to type %T",
+					rateLimitError, rateLimitExt{}))
+			return f
+		}
+		f.rateLimitingErrorCode = castedExt.rateLimitErrorCode
 	}
 
 	return f
@@ -699,7 +711,16 @@ func (f *framer) parseErrorFrame() frame {
 		// TODO(zariel): we should have some distinct types for these errors
 		return errD
 	default:
-		panic(fmt.Errorf("unknown error code: 0x%x", errD.code))
+		if f.rateLimitingErrorCode != 0 && code == f.rateLimitingErrorCode {
+			res := &RequestErrRateLimitReached{
+				errorFrame: errD,
+			}
+			res.OpType = OpType(f.readByte())
+			res.RejectedByCoordinator = f.readByte() != 0
+			return res
+		} else {
+			panic(fmt.Errorf("unknown error code: 0x%x", errD.code))
+		}
 	}
 }
 
