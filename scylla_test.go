@@ -210,6 +210,38 @@ func TestScyllaRandomConnPIcker(t *testing.T) {
 	})
 }
 
+func TestScyllaRateLimitingExtParsing(t *testing.T) {
+	t.Parallel()
+
+	t.Run("init framer without cql extensions", func(t *testing.T) {
+		t.Parallel()
+		// mock connection without cql extensions, expected to have the `rateLimitingErrorCode`
+		// field set to 0 (default, signifying no code)
+		conn := mockConn(0)
+		f := newFramerWithExts(conn, conn, conn.compressor, conn.version, conn.cqlProtoExts)
+		if f.rateLimitingErrorCode != 0 {
+			t.Error("expected to have rateLimitingErrorCode set to 0 (no code) after framer init")
+		}
+	})
+
+	const mockCode = 42
+	t.Run("init framer with cql extensions", func(t *testing.T) {
+		t.Parallel()
+		// create a mock connection, add `lwt` cql protocol extension to it,
+		// ensure that framer recognizes this extension and adjusts appropriately
+		conn := mockConn(0)
+		conn.cqlProtoExts = []cqlProtocolExtension{
+			&rateLimitExt{
+				rateLimitErrorCode: mockCode,
+			},
+		}
+		framerWithRateLimitExt := newFramerWithExts(conn, conn, conn.compressor, conn.version, conn.cqlProtoExts)
+		if framerWithRateLimitExt.rateLimitingErrorCode != mockCode {
+			t.Error("expected to have rateLimitingErrorCode set to mockCode after framer init")
+		}
+	})
+}
+
 func TestScyllaLWTExtParsing(t *testing.T) {
 	t.Parallel()
 

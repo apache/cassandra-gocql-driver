@@ -50,7 +50,57 @@ func findCQLProtoExtByName(exts []cqlProtocolExtension, name string) cqlProtocol
 // Each key identifies a single extension.
 const (
 	lwtAddMetadataMarkKey = "SCYLLA_LWT_ADD_METADATA_MARK"
+	rateLimitError        = "SCYLLA_RATE_LIMIT_ERROR"
 )
+
+// "Rate limit" CQL Protocol Extension.
+// This extension, if enabled (properly negotiated), allows Scylla server
+// to send a special kind of error.
+//
+// Implements cqlProtocolExtension interface.
+type rateLimitExt struct {
+	rateLimitErrorCode int
+}
+
+var _ cqlProtocolExtension = &rateLimitExt{}
+
+// Factory function to deserialize and create an `rateLimitExt` instance
+// from SUPPORTED message payload.
+func newRateLimitExt(supported map[string][]string) *rateLimitExt {
+	const rateLimitErrorCode = "ERROR_CODE"
+
+	if v, found := supported[rateLimitError]; found {
+		for i := range v {
+			splitVal := strings.Split(v[i], "=")
+			if splitVal[0] == rateLimitErrorCode {
+				var (
+					err       error
+					errorCode int
+				)
+				if errorCode, err = strconv.Atoi(splitVal[1]); err != nil {
+					if gocqlDebug {
+						Logger.Printf("scylla: failed to parse %s value %v: %s", rateLimitErrorCode, splitVal[1], err)
+						return nil
+					}
+				}
+				return &rateLimitExt{
+					rateLimitErrorCode: errorCode,
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func (ext *rateLimitExt) serialize() map[string]string {
+	return map[string]string{
+		rateLimitError: "",
+	}
+}
+
+func (ext *rateLimitExt) name() string {
+	return rateLimitError
+}
 
 // "LWT prepared statements metadata mark" CQL Protocol Extension.
 // This extension, if enabled (properly negotiated), allows Scylla server
@@ -186,6 +236,11 @@ func parseCQLProtocolExtensions(supported map[string][]string) []cqlProtocolExte
 	lwtExt := newLwtAddMetaMarkExt(supported)
 	if lwtExt != nil {
 		exts = append(exts, lwtExt)
+	}
+
+	rateLimitExt := newRateLimitExt(supported)
+	if rateLimitExt != nil {
+		exts = append(exts, rateLimitExt)
 	}
 
 	return exts
