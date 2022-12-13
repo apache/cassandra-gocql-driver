@@ -14,6 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.3.1] - 2022-12-13
 
+### Fixed
+
 - Panic in RackAwareRoundRobinPolicy caused by wrong alignment on 32-bit platforms. (#1666) 
 
 ## [1.3.0] - 2022-11-29
