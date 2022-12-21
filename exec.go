@@ -77,12 +77,32 @@ func NewSingleHostQueryExecutor(cfg *ClusterConfig) (e SingleHostQueryExecutor, 
 
 	// Create control connection to one of the hosts
 	e.control = createControlConn(e.session)
+
+	// shuffle endpoints so not all drivers will connect to the same initial
+	// node.
+	hosts = shuffleHosts(hosts)
+
+	conncfg := *e.control.session.connCfg
+	conncfg.disableCoalesce = true
+
 	var conn *Conn
-	if conn, err = e.control.shuffleDial(hosts); err != nil {
-		err = fmt.Errorf("connect: %w", err)
-		return
+
+	for _, host := range hosts {
+		conn, err = e.control.session.dial(e.control.session.ctx, host, &conncfg, e.control)
+		if err != nil {
+			e.control.session.logger.Printf("gocql: unable to dial control conn %v:%v: %v\n", host.ConnectAddress(), host.Port(), err)
+			continue
+		}
+		err = e.control.setupConn(conn)
+		if err == nil {
+			break
+		}
+		e.control.session.logger.Printf("gocql: unable setup control conn %v:%v: %v\n", host.ConnectAddress(), host.Port(), err)
+		conn.Close()
+		conn = nil
 	}
-	if err = e.control.setupConn(conn); err != nil {
+
+	if conn == nil {
 		err = fmt.Errorf("setup: %w", err)
 		return
 	}

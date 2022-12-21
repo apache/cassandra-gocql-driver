@@ -1,3 +1,4 @@
+//go:build all || integration
 // +build all integration
 
 package gocql
@@ -77,8 +78,8 @@ func TestRingDiscovery(t *testing.T) {
 	}
 }
 
-// TestHostFilter ensures that host filtering works even when we discover hosts
-func TestHostFilter(t *testing.T) {
+// TestHostFilterDiscovery ensures that host filtering works even when we discover hosts
+func TestHostFilterDiscovery(t *testing.T) {
 	clusterHosts := getClusterHosts()
 	if len(clusterHosts) < 2 {
 		t.Skip("skipping because we don't have 2 or more hosts")
@@ -98,7 +99,31 @@ func TestHostFilter(t *testing.T) {
 	session := createSessionFromCluster(cluster, t)
 	defer session.Close()
 
-	assertEqual(t, "len(rr.hosts.get()) != 0", len(clusterHosts)-1, len(rr.hosts.get()))
+	assertEqual(t, "len(clusterHosts)-1 != len(rr.hosts.get())", len(clusterHosts)-1, len(rr.hosts.get()))
+}
+
+// TestHostFilterInitial ensures that host filtering works for the initial
+// connection including the control connection
+func TestHostFilterInitial(t *testing.T) {
+	clusterHosts := getClusterHosts()
+	if len(clusterHosts) < 2 {
+		t.Skip("skipping because we don't have 2 or more hosts")
+	}
+	cluster := createCluster()
+	rr := RoundRobinHostPolicy().(*roundRobinHostPolicy)
+	cluster.PoolConfig.HostSelectionPolicy = rr
+	// we'll filter out the second host
+	filtered := clusterHosts[1]
+	cluster.HostFilter = HostFilterFunc(func(host *HostInfo) bool {
+		if host.ConnectAddress().String() == filtered {
+			return false
+		}
+		return true
+	})
+	session := createSessionFromCluster(cluster, t)
+	defer session.Close()
+
+	assertEqual(t, "len(clusterHosts)-1 != len(rr.hosts.get())", len(clusterHosts)-1, len(rr.hosts.get()))
 }
 
 func TestWriteFailure(t *testing.T) {

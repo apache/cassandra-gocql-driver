@@ -37,7 +37,7 @@ func BenchmarkParseRowsFrame(b *testing.B) {
 				op:      opResult,
 				length:  len(data),
 			},
-			rbuf: data,
+			buf: data,
 		}
 
 		_, err = framer.parseFrame()

@@ -1,3 +1,4 @@
+//go:build all || cassandra
 // +build all cassandra
 
 package gocql

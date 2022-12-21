@@ -39,12 +39,12 @@ func ExampleSession_MapExecuteBatchCAS() {
 	executeBatch := func(ck2Version int) {
 		b := session.NewBatch(gocql.LoggedBatch)
 		b.Entries = append(b.Entries, gocql.BatchEntry{
-			Stmt:       "UPDATE my_lwt_batch_table SET value=? WHERE pk=? AND ck=? IF version=?",
-			Args:       []interface{}{"b", "pk1", "ck1", 1},
+			Stmt: "UPDATE my_lwt_batch_table SET value=? WHERE pk=? AND ck=? IF version=?",
+			Args: []interface{}{"b", "pk1", "ck1", 1},
 		})
 		b.Entries = append(b.Entries, gocql.BatchEntry{
-			Stmt:       "UPDATE my_lwt_batch_table SET value=? WHERE pk=? AND ck=? IF version=?",
-			Args:       []interface{}{"B", "pk1", "ck2", ck2Version},
+			Stmt: "UPDATE my_lwt_batch_table SET value=? WHERE pk=? AND ck=? IF version=?",
+			Args: []interface{}{"B", "pk1", "ck2", ck2Version},
 		})
 		m := make(map[string]interface{})
 		applied, iter, err := session.MapExecuteBatchCAS(b.WithContext(ctx), m)

@@ -55,7 +55,7 @@ func TestPlacementStrategy_NetworkStrategy(t *testing.T) {
 		hostsPerDC = 5
 	)
 
-	tests := []struct{
+	tests := []struct {
 		name                   string
 		strat                  *networkTopology
 		expectedReplicaMapSize int
@@ -69,7 +69,7 @@ func TestPlacementStrategy_NetworkStrategy(t *testing.T) {
 					"dc3": 3,
 				},
 			},
-			expectedReplicaMapSize: hostsPerDC*totalDCs,
+			expectedReplicaMapSize: hostsPerDC * totalDCs,
 		},
 		{
 			name: "missing",
@@ -79,7 +79,7 @@ func TestPlacementStrategy_NetworkStrategy(t *testing.T) {
 					"dc3": 3,
 				},
 			},
-			expectedReplicaMapSize: hostsPerDC*2,
+			expectedReplicaMapSize: hostsPerDC * 2,
 		},
 		{
 			name: "zero",
@@ -90,7 +90,7 @@ func TestPlacementStrategy_NetworkStrategy(t *testing.T) {
 					"dc3": 3,
 				},
 			},
-			expectedReplicaMapSize: hostsPerDC*2,
+			expectedReplicaMapSize: hostsPerDC * 2,
 		},
 	}
 

@@ -26,8 +26,6 @@ type ring struct {
 }
 
 func (r *ring) rrHost() *HostInfo {
-	// TODO: should we filter hosts that get used here? These hosts will be used
-	// for the control connection, should we also provide an iterator?
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	if len(r.hostList) == 0 {

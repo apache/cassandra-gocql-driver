@@ -241,7 +241,7 @@ func TestStartupTimeout(t *testing.T) {
 		t.Fatalf("Expected to receive no connections error - got '%s'", err)
 	}
 
-	if !strings.Contains(log.String(), "no response to connection startup within timeout") {
+	if !strings.Contains(log.String(), "no response to connection startup within timeout") && !strings.Contains(log.String(), "no response received from cassandra within timeout period") {
 		t.Fatalf("Expected to receive timeout log message  - got '%s'", log.String())
 	}
 
@@ -669,11 +669,14 @@ func TestStream0(t *testing.T) {
 	const expErr = "gocql: received unexpected frame on stream 0"
 
 	var buf bytes.Buffer
-	f := newFramer(nil, &buf, nil, protoVersion4)
+	f := newFramer(nil, protoVersion4)
 	f.writeHeader(0, opResult, 0)
 	f.writeInt(resultKindVoid)
-	f.wbuf[0] |= 0x80
-	if err := f.finishWrite(); err != nil {
+	f.buf[0] |= 0x80
+	if err := f.finish(); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.writeTo(&buf); err != nil {
 		t.Fatal(err)
 	}
 
@@ -834,43 +837,44 @@ func TestWriteCoalescing(t *testing.T) {
 			t.Errorf("unexpected read error: %v", err)
 		}
 	}()
+	enqueued := make(chan struct{})
+	resetTimer := make(chan struct{})
 	w := &writeCoalescer{
+		writeCh: make(chan writeRequest),
 		c:       client,
-		writeCh: make(chan struct{}),
-		cond:    sync.NewCond(&sync.Mutex{}),
 		quit:    ctx.Done(),
-		running: true,
+		timeout: 500 * time.Millisecond,
+		testEnqueuedHook: func() {
+			enqueued <- struct{}{}
+		},
+		testFlushedHook: func() {
+			client.Close()
+		},
 	}
+	timerC := make(chan time.Time, 1)
+	go func() {
+		w.writeFlusherImpl(timerC, func() { resetTimer <- struct{}{} })
+	}()
 
 	go func() {
-		if _, err := w.Write([]byte("one")); err != nil {
+		if _, err := w.writeContext(context.Background(), []byte("one")); err != nil {
 			t.Error(err)
 		}
 	}()
 
 	go func() {
-		if _, err := w.Write([]byte("two")); err != nil {
+		if _, err := w.writeContext(context.Background(), []byte("two")); err != nil {
 			t.Error(err)
 		}
 	}()
 
-	bufMutex.Lock()
-	if buf.Len() != 0 {
-		t.Fatalf("expected buffer to be empty have: %v", buf.String())
-	}
-	bufMutex.Unlock()
+	<-enqueued
+	<-resetTimer
+	<-enqueued
 
-	for true {
-		w.cond.L.Lock()
-		if len(w.buffers) == 2 {
-			w.cond.L.Unlock()
-			break
-		}
-		w.cond.L.Unlock()
-	}
+	// flush
+	timerC <- time.Now()
 
-	w.flush()
-	client.Close()
 	<-done
 
 	if got := buf.String(); got != "onetwo" && got != "twoone" {
@@ -898,7 +902,7 @@ func TestWriteCoalescing_WriteAfterClose(t *testing.T) {
 	w := newWriteCoalescer(client, 0, 5*time.Millisecond, ctx.Done())
 
 	// ensure 1 write works
-	if _, err := w.Write([]byte("one")); err != nil {
+	if _, err := w.writeContext(context.Background(), []byte("one")); err != nil {
 		t.Fatal(err)
 	}
 
@@ -912,7 +916,7 @@ func TestWriteCoalescing_WriteAfterClose(t *testing.T) {
 	cancel()
 	client.Close() // close client conn too, since server won't see the answer anyway.
 
-	if _, err := w.Write([]byte("two")); err == nil {
+	if _, err := w.writeContext(context.Background(), []byte("two")); err == nil {
 		t.Fatal("expected to get error for write after closing")
 	} else if err != io.EOF {
 		t.Fatalf("expected to get EOF got %v", err)
@@ -1152,7 +1156,7 @@ func (srv *TestServer) serve() {
 					srv.onRecv(framer)
 				}
 
-				go srv.process(framer, exts)
+				go srv.process(conn, framer, exts)
 			}
 		}(conn, exts)
 	}
@@ -1190,12 +1194,13 @@ func (srv *TestServer) errorLocked(err interface{}) {
 	srv.t.Error(err)
 }
 
-func (srv *TestServer) process(f *framer, exts map[string][]string) {
-	head := f.header
+func (srv *TestServer) process(conn net.Conn, reqFrame *framer, exts map[string][]string) {
+	head := reqFrame.header
 	if head == nil {
 		srv.errorLocked("process frame with a nil header")
 		return
 	}
+	respFrame := newFramer(nil, reqFrame.proto)
 
 	switch head.op {
 	case opStartup:
@@ -1207,12 +1212,12 @@ func (srv *TestServer) process(f *framer, exts map[string][]string) {
 				return
 			}
 		}
-		f.writeHeader(0, opReady, head.stream)
+		respFrame.writeHeader(0, opReady, head.stream)
 	case opOptions:
-		f.writeHeader(0, opSupported, head.stream)
-		f.writeStringMultiMap(exts)
+		respFrame.writeHeader(0, opSupported, head.stream)
+		respFrame.writeStringMultiMap(exts)
 	case opQuery:
-		query := f.readLongString()
+		query := reqFrame.readLongString()
 		first := query
 		if n := strings.Index(query, " "); n > 0 {
 			first = first[:n]
@@ -1220,60 +1225,65 @@ func (srv *TestServer) process(f *framer, exts map[string][]string) {
 		switch strings.ToLower(first) {
 		case "kill":
 			atomic.AddInt64(&srv.nKillReq, 1)
-			f.writeHeader(0, opError, head.stream)
-			f.writeInt(0x1001)
-			f.writeString("query killed")
+			respFrame.writeHeader(0, opError, head.stream)
+			respFrame.writeInt(0x1001)
+			respFrame.writeString("query killed")
 		case "use":
-			f.writeInt(resultKindKeyspace)
-			f.writeString(strings.TrimSpace(query[3:]))
+			respFrame.writeInt(resultKindKeyspace)
+			respFrame.writeString(strings.TrimSpace(query[3:]))
 		case "void":
-			f.writeHeader(0, opResult, head.stream)
-			f.writeInt(resultKindVoid)
+			respFrame.writeHeader(0, opResult, head.stream)
+			respFrame.writeInt(resultKindVoid)
 		case "timeout":
 			<-srv.ctx.Done()
 			return
 		case "slow":
 			go func() {
-				f.writeHeader(0, opResult, head.stream)
-				f.writeInt(resultKindVoid)
-				f.wbuf[0] = srv.protocol | 0x80
+				respFrame.writeHeader(0, opResult, head.stream)
+				respFrame.writeInt(resultKindVoid)
+				respFrame.buf[0] = srv.protocol | 0x80
 				select {
 				case <-srv.ctx.Done():
 					return
 				case <-time.After(50 * time.Millisecond):
-					f.finishWrite()
+					respFrame.finish()
+					respFrame.writeTo(conn)
 				}
 			}()
 			return
 		case "speculative":
 			atomic.AddInt64(&srv.nKillReq, 1)
 			if atomic.LoadInt64(&srv.nKillReq) > 3 {
-				f.writeHeader(0, opResult, head.stream)
-				f.writeInt(resultKindVoid)
-				f.writeString("speculative query success on the node " + srv.Address)
+				respFrame.writeHeader(0, opResult, head.stream)
+				respFrame.writeInt(resultKindVoid)
+				respFrame.writeString("speculative query success on the node " + srv.Address)
 			} else {
-				f.writeHeader(0, opError, head.stream)
-				f.writeInt(0x1001)
-				f.writeString("speculative error")
+				respFrame.writeHeader(0, opError, head.stream)
+				respFrame.writeInt(0x1001)
+				respFrame.writeString("speculative error")
 				rand.Seed(time.Now().UnixNano())
 				<-time.After(time.Millisecond * 120)
 			}
 		default:
-			f.writeHeader(0, opResult, head.stream)
-			f.writeInt(resultKindVoid)
+			respFrame.writeHeader(0, opResult, head.stream)
+			respFrame.writeInt(resultKindVoid)
 		}
 	case opError:
-		f.writeHeader(0, opError, head.stream)
-		f.wbuf = append(f.wbuf, f.rbuf...)
+		respFrame.writeHeader(0, opError, head.stream)
+		respFrame.buf = append(respFrame.buf, reqFrame.buf...)
 	default:
-		f.writeHeader(0, opError, head.stream)
-		f.writeInt(0)
-		f.writeString("not supported")
+		respFrame.writeHeader(0, opError, head.stream)
+		respFrame.writeInt(0)
+		respFrame.writeString("not supported")
 	}
 
-	f.wbuf[0] = srv.protocol | 0x80
+	respFrame.buf[0] = srv.protocol | 0x80
 
-	if err := f.finishWrite(); err != nil {
+	if err := respFrame.finish(); err != nil {
+		srv.errorLocked(err)
+	}
+
+	if err := respFrame.writeTo(conn); err != nil {
 		srv.errorLocked(err)
 	}
 }
@@ -1284,9 +1294,9 @@ func (srv *TestServer) readFrame(conn net.Conn) (*framer, error) {
 	if err != nil {
 		return nil, err
 	}
-	framer := newFramer(conn, conn, nil, srv.protocol)
+	framer := newFramer(nil, srv.protocol)
 
-	err = framer.readFrame(&head)
+	err = framer.readFrame(conn, &head)
 	if err != nil {
 		return nil, err
 	}

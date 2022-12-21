@@ -5,6 +5,7 @@ package gocql
 
 import (
 	"bytes"
+	"encoding/binary"
 	"math"
 	"math/big"
 	"net"
@@ -458,8 +459,8 @@ var marshalTests = []struct {
 		},
 		bytes.Join([][]byte{
 			[]byte("\x00\x01\xFF\xFF"),
-			bytes.Repeat([]byte("X"), 65535)}, []byte("")),
-		[]string{strings.Repeat("X", 65535)},
+			bytes.Repeat([]byte("X"), math.MaxUint16)}, []byte("")),
+		[]string{strings.Repeat("X", math.MaxUint16)},
 		nil,
 		nil,
 	},
@@ -471,11 +472,11 @@ var marshalTests = []struct {
 		},
 		bytes.Join([][]byte{
 			[]byte("\x00\x01\xFF\xFF"),
-			bytes.Repeat([]byte("X"), 65535),
+			bytes.Repeat([]byte("X"), math.MaxUint16),
 			[]byte("\xFF\xFF"),
-			bytes.Repeat([]byte("Y"), 65535)}, []byte("")),
+			bytes.Repeat([]byte("Y"), math.MaxUint16)}, []byte("")),
 		map[string]string{
-			strings.Repeat("X", 65535): strings.Repeat("Y", 65535),
+			strings.Repeat("X", math.MaxUint16): strings.Repeat("Y", math.MaxUint16),
 		},
 		nil,
 		nil,
@@ -1487,12 +1488,12 @@ func TestMarshalVarint(t *testing.T) {
 	}
 }
 
-func equalStringSlice(leftList, rightList []string) bool {
+func equalStringPointerSlice(leftList, rightList []*string) bool {
 	if len(leftList) != len(rightList) {
 		return false
 	}
 	for index := range leftList {
-		if rightList[index] != leftList[index] {
+		if !reflect.DeepEqual(rightList[index], leftList[index]) {
 			return false
 		}
 	}
@@ -1500,42 +1501,105 @@ func equalStringSlice(leftList, rightList []string) bool {
 }
 
 func TestMarshalList(t *testing.T) {
-	typeInfo := CollectionType{
+	typeInfoV2 := CollectionType{
 		NativeType: NativeType{proto: 2, typ: TypeList},
 		Elem:       NativeType{proto: 2, typ: TypeVarchar},
 	}
+	typeInfoV3 := CollectionType{
+		NativeType: NativeType{proto: 3, typ: TypeList},
+		Elem:       NativeType{proto: 3, typ: TypeVarchar},
+	}
 
-	sourceLists := [][]string{
-		{"valueA"},
-		{"valueA", "valueB"},
-		{"valueB"},
+	type tc struct {
+		typeInfo CollectionType
+		input    []*string
+		expected []*string
+	}
+
+	valueA := "valueA"
+	valueB := "valueB"
+	valueEmpty := ""
+	testCases := []tc{
+		{
+			typeInfo: typeInfoV2,
+			input:    []*string{&valueA},
+			expected: []*string{&valueA},
+		},
+		{
+			typeInfo: typeInfoV2,
+			input:    []*string{&valueA, &valueB},
+			expected: []*string{&valueA, &valueB},
+		},
+		{
+			typeInfo: typeInfoV2,
+			input:    []*string{&valueA, &valueEmpty, &valueB},
+			expected: []*string{&valueA, &valueEmpty, &valueB},
+		},
+		{
+			typeInfo: typeInfoV2,
+			input:    []*string{&valueEmpty},
+			expected: []*string{&valueEmpty},
+		},
+		{
+			// nil values are marshalled to empty values for protocol < 3
+			typeInfo: typeInfoV2,
+			input:    []*string{nil},
+			expected: []*string{&valueEmpty},
+		},
+		{
+			typeInfo: typeInfoV2,
+			input:    []*string{&valueA, nil, &valueB},
+			expected: []*string{&valueA, &valueEmpty, &valueB},
+		},
+		{
+			typeInfo: typeInfoV3,
+			input:    []*string{&valueEmpty},
+			expected: []*string{&valueEmpty},
+		},
+		{
+			typeInfo: typeInfoV3,
+			input:    []*string{nil},
+			expected: []*string{nil},
+		},
+		{
+			typeInfo: typeInfoV3,
+			input:    []*string{&valueA, nil, &valueB},
+			expected: []*string{&valueA, nil, &valueB},
+		},
 	}
 
 	listDatas := [][]byte{}
-
-	for _, list := range sourceLists {
-		listData, marshalErr := Marshal(typeInfo, list)
+	for _, c := range testCases {
+		listData, marshalErr := Marshal(c.typeInfo, c.input)
 		if nil != marshalErr {
-			t.Errorf("Error marshal %+v of type %+v: %s", list, typeInfo, marshalErr)
+			t.Errorf("Error marshal %+v of type %+v: %s", c.input, c.typeInfo, marshalErr)
 		}
 		listDatas = append(listDatas, listData)
 	}
 
-	outputLists := [][]string{}
+	outputLists := [][]*string{}
 
-	var outputList []string
+	var outputList []*string
 
-	for _, listData := range listDatas {
-		if unmarshalErr := Unmarshal(typeInfo, listData, &outputList); nil != unmarshalErr {
+	for i, listData := range listDatas {
+		if unmarshalErr := Unmarshal(testCases[i].typeInfo, listData, &outputList); nil != unmarshalErr {
 			t.Error(unmarshalErr)
+		}
+		resultList := []interface{}{}
+		for i := range outputList {
+			if outputList[i] != nil {
+				resultList = append(resultList, *outputList[i])
+			} else {
+				resultList = append(resultList, nil)
+			}
 		}
 		outputLists = append(outputLists, outputList)
 	}
 
-	for index, sourceList := range sourceLists {
+	for index, c := range testCases {
 		outputList := outputLists[index]
-		if !equalStringSlice(sourceList, outputList) {
-			t.Errorf("Lists %+v not equal to lists %+v, but should", sourceList, outputList)
+		if !equalStringPointerSlice(c.expected, outputList) {
+			t.Errorf("Lists %+v not equal to lists %+v, but should", c.expected, outputList)
 		}
 	}
 }
@@ -1952,9 +2016,29 @@ func TestMarshalUDTMap(t *testing.T) {
 			"y": 2,
 			"z": 3,
 		}
-		me := MarshalError(`marshal missing map key "x"`)
-		if _, err := Marshal(typeInfo, value); err != me {
-			t.Errorf("got error %#v, want %#v", err, me)
+		expected := []byte("\xff\xff\xff\xff\x00\x00\x00\x04\x00\x00\x00\x02\x00\x00\x00\x04\x00\x00\x00\x03")
+
+		data, err := Marshal(typeInfo, value)
+		if err != nil {
+			t.Errorf("got error %#v", err)
+		}
+		if !bytes.Equal(data, expected) {
+			t.Errorf("got value %x", data)
+		}
+	})
+	t.Run("partially bound from the beginning", func(t *testing.T) {
+		value := map[string]interface{}{
+			"x": 1,
+			"y": 2,
+		}
+		expected := []byte("\x00\x00\x00\x04\x00\x00\x00\x01\x00\x00\x00\x04\x00\x00\x00\x02\xff\xff\xff\xff")
+
+		data, err := Marshal(typeInfo, value)
+		if err != nil {
+			t.Errorf("got error %#v", err)
+		}
+		if !bytes.Equal(data, expected) {
+			t.Errorf("got value %x", data)
 		}
 	})
 	t.Run("fully bound", func(t *testing.T) {
@@ -1970,7 +2054,76 @@ func TestMarshalUDTMap(t *testing.T) {
 			t.Errorf("got error %#v", err)
 		}
 		if !bytes.Equal(data, expected) {
-			t.Errorf("got error %x", data)
+			t.Errorf("got value %x", data)
+		}
+	})
+}
+
+func TestMarshalUDTStruct(t *testing.T) {
+	typeInfo := UDTTypeInfo{NativeType{proto: 3, typ: TypeUDT}, "", "xyz", []UDTField{
+		{Name: "x", Type: NativeType{proto: 3, typ: TypeInt}},
+		{Name: "y", Type: NativeType{proto: 3, typ: TypeInt}},
+		{Name: "z", Type: NativeType{proto: 3, typ: TypeInt}},
+	}}
+
+	type xyzStruct struct {
+		X int32 `cql:"x"`
+		Y int32 `cql:"y"`
+		Z int32 `cql:"z"`
+	}
+	type xyStruct struct {
+		X int32 `cql:"x"`
+		Y int32 `cql:"y"`
+	}
+	type yzStruct struct {
+		Y int32 `cql:"y"`
+		Z int32 `cql:"z"`
+	}
+
+	t.Run("partially bound", func(t *testing.T) {
+		value := yzStruct{
+			Y: 2,
+			Z: 3,
+		}
+		expected := []byte("\xff\xff\xff\xff\x00\x00\x00\x04\x00\x00\x00\x02\x00\x00\x00\x04\x00\x00\x00\x03")
+
+		data, err := Marshal(typeInfo, value)
+		if err != nil {
+			t.Errorf("got error %#v", err)
+		}
+		if !bytes.Equal(data, expected) {
+			t.Errorf("got value %x", data)
+		}
+	})
+	t.Run("partially bound from the beginning", func(t *testing.T) {
+		value := xyStruct{
+			X: 1,
+			Y: 2,
+		}
+		expected := []byte("\x00\x00\x00\x04\x00\x00\x00\x01\x00\x00\x00\x04\x00\x00\x00\x02\xff\xff\xff\xff")
+
+		data, err := Marshal(typeInfo, value)
+		if err != nil {
+			t.Errorf("got error %#v", err)
+		}
+		if !bytes.Equal(data, expected) {
+			t.Errorf("got value %x", data)
+		}
+	})
+	t.Run("fully bound", func(t *testing.T) {
+		value := xyzStruct{
+			X: 1,
+			Y: 2,
+			Z: 3,
+		}
+		expected := []byte("\x00\x00\x00\x04\x00\x00\x00\x01\x00\x00\x00\x04\x00\x00\x00\x02\x00\x00\x00\x04\x00\x00\x00\x03")
+
+		data, err := Marshal(typeInfo, value)
+		if err != nil {
+			t.Errorf("got error %#v", err)
+		}
+		if !bytes.Equal(data, expected) {
+			t.Errorf("got value %x", data)
 		}
 	})
 }
@@ -2241,4 +2394,53 @@ func BenchmarkUnmarshalUUID(b *testing.B) {
 			b.Fatal(err)
 		}
 	}
+}
+
+func TestUnmarshalUDT(t *testing.T) {
+	info := UDTTypeInfo{
+		NativeType: NativeType{proto: 4, typ: TypeUDT},
+		Name:       "myudt",
+		KeySpace:   "myks",
+		Elements: []UDTField{
+			{
+				Name: "first",
+				Type: NativeType{proto: 4, typ: TypeAscii},
+			},
+			{
+				Name: "second",
+				Type: NativeType{proto: 4, typ: TypeSmallInt},
+			},
+		},
+	}
+	data := bytesWithLength( // UDT
+		bytesWithLength([]byte("Hello")),    // first
+		bytesWithLength([]byte("\x00\x2a")), // second
+	)
+	value := map[string]interface{}{}
+	expectedErr := UnmarshalError("can not unmarshal into non-pointer map[string]interface {}")
+
+	if err := Unmarshal(info, data, value); err != expectedErr {
+		t.Errorf("(%v=>%T): %#v returned error %#v, want %#v.",
+			info, value, value, err, expectedErr)
+	}
+}
+
+// bytesWithLength concatenates all data slices and prepends the total length as uint32.
+// The length does not count the size of the uint32 used for writing the size.
+func bytesWithLength(data ...[]byte) []byte {
+	totalLen := 0
+	for i := range data {
+		totalLen += len(data[i])
+	}
+	if totalLen > math.MaxUint32 {
+		panic("total length overflows")
+	}
+	ret := make([]byte, totalLen+4)
+	binary.BigEndian.PutUint32(ret[:4], uint32(totalLen))
+	buf := ret[4:]
+	for i := range data {
+		n := copy(buf, data[i])
+		buf = buf[n:]
+	}
+	return ret
 }

@@ -45,7 +45,7 @@ func Example_set() {
 	scanner := session.Query(`SELECT id, value FROM sets`).Iter().Scanner()
 	for scanner.Next() {
 		var (
-			id int32
+			id  int32
 			val []string
 		)
 		err := scanner.Scan(&id, &val)

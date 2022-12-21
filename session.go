@@ -41,6 +41,7 @@ type Session struct {
 	batchObserver       BatchObserver
 	connectObserver     ConnectObserver
 	frameObserver       FrameHeaderObserver
+	streamObserver      StreamObserver
 	hostSource          *ringDescriber
 	stmtsLRU            *preparedLRU
 
@@ -169,6 +170,7 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 	s.batchObserver = cfg.BatchObserver
 	s.connectObserver = cfg.ConnectObserver
 	s.frameObserver = cfg.FrameHeaderObserver
+	s.streamObserver = cfg.StreamObserver
 
 	//Check the TLS Config before trying to connect to anything external
 	connCfg, err := connConfig(&s.cfg)
@@ -978,7 +980,7 @@ func (q Query) String() string {
 	return fmt.Sprintf("[query statement=%q values=%+v consistency=%s]", q.stmt, q.values, q.cons)
 }
 
-//Attempts returns the number of times the query was executed.
+// Attempts returns the number of times the query was executed.
 func (q *Query) Attempts() int {
 	return q.metrics.attempts()
 }
@@ -987,7 +989,7 @@ func (q *Query) AddAttempts(i int, host *HostInfo) {
 	q.metrics.attempt(i, 0, host, false)
 }
 
-//Latency returns the average amount of nanoseconds per attempt of the query.
+// Latency returns the average amount of nanoseconds per attempt of the query.
 func (q *Query) Latency() int64 {
 	return q.metrics.latency()
 }
@@ -1387,9 +1389,10 @@ func (q *Query) MapScanCAS(dest map[string]interface{}) (applied bool, err error
 // cannot be reused.
 //
 // Example:
-// 		qry := session.Query("SELECT * FROM my_table")
-// 		qry.Exec()
-// 		qry.Release()
+//
+//	qry := session.Query("SELECT * FROM my_table")
+//	qry.Exec()
+//	qry.Release()
 func (q *Query) Release() {
 	q.reset()
 	queryPool.Put(q)
@@ -1615,7 +1618,10 @@ func (iter *Iter) Scan(dest ...interface{}) bool {
 // custom QueryHandlers running in your C* cluster.
 // See https://datastax.github.io/java-driver/manual/custom_payloads/
 func (iter *Iter) GetCustomPayload() map[string][]byte {
-	return iter.framer.customPayload
+	if iter.framer != nil {
+		return iter.framer.customPayload
+	}
+	return nil
 }
 
 // Warnings returns any warnings generated if given in the response from Cassandra.
@@ -1782,7 +1788,7 @@ func (b *Batch) AddAttempts(i int, host *HostInfo) {
 	b.metrics.attempt(i, 0, host, false)
 }
 
-//Latency returns the average number of nanoseconds to execute a single attempt of the batch.
+// Latency returns the average number of nanoseconds to execute a single attempt of the batch.
 func (b *Batch) Latency() int64 {
 	return b.metrics.latency()
 }
@@ -2067,8 +2073,8 @@ func (r *routingKeyInfoLRU) Remove(key string) {
 	r.mu.Unlock()
 }
 
-//Max adjusts the maximum size of the cache and cleans up the oldest records if
-//the new max is lower than the previous value. Not concurrency safe.
+// Max adjusts the maximum size of the cache and cleans up the oldest records if
+// the new max is lower than the previous value. Not concurrency safe.
 func (r *routingKeyInfoLRU) Max(max int) {
 	r.mu.Lock()
 	for r.lru.Len() > max {

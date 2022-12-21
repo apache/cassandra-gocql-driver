@@ -9,7 +9,7 @@ import (
 
 type MyUDT struct {
 	FieldA string `cql:"field_a"`
-	FieldB int32 `cql:"field_b"`
+	FieldB int32  `cql:"field_b"`
 }
 
 // Example_userDefinedTypesStruct demonstrates how to work with user-defined types as structs.
