@@ -264,6 +264,9 @@ func (s *Session) handleNodeUp(eventIp net.IP, eventPort int) {
 
 	host, ok := s.ring.getHostByIP(eventIp.String())
 	if !ok {
+		if err := s.hostSource.refreshRing(); err != nil && gocqlDebug {
+			s.logger.Printf("gocql: Session.handleNodeUp: failed to refresh ring: %w\n", err.Error())
+		}
 		return
 	}
 
