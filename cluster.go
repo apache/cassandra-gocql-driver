@@ -51,14 +51,22 @@ type ClusterConfig struct {
 	// versions the protocol selected is not defined (ie, it can be any of the supported in the cluster)
 	ProtoVersion int
 
-	// Connection timeout (default: 600ms)
-	// ConnectTimeout is used to set up the default dialer and is ignored if Dialer or HostDialer is provided.
+	// Timeout limits the time spent waiting for a response from a server as well as time reading from a network
+	// connection.
+	// The timeout is counted since the beginning of a query.
+	// Default: 600ms
 	Timeout time.Duration
 
-	// Initial connection timeout, used during initial dial to server (default: 600ms)
+	// ConnectTimeout limits the time spent setting up a network connection.
+	// It is used to set the default dialer's connection timeout.
+	// ConnectTimeout is also used instead of Timeout for queries issued during connection setup.
+	// Default: 600ms
 	ConnectTimeout time.Duration
 
-	// Timeout for writing a query. Defaults to Timeout if not specified.
+	// WriteTimeout limits the amount of time spent writing data to a network connection.
+	// Counted from the start of each query attempt.
+	// Defaults to Timeout if not specified.
+	// Should be lower than or equal to Timeout.
 	WriteTimeout time.Duration
 
 	// Port used when dialing.
