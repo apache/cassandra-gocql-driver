@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Supported versions of Go that we test against are now Go 1.19 and Go 1.20.
+
 ### Fixed
 
 ## [1.3.1] - 2022-12-13
