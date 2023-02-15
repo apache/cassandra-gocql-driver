@@ -95,8 +95,12 @@ func TestHostPolicy_TokenAware_SimpleStrategy(t *testing.T) {
 	// now the token ring is configured
 	query.RoutingKey([]byte("20"))
 	iter = policy.Pick(query)
+	// first token-aware hosts
 	expectHosts(t, "hosts[0]", iter, "1")
 	expectHosts(t, "hosts[1]", iter, "2")
+	// then rest of the hosts
+	expectHosts(t, "rest", iter, "0", "3")
+	expectNoMoreHosts(t, iter)
 }
 
 // Tests of the host pool host selection policy implementation
@@ -392,6 +396,21 @@ func expectHosts(t *testing.T, msg string, iter NextHost, hostIDs ...string) {
 	}
 }
 
+func expectNoMoreHosts(t *testing.T, iter NextHost) {
+	t.Helper()
+	host := iter()
+	if host == nil {
+		// success
+		return
+	}
+	info := host.Info()
+	if info == nil {
+		t.Fatalf("expected no more hosts, but got host with nil Info()")
+		return
+	}
+	t.Fatalf("expected no more hosts, but got %s", info.HostID())
+}
+
 func TestHostPolicy_DCAwareRR(t *testing.T) {
 	p := DCAwareRoundRobinPolicy("local")
 
@@ -525,7 +544,9 @@ func TestHostPolicy_TokenAware(t *testing.T) {
 	iter = policy.Pick(query)
 	// first should be host with matching token from the local DC
 	expectHosts(t, "matching token from local DC", iter, "4")
-	// next are in non deterministic order
+	// next are in non-deterministic order
+	expectHosts(t, "rest", iter, "0", "1", "2", "3", "5", "6", "7", "8", "9", "10", "11")
+	expectNoMoreHosts(t, iter)
 }
 
 // Tests of the token-aware host selection policy implementation with a
@@ -602,22 +623,9 @@ func TestHostPolicy_TokenAware_NetworkStrategy(t *testing.T) {
 	expectHosts(t, "matching token from local DC", iter, "4", "7")
 	// rest should be hosts with matching token from remote DCs
 	expectHosts(t, "matching token from remote DCs", iter, "3", "5", "6", "8")
-}
-
-// Check that each element of toCheck is in valid, and no element appears twice
-func checkList(t *testing.T, msg string, toCheck []string, valid []string) {
-	data := make(map[string]bool)
-	for _, val := range valid {
-		data[val] = false
-	}
-
-	for _, val := range toCheck {
-		seen, exists := data[val]
-		if !exists || seen {
-			t.Fatal(msg)
-		}
-		data[val] = true
-	}
+	// followed by other hosts
+	expectHosts(t, "rest", iter, "0", "1", "2", "9", "10", "11")
+	expectNoMoreHosts(t, iter)
 }
 
 func TestHostPolicy_RackAwareRR(t *testing.T) {
@@ -634,42 +642,19 @@ func TestHostPolicy_RackAwareRR(t *testing.T) {
 		{hostId: "7", connectAddress: net.ParseIP("10.0.0.8"), dataCenter: "remote", rack: "b"},
 	}
 
-	hostsOut := make([]*HostInfo, 0, len(hosts))
-
 	for _, host := range hosts {
 		p.AddHost(host)
 	}
 
 	it := p.Pick(nil)
-	for h := it(); h != nil; h = it() {
-		hostsOut = append(hostsOut, h.Info())
-	}
-
-	if len(hostsOut) != len(hosts) {
-		t.Fatalf("expected %d hosts got %d", len(hosts), len(hostsOut))
-	}
 
 	// Must start with rack-local hosts
-	checkList(
-		t,
-		"did not return correct rack-local hosts",
-		[]string{hostsOut[0].hostId, hostsOut[1].hostId},
-		[]string{"3", "2"},
-	)
+	expectHosts(t, "rack-local hosts", it, "3", "2")
 	// Then dc-local hosts
-	checkList(
-		t,
-		"did not return correct rack-local hosts",
-		[]string{hostsOut[2].hostId, hostsOut[3].hostId},
-		[]string{"0", "1"},
-	)
+	expectHosts(t, "dc-local hosts", it, "0", "1")
 	// Then the remote hosts
-	checkList(
-		t,
-		"did not return correct rack-local hosts",
-		[]string{hostsOut[4].hostId, hostsOut[5].hostId, hostsOut[6].hostId, hostsOut[7].hostId},
-		[]string{"4", "5", "6", "7"},
-	)
+	expectHosts(t, "remote hosts", it, "4", "5", "6", "7")
+	expectNoMoreHosts(t, it)
 }
 
 // Tests of the token-aware host selection policy implementation with a
@@ -779,6 +764,7 @@ func TestHostPolicy_TokenAware_RackAware(t *testing.T) {
 	expectHosts(t, "non-matching token from local DC and non-local rack", iter, "2", "10")
 	// finally, the other DC that didn't match the token
 	expectHosts(t, "non-matching token from non-local DC", iter, "0", "1", "8", "9")
+	expectNoMoreHosts(t, iter)
 
 	// Test the policy without fallback
 	iter = policy.Pick(query)
@@ -791,4 +777,5 @@ func TestHostPolicy_TokenAware_RackAware(t *testing.T) {
 	expectHosts(t, "local DC, non-local rack", iter, "2", "6", "10")
 	// then the 6 hosts from the other DC
 	expectHosts(t, "non-local DC", iter, "0", "1", "4", "5", "8", "9")
+	expectNoMoreHosts(t, iter)
 }
