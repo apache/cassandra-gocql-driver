@@ -14,6 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Learning a new IP address for an existing node (identified by host ID) now triggers replacement of that host.
+  This fixes some Kubernetes reconnection failures. (#1682)
+
 ## [1.3.1] - 2022-12-13
 
 ### Fixed
