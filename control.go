@@ -98,7 +98,7 @@ func (c *controlConn) heartBeat() {
 	reconn:
 		// try to connect a bit faster
 		sleepTime = 1 * time.Second
-		c.reconnect(true)
+		c.reconnect()
 		continue
 	}
 }
@@ -335,7 +335,7 @@ func (c *controlConn) registerEvents(conn *Conn) error {
 	return nil
 }
 
-func (c *controlConn) reconnect(refreshring bool) {
+func (c *controlConn) reconnect() {
 	if atomic.LoadInt32(&c.state) == controlConnClosing {
 		return
 	}
@@ -381,9 +381,7 @@ func (c *controlConn) reconnect(refreshring bool) {
 		return
 	}
 
-	if refreshring {
-		c.session.hostSource.refreshRing()
-	}
+	c.session.hostSource.refreshRing()
 }
 
 func (c *controlConn) HandleError(conn *Conn, err error, closed bool) {
@@ -399,7 +397,7 @@ func (c *controlConn) HandleError(conn *Conn, err error, closed bool) {
 		return
 	}
 
-	c.reconnect(false)
+	c.reconnect()
 }
 
 func (c *controlConn) getConn() *connHost {
@@ -433,7 +431,7 @@ func (c *controlConn) withConnHost(fn func(*connHost) *Iter) *Iter {
 
 			connectAttempts++
 
-			c.reconnect(false)
+			c.reconnect()
 			continue
 		}
 
