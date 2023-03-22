@@ -194,34 +194,6 @@ func (s *Session) handleNodeEvent(frames []frame) {
 	}
 }
 
-func (s *Session) addNewNode(hostID UUID) {
-	// Get host info and apply any filters to the host
-	hostInfo, err := s.hostSource.getHostInfo(hostID)
-	if err != nil {
-		s.logger.Printf("gocql: events: unable to fetch host info for hostID: %q: %v\n", hostID, err)
-		return
-	} else if hostInfo == nil {
-		// ignore if it's null because we couldn't find it
-		return
-	}
-
-	if t := hostInfo.Version().nodeUpDelay(); t > 0 {
-		time.Sleep(t)
-	}
-
-	// should this handle token moving?
-	hostInfo = s.ring.addOrUpdate(hostInfo)
-
-	if !s.cfg.filterHost(hostInfo) {
-		s.startPoolFill(hostInfo)
-	}
-
-	if s.control != nil && !s.cfg.IgnorePeerAddr {
-		// TODO(zariel): debounce ring refresh
-		s.hostSource.refreshRing()
-	}
-}
-
 func (s *Session) handleNodeUp(eventIp net.IP, eventPort int) {
 	if gocqlDebug {
 		s.logger.Printf("gocql: Session.handleNodeUp: %s:%d\n", eventIp.String(), eventPort)
