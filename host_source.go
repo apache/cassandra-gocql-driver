@@ -401,6 +401,13 @@ func (h *HostInfo) HostnameAndPort() string {
 	return net.JoinHostPort(h.hostname, strconv.Itoa(h.port))
 }
 
+func (h *HostInfo) ConnectAddressAndPort() string {
+        h.mu.Lock()
+        defer h.mu.Unlock()
+        addr, _ := h.connectAddressLocked()
+        return net.JoinHostPort(addr.String(), strconv.Itoa(h.port))
+}
+
 func (h *HostInfo) String() string {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
