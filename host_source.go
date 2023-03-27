@@ -670,50 +670,6 @@ func (r *ringDescriber) GetHosts() ([]*HostInfo, string, error) {
 	return hosts, partitioner, nil
 }
 
-// Given an ip/port return HostInfo for the specified ip/port
-func (r *ringDescriber) getHostInfo(hostID UUID) (*HostInfo, error) {
-	var host *HostInfo
-	for _, table := range []string{"system.peers", "system.local"} {
-		iter := r.session.control.withConnHost(func(ch *connHost) *Iter {
-			if ch.host.HostID() == hostID.String() {
-				host = ch.host
-				return nil
-			}
-
-			if table == "system.peers" {
-				return ch.conn.querySystemPeers(context.TODO(), ch.host.version)
-			} else {
-				return ch.conn.query(context.TODO(), fmt.Sprintf("SELECT * FROM %s", table))
-			}
-		})
-
-		if iter != nil {
-			rows, err := iter.SliceMap()
-			if err != nil {
-				return nil, err
-			}
-
-			for _, row := range rows {
-				h, err := r.session.hostInfoFromMap(row, &HostInfo{port: r.session.cfg.Port})
-				if err != nil {
-					return nil, err
-				}
-
-				if h.HostID() == hostID.String() {
-					host = h
-					break
-				}
-			}
-		}
-	}
-
-	if host == nil {
-		return nil, errors.New("unable to fetch host info: invalid control connection")
-	}
-
-	return host, nil
-}
-
 func (r *ringDescriber) refreshRing() error {
 	// if we have 0 hosts this will return the previous list of hosts to
 	// attempt to reconnect to the cluster otherwise we would never find
