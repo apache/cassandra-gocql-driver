@@ -269,10 +269,13 @@ type connHost struct {
 
 func (c *controlConn) setupConn(conn *Conn) error {
 	// we need up-to-date host info for the filterHost call below
-	host, err := conn.localHostInfo(context.TODO())
+	iter := conn.querySystemLocal(context.TODO())
+	host, err := c.session.hostInfoFromIter(iter, conn.host.connectAddress, conn.conn.RemoteAddr().(*net.TCPAddr).Port)
 	if err != nil {
 		return err
 	}
+
+	host = c.session.ring.addOrUpdate(host)
 
 	if c.session.cfg.filterHost(host) {
 		return fmt.Errorf("host was filtered: %v", host.ConnectAddress())

@@ -559,12 +559,54 @@ func (s *Session) hostInfoFromMap(row map[string]interface{}, host *HostInfo) (*
 	return host, nil
 }
 
-// Ask the control node for host info on all it's known peers
-func (r *ringDescriber) getClusterPeerInfo() ([]*HostInfo, error) {
-	var hosts []*HostInfo
+func (s *Session) hostInfoFromIter(iter *Iter, connectAddress net.IP, defaultPort int) (*HostInfo, error) {
+	rows, err := iter.SliceMap()
+	if err != nil {
+		// TODO(zariel): make typed error
+		return nil, err
+	}
+
+	if len(rows) == 0 {
+		return nil, errors.New("query returned 0 rows")
+	}
+
+	host, err := s.hostInfoFromMap(rows[0], &HostInfo{connectAddress: connectAddress, port: defaultPort})
+	if err != nil {
+		return nil, err
+	}
+	return host, nil
+}
+
+// Ask the control node for the local host info
+func (r *ringDescriber) getLocalHostInfo() (*HostInfo, error) {
+	if r.session.control == nil {
+		return nil, errNoControl
+	}
+
 	iter := r.session.control.withConnHost(func(ch *connHost) *Iter {
-		hosts = append(hosts, ch.host)
-		return ch.conn.querySystemPeers(context.TODO(), ch.host.version)
+		return ch.conn.querySystemLocal(context.TODO())
+	})
+
+	if iter == nil {
+		return nil, errNoControl
+	}
+
+	host, err := r.session.hostInfoFromIter(iter, nil, r.session.cfg.Port)
+	if err != nil {
+		return nil, fmt.Errorf("could not retrieve local host info: %w", err)
+	}
+	return host, nil
+}
+
+// Ask the control node for host info on all it's known peers
+func (r *ringDescriber) getClusterPeerInfo(localHost *HostInfo) ([]*HostInfo, error) {
+	if r.session.control == nil {
+		return nil, errNoControl
+	}
+
+	var peers []*HostInfo
+	iter := r.session.control.withConnHost(func(ch *connHost) *Iter {
+		return ch.conn.querySystemPeers(context.TODO(), localHost.version)
 	})
 
 	if iter == nil {
@@ -589,10 +631,10 @@ func (r *ringDescriber) getClusterPeerInfo() ([]*HostInfo, error) {
 			continue
 		}
 
-		hosts = append(hosts, host)
+		peers = append(peers, host)
 	}
 
-	return hosts, nil
+	return peers, nil
 }
 
 // Return true if the host is a valid peer
@@ -609,11 +651,17 @@ func (r *ringDescriber) GetHosts() ([]*HostInfo, string, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	hosts, err := r.getClusterPeerInfo()
+	localHost, err := r.getLocalHostInfo()
 	if err != nil {
 		return r.prevHosts, r.prevPartitioner, err
 	}
 
+	peerHosts, err := r.getClusterPeerInfo(localHost)
+	if err != nil {
+		return r.prevHosts, r.prevPartitioner, err
+	}
+
+	hosts := append([]*HostInfo{localHost}, peerHosts...)
 	var partitioner string
 	if len(hosts) > 0 {
 		partitioner = hosts[0].Partitioner()
