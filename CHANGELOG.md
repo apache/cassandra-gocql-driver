@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Deadlock in Session.Close(). (#1688)
+- Race between Query.Release() and speculative executions (#1684)
 
 ## [1.3.2] - 2023-03-27
 
@@ -33,7 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Panic in RackAwareRoundRobinPolicy caused by wrong alignment on 32-bit platforms. (#1666) 
+- Panic in RackAwareRoundRobinPolicy caused by wrong alignment on 32-bit platforms. (#1666)
 
 ## [1.3.0] - 2022-11-29
 
@@ -100,7 +101,7 @@ This release improves support for connecting through proxies and some improvemen
 - Fixed panic when trying to unmarshal unknown/custom CQL type.
 
 ## Deprecated
-- TypeInfo.New, please use TypeInfo.NewWithError instead. 
+- TypeInfo.New, please use TypeInfo.NewWithError instead.
 
 ## [1.0.0] - 2022-03-04
 ### Changed
