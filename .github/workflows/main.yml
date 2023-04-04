@@ -10,7 +10,7 @@ on:
 jobs:
   build:
     name: Unit tests
-    runs-on: ubuntu-18.04
+    runs-on: ubuntu-latest
     strategy:
       matrix:
         go: [ '1.19', '1.20' ]
@@ -30,11 +30,11 @@ jobs:
       - name: Run unit tests
         run: go test -tags unit -race
   integration-cassandra:
-    timeout-minutes: 10
+    timeout-minutes: 15
     needs:
       - build
     name: Integration Tests
-    runs-on: ubuntu-18.04
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
@@ -103,11 +103,11 @@ jobs:
           export JVM_EXTRA_OPTS="${{env.JVM_EXTRA_OPTS}}"
           go test -tags "${{ matrix.tags }} gocql_debug" -timeout=5m -race ${{ env.args }}
   integration-auth-cassandra:
-    timeout-minutes: 10
+    timeout-minutes: 15
     needs:
       - build
     name: Integration Tests with auth
-    runs-on: ubuntu-18.04
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
