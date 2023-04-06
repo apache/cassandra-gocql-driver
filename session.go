@@ -73,8 +73,10 @@ type Session struct {
 
 	// sessionStateMu protects isClosed and isInitialized.
 	sessionStateMu sync.RWMutex
-	// isClosed is true once Session.Close is called.
+	// isClosed is true once Session.Close is finished.
 	isClosed bool
+	// isClosing bool is true once Session.Close is started.
+	isClosing bool
 	// isInitialized is true once Session.init succeeds.
 	// you can use initialized() to read the value.
 	isInitialized bool
@@ -463,11 +465,12 @@ func (s *Session) Bind(stmt string, b func(q *QueryInfo) ([]interface{}, error))
 func (s *Session) Close() {
 
 	s.sessionStateMu.Lock()
-	defer s.sessionStateMu.Unlock()
-	if s.isClosed {
+	if s.isClosing {
+		s.sessionStateMu.Unlock()
 		return
 	}
-	s.isClosed = true
+	s.isClosing = true
+	s.sessionStateMu.Unlock()
 
 	if s.pool != nil {
 		s.pool.Close()
@@ -488,6 +491,10 @@ func (s *Session) Close() {
 	if s.cancel != nil {
 		s.cancel()
 	}
+
+	s.sessionStateMu.Lock()
+	s.isClosed = true
+	s.sessionStateMu.Unlock()
 }
 
 func (s *Session) Closed() bool {
