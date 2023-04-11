@@ -12,6 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Deadlock in Session.Close(). (#1688)
+
 ## [1.3.2] - 2023-03-27
 
 ### Changed
