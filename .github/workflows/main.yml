@@ -7,6 +7,9 @@ on:
   pull_request:
     types: [ opened, synchronize, reopened ]
 
+env:
+  CCM_VERSION: "6e71061146f7ae67b84ccd2b1d90d7319b640e4c"
+
 jobs:
   build:
     name: Unit tests
@@ -56,7 +59,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-go-
       - name: Install CCM
-        run: pip install git+https://github.com/riptano/ccm.git@2.8.2
+        run: pip install "git+https://github.com/riptano/ccm.git@${CCM_VERSION}"
       - name: Start cassandra nodes
         run: |
           VERSION=${{ matrix.cassandra_version }}
@@ -129,7 +132,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-go-
       - name: Install CCM
-        run: pip install git+https://github.com/riptano/ccm.git@2.8.2
+        run: pip install "git+https://github.com/riptano/ccm.git@${CCM_VERSION}"
       - name: Start cassandra nodes
         run: |
           VERSION=${{ matrix.cassandra_version }}
