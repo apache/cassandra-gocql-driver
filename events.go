@@ -151,7 +151,6 @@ func (s *Session) handleNodeEvent(frames []frame) {
 	sEvents := make(map[string]*nodeEvent)
 
 	for _, frame := range frames {
-		// TODO: can we be sure the order of events in the buffer is correct?
 		switch f := frame.(type) {
 		case *topologyChangeEventFrame:
 			topologyEventReceived = true
@@ -166,12 +165,7 @@ func (s *Session) handleNodeEvent(frames []frame) {
 	}
 
 	if topologyEventReceived && !s.cfg.Events.DisableTopologyEvents {
-		// maybe add MOVED_NODE handling
-		// java-driver handles this, not mentioned in the spec
-		// TODO(zariel): refresh token map
-		if err := s.hostSource.refreshRing(); err != nil && gocqlDebug {
-			s.logger.Printf("gocql: Session.handleNewNode: failed to refresh ring: %w\n", err.Error())
-		}
+		s.debounceRingRefresh()
 	}
 
 	for _, f := range sEvents {
@@ -201,9 +195,7 @@ func (s *Session) handleNodeUp(eventIp net.IP, eventPort int) {
 
 	host, ok := s.ring.getHostByIP(eventIp.String())
 	if !ok {
-		if err := s.hostSource.refreshRing(); err != nil && gocqlDebug {
-			s.logger.Printf("gocql: Session.handleNodeUp: failed to refresh ring: %w\n", err.Error())
-		}
+		s.debounceRingRefresh()
 		return
 	}
 

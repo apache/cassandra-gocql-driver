@@ -384,7 +384,10 @@ func (c *controlConn) reconnect() {
 		return
 	}
 
-	c.session.hostSource.refreshRing()
+	err = c.session.refreshRing()
+	if err != nil {
+		c.session.logger.Printf("gocql: unable to refresh ring: %v\n", err)
+	}
 }
 
 func (c *controlConn) HandleError(conn *Conn, err error, closed bool) {

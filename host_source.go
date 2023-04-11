@@ -646,7 +646,7 @@ func isValidPeer(host *HostInfo) bool {
 		len(host.tokens) == 0)
 }
 
-// Return a list of hosts the cluster knows about
+// GetHosts returns a list of hosts found via queries to system.local and system.peers
 func (r *ringDescriber) GetHosts() ([]*HostInfo, string, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -670,11 +670,22 @@ func (r *ringDescriber) GetHosts() ([]*HostInfo, string, error) {
 	return hosts, partitioner, nil
 }
 
-func (r *ringDescriber) refreshRing() error {
-	// if we have 0 hosts this will return the previous list of hosts to
-	// attempt to reconnect to the cluster otherwise we would never find
-	// downed hosts again, could possibly have an optimisation to only
-	// try to add new hosts if GetHosts didn't error and the hosts didn't change.
+// debounceRingRefresh submits a ring refresh request to the ring refresh debouncer.
+func (s *Session) debounceRingRefresh() {
+	s.ringRefresher.debounce()
+}
+
+// refreshRing executes a ring refresh immediately and cancels pending debounce ring refresh requests.
+func (s *Session) refreshRing() error {
+	err, ok := <-s.ringRefresher.refreshNow()
+	if !ok {
+		return errors.New("could not refresh ring because stop was requested")
+	}
+
+	return err
+}
+
+func refreshRing(r *ringDescriber) error {
 	hosts, partitioner, err := r.GetHosts()
 	if err != nil {
 		return err
@@ -682,7 +693,6 @@ func (r *ringDescriber) refreshRing() error {
 
 	prevHosts := r.session.ring.currentHosts()
 
-	// TODO: move this to session
 	for _, h := range hosts {
 		if r.session.cfg.filterHost(h) {
 			continue
@@ -714,9 +724,6 @@ func (r *ringDescriber) refreshRing() error {
 		delete(prevHosts, h.HostID())
 	}
 
-	// TODO(zariel): it may be worth having a mutex covering the overall ring state
-	// in a session so that everything sees a consistent state. Becuase as is today
-	// events can come in and due to ordering an UP host could be removed from the cluster
 	for _, host := range prevHosts {
 		r.session.removeHost(host)
 	}
@@ -724,4 +731,162 @@ func (r *ringDescriber) refreshRing() error {
 	r.session.metadata.setPartitioner(partitioner)
 	r.session.policy.SetPartitioner(partitioner)
 	return nil
+}
+
+const (
+	ringRefreshDebounceTime = 1 * time.Second
+)
+
+// debounces requests to call a refresh function (currently used for ring refresh). It also supports triggering a refresh immediately.
+type refreshDebouncer struct {
+	mu           sync.Mutex
+	stopped      bool
+	broadcaster  *errorBroadcaster
+	interval     time.Duration
+	timer        *time.Timer
+	refreshNowCh chan struct{}
+	quit         chan struct{}
+	refreshFn    func() error
+}
+
+func newRefreshDebouncer(interval time.Duration, refreshFn func() error) *refreshDebouncer {
+	d := &refreshDebouncer{
+		stopped:      false,
+		broadcaster:  nil,
+		refreshNowCh: make(chan struct{}, 1),
+		quit:         make(chan struct{}),
+		interval:     interval,
+		timer:        time.NewTimer(interval),
+		refreshFn:    refreshFn,
+	}
+	d.timer.Stop()
+	go d.flusher()
+	return d
+}
+
+// debounces a request to call the refresh function
+func (d *refreshDebouncer) debounce() {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.stopped {
+		return
+	}
+	d.timer.Reset(d.interval)
+}
+
+// requests an immediate refresh which will cancel pending refresh requests
+func (d *refreshDebouncer) refreshNow() <-chan error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.broadcaster == nil {
+		d.broadcaster = newErrorBroadcaster()
+		select {
+		case d.refreshNowCh <- struct{}{}:
+		default:
+			// already a refresh pending
+		}
+	}
+	return d.broadcaster.newListener()
+}
+
+func (d *refreshDebouncer) flusher() {
+	for {
+		select {
+		case <-d.refreshNowCh:
+		case <-d.timer.C:
+		case <-d.quit:
+		}
+		d.mu.Lock()
+		if d.stopped {
+			if d.broadcaster != nil {
+				d.broadcaster.stop()
+				d.broadcaster = nil
+			}
+			d.timer.Stop()
+			d.mu.Unlock()
+			return
+		}
+
+		// make sure both request channels are cleared before we refresh
+		select {
+		case <-d.refreshNowCh:
+		default:
+		}
+
+		d.timer.Stop()
+		select {
+		case <-d.timer.C:
+		default:
+		}
+
+		curBroadcaster := d.broadcaster
+		d.broadcaster = nil
+		d.mu.Unlock()
+
+		err := d.refreshFn()
+		if curBroadcaster != nil {
+			curBroadcaster.broadcast(err)
+		}
+	}
+}
+
+func (d *refreshDebouncer) stop() {
+	d.mu.Lock()
+	if d.stopped {
+		d.mu.Unlock()
+		return
+	}
+	d.stopped = true
+	d.mu.Unlock()
+	d.quit <- struct{}{} // sync with flusher
+	close(d.quit)
+}
+
+// broadcasts an error to multiple channels (listeners)
+type errorBroadcaster struct {
+	listeners []chan<- error
+	mu        sync.Mutex
+}
+
+func newErrorBroadcaster() *errorBroadcaster {
+	return &errorBroadcaster{
+		listeners: nil,
+		mu:        sync.Mutex{},
+	}
+}
+
+func (b *errorBroadcaster) newListener() <-chan error {
+	ch := make(chan error, 1)
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.listeners = append(b.listeners, ch)
+	return ch
+}
+
+func (b *errorBroadcaster) broadcast(err error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	curListeners := b.listeners
+	if len(curListeners) > 0 {
+		b.listeners = nil
+	} else {
+		return
+	}
+
+	for _, listener := range curListeners {
+		listener <- err
+		close(listener)
+	}
+}
+
+func (b *errorBroadcaster) stop() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if len(b.listeners) == 0 {
+		return
+	}
+	for _, listener := range b.listeners {
+		close(listener)
+	}
+	b.listeners = nil
 }
