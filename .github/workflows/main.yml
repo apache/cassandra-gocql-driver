@@ -105,6 +105,13 @@ jobs:
         run: |
           export JVM_EXTRA_OPTS="${{env.JVM_EXTRA_OPTS}}"
           go test -tags "${{ matrix.tags }} gocql_debug" -timeout=5m -race ${{ env.args }}
+      - name: 'Save ccm logs'
+        if: 'failure()'
+        uses: actions/upload-artifact@v3
+        with:
+          name: ccm-cluster
+          path: /home/runner/.ccm/test
+          retention-days: 5
   integration-auth-cassandra:
     timeout-minutes: 15
     needs:
