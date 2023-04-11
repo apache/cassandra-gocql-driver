@@ -88,7 +88,7 @@ jobs:
 
           export JVM_EXTRA_OPTS=" -Dcassandra.test.fail_writes_ks=test -Dcassandra.custom_query_handler_class=org.apache.cassandra.cql3.CustomPayloadMirroringQueryHandler"
 
-          ccm start --wait-for-binary-proto
+          ccm start --wait-for-binary-proto --verbose
           ccm status
           ccm node1 nodetool status
 
@@ -172,7 +172,7 @@ jobs:
 
           export JVM_EXTRA_OPTS=" -Dcassandra.test.fail_writes_ks=test -Dcassandra.custom_query_handler_class=org.apache.cassandra.cql3.CustomPayloadMirroringQueryHandler"
 
-          ccm start --wait-for-binary-proto
+          ccm start --wait-for-binary-proto --verbose
           ccm status
           ccm node1 nodetool status
 
