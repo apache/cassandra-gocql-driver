@@ -18,17 +18,10 @@ jobs:
       matrix:
         go: [ '1.19', '1.20' ]
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions/setup-go@v2
+      - uses: actions/checkout@v3
+      - uses: actions/setup-go@v4
         with:
-          go-VERSION: ${{ matrix.go }}
-      - uses: actions/cache@v2
-        id: gomod-cache
-        with:
-          path: ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('go.mod') }}
-          restore-keys: |
-            ${{ runner.os }}-go-
+          go-version: ${{ matrix.go }}
       - run: go vet
       - name: Run unit tests
         run: go test -v -tags unit -race
@@ -138,17 +131,10 @@ jobs:
         tags: [ "integration" ]
 
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions/setup-go@v2
+      - uses: actions/checkout@v3
+      - uses: actions/setup-go@v4
         with:
           go-version: ${{ matrix.go }}
-      - uses: actions/cache@v2
-        id: gomod-cache
-        with:
-          path: ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('go.mod') }}
-          restore-keys: |
-            ${{ runner.os }}-go-
       - name: Install CCM
         run: pip install "git+https://github.com/riptano/ccm.git@${CCM_VERSION}"
       - name: Start cassandra nodes
