@@ -86,7 +86,7 @@ type Session struct {
 
 var queryPool = &sync.Pool{
 	New: func() interface{} {
-		return new(Query)
+		return &Query{refCount: 1}
 	},
 }
 
@@ -893,6 +893,7 @@ type Query struct {
 	idempotent            bool
 	customPayload         map[string][]byte
 	metrics               *queryMetrics
+	refCount              uint32
 
 	disableAutoPage bool
 
@@ -1331,13 +1332,32 @@ func (q *Query) MapScanCAS(dest map[string]interface{}) (applied bool, err error
 //	qry.Exec()
 //	qry.Release()
 func (q *Query) Release() {
-	q.reset()
-	queryPool.Put(q)
+	q.decRefCount()
 }
 
 // reset zeroes out all fields of a query so that it can be safely pooled.
 func (q *Query) reset() {
-	*q = Query{}
+	*q = Query{refCount: 1}
+}
+
+func (q *Query) incRefCount() {
+	atomic.AddUint32(&q.refCount, 1)
+}
+
+func (q *Query) decRefCount() {
+	if res := atomic.AddUint32(&q.refCount, ^uint32(0)); res == 0 {
+		// do release
+		q.reset()
+		queryPool.Put(q)
+	}
+}
+
+func (q *Query) borrowForExecution() {
+	q.incRefCount()
+}
+
+func (q *Query) releaseAfterExecution() {
+	q.decRefCount()
 }
 
 // Iter represents an iterator that can be used to iterate over all rows that
@@ -1937,6 +1957,16 @@ func createRoutingKey(routingKeyInfo *routingKeyInfo, values []interface{}) ([]b
 	}
 	routingKey := buf.Bytes()
 	return routingKey, nil
+}
+
+func (b *Batch) borrowForExecution() {
+	// empty, because Batch has no equivalent of Query.Release()
+	// that would race with speculative executions.
+}
+
+func (b *Batch) releaseAfterExecution() {
+	// empty, because Batch has no equivalent of Query.Release()
+	// that would race with speculative executions.
 }
 
 type BatchType byte
