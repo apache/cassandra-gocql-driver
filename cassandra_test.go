@@ -2258,9 +2258,11 @@ func TestMaterializedViewMetadata(t *testing.T) {
 	}
 	expectedChunkLengthInKB := "16"
 	expectedDCLocalReadRepairChance := float64(0)
+	expectedSpeculativeRetry := "99p"
 	if flagCassVersion.Before(4, 0, 0) {
 		expectedChunkLengthInKB = "64"
 		expectedDCLocalReadRepairChance = 0.1
+		expectedSpeculativeRetry = "99PERCENTILE"
 	}
 	expectedView1 := MaterializedViewMetadata{
 		Keyspace:                "gocql_test",
@@ -2277,7 +2279,7 @@ func TestMaterializedViewMetadata(t *testing.T) {
 		Extensions:              map[string]string{},
 		GcGraceSeconds:          864000,
 		IncludeAllColumns:       false, MaxIndexInterval: 2048, MemtableFlushPeriodInMs: 0, MinIndexInterval: 128, ReadRepairChance: 0,
-		SpeculativeRetry: "99PERCENTILE",
+		SpeculativeRetry: expectedSpeculativeRetry,
 	}
 	expectedView2 := MaterializedViewMetadata{
 		Keyspace:                "gocql_test",
@@ -2294,7 +2296,7 @@ func TestMaterializedViewMetadata(t *testing.T) {
 		Extensions:              map[string]string{},
 		GcGraceSeconds:          864000,
 		IncludeAllColumns:       false, MaxIndexInterval: 2048, MemtableFlushPeriodInMs: 0, MinIndexInterval: 128, ReadRepairChance: 0,
-		SpeculativeRetry: "99PERCENTILE",
+		SpeculativeRetry: expectedSpeculativeRetry,
 	}
 
 	expectedView1.BaseTableId = materializedViews[0].BaseTableId
