@@ -26,9 +26,9 @@ jobs:
           key: ${{ runner.os }}-go-${{ hashFiles('go.mod') }}
           restore-keys: |
             ${{ runner.os }}-go-
-      - run: go vet
+      - run: go vet ./...
       - name: Run unit tests
-        run: go test -tags unit -race
+        run: go test -tags unit -race ./...
   integration-cassandra:
     timeout-minutes: 10
     needs:
@@ -101,7 +101,7 @@ jobs:
       - name: Integration tests
         run: |
           export JVM_EXTRA_OPTS="${{env.JVM_EXTRA_OPTS}}"
-          go test -tags "${{ matrix.tags }} gocql_debug" -timeout=5m -race ${{ env.args }}
+          go test -tags "${{ matrix.tags }} gocql_debug" -timeout=5m -race ${{ env.args }} ./...
   integration-auth-cassandra:
     timeout-minutes: 10
     needs:
@@ -174,4 +174,4 @@ jobs:
       - name: Integration tests
         run: |
           export JVM_EXTRA_OPTS="${{env.JVM_EXTRA_OPTS}}"
-          go test -run=TestAuthentication -tags "${{ matrix.tags }} gocql_debug" -timeout=15s -runauth ${{ env.args }}
+          go test -run=TestAuthentication -tags "${{ matrix.tags }} gocql_debug" -timeout=15s -runauth ${{ env.args }} ./...
