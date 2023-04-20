@@ -2256,6 +2256,10 @@ func TestMaterializedViewMetadata(t *testing.T) {
 	if len(materializedViews) != 2 {
 		t.Fatal("expected two views")
 	}
+	expectedChunkLengthInKB := "16"
+	if flagCassVersion.Before(4, 0, 0) {
+		expectedChunkLengthInKB = "64"
+	}
 	expectedView1 := MaterializedViewMetadata{
 		Keyspace:                "gocql_test",
 		Name:                    "view_view",
@@ -2264,7 +2268,7 @@ func TestMaterializedViewMetadata(t *testing.T) {
 		Caching:                 map[string]string{"keys": "ALL", "rows_per_partition": "NONE"},
 		Comment:                 "",
 		Compaction:              map[string]string{"class": "org.apache.cassandra.db.compaction.SizeTieredCompactionStrategy", "max_threshold": "32", "min_threshold": "4"},
-		Compression:             map[string]string{"chunk_length_in_kb": "64", "class": "org.apache.cassandra.io.compress.LZ4Compressor"},
+		Compression:             map[string]string{"chunk_length_in_kb": expectedChunkLengthInKB, "class": "org.apache.cassandra.io.compress.LZ4Compressor"},
 		CrcCheckChance:          1,
 		DcLocalReadRepairChance: 0.1,
 		DefaultTimeToLive:       0,
@@ -2281,7 +2285,7 @@ func TestMaterializedViewMetadata(t *testing.T) {
 		Caching:                 map[string]string{"keys": "ALL", "rows_per_partition": "NONE"},
 		Comment:                 "",
 		Compaction:              map[string]string{"class": "org.apache.cassandra.db.compaction.SizeTieredCompactionStrategy", "max_threshold": "32", "min_threshold": "4"},
-		Compression:             map[string]string{"chunk_length_in_kb": "64", "class": "org.apache.cassandra.io.compress.LZ4Compressor"},
+		Compression:             map[string]string{"chunk_length_in_kb": expectedChunkLengthInKB, "class": "org.apache.cassandra.io.compress.LZ4Compressor"},
 		CrcCheckChance:          1,
 		DcLocalReadRepairChance: 0.1,
 		DefaultTimeToLive:       0,
