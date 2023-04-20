@@ -2256,6 +2256,14 @@ func TestMaterializedViewMetadata(t *testing.T) {
 	if len(materializedViews) != 2 {
 		t.Fatal("expected two views")
 	}
+	expectedChunkLengthInKB := "16"
+	expectedDCLocalReadRepairChance := float64(0)
+	expectedSpeculativeRetry := "99p"
+	if flagCassVersion.Before(4, 0, 0) {
+		expectedChunkLengthInKB = "64"
+		expectedDCLocalReadRepairChance = 0.1
+		expectedSpeculativeRetry = "99PERCENTILE"
+	}
 	expectedView1 := MaterializedViewMetadata{
 		Keyspace:                "gocql_test",
 		Name:                    "view_view",
@@ -2264,14 +2272,14 @@ func TestMaterializedViewMetadata(t *testing.T) {
 		Caching:                 map[string]string{"keys": "ALL", "rows_per_partition": "NONE"},
 		Comment:                 "",
 		Compaction:              map[string]string{"class": "org.apache.cassandra.db.compaction.SizeTieredCompactionStrategy", "max_threshold": "32", "min_threshold": "4"},
-		Compression:             map[string]string{"chunk_length_in_kb": "64", "class": "org.apache.cassandra.io.compress.LZ4Compressor"},
+		Compression:             map[string]string{"chunk_length_in_kb": expectedChunkLengthInKB, "class": "org.apache.cassandra.io.compress.LZ4Compressor"},
 		CrcCheckChance:          1,
-		DcLocalReadRepairChance: 0.1,
+		DcLocalReadRepairChance: expectedDCLocalReadRepairChance,
 		DefaultTimeToLive:       0,
 		Extensions:              map[string]string{},
 		GcGraceSeconds:          864000,
 		IncludeAllColumns:       false, MaxIndexInterval: 2048, MemtableFlushPeriodInMs: 0, MinIndexInterval: 128, ReadRepairChance: 0,
-		SpeculativeRetry: "99PERCENTILE",
+		SpeculativeRetry: expectedSpeculativeRetry,
 	}
 	expectedView2 := MaterializedViewMetadata{
 		Keyspace:                "gocql_test",
@@ -2281,14 +2289,14 @@ func TestMaterializedViewMetadata(t *testing.T) {
 		Caching:                 map[string]string{"keys": "ALL", "rows_per_partition": "NONE"},
 		Comment:                 "",
 		Compaction:              map[string]string{"class": "org.apache.cassandra.db.compaction.SizeTieredCompactionStrategy", "max_threshold": "32", "min_threshold": "4"},
-		Compression:             map[string]string{"chunk_length_in_kb": "64", "class": "org.apache.cassandra.io.compress.LZ4Compressor"},
+		Compression:             map[string]string{"chunk_length_in_kb": expectedChunkLengthInKB, "class": "org.apache.cassandra.io.compress.LZ4Compressor"},
 		CrcCheckChance:          1,
-		DcLocalReadRepairChance: 0.1,
+		DcLocalReadRepairChance: expectedDCLocalReadRepairChance,
 		DefaultTimeToLive:       0,
 		Extensions:              map[string]string{},
 		GcGraceSeconds:          864000,
 		IncludeAllColumns:       false, MaxIndexInterval: 2048, MemtableFlushPeriodInMs: 0, MinIndexInterval: 128, ReadRepairChance: 0,
-		SpeculativeRetry: "99PERCENTILE",
+		SpeculativeRetry: expectedSpeculativeRetry,
 	}
 
 	expectedView1.BaseTableId = materializedViews[0].BaseTableId
