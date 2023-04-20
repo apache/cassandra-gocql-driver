@@ -2257,8 +2257,10 @@ func TestMaterializedViewMetadata(t *testing.T) {
 		t.Fatal("expected two views")
 	}
 	expectedChunkLengthInKB := "16"
+	expectedDCLocalReadRepairChance := float64(0)
 	if flagCassVersion.Before(4, 0, 0) {
 		expectedChunkLengthInKB = "64"
+		expectedDCLocalReadRepairChance = 0.1
 	}
 	expectedView1 := MaterializedViewMetadata{
 		Keyspace:                "gocql_test",
@@ -2270,7 +2272,7 @@ func TestMaterializedViewMetadata(t *testing.T) {
 		Compaction:              map[string]string{"class": "org.apache.cassandra.db.compaction.SizeTieredCompactionStrategy", "max_threshold": "32", "min_threshold": "4"},
 		Compression:             map[string]string{"chunk_length_in_kb": expectedChunkLengthInKB, "class": "org.apache.cassandra.io.compress.LZ4Compressor"},
 		CrcCheckChance:          1,
-		DcLocalReadRepairChance: 0.1,
+		DcLocalReadRepairChance: expectedDCLocalReadRepairChance,
 		DefaultTimeToLive:       0,
 		Extensions:              map[string]string{},
 		GcGraceSeconds:          864000,
@@ -2287,7 +2289,7 @@ func TestMaterializedViewMetadata(t *testing.T) {
 		Compaction:              map[string]string{"class": "org.apache.cassandra.db.compaction.SizeTieredCompactionStrategy", "max_threshold": "32", "min_threshold": "4"},
 		Compression:             map[string]string{"chunk_length_in_kb": expectedChunkLengthInKB, "class": "org.apache.cassandra.io.compress.LZ4Compressor"},
 		CrcCheckChance:          1,
-		DcLocalReadRepairChance: 0.1,
+		DcLocalReadRepairChance: expectedDCLocalReadRepairChance,
 		DefaultTimeToLive:       0,
 		Extensions:              map[string]string{},
 		GcGraceSeconds:          864000,
