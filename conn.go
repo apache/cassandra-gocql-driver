@@ -1727,10 +1727,14 @@ func (c *Conn) localHostInfo(ctx context.Context) (*HostInfo, error) {
 		return nil, err
 	}
 
-	port := c.conn.RemoteAddr().(*net.TCPAddr).Port
+	addr := c.conn.RemoteAddr().(*net.TCPAddr)
 
 	// TODO(zariel): avoid doing this here
-	host, err := c.session.hostInfoFromMap(row, &HostInfo{connectAddress: c.host.connectAddress, port: port})
+	// If using a DNS address with a control connection enabled, it's possible that the connectAddress for
+	// the Conn struct does not actually match the IP address of the host that the Conn established
+	// a connection to since the HostDialer has dialed the DNS address again. Update the connectAddress
+	// to the remoteAddress of the connection to avoid mismatch IP's
+	host, err := c.session.hostInfoFromMap(row, &HostInfo{connectAddress: addr.IP, port: addr.Port})
 	if err != nil {
 		return nil, err
 	}
