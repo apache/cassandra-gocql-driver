@@ -117,9 +117,11 @@ func TestControlConn_ReconnectRefreshesRing(t *testing.T) {
 			}
 		}
 
-		pools := session.pool.hostConnPools
-		if len(pools) != 0 {
-			return fmt.Errorf("expected 0 connection pool but there were %v", len(pools))
+		session.pool.mu.RLock()
+		poolsLen := len(session.pool.hostConnPools)
+		session.pool.mu.RUnlock()
+		if poolsLen != 0 {
+			return fmt.Errorf("expected 0 connection pool but there were %v", poolsLen)
 		}
 		return nil
 	}
@@ -152,9 +154,11 @@ func TestControlConn_ReconnectRefreshesRing(t *testing.T) {
 				return fmt.Errorf("expected all hosts to be UP but %v isn't", host.String())
 			}
 		}
-		pools := session.pool.hostConnPools
-		if len(pools) != len(allCcmHosts) {
-			return fmt.Errorf("expected %v connection pool but there were %v", len(allCcmHosts), len(pools))
+		session.pool.mu.RLock()
+		poolsLen := len(session.pool.hostConnPools)
+		session.pool.mu.RUnlock()
+		if poolsLen != len(allCcmHosts) {
+			return fmt.Errorf("expected %v connection pool but there were %v", len(allCcmHosts), poolsLen)
 		}
 		return nil
 	}
