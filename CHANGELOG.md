@@ -10,10 +10,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- gocql now refreshes the entire ring when it receives a topology change event and
+  when control connection is re-connected.
+  This simplifies code managing ring state. (#1680) 
+
 ### Fixed
 
 - Deadlock in Session.Close(). (#1688)
 - Race between Query.Release() and speculative executions (#1684)
+- Missed ring update during control connection reconnection (#1680)
 
 ## [1.3.2] - 2023-03-27
 
