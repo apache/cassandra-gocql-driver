@@ -12,7 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - gocql now refreshes the entire ring when it receives a topology change event and
   when control connection is re-connected.
-  This simplifies code managing ring state. (#1680) 
+  This simplifies code managing ring state. (#1680)
+- Supported versions of Cassandra that we test against are now 4.0.x and 4.1.x. (#1685)
 
 ### Fixed
 
