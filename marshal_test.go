@@ -2185,6 +2185,7 @@ func TestMarshalDate(t *testing.T) {
 	now := time.Now().UTC()
 	timestamp := now.UnixNano() / int64(time.Millisecond)
 	expectedData := encInt(int32(timestamp/86400000 + int64(1<<31)))
+
 	var marshalDateTests = []struct {
 		Info  TypeInfo
 		Data  []byte
@@ -2223,6 +2224,35 @@ func TestMarshalDate(t *testing.T) {
 			t.Errorf("marshalTest[%d]: expected %x (%v), got %x (%v) for time %s", i,
 				test.Data, decInt(test.Data), data, decInt(data), test.Value)
 		}
+	}
+}
+
+func TestLargeDate(t *testing.T) {
+	largeDate := time.Date(999999, time.December, 31, 0, 0, 0, 0, time.UTC)
+	largeTimeStamp := largeDate.UnixMilli()
+	largeExpectedData := encInt(int32(largeTimeStamp/86400000 + int64(1<<31)))
+
+	nativeType := NativeType{proto: 4, typ: TypeDate}
+
+	t.Log(largeDate)
+	data, err := Marshal(nativeType, largeDate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(data, largeExpectedData) {
+		t.Fatalf("marshalTest: expected %x (%v), got %x (%v) for time %s",
+			largeExpectedData, decInt(largeExpectedData), data, decInt(data), largeDate)
+	}
+
+	var date time.Time
+	if err := Unmarshal(nativeType, data, &date); err != nil {
+		t.Fatal(err)
+	}
+
+	expectedDate := "999999-12-31"
+	formattedDate := date.Format("2006-01-02")
+	if expectedDate != formattedDate {
+		t.Fatalf("marshalTest: expected %v, got %v", expectedDate, formattedDate)
 	}
 }
 
