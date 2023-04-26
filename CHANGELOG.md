@@ -10,10 +10,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+### Fixed
+
+## [1.4.0] - 2023-04-26
+
+### Added
+
+### Changed
+
 - gocql now refreshes the entire ring when it receives a topology change event and
   when control connection is re-connected.
   This simplifies code managing ring state. (#1680)
 - Supported versions of Cassandra that we test against are now 4.0.x and 4.1.x. (#1685)
+- Default HostDialer now uses already-resolved connect address instead of hostname when establishing TCP connections (#1683).
 
 ### Fixed
 
