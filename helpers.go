@@ -49,17 +49,17 @@ func goType(t TypeInfo) (reflect.Type, error) {
 	case TypeUUID, TypeTimeUUID:
 		return reflect.TypeOf(*new(UUID)), nil
 	case TypeList, TypeSet:
-		elemType, err := goType(t.(CollectionType).Elem)
+		elemType, err := goType(t.(*CollectionType).Elem)
 		if err != nil {
 			return nil, err
 		}
 		return reflect.SliceOf(elemType), nil
 	case TypeMap:
-		keyType, err := goType(t.(CollectionType).Key)
+		keyType, err := goType(t.(*CollectionType).Key)
 		if err != nil {
 			return nil, err
 		}
-		valueType, err := goType(t.(CollectionType).Elem)
+		valueType, err := goType(t.(*CollectionType).Elem)
 		if err != nil {
 			return nil, err
 		}
@@ -68,7 +68,7 @@ func goType(t TypeInfo) (reflect.Type, error) {
 		return reflect.TypeOf(*new(*big.Int)), nil
 	case TypeTuple:
 		// what can we do here? all there is to do is to make a list of interface{}
-		tuple := t.(TupleTypeInfo)
+		tuple := t.(*TupleTypeInfo)
 		return reflect.TypeOf(make([]interface{}, len(tuple.Elems))), nil
 	case TypeUDT:
 		return reflect.TypeOf(make(map[string]interface{})), nil
@@ -146,12 +146,12 @@ func getCassandraType(name string, logger StdLogger) TypeInfo {
 	if strings.HasPrefix(name, "frozen<") {
 		return getCassandraType(strings.TrimPrefix(name[:len(name)-1], "frozen<"), logger)
 	} else if strings.HasPrefix(name, "set<") {
-		return CollectionType{
+		return &CollectionType{
 			NativeType: NativeType{typ: TypeSet},
 			Elem:       getCassandraType(strings.TrimPrefix(name[:len(name)-1], "set<"), logger),
 		}
 	} else if strings.HasPrefix(name, "list<") {
-		return CollectionType{
+		return &CollectionType{
 			NativeType: NativeType{typ: TypeList},
 			Elem:       getCassandraType(strings.TrimPrefix(name[:len(name)-1], "list<"), logger),
 		}
@@ -159,11 +159,11 @@ func getCassandraType(name string, logger StdLogger) TypeInfo {
 		names := splitCompositeTypes(strings.TrimPrefix(name[:len(name)-1], "map<"))
 		if len(names) != 2 {
 			logger.Printf("Error parsing map type, it has %d subelements, expecting 2\n", len(names))
-			return NativeType{
+			return &NativeType{
 				typ: TypeCustom,
 			}
 		}
-		return CollectionType{
+		return &CollectionType{
 			NativeType: NativeType{typ: TypeMap},
 			Key:        getCassandraType(names[0], logger),
 			Elem:       getCassandraType(names[1], logger),
@@ -176,12 +176,12 @@ func getCassandraType(name string, logger StdLogger) TypeInfo {
 			types[i] = getCassandraType(name, logger)
 		}
 
-		return TupleTypeInfo{
+		return &TupleTypeInfo{
 			NativeType: NativeType{typ: TypeTuple},
 			Elems:      types,
 		}
 	} else {
-		return NativeType{
+		return &NativeType{
 			typ: getCassandraBaseType(name),
 		}
 	}
@@ -311,7 +311,7 @@ func (iter *Iter) RowData() (RowData, error) {
 	values := make([]interface{}, 0, len(iter.Columns()))
 
 	for _, column := range iter.Columns() {
-		if c, ok := column.TypeInfo.(TupleTypeInfo); !ok {
+		if c, ok := column.TypeInfo.(*TupleTypeInfo); !ok {
 			val, err := column.TypeInfo.NewWithError()
 			if err != nil {
 				return RowData{}, err

@@ -878,7 +878,7 @@ func (f *framer) readTypeInfo() TypeInfo {
 			tuple.Elems[i] = f.readTypeInfo()
 		}
 
-		return tuple
+		return &tuple
 
 	case TypeUDT:
 		udt := UDTTypeInfo{
@@ -895,7 +895,7 @@ func (f *framer) readTypeInfo() TypeInfo {
 			field.Type = f.readTypeInfo()
 		}
 
-		return udt
+		return &udt
 	case TypeMap, TypeList, TypeSet:
 		collection := CollectionType{
 			NativeType: simple,
@@ -907,10 +907,10 @@ func (f *framer) readTypeInfo() TypeInfo {
 
 		collection.Elem = f.readTypeInfo()
 
-		return collection
+		return &collection
 	}
 
-	return simple
+	return &simple
 }
 
 type preparedMetadata struct {
@@ -1017,7 +1017,7 @@ func (f *framer) readCol(col *ColumnInfo, meta *resultMetadata, globalSpec bool,
 	col.TypeInfo = f.readTypeInfo()
 	switch v := col.TypeInfo.(type) {
 	// maybe also UDT
-	case TupleTypeInfo:
+	case *TupleTypeInfo:
 		// -1 because we already included the tuple column
 		meta.actualColCount += len(v.Elems) - 1
 	}

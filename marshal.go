@@ -1507,7 +1507,7 @@ func encVint(v int64) []byte {
 	return buf
 }
 
-func writeCollectionSize(info CollectionType, n int, buf *bytes.Buffer) error {
+func writeCollectionSize(info *CollectionType, n int, buf *bytes.Buffer) error {
 	if info.proto > protoVersion2 {
 		if n > math.MaxInt32 {
 			return marshalErrorf("marshal: collection too large")
@@ -1530,7 +1530,7 @@ func writeCollectionSize(info CollectionType, n int, buf *bytes.Buffer) error {
 }
 
 func marshalList(info TypeInfo, value interface{}) ([]byte, error) {
-	listInfo, ok := info.(CollectionType)
+	listInfo, ok := info.(*CollectionType)
 	if !ok {
 		return nil, marshalErrorf("marshal: can not marshal non collection type into list")
 	}
@@ -1587,7 +1587,7 @@ func marshalList(info TypeInfo, value interface{}) ([]byte, error) {
 	return nil, marshalErrorf("can not marshal %T into %s", value, info)
 }
 
-func readCollectionSize(info CollectionType, data []byte) (size, read int, err error) {
+func readCollectionSize(info *CollectionType, data []byte) (size, read int, err error) {
 	if info.proto > protoVersion2 {
 		if len(data) < 4 {
 			return 0, 0, unmarshalErrorf("unmarshal list: unexpected eof")
@@ -1605,7 +1605,7 @@ func readCollectionSize(info CollectionType, data []byte) (size, read int, err e
 }
 
 func unmarshalList(info TypeInfo, data []byte, value interface{}) error {
-	listInfo, ok := info.(CollectionType)
+	listInfo, ok := info.(*CollectionType)
 	if !ok {
 		return unmarshalErrorf("unmarshal: can not unmarshal none collection type into list")
 	}
@@ -1668,7 +1668,7 @@ func unmarshalList(info TypeInfo, data []byte, value interface{}) error {
 }
 
 func marshalMap(info TypeInfo, value interface{}) ([]byte, error) {
-	mapInfo, ok := info.(CollectionType)
+	mapInfo, ok := info.(*CollectionType)
 	if !ok {
 		return nil, marshalErrorf("marshal: can not marshal none collection type into map")
 	}
@@ -1731,7 +1731,7 @@ func marshalMap(info TypeInfo, value interface{}) ([]byte, error) {
 }
 
 func unmarshalMap(info TypeInfo, data []byte, value interface{}) error {
-	mapInfo, ok := info.(CollectionType)
+	mapInfo, ok := info.(*CollectionType)
 	if !ok {
 		return unmarshalErrorf("unmarshal: can not unmarshal none collection type into map")
 	}
@@ -1960,7 +1960,7 @@ func unmarshalInet(info TypeInfo, data []byte, value interface{}) error {
 }
 
 func marshalTuple(info TypeInfo, value interface{}) ([]byte, error) {
-	tuple := info.(TupleTypeInfo)
+	tuple := info.(*TupleTypeInfo)
 	switch v := value.(type) {
 	case unsetColumn:
 		return nil, unmarshalErrorf("Invalid request: UnsetValue is unsupported for tuples")
@@ -2068,7 +2068,7 @@ func unmarshalTuple(info TypeInfo, data []byte, value interface{}) error {
 		return v.UnmarshalCQL(info, data)
 	}
 
-	tuple := info.(TupleTypeInfo)
+	tuple := info.(*TupleTypeInfo)
 	switch v := value.(type) {
 	case []interface{}:
 		for i, elem := range tuple.Elems {
@@ -2190,7 +2190,7 @@ type UDTUnmarshaler interface {
 }
 
 func marshalUDT(info TypeInfo, value interface{}) ([]byte, error) {
-	udt := info.(UDTTypeInfo)
+	udt := info.(*UDTTypeInfo)
 
 	switch v := value.(type) {
 	case Marshaler:
@@ -2279,7 +2279,7 @@ func unmarshalUDT(info TypeInfo, data []byte, value interface{}) error {
 	case Unmarshaler:
 		return v.UnmarshalCQL(info, data)
 	case UDTUnmarshaler:
-		udt := info.(UDTTypeInfo)
+		udt := info.(*UDTTypeInfo)
 
 		for _, e := range udt.Elements {
 			if len(data) == 0 {
@@ -2296,7 +2296,7 @@ func unmarshalUDT(info TypeInfo, data []byte, value interface{}) error {
 
 		return nil
 	case *map[string]interface{}:
-		udt := info.(UDTTypeInfo)
+		udt := info.(*UDTTypeInfo)
 
 		rv := reflect.ValueOf(value)
 		if rv.Kind() != reflect.Ptr {
@@ -2367,7 +2367,7 @@ func unmarshalUDT(info TypeInfo, data []byte, value interface{}) error {
 		}
 	}
 
-	udt := info.(UDTTypeInfo)
+	udt := info.(*UDTTypeInfo)
 	for _, e := range udt.Elements {
 		if len(data) < 4 {
 			// UDT def does not match the column value
@@ -2431,7 +2431,7 @@ func NewNativeType(proto byte, typ Type, custom string) NativeType {
 	return NativeType{proto, typ, custom}
 }
 
-func (t NativeType) NewWithError() (interface{}, error) {
+func (t *NativeType) NewWithError() (interface{}, error) {
 	typ, err := goType(t)
 	if err != nil {
 		return nil, err
@@ -2439,7 +2439,7 @@ func (t NativeType) NewWithError() (interface{}, error) {
 	return reflect.New(typ).Interface(), nil
 }
 
-func (t NativeType) New() interface{} {
+func (t *NativeType) New() interface{} {
 	val, err := t.NewWithError()
 	if err != nil {
 		panic(err.Error())
@@ -2447,19 +2447,19 @@ func (t NativeType) New() interface{} {
 	return val
 }
 
-func (s NativeType) Type() Type {
+func (s *NativeType) Type() Type {
 	return s.typ
 }
 
-func (s NativeType) Version() byte {
+func (s *NativeType) Version() byte {
 	return s.proto
 }
 
-func (s NativeType) Custom() string {
+func (s *NativeType) Custom() string {
 	return s.custom
 }
 
-func (s NativeType) String() string {
+func (s *NativeType) String() string {
 	switch s.typ {
 	case TypeCustom:
 		return fmt.Sprintf("%s(%s)", s.typ, s.custom)
@@ -2474,7 +2474,7 @@ type CollectionType struct {
 	Elem TypeInfo // only used for TypeMap, TypeList and TypeSet
 }
 
-func (t CollectionType) NewWithError() (interface{}, error) {
+func (t *CollectionType) NewWithError() (interface{}, error) {
 	typ, err := goType(t)
 	if err != nil {
 		return nil, err
@@ -2482,7 +2482,7 @@ func (t CollectionType) NewWithError() (interface{}, error) {
 	return reflect.New(typ).Interface(), nil
 }
 
-func (t CollectionType) New() interface{} {
+func (t *CollectionType) New() interface{} {
 	val, err := t.NewWithError()
 	if err != nil {
 		panic(err.Error())
@@ -2490,16 +2490,16 @@ func (t CollectionType) New() interface{} {
 	return val
 }
 
-func (c CollectionType) String() string {
-	switch c.typ {
+func (t *CollectionType) String() string {
+	switch t.typ {
 	case TypeMap:
-		return fmt.Sprintf("%s(%s, %s)", c.typ, c.Key, c.Elem)
+		return fmt.Sprintf("%s(%s, %s)", t.typ, t.Key, t.Elem)
 	case TypeList, TypeSet:
-		return fmt.Sprintf("%s(%s)", c.typ, c.Elem)
+		return fmt.Sprintf("%s(%s)", t.typ, t.Elem)
 	case TypeCustom:
-		return fmt.Sprintf("%s(%s)", c.typ, c.custom)
+		return fmt.Sprintf("%s(%s)", t.typ, t.custom)
 	default:
-		return c.typ.String()
+		return t.typ.String()
 	}
 }
 
@@ -2508,7 +2508,7 @@ type TupleTypeInfo struct {
 	Elems []TypeInfo
 }
 
-func (t TupleTypeInfo) String() string {
+func (t *TupleTypeInfo) String() string {
 	var buf bytes.Buffer
 	buf.WriteString(fmt.Sprintf("%s(", t.typ))
 	for _, elem := range t.Elems {
@@ -2519,7 +2519,7 @@ func (t TupleTypeInfo) String() string {
 	return buf.String()
 }
 
-func (t TupleTypeInfo) NewWithError() (interface{}, error) {
+func (t *TupleTypeInfo) NewWithError() (interface{}, error) {
 	typ, err := goType(t)
 	if err != nil {
 		return nil, err
@@ -2527,7 +2527,7 @@ func (t TupleTypeInfo) NewWithError() (interface{}, error) {
 	return reflect.New(typ).Interface(), nil
 }
 
-func (t TupleTypeInfo) New() interface{} {
+func (t *TupleTypeInfo) New() interface{} {
 	val, err := t.NewWithError()
 	if err != nil {
 		panic(err.Error())
@@ -2547,7 +2547,7 @@ type UDTTypeInfo struct {
 	Elements []UDTField
 }
 
-func (u UDTTypeInfo) NewWithError() (interface{}, error) {
+func (u *UDTTypeInfo) NewWithError() (interface{}, error) {
 	typ, err := goType(u)
 	if err != nil {
 		return nil, err
@@ -2555,7 +2555,7 @@ func (u UDTTypeInfo) NewWithError() (interface{}, error) {
 	return reflect.New(typ).Interface(), nil
 }
 
-func (u UDTTypeInfo) New() interface{} {
+func (u *UDTTypeInfo) New() interface{} {
 	val, err := u.NewWithError()
 	if err != nil {
 		panic(err.Error())
@@ -2563,7 +2563,7 @@ func (u UDTTypeInfo) New() interface{} {
 	return val
 }
 
-func (u UDTTypeInfo) String() string {
+func (u *UDTTypeInfo) String() string {
 	buf := &bytes.Buffer{}
 
 	fmt.Fprintf(buf, "%s.%s{", u.KeySpace, u.Name)

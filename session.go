@@ -1451,7 +1451,7 @@ func scanColumn(p []byte, col ColumnInfo, dest []interface{}) (int, error) {
 
 	if col.TypeInfo.Type() == TypeTuple {
 		// this will panic, actually a bug, please report
-		tuple := col.TypeInfo.(TupleTypeInfo)
+		tuple := col.TypeInfo.(*TupleTypeInfo)
 
 		count := len(tuple.Elems)
 		// here we pass in a slice of the struct which has the number number of

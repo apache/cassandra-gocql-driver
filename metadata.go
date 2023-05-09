@@ -1209,7 +1209,7 @@ func (t *typeParser) parse() typeParserResult {
 		return typeParserResult{
 			isComposite: false,
 			types: []TypeInfo{
-				NativeType{
+				&NativeType{
 					typ:    TypeCustom,
 					custom: t.input,
 				},
@@ -1287,7 +1287,7 @@ func (t *typeParser) parse() typeParserResult {
 func (class *typeParserClassNode) asTypeInfo() TypeInfo {
 	if strings.HasPrefix(class.name, LIST_TYPE) {
 		elem := class.params[0].class.asTypeInfo()
-		return CollectionType{
+		return &CollectionType{
 			NativeType: NativeType{
 				typ: TypeList,
 			},
@@ -1296,7 +1296,7 @@ func (class *typeParserClassNode) asTypeInfo() TypeInfo {
 	}
 	if strings.HasPrefix(class.name, SET_TYPE) {
 		elem := class.params[0].class.asTypeInfo()
-		return CollectionType{
+		return &CollectionType{
 			NativeType: NativeType{
 				typ: TypeSet,
 			},
@@ -1306,7 +1306,7 @@ func (class *typeParserClassNode) asTypeInfo() TypeInfo {
 	if strings.HasPrefix(class.name, MAP_TYPE) {
 		key := class.params[0].class.asTypeInfo()
 		elem := class.params[1].class.asTypeInfo()
-		return CollectionType{
+		return &CollectionType{
 			NativeType: NativeType{
 				typ: TypeMap,
 			},
@@ -1321,7 +1321,7 @@ func (class *typeParserClassNode) asTypeInfo() TypeInfo {
 		// add the entire class definition
 		info.custom = class.input
 	}
-	return info
+	return &info
 }
 
 // CLASS := ID [ PARAMS ]

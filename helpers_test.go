@@ -7,14 +7,14 @@ import (
 
 func TestGetCassandraType_Set(t *testing.T) {
 	typ := getCassandraType("set<text>", &defaultLogger{})
-	set, ok := typ.(CollectionType)
+	set, ok := typ.(*CollectionType)
 	if !ok {
 		t.Fatalf("expected CollectionType got %T", typ)
 	} else if set.typ != TypeSet {
 		t.Fatalf("expected type %v got %v", TypeSet, set.typ)
 	}
 
-	inner, ok := set.Elem.(NativeType)
+	inner, ok := set.Elem.(*NativeType)
 	if !ok {
 		t.Fatalf("expected to get NativeType got %T", set.Elem)
 	} else if inner.typ != TypeText {
@@ -28,50 +28,50 @@ func TestGetCassandraType(t *testing.T) {
 		exp   TypeInfo
 	}{
 		{
-			"set<text>", CollectionType{
+			"set<text>", &CollectionType{
 				NativeType: NativeType{typ: TypeSet},
 
-				Elem: NativeType{typ: TypeText},
+				Elem: &NativeType{typ: TypeText},
 			},
 		},
 		{
-			"map<text, varchar>", CollectionType{
+			"map<text, varchar>", &CollectionType{
 				NativeType: NativeType{typ: TypeMap},
 
-				Key:  NativeType{typ: TypeText},
-				Elem: NativeType{typ: TypeVarchar},
+				Key:  &NativeType{typ: TypeText},
+				Elem: &NativeType{typ: TypeVarchar},
 			},
 		},
 		{
-			"list<int>", CollectionType{
+			"list<int>", &CollectionType{
 				NativeType: NativeType{typ: TypeList},
-				Elem:       NativeType{typ: TypeInt},
+				Elem:       &NativeType{typ: TypeInt},
 			},
 		},
 		{
-			"tuple<int, int, text>", TupleTypeInfo{
+			"tuple<int, int, text>", &TupleTypeInfo{
 				NativeType: NativeType{typ: TypeTuple},
 
 				Elems: []TypeInfo{
-					NativeType{typ: TypeInt},
-					NativeType{typ: TypeInt},
-					NativeType{typ: TypeText},
+					&NativeType{typ: TypeInt},
+					&NativeType{typ: TypeInt},
+					&NativeType{typ: TypeText},
 				},
 			},
 		},
 		{
-			"frozen<map<text, frozen<list<frozen<tuple<int, int>>>>>>", CollectionType{
+			"frozen<map<text, frozen<list<frozen<tuple<int, int>>>>>>", &CollectionType{
 				NativeType: NativeType{typ: TypeMap},
 
-				Key: NativeType{typ: TypeText},
-				Elem: CollectionType{
+				Key: &NativeType{typ: TypeText},
+				Elem: &CollectionType{
 					NativeType: NativeType{typ: TypeList},
-					Elem: TupleTypeInfo{
+					Elem: &TupleTypeInfo{
 						NativeType: NativeType{typ: TypeTuple},
 
 						Elems: []TypeInfo{
-							NativeType{typ: TypeInt},
-							NativeType{typ: TypeInt},
+							&NativeType{typ: TypeInt},
+							&NativeType{typ: TypeInt},
 						},
 					},
 				},
@@ -79,51 +79,51 @@ func TestGetCassandraType(t *testing.T) {
 		},
 		{
 			"frozen<tuple<frozen<tuple<text, frozen<list<frozen<tuple<int, int>>>>>>, frozen<tuple<text, frozen<list<frozen<tuple<int, int>>>>>>,  frozen<map<text, frozen<list<frozen<tuple<int, int>>>>>>>>",
-			TupleTypeInfo{
+			&TupleTypeInfo{
 				NativeType: NativeType{typ: TypeTuple},
 				Elems: []TypeInfo{
-					TupleTypeInfo{
+					&TupleTypeInfo{
 						NativeType: NativeType{typ: TypeTuple},
 						Elems: []TypeInfo{
-							NativeType{typ: TypeText},
-							CollectionType{
+							&NativeType{typ: TypeText},
+							&CollectionType{
 								NativeType: NativeType{typ: TypeList},
-								Elem: TupleTypeInfo{
+								Elem: &TupleTypeInfo{
 									NativeType: NativeType{typ: TypeTuple},
 									Elems: []TypeInfo{
-										NativeType{typ: TypeInt},
-										NativeType{typ: TypeInt},
+										&NativeType{typ: TypeInt},
+										&NativeType{typ: TypeInt},
 									},
 								},
 							},
 						},
 					},
-					TupleTypeInfo{
+					&TupleTypeInfo{
 						NativeType: NativeType{typ: TypeTuple},
 						Elems: []TypeInfo{
-							NativeType{typ: TypeText},
-							CollectionType{
+							&NativeType{typ: TypeText},
+							&CollectionType{
 								NativeType: NativeType{typ: TypeList},
-								Elem: TupleTypeInfo{
+								Elem: &TupleTypeInfo{
 									NativeType: NativeType{typ: TypeTuple},
 									Elems: []TypeInfo{
-										NativeType{typ: TypeInt},
-										NativeType{typ: TypeInt},
+										&NativeType{typ: TypeInt},
+										&NativeType{typ: TypeInt},
 									},
 								},
 							},
 						},
 					},
-					CollectionType{
+					&CollectionType{
 						NativeType: NativeType{typ: TypeMap},
-						Key:        NativeType{typ: TypeText},
-						Elem: CollectionType{
+						Key:        &NativeType{typ: TypeText},
+						Elem: &CollectionType{
 							NativeType: NativeType{typ: TypeList},
-							Elem: TupleTypeInfo{
+							Elem: &TupleTypeInfo{
 								NativeType: NativeType{typ: TypeTuple},
 								Elems: []TypeInfo{
-									NativeType{typ: TypeInt},
-									NativeType{typ: TypeInt},
+									&NativeType{typ: TypeInt},
+									&NativeType{typ: TypeInt},
 								},
 							},
 						},
@@ -132,71 +132,71 @@ func TestGetCassandraType(t *testing.T) {
 			},
 		},
 		{
-			"frozen<tuple<frozen<tuple<int, int>>, int, frozen<tuple<int, int>>>>", TupleTypeInfo{
+			"frozen<tuple<frozen<tuple<int, int>>, int, frozen<tuple<int, int>>>>", &TupleTypeInfo{
 				NativeType: NativeType{typ: TypeTuple},
 
 				Elems: []TypeInfo{
-					TupleTypeInfo{
+					&TupleTypeInfo{
 						NativeType: NativeType{typ: TypeTuple},
 
 						Elems: []TypeInfo{
-							NativeType{typ: TypeInt},
-							NativeType{typ: TypeInt},
+							&NativeType{typ: TypeInt},
+							&NativeType{typ: TypeInt},
 						},
 					},
-					NativeType{typ: TypeInt},
-					TupleTypeInfo{
+					&NativeType{typ: TypeInt},
+					&TupleTypeInfo{
 						NativeType: NativeType{typ: TypeTuple},
 
 						Elems: []TypeInfo{
-							NativeType{typ: TypeInt},
-							NativeType{typ: TypeInt},
+							&NativeType{typ: TypeInt},
+							&NativeType{typ: TypeInt},
 						},
 					},
 				},
 			},
 		},
 		{
-			"frozen<map<frozen<tuple<int, int>>, int>>", CollectionType{
+			"frozen<map<frozen<tuple<int, int>>, int>>", &CollectionType{
 				NativeType: NativeType{typ: TypeMap},
 
-				Key: TupleTypeInfo{
+				Key: &TupleTypeInfo{
 					NativeType: NativeType{typ: TypeTuple},
 
 					Elems: []TypeInfo{
-						NativeType{typ: TypeInt},
-						NativeType{typ: TypeInt},
+						&NativeType{typ: TypeInt},
+						&NativeType{typ: TypeInt},
 					},
 				},
-				Elem: NativeType{typ: TypeInt},
+				Elem: &NativeType{typ: TypeInt},
 			},
 		},
 		{
-			"set<smallint>", CollectionType{
+			"set<smallint>", &CollectionType{
 				NativeType: NativeType{typ: TypeSet},
-				Elem:       NativeType{typ: TypeSmallInt},
+				Elem:       &NativeType{typ: TypeSmallInt},
 			},
 		},
 		{
-			"list<tinyint>", CollectionType{
+			"list<tinyint>", &CollectionType{
 				NativeType: NativeType{typ: TypeList},
-				Elem:       NativeType{typ: TypeTinyInt},
+				Elem:       &NativeType{typ: TypeTinyInt},
 			},
 		},
-		{"smallint", NativeType{typ: TypeSmallInt}},
-		{"tinyint", NativeType{typ: TypeTinyInt}},
-		{"duration", NativeType{typ: TypeDuration}},
-		{"date", NativeType{typ: TypeDate}},
+		{"smallint", &NativeType{typ: TypeSmallInt}},
+		{"tinyint", &NativeType{typ: TypeTinyInt}},
+		{"duration", &NativeType{typ: TypeDuration}},
+		{"date", &NativeType{typ: TypeDate}},
 		{
-			"list<date>", CollectionType{
+			"list<date>", &CollectionType{
 				NativeType: NativeType{typ: TypeList},
-				Elem:       NativeType{typ: TypeDate},
+				Elem:       &NativeType{typ: TypeDate},
 			},
 		},
 		{
-			"set<duration>", CollectionType{
+			"set<duration>", &CollectionType{
 				NativeType: NativeType{typ: TypeSet},
-				Elem:       NativeType{typ: TypeDuration},
+				Elem:       &NativeType{typ: TypeDuration},
 			},
 		},
 	}
