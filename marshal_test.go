@@ -1264,6 +1264,42 @@ var unmarshalTests = []struct {
 		map[string]int{"foo": 1},
 		UnmarshalError("unmarshal map: unexpected eof"),
 	},
+	{
+		NativeType{proto: 2, typ: TypeDecimal},
+		[]byte("\xff\xff\xff"),
+		inf.NewDec(0, 0), // From the datastax/python-driver test suite
+		UnmarshalError("inf.Dec needs at least 4 bytes, while value has only 3"),
+	},
+	{
+		NativeType{proto: 5, typ: TypeDuration},
+		[]byte("\x89\xa2\xc3\xc2\x9a\xe0F\x91"),
+		Duration{},
+		UnmarshalError("failed to unmarshal duration into *gocql.Duration: failed to extract nanoseconds: data expect to have 9 bytes, but it has only 8"),
+	},
+	{
+		NativeType{proto: 5, typ: TypeDuration},
+		[]byte("\x89\xa2\xc3\xc2\x9a"),
+		Duration{},
+		UnmarshalError("failed to unmarshal duration into *gocql.Duration: failed to extract nanoseconds: unexpected eof"),
+	},
+	{
+		NativeType{proto: 5, typ: TypeDuration},
+		[]byte("\x89\xa2\xc3\xc2"),
+		Duration{},
+		UnmarshalError("failed to unmarshal duration into *gocql.Duration: failed to extract days: data expect to have 5 bytes, but it has only 4"),
+	},
+	{
+		NativeType{proto: 5, typ: TypeDuration},
+		[]byte("\x89\xa2"),
+		Duration{},
+		UnmarshalError("failed to unmarshal duration into *gocql.Duration: failed to extract days: unexpected eof"),
+	},
+	{
+		NativeType{proto: 5, typ: TypeDuration},
+		[]byte("\x89"),
+		Duration{},
+		UnmarshalError("failed to unmarshal duration into *gocql.Duration: failed to extract month: data expect to have 2 bytes, but it has only 1"),
+	},
 }
 
 func decimalize(s string) *inf.Dec {
