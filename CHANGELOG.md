@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - Potential panic on deserialization (#1695)
+- Unmarshalling of dates outside of `[1677-09-22, 2262-04-11]` range. (#1692)
 
 ## [1.4.0] - 2023-04-26
 
