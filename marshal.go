@@ -1329,6 +1329,8 @@ func unmarshalTimestamp(info TypeInfo, data []byte, value interface{}) error {
 	return unmarshalErrorf("can not unmarshal %s into %T", info, value)
 }
 
+const millisecondsInADay int64 = 24 * 60 * 60 * 1000
+
 func marshalDate(info TypeInfo, value interface{}) ([]byte, error) {
 	var timestamp int64
 	switch v := value.(type) {
@@ -1338,21 +1340,21 @@ func marshalDate(info TypeInfo, value interface{}) ([]byte, error) {
 		return nil, nil
 	case int64:
 		timestamp = v
-		x := timestamp/86400000 + int64(1<<31)
+		x := timestamp/millisecondsInADay + int64(1<<31)
 		return encInt(int32(x)), nil
 	case time.Time:
 		if v.IsZero() {
 			return []byte{}, nil
 		}
 		timestamp = int64(v.UTC().Unix()*1e3) + int64(v.UTC().Nanosecond()/1e6)
-		x := timestamp/86400000 + int64(1<<31)
+		x := timestamp/millisecondsInADay + int64(1<<31)
 		return encInt(int32(x)), nil
 	case *time.Time:
 		if v.IsZero() {
 			return []byte{}, nil
 		}
 		timestamp = int64(v.UTC().Unix()*1e3) + int64(v.UTC().Nanosecond()/1e6)
-		x := timestamp/86400000 + int64(1<<31)
+		x := timestamp/millisecondsInADay + int64(1<<31)
 		return encInt(int32(x)), nil
 	case string:
 		if v == "" {
@@ -1363,7 +1365,7 @@ func marshalDate(info TypeInfo, value interface{}) ([]byte, error) {
 			return nil, marshalErrorf("can not marshal %T into %s, date layout must be '2006-01-02'", value, info)
 		}
 		timestamp = int64(t.UTC().Unix()*1e3) + int64(t.UTC().Nanosecond()/1e6)
-		x := timestamp/86400000 + int64(1<<31)
+		x := timestamp/millisecondsInADay + int64(1<<31)
 		return encInt(int32(x)), nil
 	}
 
@@ -1384,8 +1386,8 @@ func unmarshalDate(info TypeInfo, data []byte, value interface{}) error {
 		}
 		var origin uint32 = 1 << 31
 		var current uint32 = binary.BigEndian.Uint32(data)
-		timestamp := (int64(current) - int64(origin)) * 86400000
-		*v = time.Unix(0, timestamp*int64(time.Millisecond)).In(time.UTC)
+		timestamp := (int64(current) - int64(origin)) * millisecondsInADay
+		*v = time.UnixMilli(timestamp).In(time.UTC)
 		return nil
 	case *string:
 		if len(data) == 0 {
@@ -1394,8 +1396,8 @@ func unmarshalDate(info TypeInfo, data []byte, value interface{}) error {
 		}
 		var origin uint32 = 1 << 31
 		var current uint32 = binary.BigEndian.Uint32(data)
-		timestamp := (int64(current) - int64(origin)) * 86400000
-		*v = time.Unix(0, timestamp*int64(time.Millisecond)).In(time.UTC).Format("2006-01-02")
+		timestamp := (int64(current) - int64(origin)) * millisecondsInADay
+		*v = time.UnixMilli(timestamp).In(time.UTC).Format("2006-01-02")
 		return nil
 	}
 	return unmarshalErrorf("can not unmarshal %s into %T", info, value)
