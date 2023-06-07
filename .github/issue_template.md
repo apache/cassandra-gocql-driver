@@ -1,9 +1,9 @@
 Please answer these questions before submitting your issue. Thanks!
 
-### What version of Scylla or Cassandra are you using?
+### What version of ScyllaDB or Cassandra are you using?
 
 
-### What version of Gocql are you using?
+### What version of ScyllaDB Gocql driver are you using?
 
 
 ### What version of Go are you using?
