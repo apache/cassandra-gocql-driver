@@ -12,6 +12,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [1.5.2] - 2023-06-12
+
+Same as 1.5.0. GitHub does not like gpg signed text in the tag message (even with prefixed armor),
+so pushing a new tag.
+
 ## [1.5.1] - 2023-06-12
 
 Same as 1.5.0. GitHub does not like gpg signed text in the tag message,
