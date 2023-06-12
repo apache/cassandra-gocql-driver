@@ -935,8 +935,8 @@ func (q Query) Statement() string {
 	return q.stmt
 }
 
-// Values returns the values passed in via Bind. This can be helpful for wrapping types
-// to not have to keep track of the values to be able to access them.
+// Values returns the values passed in via Bind.
+// This can be used by a wrapper type that needs to access the bound values.
 func (q Query) Values() []interface{} {
 	return q.values
 }
