@@ -935,6 +935,12 @@ func (q Query) Statement() string {
 	return q.stmt
 }
 
+// Values returns the values passed in via Bind. This can be helpful for wrapping types
+// to not have to keep track of the values to be able to access them.
+func (q Query) Values() []interface{} {
+	return q.values
+}
+
 // String implements the stringer interface.
 func (q Query) String() string {
 	return fmt.Sprintf("[query statement=%q values=%+v consistency=%s]", q.stmt, q.values, q.cons)
