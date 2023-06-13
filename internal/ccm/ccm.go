@@ -1,3 +1,4 @@
+//go:build ccm
 // +build ccm
 
 package ccm
@@ -8,11 +9,17 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"runtime"
 	"strings"
 )
 
 func execCmd(args ...string) (*bytes.Buffer, error) {
-	cmd := exec.Command("ccm", args...)
+	execName := "ccm"
+	if runtime.GOOS == "windows" {
+		args = append([]string{"/c", execName}, args...)
+		execName = "cmd.exe"
+	}
+	cmd := exec.Command(execName, args...)
 	stdout := &bytes.Buffer{}
 	cmd.Stdout = stdout
 	cmd.Stderr = &bytes.Buffer{}
@@ -41,7 +48,11 @@ func AllUp() error {
 }
 
 func NodeUp(node string) error {
-	_, err := execCmd(node, "start", "--wait-for-binary-proto", "--wait-other-notice")
+	args := []string{node, "start", "--wait-for-binary-proto"}
+	if runtime.GOOS == "windows" {
+		args = append(args, "--quiet-windows")
+	}
+	_, err := execCmd(args...)
 	return err
 }
 

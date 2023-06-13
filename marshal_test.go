@@ -1277,6 +1277,42 @@ var unmarshalTests = []struct {
 		map[string]int{"foo": 1},
 		UnmarshalError("unmarshal map: unexpected eof"),
 	},
+	{
+		NativeType{proto: 2, typ: TypeDecimal},
+		[]byte("\xff\xff\xff"),
+		inf.NewDec(0, 0), // From the datastax/python-driver test suite
+		UnmarshalError("inf.Dec needs at least 4 bytes, while value has only 3"),
+	},
+	{
+		NativeType{proto: 5, typ: TypeDuration},
+		[]byte("\x89\xa2\xc3\xc2\x9a\xe0F\x91"),
+		Duration{},
+		UnmarshalError("failed to unmarshal duration into *gocql.Duration: failed to extract nanoseconds: data expect to have 9 bytes, but it has only 8"),
+	},
+	{
+		NativeType{proto: 5, typ: TypeDuration},
+		[]byte("\x89\xa2\xc3\xc2\x9a"),
+		Duration{},
+		UnmarshalError("failed to unmarshal duration into *gocql.Duration: failed to extract nanoseconds: unexpected eof"),
+	},
+	{
+		NativeType{proto: 5, typ: TypeDuration},
+		[]byte("\x89\xa2\xc3\xc2"),
+		Duration{},
+		UnmarshalError("failed to unmarshal duration into *gocql.Duration: failed to extract days: data expect to have 5 bytes, but it has only 4"),
+	},
+	{
+		NativeType{proto: 5, typ: TypeDuration},
+		[]byte("\x89\xa2"),
+		Duration{},
+		UnmarshalError("failed to unmarshal duration into *gocql.Duration: failed to extract days: unexpected eof"),
+	},
+	{
+		NativeType{proto: 5, typ: TypeDuration},
+		[]byte("\x89"),
+		Duration{},
+		UnmarshalError("failed to unmarshal duration into *gocql.Duration: failed to extract month: data expect to have 2 bytes, but it has only 1"),
+	},
 }
 
 func decimalize(s string) *inf.Dec {
@@ -2198,6 +2234,7 @@ func TestMarshalDate(t *testing.T) {
 	now := time.Now().UTC()
 	timestamp := now.UnixNano() / int64(time.Millisecond)
 	expectedData := encInt(int32(timestamp/86400000 + int64(1<<31)))
+
 	var marshalDateTests = []struct {
 		Info  TypeInfo
 		Data  []byte
@@ -2235,6 +2272,57 @@ func TestMarshalDate(t *testing.T) {
 		if !bytes.Equal(data, test.Data) {
 			t.Errorf("marshalTest[%d]: expected %x (%v), got %x (%v) for time %s", i,
 				test.Data, decInt(test.Data), data, decInt(data), test.Value)
+		}
+	}
+}
+
+func TestLargeDate(t *testing.T) {
+	farFuture := time.Date(999999, time.December, 31, 0, 0, 0, 0, time.UTC)
+	expectedFutureData := encInt(int32(farFuture.UnixMilli()/86400000 + int64(1<<31)))
+
+	farPast := time.Date(-999999, time.January, 1, 0, 0, 0, 0, time.UTC)
+	expectedPastData := encInt(int32(farPast.UnixMilli()/86400000 + int64(1<<31)))
+
+	var marshalDateTests = []struct {
+		Data         []byte
+		Value        interface{}
+		ExpectedDate string
+	}{
+		{
+			expectedFutureData,
+			farFuture,
+			"999999-12-31",
+		},
+		{
+			expectedPastData,
+			farPast,
+			"-999999-01-01",
+		},
+	}
+
+	nativeType := NativeType{proto: 4, typ: TypeDate}
+
+	for i, test := range marshalDateTests {
+		t.Log(i, test)
+
+		data, err := Marshal(nativeType, test.Value)
+		if err != nil {
+			t.Errorf("largeDateTest[%d]: %v", i, err)
+			continue
+		}
+		if !bytes.Equal(data, test.Data) {
+			t.Errorf("largeDateTest[%d]: expected %x (%v), got %x (%v) for time %s", i,
+				test.Data, decInt(test.Data), data, decInt(data), test.Value)
+		}
+
+		var date time.Time
+		if err := Unmarshal(nativeType, data, &date); err != nil {
+			t.Fatal(err)
+		}
+
+		formattedDate := date.Format("2006-01-02")
+		if test.ExpectedDate != formattedDate {
+			t.Fatalf("largeDateTest: expected %v, got %v", test.ExpectedDate, formattedDate)
 		}
 	}
 }

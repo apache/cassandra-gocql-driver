@@ -15,6 +15,11 @@ There are open pull requests to merge the functionality to the upstream project:
 
 It also provides support for shard aware ports, a faster way to connect to all shards, details available in [blogpost](https://www.scylladb.com/2021/04/27/connect-faster-to-scylla-with-a-shard-aware-port/).
 
+Sunsetting Model
+----------------
+
+In general, the gocql team will focus on supporting the current and previous versions of Go. gocql may still work with older versions of Go, but official support for these versions will have been sunset.
+
 Installation
 ------------
 
