@@ -41,6 +41,12 @@ type Unmarshaler interface {
 	UnmarshalCQL(info TypeInfo, data []byte) error
 }
 
+// TypeHintedValue is a hinted value to power binding non-prepared stmts
+type TypeHintedValue struct {
+	Value interface{}
+	TInfo TypeInfo
+}
+
 // Marshal returns the CQL encoding of the value for the Cassandra
 // internal type described by the info parameter.
 func Marshal(info TypeInfo, value interface{}) ([]byte, error) {
