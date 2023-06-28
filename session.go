@@ -93,8 +93,8 @@ var queryPool = &sync.Pool{
 
 func addrsToHosts(addrs []string, defaultPort int, logger StdLogger) ([]*HostInfo, error) {
 	var hosts []*HostInfo
-	for _, hostport := range addrs {
-		resolvedHosts, err := hostInfo(hostport, defaultPort)
+	for _, hostaddr := range addrs {
+		resolvedHosts, err := hostInfo(hostaddr, defaultPort)
 		if err != nil {
 			// Try other hosts if unable to resolve DNS name
 			if _, ok := err.(*net.DNSError); ok {
