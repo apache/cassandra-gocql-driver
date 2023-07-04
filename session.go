@@ -93,8 +93,8 @@ var queryPool = &sync.Pool{
 
 func addrsToHosts(addrs []string, defaultPort int, logger StdLogger) ([]*HostInfo, error) {
 	var hosts []*HostInfo
-	for _, hostport := range addrs {
-		resolvedHosts, err := hostInfo(hostport, defaultPort)
+	for _, hostaddr := range addrs {
+		resolvedHosts, err := hostInfo(hostaddr, defaultPort)
 		if err != nil {
 			// Try other hosts if unable to resolve DNS name
 			if _, ok := err.(*net.DNSError); ok {
@@ -933,6 +933,12 @@ func (q *Query) defaultsFromSession() {
 // Statement returns the statement that was used to generate this query.
 func (q Query) Statement() string {
 	return q.stmt
+}
+
+// Values returns the values passed in via Bind.
+// This can be used by a wrapper type that needs to access the bound values.
+func (q Query) Values() []interface{} {
+	return q.values
 }
 
 // String implements the stringer interface.
