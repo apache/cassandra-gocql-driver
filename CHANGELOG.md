@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Added the InstaclustrPasswordAuthenticator to the list of default approved authenticators.
+- Added the `com.scylladb.auth.SaslauthdAuthenticator` and `com.scylladb.auth.TransitionalAuthenticator`
+  to the list of default approved authenticators.
 ### Changed
 
 ### Fixed
