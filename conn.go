@@ -858,6 +858,31 @@ func (c *Conn) executeQuery(qry *Query) *Iter {
 			params:     params,
 		}
 	} else {
+		values := qry.values
+
+		params.values = make([]queryValues, len(values))
+		hasSeenThVals := false
+		for i := 0; i < len(values); i++ {
+			v := &params.values[i]
+			value := values[i]
+			if thVal, isTh := value.(TypeHintedValue); isTh {
+				if !hasSeenThVals && i > 0 {
+					err := fmt.Errorf(
+						"type-hinted and non-hinted values must not be mixed")
+					return &Iter{err: err}
+				}
+				hasSeenThVals = true
+
+				if err := marshalQueryValue(thVal.TInfo, thVal.Value, v); err != nil {
+					return &Iter{err: err}
+				}
+			} else if hasSeenThVals {
+				err := fmt.Errorf(
+					"type-hinted and non-hinted values must not be mixed")
+				return &Iter{err: err}
+			}
+		}
+
 		frame = &writeQueryFrame{
 			statement: qry.stmt,
 			params:    params,
