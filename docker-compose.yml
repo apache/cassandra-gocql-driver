@@ -21,6 +21,11 @@ services:
     - type: bind
       source: ./testdata/pki/cassandra.key
       target: /etc/scylla/db.key
+    healthcheck:
+      test: [ "CMD", "cqlsh", "-e", "select * from system.local" ]
+      interval: 5s
+      timeout: 5s
+      retries: 18
 networks:
   public:
     driver: bridge
