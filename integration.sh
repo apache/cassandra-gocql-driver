@@ -8,11 +8,11 @@ readonly SCYLLA_IMAGE=${SCYLLA_IMAGE}
 set -eu -o pipefail
 
 function scylla_up() {
-  local -r exec="docker-compose exec -T"
+  local -r exec="docker compose exec -T"
 
   echo "==> Running Scylla ${SCYLLA_IMAGE}"
   docker pull ${SCYLLA_IMAGE}
-  docker-compose up -d
+  docker compose up -d
 
   echo "==> Waiting for CQL port"
   for s in $(docker-compose ps --services); do
@@ -27,7 +27,7 @@ function scylla_up() {
 
 function scylla_down() {
   echo "==> Stopping Scylla"
-  docker-compose down
+  docker compose down
 }
 
 function scylla_restart() {
