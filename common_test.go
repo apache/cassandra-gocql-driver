@@ -13,17 +13,18 @@ import (
 )
 
 var (
-	flagCluster      = flag.String("cluster", "127.0.0.1", "a comma-separated list of host:port tuples")
-	flagProto        = flag.Int("proto", 0, "protcol version")
-	flagCQL          = flag.String("cql", "3.0.0", "CQL version")
-	flagRF           = flag.Int("rf", 1, "replication factor for test keyspace")
-	clusterSize      = flag.Int("clusterSize", 1, "the expected size of the cluster")
-	flagRetry        = flag.Int("retries", 5, "number of times to retry queries")
-	flagAutoWait     = flag.Duration("autowait", 1000*time.Millisecond, "time to wait for autodiscovery to fill the hosts poll")
-	flagRunSslTest   = flag.Bool("runssl", false, "Set to true to run ssl test")
-	flagRunAuthTest  = flag.Bool("runauth", false, "Set to true to run authentication test")
-	flagCompressTest = flag.String("compressor", "", "compressor to use")
-	flagTimeout      = flag.Duration("gocql.timeout", 5*time.Second, "sets the connection `timeout` for all operations")
+	flagCluster          = flag.String("cluster", "127.0.0.1", "a comma-separated list of host:port tuples")
+	flagMultiNodeCluster = flag.String("multiCluster", "127.0.0.2", "a comma-separated list of host:port tuples")
+	flagProto            = flag.Int("proto", 0, "protcol version")
+	flagCQL              = flag.String("cql", "3.0.0", "CQL version")
+	flagRF               = flag.Int("rf", 1, "replication factor for test keyspace")
+	clusterSize          = flag.Int("clusterSize", 1, "the expected size of the cluster")
+	flagRetry            = flag.Int("retries", 5, "number of times to retry queries")
+	flagAutoWait         = flag.Duration("autowait", 1000*time.Millisecond, "time to wait for autodiscovery to fill the hosts poll")
+	flagRunSslTest       = flag.Bool("runssl", false, "Set to true to run ssl test")
+	flagRunAuthTest      = flag.Bool("runauth", false, "Set to true to run authentication test")
+	flagCompressTest     = flag.String("compressor", "", "compressor to use")
+	flagTimeout          = flag.Duration("gocql.timeout", 5*time.Second, "sets the connection `timeout` for all operations")
 
 	flagCassVersion cassVersion
 )
@@ -36,6 +37,10 @@ func init() {
 
 func getClusterHosts() []string {
 	return strings.Split(*flagCluster, ",")
+}
+
+func getMultiNodeClusterHosts() []string {
+	return strings.Split(*flagMultiNodeCluster, ",")
 }
 
 func addSslOptions(cluster *ClusterConfig) *ClusterConfig {
@@ -102,6 +107,35 @@ func createCluster(opts ...func(*ClusterConfig)) *ClusterConfig {
 	return cluster
 }
 
+func createMultiNodeCluster(opts ...func(*ClusterConfig)) *ClusterConfig {
+	clusterHosts := getMultiNodeClusterHosts()
+	cluster := NewCluster(clusterHosts...)
+	cluster.ProtoVersion = *flagProto
+	cluster.CQLVersion = *flagCQL
+	cluster.Timeout = *flagTimeout
+	cluster.Consistency = Quorum
+	cluster.MaxWaitSchemaAgreement = 2 * time.Minute // travis might be slow
+	if *flagRetry > 0 {
+		cluster.RetryPolicy = &SimpleRetryPolicy{NumRetries: *flagRetry}
+	}
+
+	switch *flagCompressTest {
+	case "snappy":
+		cluster.Compressor = &SnappyCompressor{}
+	case "":
+	default:
+		panic("invalid compressor: " + *flagCompressTest)
+	}
+
+	cluster = addSslOptions(cluster)
+
+	for _, opt := range opts {
+		opt(cluster)
+	}
+
+	return cluster
+}
+
 func createKeyspace(tb testing.TB, cluster *ClusterConfig, keyspace string) {
 	// TODO: tb.Helper()
 	c := *cluster
@@ -141,6 +175,37 @@ func createSessionFromCluster(cluster *ClusterConfig, tb testing.TB) *Session {
 	if err != nil {
 		tb.Fatal("createSession:", err)
 	}
+
+	if err := session.control.awaitSchemaAgreement(); err != nil {
+		tb.Fatal(err)
+	}
+
+	return session
+}
+
+func createSessionFromMultiNodeCluster(cluster *ClusterConfig, tb testing.TB) *Session {
+	keyspace := "test1"
+
+	session, err := cluster.CreateSession()
+	if err != nil {
+		tb.Fatal("createSession:", err)
+	}
+
+	initOnce.Do(func() {
+		if err = createTable(session, `DROP KEYSPACE IF EXISTS `+keyspace); err != nil {
+			panic(fmt.Sprintf("unable to drop keyspace: %v", err))
+		}
+
+		if err = createTable(session, fmt.Sprintf(`CREATE KEYSPACE %s
+		WITH replication = {
+			'class': 'NetworkTopologyStrategy',
+			'replication_factor': 1,
+			'initial_tablets': 8
+		};`, keyspace)); err != nil {
+			panic(fmt.Sprintf("unable to create keyspace: %v", err))
+		}
+
+	})
 
 	if err := session.control.awaitSchemaAgreement(); err != nil {
 		tb.Fatal(err)
