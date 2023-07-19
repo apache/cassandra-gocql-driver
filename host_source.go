@@ -989,6 +989,8 @@ func addTablet(r *ringDescriber, tablet *TabletInfo) error {
 	r.session.ring.setTablets(tablets)
 	r.session.policy.SetTablets(tablets)
 
+	r.session.schemaDescriber.refreshTabletsSchema()
+
 	return nil
 }
 

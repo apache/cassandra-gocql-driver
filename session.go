@@ -577,6 +577,19 @@ func (s *Session) KeyspaceMetadata(keyspace string) (*KeyspaceMetadata, error) {
 	return s.schemaDescriber.getSchema(keyspace)
 }
 
+// TabletsMetadata returns the metadata about tablets
+// Experimental, this interface and use may change
+func (s *Session) TabletsMetadata() (*TabletsMetadata, error) {
+	// fail fast
+	if s.Closed() {
+		return nil, ErrSessionClosed
+	} else if !s.tabletsRoutingV1 {
+		return nil, ErrTabletsNotUsed
+	}
+
+	return s.schemaDescriber.getTabletsSchema(), nil
+}
+
 func (s *Session) getConn() *Conn {
 	hosts := s.ring.allHosts()
 	for _, host := range hosts {
@@ -1200,6 +1213,10 @@ func (q *Query) Keyspace() string {
 // Table returns name of the table the query will be executed against.
 func (q *Query) Table() string {
 	return q.routingInfo.table
+}
+
+func (q *Query) GetSession() *Session {
+	return q.session
 }
 
 // GetRoutingKey gets the routing key to use for routing this query. If
@@ -1862,6 +1879,10 @@ func (b *Batch) Table() string {
 	return b.routingInfo.table
 }
 
+func (b *Batch) GetSession() *Session {
+	return b.session
+}
+
 // Attempts returns the number of attempts made to execute the batch.
 func (b *Batch) Attempts() int {
 	return b.metrics.attempts()
@@ -2366,6 +2387,7 @@ var (
 	ErrNoKeyspace           = errors.New("no keyspace provided")
 	ErrKeyspaceDoesNotExist = errors.New("keyspace does not exist")
 	ErrNoMetadata           = errors.New("no metadata available")
+	ErrTabletsNotUsed       = errors.New("tablets not used")
 )
 
 type ErrProtocol struct{ error }
