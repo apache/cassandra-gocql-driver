@@ -13,4 +13,11 @@ require (
 	sigs.k8s.io/yaml v1.3.0
 )
 
+retract (
+    v1.8.0  // tag from kiwicom/gocql added by mistake to scylladb/gocql
+    v1.8.1  // tag from kiwicom/gocql added by mistake to scylladb/gocql
+    v1.9.0  // tag from kiwicom/gocql added by mistake to scylladb/gocql
+    v1.10.0 // tag from kiwicom/gocql added by mistake to scylladb/gocql
+)
+
 go 1.13
