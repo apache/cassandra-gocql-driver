@@ -2519,3 +2519,98 @@ func bytesWithLength(data ...[]byte) []byte {
 	}
 	return ret
 }
+
+func TestTupleTypeInfo_String(t *testing.T) {
+	tests := map[string]struct {
+		input    TupleTypeInfo
+		expected string
+	}{
+		"empty elems": {
+			input: TupleTypeInfo{
+				NativeType: NewNativeType(4, TypeTuple, ""),
+				Elems:      nil,
+			},
+			expected: "tuple()",
+		},
+		"one elem": {
+			input: TupleTypeInfo{
+				NativeType: NewNativeType(4, TypeTuple, ""),
+				Elems: []TypeInfo{
+					NewNativeType(4, TypeVarchar, ""),
+				},
+			},
+			expected: "tuple(varchar)",
+		},
+		"two elems": {
+			input: TupleTypeInfo{
+				NativeType: NewNativeType(4, TypeTuple, ""),
+				Elems: []TypeInfo{
+					NewNativeType(4, TypeVarchar, ""),
+					NewNativeType(4, TypeSmallInt, ""),
+				},
+			},
+			expected: "tuple(varchar, smallint)",
+		},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			got := test.input.String()
+			assertEqual(t, "string value", test.expected, got)
+		})
+	}
+}
+
+func TestUDTTypeInfo_String(t *testing.T) {
+	tests := map[string]struct {
+		input    UDTTypeInfo
+		expected string
+	}{
+		"empty elems": {
+			input: UDTTypeInfo{
+				NativeType: NewNativeType(4, TypeUDT, ""),
+				Name:       "myudt",
+				KeySpace:   "mykeyspace",
+				Elements:   nil,
+			},
+			expected: "mykeyspace.myudt{}",
+		},
+		"one elem": {
+			input: UDTTypeInfo{
+				NativeType: NewNativeType(4, TypeUDT, ""),
+				Name:       "myudt",
+				KeySpace:   "mykeyspace",
+				Elements: []UDTField{
+					{
+						Name: "first",
+						Type: NewNativeType(4, TypeVarchar, ""),
+					},
+				},
+			},
+			expected: "mykeyspace.myudt{first=varchar}",
+		},
+		"two elems": {
+			input: UDTTypeInfo{
+				NativeType: NewNativeType(4, TypeUDT, ""),
+				Name:       "myudt",
+				KeySpace:   "mykeyspace",
+				Elements: []UDTField{
+					{
+						Name: "first",
+						Type: NewNativeType(4, TypeVarchar, ""),
+					},
+					{
+						Name: "second",
+						Type: NewNativeType(4, TypeSmallInt, ""),
+					},
+				},
+			},
+			expected: "mykeyspace.myudt{first=varchar,second=smallint}",
+		},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			got := test.input.String()
+			assertEqual(t, "string value", test.expected, got)
+		})
+	}
+}

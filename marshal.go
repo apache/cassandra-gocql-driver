@@ -2538,12 +2538,15 @@ type TupleTypeInfo struct {
 }
 
 func (t TupleTypeInfo) String() string {
-	var buf bytes.Buffer
-	buf.WriteString(fmt.Sprintf("%s(", t.typ))
-	for _, elem := range t.Elems {
-		buf.WriteString(fmt.Sprintf("%s, ", elem))
+	var buf strings.Builder
+	buf.WriteString(t.typ.String())
+	buf.WriteString("(")
+	for i, elem := range t.Elems {
+		if i > 0 {
+			buf.WriteString(", ")
+		}
+		buf.WriteString(fmt.Sprintf("%s", elem))
 	}
-	buf.Truncate(buf.Len() - 2)
 	buf.WriteByte(')')
 	return buf.String()
 }
@@ -2593,20 +2596,17 @@ func (u UDTTypeInfo) New() interface{} {
 }
 
 func (u UDTTypeInfo) String() string {
-	buf := &bytes.Buffer{}
+	var buf strings.Builder
 
-	fmt.Fprintf(buf, "%s.%s{", u.KeySpace, u.Name)
-	first := true
-	for _, e := range u.Elements {
-		if !first {
-			fmt.Fprint(buf, ",")
-		} else {
-			first = false
+	buf.WriteString(fmt.Sprintf("%s.%s{", u.KeySpace, u.Name))
+	for i, e := range u.Elements {
+		if i > 0 {
+			buf.WriteString(",")
 		}
 
-		fmt.Fprintf(buf, "%s=%v", e.Name, e.Type)
+		buf.WriteString(fmt.Sprintf("%s=%v", e.Name, e.Type))
 	}
-	fmt.Fprint(buf, "}")
+	buf.WriteString("}")
 
 	return buf.String()
 }
