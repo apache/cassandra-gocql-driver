@@ -1378,6 +1378,12 @@ func (c *Conn) executeQuery(ctx context.Context, qry *Query) *Iter {
 			params:        params,
 			customPayload: qry.customPayload,
 		}
+
+		// Set "keyspace" and "table" property in the query if it is present in preparedMetadata
+		qry.routingInfo.mu.Lock()
+		qry.routingInfo.keyspace = info.request.keyspace
+		qry.routingInfo.table = info.request.table
+		qry.routingInfo.mu.Unlock()
 	} else {
 		frame = &writeQueryFrame{
 			statement:     qry.stmt,
