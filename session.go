@@ -2131,6 +2131,7 @@ func (t *traceWriter) Trace(traceId []byte) {
 		activity  string
 		source    string
 		elapsed   int
+		thread    string
 	)
 
 	t.mu.Lock()
@@ -2139,13 +2140,13 @@ func (t *traceWriter) Trace(traceId []byte) {
 	fmt.Fprintf(t.w, "Tracing session %016x (coordinator: %s, duration: %v):\n",
 		traceId, coordinator, time.Duration(duration)*time.Microsecond)
 
-	iter = t.session.control.query(`SELECT event_id, activity, source, source_elapsed
+	iter = t.session.control.query(`SELECT event_id, activity, source, source_elapsed, thread
 			FROM system_traces.events
 			WHERE session_id = ?`, traceId)
 
-	for iter.Scan(&timestamp, &activity, &source, &elapsed) {
-		fmt.Fprintf(t.w, "%s: %s (source: %s, elapsed: %d)\n",
-			timestamp.Format("2006/01/02 15:04:05.999999"), activity, source, elapsed)
+	for iter.Scan(&timestamp, &activity, &source, &elapsed, &thread) {
+		fmt.Fprintf(t.w, "%s: %s [%s] (source: %s, elapsed: %d)\n",
+			timestamp.Format("2006/01/02 15:04:05.999999"), activity, thread, source, elapsed)
 	}
 
 	if err := iter.Close(); err != nil {
