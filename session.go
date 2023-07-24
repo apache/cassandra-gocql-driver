@@ -93,8 +93,8 @@ var queryPool = &sync.Pool{
 
 func addrsToHosts(addrs []string, defaultPort int, logger StdLogger) ([]*HostInfo, error) {
 	var hosts []*HostInfo
-	for _, hostport := range addrs {
-		resolvedHosts, err := hostInfo(hostport, defaultPort)
+	for _, hostaddr := range addrs {
+		resolvedHosts, err := hostInfo(hostaddr, defaultPort)
 		if err != nil {
 			// Try other hosts if unable to resolve DNS name
 			if _, ok := err.(*net.DNSError); ok {
@@ -643,8 +643,8 @@ func (s *Session) routingKeyInfo(ctx context.Context, stmt string) (*routingKeyI
 		return nil, nil
 	}
 
-	table := info.request.columns[0].Table
-	keyspace := info.request.columns[0].Keyspace
+	table := info.request.table
+	keyspace := info.request.keyspace
 
 	partitioner, err := scyllaGetTablePartitioner(s, keyspace, table)
 	if err != nil {
@@ -665,6 +665,8 @@ func (s *Session) routingKeyInfo(ctx context.Context, stmt string) (*routingKeyI
 			types:       types,
 			lwt:         info.request.lwt,
 			partitioner: partitioner,
+			keyspace:    keyspace,
+			table:       table,
 		}
 
 		inflight.value = routingKeyInfo
@@ -700,6 +702,8 @@ func (s *Session) routingKeyInfo(ctx context.Context, stmt string) (*routingKeyI
 		types:       make([]TypeInfo, size),
 		lwt:         info.request.lwt,
 		partitioner: partitioner,
+		keyspace:    keyspace,
+		table:       table,
 	}
 
 	for keyIndex, keyColumn := range partitionKey {
@@ -951,6 +955,10 @@ type queryRoutingInfo struct {
 
 	// If not nil, represents a custom partitioner for the table.
 	partitioner partitioner
+
+	keyspace string
+
+	table string
 }
 
 func (qri *queryRoutingInfo) isLWT() bool {
@@ -1158,12 +1166,21 @@ func (q *Query) Keyspace() string {
 	if q.getKeyspace != nil {
 		return q.getKeyspace()
 	}
+	if q.routingInfo.keyspace != "" {
+		return q.routingInfo.keyspace
+	}
+
 	if q.session == nil {
 		return ""
 	}
 	// TODO(chbannis): this should be parsed from the query or we should let
 	// this be set by users.
 	return q.session.cfg.Keyspace
+}
+
+// Table returns name of the table the query will be executed against.
+func (q *Query) Table() string {
+	return q.routingInfo.table
 }
 
 // GetRoutingKey gets the routing key to use for routing this query. If
@@ -1187,10 +1204,13 @@ func (q *Query) GetRoutingKey() ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	if routingKeyInfo != nil {
 		q.routingInfo.mu.Lock()
 		q.routingInfo.lwt = routingKeyInfo.lwt
 		q.routingInfo.partitioner = routingKeyInfo.partitioner
+		q.routingInfo.keyspace = routingKeyInfo.keyspace
+		q.routingInfo.table = routingKeyInfo.table
 		q.routingInfo.mu.Unlock()
 	}
 	return createRoutingKey(routingKeyInfo, q.values)
@@ -1818,6 +1838,11 @@ func (b *Batch) Keyspace() string {
 	return b.keyspace
 }
 
+// Batch has no reasonable eqivalent of Query.Table().
+func (b *Batch) Table() string {
+	return b.routingInfo.table
+}
+
 // Attempts returns the number of attempts made to execute the batch.
 func (b *Batch) Attempts() int {
 	return b.metrics.attempts()
@@ -2106,8 +2131,10 @@ type routingKeyInfoLRU struct {
 }
 
 type routingKeyInfo struct {
-	indexes     []int
-	types       []TypeInfo
+	indexes  []int
+	types    []TypeInfo
+	keyspace string
+	table    string
 	lwt         bool
 	partitioner partitioner
 }
@@ -2182,6 +2209,7 @@ func (t *traceWriter) Trace(traceId []byte) {
 		activity  string
 		source    string
 		elapsed   int
+		thread    string
 	)
 
 	t.mu.Lock()
@@ -2190,13 +2218,13 @@ func (t *traceWriter) Trace(traceId []byte) {
 	fmt.Fprintf(t.w, "Tracing session %016x (coordinator: %s, duration: %v):\n",
 		traceId, coordinator, time.Duration(duration)*time.Microsecond)
 
-	iter = t.session.control.query(`SELECT event_id, activity, source, source_elapsed
+	iter = t.session.control.query(`SELECT event_id, activity, source, source_elapsed, thread
 			FROM system_traces.events
 			WHERE session_id = ?`, traceId)
 
-	for iter.Scan(&timestamp, &activity, &source, &elapsed) {
-		fmt.Fprintf(t.w, "%s: %s (source: %s, elapsed: %d)\n",
-			timestamp.Format("2006/01/02 15:04:05.999999"), activity, source, elapsed)
+	for iter.Scan(&timestamp, &activity, &source, &elapsed, &thread) {
+		fmt.Fprintf(t.w, "%s: %s [%s] (source: %s, elapsed: %d)\n",
+			timestamp.Format("2006/01/02 15:04:05.999999"), activity, thread, source, elapsed)
 	}
 
 	if err := iter.Close(); err != nil {

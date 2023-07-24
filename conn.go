@@ -34,6 +34,7 @@ var (
 		"com.ericsson.bss.cassandra.ecaudit.auth.AuditAuthenticator",
 		"com.scylladb.auth.SaslauthdAuthenticator",
 		"com.scylladb.auth.TransitionalAuthenticator",
+		"com.instaclustr.cassandra.auth.InstaclustrPasswordAuthenticator",
 	}
 )
 
@@ -1428,9 +1429,11 @@ func (c *Conn) executeQuery(ctx context.Context, qry *Query) *Iter {
 			customPayload: qry.customPayload,
 		}
 
-		// Set "lwt" property in the query if it is present in preparedMetadata
+		// Set "lwt", keyspace", "table" property in the query if it is present in preparedMetadata
 		qry.routingInfo.mu.Lock()
 		qry.routingInfo.lwt = info.request.lwt
+		qry.routingInfo.keyspace = info.request.keyspace
+		qry.routingInfo.table = info.request.table
 		qry.routingInfo.mu.Unlock()
 	} else {
 		frame = &writeQueryFrame{
