@@ -23,6 +23,8 @@ type ExecutableQuery interface {
 	withContext(context.Context) ExecutableQuery
 
 	RetryableQuery
+
+	GetSession() *Session
 }
 
 type queryExecutor struct {
@@ -123,7 +125,7 @@ func (q *queryExecutor) do(ctx context.Context, qry ExecutableQuery, hostIter Ne
 			continue
 		}
 
-		conn := pool.Pick(selectedHost.Token())
+		conn := pool.Pick(selectedHost.Token(), qry.Keyspace(), qry.Table())
 		if conn == nil {
 			selectedHost = hostIter()
 			continue

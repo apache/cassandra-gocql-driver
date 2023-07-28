@@ -367,6 +367,7 @@ type framer struct {
 
 	flagLWT               int
 	rateLimitingErrorCode int
+	tabletsRoutingV1      bool
 }
 
 func newFramer(compressor Compressor, version byte) *framer {
@@ -397,6 +398,8 @@ func newFramer(compressor Compressor, version byte) *framer {
 
 	f.header = nil
 	f.traceID = nil
+
+	f.tabletsRoutingV1 = false
 
 	return f
 }
@@ -435,6 +438,7 @@ func newFramerWithExts(compressor Compressor, version byte, cqlProtoExts []cqlPr
 					tabletsRoutingV1, tabletsRoutingV1Ext{}))
 			return f
 		}
+		f.tabletsRoutingV1 = true
 	}
 
 	return f

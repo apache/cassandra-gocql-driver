@@ -208,7 +208,8 @@ type Conn struct {
 
 	timeouts int64
 
-	logger StdLogger
+	logger           StdLogger
+	tabletsRoutingV1 bool
 }
 
 // connect establishes a connection to a Cassandra node using session's connection config.
@@ -724,6 +725,9 @@ func (c *Conn) recv(ctx context.Context) error {
 	} else if head.stream == -1 {
 		// TODO: handle cassandra event frames, we shouldnt get any currently
 		framer := newFramerWithExts(c.compressor, c.version, c.cqlProtoExts)
+		c.mu.Lock()
+		c.tabletsRoutingV1 = framer.tabletsRoutingV1
+		c.mu.Unlock()
 		if err := framer.readFrame(c, &head); err != nil {
 			return err
 		}
@@ -733,6 +737,9 @@ func (c *Conn) recv(ctx context.Context) error {
 		// reserved stream that we dont use, probably due to a protocol error
 		// or a bug in Cassandra, this should be an error, parse it and return.
 		framer := newFramerWithExts(c.compressor, c.version, c.cqlProtoExts)
+		c.mu.Lock()
+		c.tabletsRoutingV1 = framer.tabletsRoutingV1
+		c.mu.Unlock()
 		if err := framer.readFrame(c, &head); err != nil {
 			return err
 		}
@@ -1069,6 +1076,9 @@ func (c *Conn) exec(ctx context.Context, req frameBuilder, tracer Tracer) (*fram
 
 	// resp is basically a waiting semaphore protecting the framer
 	framer := newFramerWithExts(c.compressor, c.version, c.cqlProtoExts)
+	c.mu.Lock()
+	c.tabletsRoutingV1 = framer.tabletsRoutingV1
+	c.mu.Unlock()
 
 	call := &callReq{
 		timeout:  make(chan struct{}),
@@ -1451,6 +1461,63 @@ func (c *Conn) executeQuery(ctx context.Context, qry *Query) *Iter {
 	resp, err := framer.parseFrame()
 	if err != nil {
 		return &Iter{err: err}
+	}
+
+	if len(framer.customPayload) > 0 {
+		if tabletInfo, ok := framer.customPayload["tablets-routing-v1"]; ok {
+			var firstToken string
+			var lastToken string
+			var replicas [][]interface{}
+			tabletInfoValue := []interface{}{&firstToken, &lastToken, &replicas}
+			Unmarshal(TupleTypeInfo{
+				NativeType: NativeType{proto: c.version, typ: TypeTuple},
+				Elems: []TypeInfo{
+					NativeType{typ: TypeBigInt},
+					NativeType{typ: TypeBigInt},
+					CollectionType{
+						NativeType: NativeType{proto: c.version, typ: TypeList},
+						Elem: TupleTypeInfo{
+							NativeType: NativeType{proto: c.version, typ: TypeTuple},
+							Elems: []TypeInfo{
+								NativeType{proto: c.version, typ: TypeUUID},
+								NativeType{proto: c.version, typ: TypeInt},
+							}},
+					},
+				},
+			}, tabletInfo, tabletInfoValue)
+
+			tablet := TabletInfo{}
+			tablet.firstToken, err = strconv.ParseInt(firstToken, 10, 64)
+			if err != nil {
+				return &Iter{err: err}
+			}
+			tablet.lastToken, err = strconv.ParseInt(lastToken, 10, 64)
+			if err != nil {
+				return &Iter{err: err}
+			}
+
+			tabletReplicas := make([]ReplicaInfo, 0, len(replicas))
+			for _, replica := range replicas {
+				if len(replica) != 2 {
+					return &Iter{err: err}
+				}
+				if hostId, ok := replica[0].(UUID); ok {
+					if shardId, ok := replica[1].(int); ok {
+						repInfo := ReplicaInfo{hostId, shardId}
+						tabletReplicas = append(tabletReplicas, repInfo)
+					} else {
+						return &Iter{err: err}
+					}
+				} else {
+					return &Iter{err: err}
+				}
+			}
+			tablet.replicas = tabletReplicas
+			tablet.keyspaceName = qry.routingInfo.keyspace
+			tablet.tableName = qry.routingInfo.table
+
+			addTablet(c.session.hostSource, &tablet)
+		}
 	}
 
 	if len(framer.traceID) > 0 && qry.trace != nil {

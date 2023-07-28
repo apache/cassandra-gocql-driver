@@ -83,6 +83,8 @@ type Session struct {
 	isInitialized bool
 
 	logger StdLogger
+
+	tabletsRoutingV1 bool
 }
 
 var queryPool = &sync.Pool{
@@ -227,6 +229,9 @@ func (s *Session) init() error {
 		if err := s.control.connect(hosts); err != nil {
 			return err
 		}
+		s.control.getConn().conn.mu.Lock()
+		s.tabletsRoutingV1 = s.control.getConn().conn.tabletsRoutingV1
+		s.control.getConn().conn.mu.Unlock()
 
 		if !s.cfg.DisableInitialHostLookup {
 			var partitioner string
@@ -243,6 +248,12 @@ func (s *Session) init() error {
 			}
 
 			hosts = filteredHosts
+
+			if s.tabletsRoutingV1 {
+				tablets := []*TabletInfo{}
+				s.ring.setTablets(tablets)
+				s.policy.SetTablets(tablets)
+			}
 		}
 	}
 
@@ -576,12 +587,20 @@ func (s *Session) getConn() *Conn {
 		pool, ok := s.pool.getPool(host)
 		if !ok {
 			continue
-		} else if conn := pool.Pick(nil); conn != nil {
+		} else if conn := pool.Pick(nil, "", ""); conn != nil {
 			return conn
 		}
 	}
 
 	return nil
+}
+
+// Experimental, this interface and use may change
+func (s *Session) getTablets() []*TabletInfo {
+	s.ring.mu.Lock()
+	defer s.ring.mu.Unlock()
+
+	return s.ring.tabletList
 }
 
 // returns routing key indexes and type info

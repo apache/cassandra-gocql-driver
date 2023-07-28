@@ -95,6 +95,34 @@ func (c *cowHostList) remove(ip net.IP) bool {
 	return true
 }
 
+// cowTabletList implements a copy on write tablet list, its equivalent type is []*TabletInfo
+// Experimental, this interface and use may change
+type cowTabletList struct {
+	list atomic.Value
+	mu   sync.Mutex
+}
+
+func (c *cowTabletList) get() []*TabletInfo {
+	l, ok := c.list.Load().(*[]*TabletInfo)
+	if !ok {
+		return nil
+	}
+	return *l
+}
+
+func (c *cowTabletList) set(tablets []*TabletInfo) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	n := len(tablets)
+	l := make([]*TabletInfo, n)
+	for i := 0; i < n; i++ {
+		l[i] = tablets[i]
+	}
+
+	c.list.Store(&l)
+}
+
 // RetryableQuery is an interface that represents a query or batch statement that
 // exposes the correct functions for the retry policy logic to evaluate correctly.
 type RetryableQuery interface {
@@ -279,6 +307,8 @@ type HostTierer interface {
 type HostSelectionPolicy interface {
 	HostStateNotifier
 	SetPartitioner
+	// Experimental, this interface and use may change
+	SetTablets
 	KeyspaceChanged(KeyspaceUpdateEvent)
 	Init(*Session)
 	IsLocal(host *HostInfo) bool
@@ -330,6 +360,9 @@ func (r *roundRobinHostPolicy) IsLocal(*HostInfo) bool              { return tru
 func (r *roundRobinHostPolicy) KeyspaceChanged(KeyspaceUpdateEvent) {}
 func (r *roundRobinHostPolicy) SetPartitioner(partitioner string)   {}
 func (r *roundRobinHostPolicy) Init(*Session)                       {}
+
+// Experimental, this interface and use may change
+func (r *roundRobinHostPolicy) SetTablets(tablets []*TabletInfo) {}
 
 func (r *roundRobinHostPolicy) Pick(qry ExecutableQuery) NextHost {
 	nextStartOffset := atomic.AddUint64(&r.lastUsedHostIdx, 1)
@@ -407,6 +440,9 @@ type tokenAwareHostPolicy struct {
 	metadata    atomic.Value // *clusterMeta
 
 	logger StdLogger
+
+	// Experimental, this interface and use may change
+	tablets cowTabletList
 }
 
 func (t *tokenAwareHostPolicy) Init(s *Session) {
@@ -471,6 +507,14 @@ func (t *tokenAwareHostPolicy) SetPartitioner(partitioner string) {
 		t.updateReplicas(meta, t.getKeyspaceName())
 		t.metadata.Store(meta)
 	}
+}
+
+// Experimental, this interface and use may change
+func (t *tokenAwareHostPolicy) SetTablets(tablets []*TabletInfo) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	t.tablets.set(tablets)
 }
 
 func (t *tokenAwareHostPolicy) AddHost(host *HostInfo) {
@@ -589,16 +633,57 @@ func (t *tokenAwareHostPolicy) Pick(qry ExecutableQuery) NextHost {
 	}
 
 	token := partitioner.Hash(routingKey)
-	ht := meta.replicas[qry.Keyspace()].replicasFor(token)
 
 	var replicas []*HostInfo
-	if ht == nil {
-		host, _ := meta.tokenRing.GetHostForToken(token)
-		replicas = []*HostInfo{host}
-	} else {
-		replicas = ht.hosts
+
+	if qry.GetSession() != nil && qry.GetSession().tabletsRoutingV1 {
+		t.tablets.mu.Lock()
+		tablets := t.tablets.get()
+
+		// Search for tablets with Keyspace and Table from the Query
+		l, r := findTablets(tablets, qry.Keyspace(), qry.Table())
+		if l != -1 {
+			tablet := findTabletForToken(tablets, token, l, r)
+
+			replicas = []*HostInfo{}
+			for _, replica := range tablet.Replicas() {
+				t.hosts.mu.Lock()
+				hosts := t.hosts.get()
+				for _, host := range hosts {
+					if host.hostId == replica.hostId.String() {
+						replicas = append(replicas, host)
+						break
+					}
+				}
+				t.hosts.mu.Unlock()
+			}
+		} else {
+			ht := meta.replicas[qry.Keyspace()].replicasFor(token)
+
+			if ht == nil {
+				host, _ := meta.tokenRing.GetHostForToken(token)
+				replicas = []*HostInfo{host}
+			} else {
+				replicas = ht.hosts
+			}
+		}
+
 		if t.shuffleReplicas && !qry.IsLWT() {
 			replicas = shuffleHosts(replicas)
+		}
+
+		t.tablets.mu.Unlock()
+	} else {
+		ht := meta.replicas[qry.Keyspace()].replicasFor(token)
+
+		if ht == nil {
+			host, _ := meta.tokenRing.GetHostForToken(token)
+			replicas = []*HostInfo{host}
+		} else {
+			replicas = ht.hosts
+			if t.shuffleReplicas && !qry.IsLWT() {
+				replicas = shuffleHosts(replicas)
+			}
 		}
 	}
 
@@ -710,6 +795,9 @@ func (r *hostPoolHostPolicy) Init(*Session)                       {}
 func (r *hostPoolHostPolicy) KeyspaceChanged(KeyspaceUpdateEvent) {}
 func (r *hostPoolHostPolicy) SetPartitioner(string)               {}
 func (r *hostPoolHostPolicy) IsLocal(*HostInfo) bool              { return true }
+
+// Experimental, this interface and use may change
+func (r *hostPoolHostPolicy) SetTablets(tablets []*TabletInfo) {}
 
 func (r *hostPoolHostPolicy) SetHosts(hosts []*HostInfo) {
 	peers := make([]string, len(hosts))
@@ -850,6 +938,9 @@ func (d *dcAwareRR) IsLocal(host *HostInfo) bool {
 	return host.DataCenter() == d.local
 }
 
+// Experimental, this interface and use may change
+func (d *dcAwareRR) SetTablets(tablets []*TabletInfo) {}
+
 func (d *dcAwareRR) AddHost(host *HostInfo) {
 	if d.IsLocal(host) {
 		d.localHosts.add(host)
@@ -942,6 +1033,9 @@ func (d *rackAwareRR) SetPartitioner(p string)             {}
 func (d *rackAwareRR) MaxHostTier() uint {
 	return 2
 }
+
+// Experimental, this interface and use may change
+func (d *rackAwareRR) SetTablets(tablets []*TabletInfo) {}
 
 func (d *rackAwareRR) HostTier(host *HostInfo) uint {
 	if host.DataCenter() == d.localDC {
