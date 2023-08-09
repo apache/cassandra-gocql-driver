@@ -5,7 +5,6 @@
 package gocql
 
 import (
-	"bytes"
 	"crypto/md5"
 	"fmt"
 	"math/big"
@@ -181,7 +180,7 @@ func (t *tokenRing) Swap(i, j int) {
 }
 
 func (t *tokenRing) String() string {
-	buf := &bytes.Buffer{}
+	var buf  strings.Builder
 	buf.WriteString("TokenRing(")
 	if t.partitioner != nil {
 		buf.WriteString(t.partitioner.Name())
