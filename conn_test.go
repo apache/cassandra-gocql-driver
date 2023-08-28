@@ -229,6 +229,7 @@ func TestStartupTimeout(t *testing.T) {
 	// Set very long query connection timeout
 	// so we know CreateSession() is using the ConnectTimeout
 	cluster.Timeout = time.Second * 5
+	cluster.ConnectTimeout = 600 * time.Millisecond
 
 	// Create session should timeout during connect attempt
 	_, err := cluster.CreateSession()

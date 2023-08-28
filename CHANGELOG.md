@@ -14,6 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   information about that every time this information is received. (#1714)
 ### Changed
 - Tracer created with NewTraceWriter now includes the thread information from trace events in the output. (#1716)
+- Increased default timeouts so that they are higher than Cassandra default timeouts.
+  This should help prevent issues where a default configuration overloads a server using default timeouts
+  during retries. (#1701)
 
 ### Fixed
 
