@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -138,6 +139,10 @@ type HostInfo struct {
 func (h *HostInfo) Equal(host *HostInfo) bool {
 	if h == host {
 		// prevent rlock reentry
+		return true
+	}
+
+	if id := h.HostID(); id != "" && id == host.HostID() {
 		return true
 	}
 
@@ -402,10 +407,10 @@ func (h *HostInfo) HostnameAndPort() string {
 }
 
 func (h *HostInfo) ConnectAddressAndPort() string {
-        h.mu.Lock()
-        defer h.mu.Unlock()
-        addr, _ := h.connectAddressLocked()
-        return net.JoinHostPort(addr.String(), strconv.Itoa(h.port))
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	addr, _ := h.connectAddressLocked()
+	return net.JoinHostPort(addr.String(), strconv.Itoa(h.port))
 }
 
 func (h *HostInfo) String() string {
@@ -423,10 +428,11 @@ func (h *HostInfo) String() string {
 
 // Polls system.peers at a specific interval to find new hosts
 type ringDescriber struct {
-	session         *Session
-	mu              sync.Mutex
-	prevHosts       []*HostInfo
-	prevPartitioner string
+	session          *Session
+	mu               sync.Mutex
+	prevHosts        []*HostInfo
+	prevPartitioner  string
+	firstRingRefresh int32
 }
 
 // Returns true if we are using system_schema.keyspaces instead of system.schema_keyspaces
@@ -699,6 +705,31 @@ func refreshRing(r *ringDescriber) error {
 	}
 
 	prevHosts := r.session.ring.currentHosts()
+
+	// If DisableInitialHostLookup=true, the host ids were initially set with random UUIDs.
+	// In this scenario, and only on the first refreshRing invocation, remove the hosts from
+	// the session (so they can be re-added and have their pools refilled).
+	if atomic.CompareAndSwapInt32(&r.firstRingRefresh, 0, 1) && r.session.cfg.DisableInitialHostLookup {
+		addrToNewHostID := make(map[string]string, len(hosts))
+		for _, h := range hosts {
+			addrToNewHostID[h.ConnectAddress().String()] = h.HostID()
+		}
+		for _, prevHost := range prevHosts {
+			newHostID, ok := addrToNewHostID[prevHost.ConnectAddress().String()]
+			if ok {
+				if gocqlDebug {
+					r.session.logger.Printf("gocql: removing host %s (%s), after ring refresh host id is now: %v\n",
+						prevHost.HostID(), prevHost.ConnectAddress().String(), newHostID)
+				}
+				r.session.removeHost(prevHost)
+			} else {
+				if gocqlDebug {
+					r.session.logger.Printf("gocql: host %s (%s) no longer found after ring refresh: %v\n",
+						prevHost.HostID(), prevHost.ConnectAddress().String())
+				}
+			}
+		}
+	}
 
 	for _, h := range hosts {
 		if r.session.cfg.filterHost(h) {
