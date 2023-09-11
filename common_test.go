@@ -128,7 +128,7 @@ func createKeyspace(tb testing.TB, cluster *ClusterConfig, keyspace string) {
 	}
 }
 
-func createSessionFromCluster(cluster *ClusterConfig, tb testing.TB) *Session {
+func createSessionFromClusterWithoutSchemaAgreement(cluster *ClusterConfig, tb testing.TB) *Session {
 	// Drop and re-create the keyspace once. Different tests should use their own
 	// individual tables, but can assume that the table does not exist before.
 	initOnce.Do(func() {
@@ -140,7 +140,11 @@ func createSessionFromCluster(cluster *ClusterConfig, tb testing.TB) *Session {
 	if err != nil {
 		tb.Fatal("createSession:", err)
 	}
+	return session
+}
 
+func createSessionFromCluster(cluster *ClusterConfig, tb testing.TB) *Session {
+	session := createSessionFromClusterWithoutSchemaAgreement(cluster, tb)
 	if err := session.control.awaitSchemaAgreement(); err != nil {
 		tb.Fatal(err)
 	}
