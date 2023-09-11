@@ -142,7 +142,7 @@ func (h *HostInfo) Equal(host *HostInfo) bool {
 		return true
 	}
 
-	if h.HostID() == host.HostID() {
+	if id := h.HostID(); id != "" && id == host.HostID() {
 		return true
 	}
 
