@@ -198,6 +198,22 @@ func (s *Session) init() error {
 	}
 	s.ring.endpoints = hosts
 
+	// filter hosts at the onset to avoid using using filtered hosts in the control connection while
+	// discovering the protocol and/or connecting.
+	if s.cfg.HostFilter != nil {
+		newHosts := make([]*HostInfo, 0, len(hosts))
+		for _, host := range hosts {
+			if !s.cfg.filterHost(host) {
+				newHosts = append(newHosts, host)
+			}
+		}
+		if len(newHosts) > 0 {
+			hosts = newHosts
+		} else {
+			s.logger.Printf("gocql: hostfilter removed all hosts, defaulting to initial host list\n")
+		}
+	}
+
 	if !s.cfg.disableControlConn {
 		s.control = createControlConn(s)
 		if s.cfg.ProtoVersion == 0 {
