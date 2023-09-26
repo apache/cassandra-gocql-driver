@@ -182,7 +182,8 @@ func getCassandraType(name string, logger StdLogger) TypeInfo {
 		}
 	} else {
 		return NativeType{
-			typ: getCassandraBaseType(name),
+			typ:    getCassandraBaseType(name),
+			custom: name,
 		}
 	}
 }
