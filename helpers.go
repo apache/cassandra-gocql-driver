@@ -181,14 +181,10 @@ func getCassandraType(name string, logger StdLogger) TypeInfo {
 			Elems:      types,
 		}
 	} else {
-		bType := getCassandraBaseType(name)
-		custom := ""
-		if bType == TypeCustom {
-			custom = name
-		}
-		return NativeType{
-			typ:    bType,
-			custom: custom,
+		if bType := getCassandraBaseType(name); bType == TypeCustom {
+			return NativeType{typ: bType, custom: name}
+		} else {
+			return NativeType{typ: bType}
 		}
 	}
 }
