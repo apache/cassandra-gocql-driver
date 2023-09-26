@@ -199,6 +199,12 @@ func TestGetCassandraType(t *testing.T) {
 				Elem:       NativeType{typ: TypeDuration},
 			},
 		},
+		{
+			"frozen<list<frozen<my_udt_custom>>>", CollectionType{
+				NativeType: NativeType{typ: TypeList},
+				Elem:       NativeType{typ: TypeCustom, custom: "my_udt_custom"},
+			},
+		},
 	}
 
 	for _, test := range tests {
