@@ -103,3 +103,71 @@ func TestFrameReadTooLong(t *testing.T) {
 		t.Fatalf("expected to get header %v got %v", opReady, head.op)
 	}
 }
+
+func FuzzFrame(f *testing.F) {
+
+	tests := [][]byte{
+		[]byte("00000\xa0000"),
+		[]byte("\x8000\x0e\x00\x00\x00\x000"),
+		[]byte("\x8000\x00\x00\x00\x00\t0000000000"),
+		[]byte("\xa0\xff\x01\xae\xefqE\xf2\x1a"),
+		[]byte("\x8200\b\x00\x00\x00c\x00\x00\x00\x02000\x01\x00\x00\x00\x03" +
+			"\x00\n0000000000\x00\x14000000" +
+			"00000000000000\x00\x020000" +
+			"\x00\a000000000\x00\x050000000" +
+			"\xff0000000000000000000" +
+			"0000000"),
+		[]byte("\x82\xe600\x00\x00\x00\x000"),
+		[]byte("\x8200\b\x00\x00\x00\b0\x00\x00\x00\x040000"),
+		[]byte("\x8200\x00\x00\x00\x00\x100\x00\x00\x12\x00\x00\x0000000" +
+			"00000"),
+		[]byte("\x83000\b\x00\x00\x00\x14\x00\x00\x00\x020000000" +
+			"000000000"),
+		[]byte("\x83000\b\x00\x00\x000\x00\x00\x00\x04\x00\x1000000" +
+			"00000000000000e00000" +
+			"000\x800000000000000000" +
+			"0000000000000"),
+	}
+
+	for _, test := range tests {
+		f.Add(test)
+	}
+
+	f.Fuzz(func(t *testing.T, packet []byte) {
+
+		read := bytes.NewReader(packet)
+
+		head, err := readHeader(read, make([]byte, 9))
+		if err != nil {
+			return
+		}
+
+		framer := newFramer(nil, byte(head.version))
+		err = framer.readFrame(read, &head)
+		if err != nil {
+			return
+		}
+
+		_, _ = framer.parseFrame()
+	})
+}
+
+func TestFuzzBugsNew(t *testing.T) {
+
+	for i := 0; i < 100000; i++ {
+		r := bytes.NewReader([]byte("\x85000\b\x00\x00\x00\x19\x00\x00\x00\x04\x00\x000001000000000000000"))
+
+		head, err := readHeader(r, make([]byte, 9))
+		if err != nil {
+			return
+		}
+
+		framer := newFramer(nil, byte(head.version))
+		err = framer.readFrame(r, &head)
+		if err != nil {
+			return
+		}
+
+		framer.parseFrame()
+	}
+}
