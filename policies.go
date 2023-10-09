@@ -386,7 +386,7 @@ func (t *tokenAwareHostPolicy) Init(s *Session) {
 		// See https://github.com/scylladb/gocql/issues/94.
 		panic("sharing token aware host selection policy between sessions is not supported")
 	}
-	t.getMetadataReadOnly = func() *ClusterMetadata { return s.metaMngr.getMetadataReadOnly() }
+	t.getMetadataReadOnly = s.metaMngr.getMetadataReadOnly
 }
 
 func (t *tokenAwareHostPolicy) IsLocal(host *HostInfo) bool {
