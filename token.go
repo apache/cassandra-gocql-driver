@@ -29,15 +29,15 @@ type Token interface {
 	Less(Token) bool
 }
 
-//TokenRange represents a token range.
-//The start token is exclusive and the end token is inclusive.
+// TokenRange represents a token range.
+// The start token is exclusive and the end token is inclusive.
 type TokenRange struct {
 	Start Token
 	End   Token
 }
 
-//WrapsAround returns true if the token range wraps around the highest token value and back to the first token.
-//In that case, all token values greater than Start and all token values less than or equal to End are part of the range.
+// WrapsAround returns true if the token range wraps around the highest token value and back to the first token.
+// In that case, all token values greater than Start and all token values less than or equal to End are part of the range.
 func (r *TokenRange) WrapsAround() bool {
 	return !r.Start.Less(r.End)
 }
@@ -226,9 +226,9 @@ func (t *tokenRing) String() string {
 	return string(buf.Bytes())
 }
 
-//GetTokenRanges returns all token ranges in the ring.
-//All tokens within a range belong to the same host. You can obtain the owner by calling
-//GetHostForToken with the End token in the range.
+// GetTokenRanges returns all token ranges in the ring.
+// All tokens within a range belong to the same host. You can obtain the owner by calling
+// GetHostForToken with the End token in the range.
 func (t *tokenRing) GetTokenRanges() []TokenRange {
 	if len(t.tokens) == 0 {
 		return nil
@@ -245,7 +245,7 @@ func (t *tokenRing) GetTokenRanges() []TokenRange {
 	return ranges
 }
 
-//GetHostForToken returns the host to which a token belongs
+// GetHostForToken returns the host to which a token belongs
 func (t *tokenRing) GetHostForToken(token Token) (host *HostInfo, endToken Token) {
 	if t == nil || len(t.tokens) == 0 {
 		return nil, nil

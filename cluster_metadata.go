@@ -21,7 +21,7 @@ type clusterMetadata struct {
 	tokenRing *tokenRing
 }
 
-//GetTokenRing returns the token ring
+// GetTokenRing returns the token ring
 func (m *clusterMetadata) GetTokenRing() TokenRing {
 	return m.tokenRing
 }
