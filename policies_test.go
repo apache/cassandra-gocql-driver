@@ -50,7 +50,7 @@ func TestHostPolicy_TokenAware_SimpleStrategy(t *testing.T) {
 	policy := TokenAwareHostPolicy(RoundRobinHostPolicy())
 	policyInternal := policy.(*tokenAwareHostPolicy)
 
-	query := &Query{}
+	query := &Query{routingInfo: &queryRoutingInfo{}}
 	query.getKeyspace = func() string { return keyspace }
 
 	iter := policy.Pick(nil)
@@ -192,7 +192,7 @@ func TestHostPolicy_TokenAware_NilHostInfo(t *testing.T) {
 		return meta
 	}
 
-	query := &Query{}
+	query := &Query{routingInfo: &queryRoutingInfo{}}
 	query.getKeyspace = func() string { return "myKeyspace" }
 	query.RoutingKey([]byte("20"))
 
@@ -250,7 +250,7 @@ func TestCOWList_Add(t *testing.T) {
 
 // TestSimpleRetryPolicy makes sure that we only allow 1 + numRetries attempts
 func TestSimpleRetryPolicy(t *testing.T) {
-	q := &Query{}
+	q := &Query{routingInfo: &queryRoutingInfo{}}
 
 	// this should allow a total of 3 tries.
 	rt := &SimpleRetryPolicy{NumRetries: 2}
@@ -308,7 +308,7 @@ func TestExponentialBackoffPolicy(t *testing.T) {
 
 func TestDowngradingConsistencyRetryPolicy(t *testing.T) {
 
-	q := &Query{cons: LocalQuorum}
+	q := &Query{cons: LocalQuorum, routingInfo: &queryRoutingInfo{}}
 
 	rewt0 := &RequestErrWriteTimeout{
 		Received:  0,
@@ -466,7 +466,7 @@ func TestHostPolicy_TokenAware(t *testing.T) {
 	policy := TokenAwareHostPolicy(DCAwareRoundRobinPolicy("local"))
 	policyInternal := policy.(*tokenAwareHostPolicy)
 
-	query := &Query{}
+	query := &Query{routingInfo: &queryRoutingInfo{}}
 	query.getKeyspace = func() string { return keyspace }
 
 	iter := policy.Pick(nil)
@@ -558,7 +558,7 @@ func TestHostPolicy_TokenAware_NetworkStrategy(t *testing.T) {
 	policy := TokenAwareHostPolicy(DCAwareRoundRobinPolicy("local"), NonLocalReplicasFallback())
 	policyInternal := policy.(*tokenAwareHostPolicy)
 
-	query := &Query{}
+	query := &Query{routingInfo: &queryRoutingInfo{}}
 	query.getKeyspace = func() string { return keyspace }
 
 	iter := policy.Pick(nil)
@@ -668,7 +668,7 @@ func TestHostPolicy_TokenAware_RackAware(t *testing.T) {
 	policyInternal := policy.(*tokenAwareHostPolicy)
 	policyWithFallbackInternal := policyWithFallback.(*tokenAwareHostPolicy)
 
-	query := &Query{}
+	query := &Query{routingInfo: &queryRoutingInfo{}}
 	query.getKeyspace = func() string { return keyspace }
 
 	iter := policy.Pick(nil)

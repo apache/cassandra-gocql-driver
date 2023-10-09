@@ -39,6 +39,10 @@ func TestApprove(t *testing.T) {
 		approve("com.datastax.bdp.cassandra.auth.DseAuthenticator", []string{}):                                         true,
 		approve("io.aiven.cassandra.auth.AivenAuthenticator", []string{}):                                               true,
 		approve("com.amazon.helenus.auth.HelenusAuthenticator", []string{}):                                             true,
+		approve("com.ericsson.bss.cassandra.ecaudit.auth.AuditAuthenticator", []string{}):                               true,
+		approve("com.scylladb.auth.SaslauthdAuthenticator", []string{}):                                                 true,
+		approve("com.scylladb.auth.TransitionalAuthenticator", []string{}):                                              true,
+		approve("com.instaclustr.cassandra.auth.InstaclustrPasswordAuthenticator", []string{}):                          true,
 		approve("com.apache.cassandra.auth.FakeAuthenticator", []string{}):                                              false,
 		approve("com.apache.cassandra.auth.FakeAuthenticator", nil):                                                     false,
 		approve("com.apache.cassandra.auth.FakeAuthenticator", []string{"com.apache.cassandra.auth.FakeAuthenticator"}): true,
@@ -225,6 +229,7 @@ func TestStartupTimeout(t *testing.T) {
 	// Set very long query connection timeout
 	// so we know CreateSession() is using the ConnectTimeout
 	cluster.Timeout = time.Second * 5
+	cluster.ConnectTimeout = 600 * time.Millisecond
 
 	// Create session should timeout during connect attempt
 	_, err := cluster.CreateSession()

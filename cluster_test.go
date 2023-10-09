@@ -10,7 +10,7 @@ import (
 func TestNewCluster_Defaults(t *testing.T) {
 	cfg := NewCluster()
 	assertEqual(t, "cluster config cql version", "3.0.0", cfg.CQLVersion)
-	assertEqual(t, "cluster config timeout", 600*time.Millisecond, cfg.Timeout)
+	assertEqual(t, "cluster config timeout", 11*time.Second, cfg.Timeout)
 	assertEqual(t, "cluster config port", 9042, cfg.Port)
 	assertEqual(t, "cluster config num-conns", 2, cfg.NumConns)
 	assertEqual(t, "cluster config consistency", Quorum, cfg.Consistency)
