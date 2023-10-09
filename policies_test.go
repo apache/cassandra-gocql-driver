@@ -77,8 +77,8 @@ func TestHostPolicy_TokenAware_SimpleStrategy(t *testing.T) {
 	policy.KeyspaceChanged(KeyspaceUpdateEvent{Keyspace: keyspace})
 
 	// The SimpleStrategy above should generate the following replicas.
-	policyInternal.getMetadataReadOnly = func() *clusterMetadata {
-		meta := &clusterMetadata{
+	policyInternal.getMetadataReadOnly = func() *ClusterMetadata {
+		meta := &ClusterMetadata{
 			replicas: map[string]tokenRingReplicas{
 				"myKeyspace": {
 					{orderedToken("00"), []*HostInfo{hosts[0], hosts[1]}},
@@ -186,8 +186,8 @@ func TestHostPolicy_TokenAware_NilHostInfo(t *testing.T) {
 	policy.SetPartitioner(partitioner)
 
 	// We'll simulate a SimpleStrategy, which should generate the following replicas.
-	policyInternal.getMetadataReadOnly = func() *clusterMetadata {
-		meta := &clusterMetadata{replicas: map[string]tokenRingReplicas{}}
+	policyInternal.getMetadataReadOnly = func() *ClusterMetadata {
+		meta := &ClusterMetadata{replicas: map[string]tokenRingReplicas{}}
 		meta.resetTokenRing(partitioner, hosts, nil)
 		return meta
 	}
@@ -497,8 +497,8 @@ func TestHostPolicy_TokenAware(t *testing.T) {
 		policy.AddHost(host)
 	}
 
-	policyInternal.getMetadataReadOnly = func() *clusterMetadata {
-		return &clusterMetadata{} // no replicas here, force the policy to use the fallback for now
+	policyInternal.getMetadataReadOnly = func() *ClusterMetadata {
+		return &ClusterMetadata{} // no replicas here, force the policy to use the fallback for now
 	}
 
 	// the token ring is not setup without the partitioner, but the fallback
@@ -516,8 +516,8 @@ func TestHostPolicy_TokenAware(t *testing.T) {
 	policy.KeyspaceChanged(KeyspaceUpdateEvent{Keyspace: keyspace})
 
 	// The NetworkTopologyStrategy should generate the following replicas.
-	policyInternal.getMetadataReadOnly = func() *clusterMetadata {
-		meta := &clusterMetadata{
+	policyInternal.getMetadataReadOnly = func() *ClusterMetadata {
+		meta := &ClusterMetadata{
 			replicas: map[string]tokenRingReplicas{
 				"myKeyspace": {
 					{orderedToken("05"), []*HostInfo{hosts[0], hosts[1], hosts[2]}},
@@ -593,8 +593,8 @@ func TestHostPolicy_TokenAware_NetworkStrategy(t *testing.T) {
 	policy.KeyspaceChanged(KeyspaceUpdateEvent{Keyspace: "myKeyspace"})
 
 	// The NetworkTopologyStrategy above should generate the following replicas.
-	policyInternal.getMetadataReadOnly = func() *clusterMetadata {
-		meta := &clusterMetadata{
+	policyInternal.getMetadataReadOnly = func() *ClusterMetadata {
+		meta := &ClusterMetadata{
 			replicas: map[string]tokenRingReplicas{
 				keyspace: {
 					{orderedToken("05"), []*HostInfo{hosts[0], hosts[1], hosts[2], hosts[3], hosts[4], hosts[5]}},
@@ -706,8 +706,8 @@ func TestHostPolicy_TokenAware_RackAware(t *testing.T) {
 		t.Fatal("expected to get host from fallback got nil")
 	}
 
-	policyInternal.getMetadataReadOnly = func() *clusterMetadata {
-		return &clusterMetadata{} // no replicas here, force the policy to use the fallback for now
+	policyInternal.getMetadataReadOnly = func() *ClusterMetadata {
+		return &ClusterMetadata{} // no replicas here, force the policy to use the fallback for now
 	}
 
 	query.RoutingKey([]byte("30"))
@@ -722,8 +722,8 @@ func TestHostPolicy_TokenAware_RackAware(t *testing.T) {
 	policyWithFallback.KeyspaceChanged(KeyspaceUpdateEvent{Keyspace: keyspace})
 
 	// The NetworkTopologyStrategy above should generate the following replicas.
-	policyInternal.getMetadataReadOnly = func() *clusterMetadata {
-		meta := &clusterMetadata{
+	policyInternal.getMetadataReadOnly = func() *ClusterMetadata {
+		meta := &ClusterMetadata{
 			replicas: map[string]tokenRingReplicas{
 				"myKeyspace": {
 					{orderedToken("05"), []*HostInfo{hosts[0], hosts[1], hosts[2], hosts[3]}},

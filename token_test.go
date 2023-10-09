@@ -143,7 +143,7 @@ func TestTokenRing_Int(t *testing.T) {
 	host25 := &HostInfo{}
 	host50 := &HostInfo{}
 	host75 := &HostInfo{}
-	ring := &tokenRing{
+	ring := &TokenRing{
 		partitioner: nil,
 		// these tokens and hosts are out of order to test sorting
 		tokens: []hostToken{
@@ -156,52 +156,52 @@ func TestTokenRing_Int(t *testing.T) {
 
 	sort.Sort(ring)
 
-	if host, endToken := ring.GetHostForToken(intToken(0)); host != host0 || endToken != intToken(0) {
+	if host, endToken := ring.HostForToken(intToken(0)); host != host0 || endToken != intToken(0) {
 		t.Error("Expected host 0 for token 0")
 	}
-	if host, endToken := ring.GetHostForToken(intToken(1)); host != host25 || endToken != intToken(25) {
+	if host, endToken := ring.HostForToken(intToken(1)); host != host25 || endToken != intToken(25) {
 		t.Error("Expected host 25 for token 1")
 	}
-	if host, endToken := ring.GetHostForToken(intToken(24)); host != host25 || endToken != intToken(25) {
+	if host, endToken := ring.HostForToken(intToken(24)); host != host25 || endToken != intToken(25) {
 		t.Error("Expected host 25 for token 24")
 	}
-	if host, endToken := ring.GetHostForToken(intToken(25)); host != host25 || endToken != intToken(25) {
+	if host, endToken := ring.HostForToken(intToken(25)); host != host25 || endToken != intToken(25) {
 		t.Error("Expected host 25 for token 25")
 	}
-	if host, endToken := ring.GetHostForToken(intToken(26)); host != host50 || endToken != intToken(50) {
+	if host, endToken := ring.HostForToken(intToken(26)); host != host50 || endToken != intToken(50) {
 		t.Error("Expected host 50 for token 26")
 	}
-	if host, endToken := ring.GetHostForToken(intToken(49)); host != host50 || endToken != intToken(50) {
+	if host, endToken := ring.HostForToken(intToken(49)); host != host50 || endToken != intToken(50) {
 		t.Error("Expected host 50 for token 49")
 	}
-	if host, endToken := ring.GetHostForToken(intToken(50)); host != host50 || endToken != intToken(50) {
+	if host, endToken := ring.HostForToken(intToken(50)); host != host50 || endToken != intToken(50) {
 		t.Error("Expected host 50 for token 50")
 	}
-	if host, endToken := ring.GetHostForToken(intToken(51)); host != host75 || endToken != intToken(75) {
+	if host, endToken := ring.HostForToken(intToken(51)); host != host75 || endToken != intToken(75) {
 		t.Error("Expected host 75 for token 51")
 	}
-	if host, endToken := ring.GetHostForToken(intToken(74)); host != host75 || endToken != intToken(75) {
+	if host, endToken := ring.HostForToken(intToken(74)); host != host75 || endToken != intToken(75) {
 		t.Error("Expected host 75 for token 74")
 	}
-	if host, endToken := ring.GetHostForToken(intToken(75)); host != host75 || endToken != intToken(75) {
+	if host, endToken := ring.HostForToken(intToken(75)); host != host75 || endToken != intToken(75) {
 		t.Error("Expected host 75 for token 75")
 	}
-	if host, endToken := ring.GetHostForToken(intToken(76)); host != host0 || endToken != intToken(0) {
+	if host, endToken := ring.HostForToken(intToken(76)); host != host0 || endToken != intToken(0) {
 		t.Error("Expected host 0 for token 76")
 	}
-	if host, endToken := ring.GetHostForToken(intToken(99)); host != host0 || endToken != intToken(0) {
+	if host, endToken := ring.HostForToken(intToken(99)); host != host0 || endToken != intToken(0) {
 		t.Error("Expected host 0 for token 99")
 	}
-	if host, endToken := ring.GetHostForToken(intToken(100)); host != host0 || endToken != intToken(0) {
+	if host, endToken := ring.HostForToken(intToken(100)); host != host0 || endToken != intToken(0) {
 		t.Error("Expected host 0 for token 100")
 	}
 }
 
-// Test for the behavior of a nil pointer to tokenRing
+// Test for the behavior of a nil pointer to TokenRing
 func TestTokenRing_Nil(t *testing.T) {
-	var ring *tokenRing = nil
+	var ring *TokenRing = nil
 
-	if host, endToken := ring.GetHostForToken(nil); host != nil || endToken != nil {
+	if host, endToken := ring.HostForToken(nil); host != nil || endToken != nil {
 		t.Error("Expected nil for nil token ring")
 	}
 }
@@ -227,7 +227,7 @@ func hostsForTests(n int) []*HostInfo {
 	return hosts
 }
 
-// Test of the tokenRing with the Murmur3Partitioner
+// Test of the TokenRing with the Murmur3Partitioner
 func TestTokenRing_Murmur3(t *testing.T) {
 	// Note, strings are parsed directly to int64, they are not murmur3 hashed
 	hosts := hostsForTests(4)
@@ -239,25 +239,25 @@ func TestTokenRing_Murmur3(t *testing.T) {
 	p := murmur3Partitioner{}
 
 	for _, host := range hosts {
-		actual, _ := ring.GetHostForToken(p.ParseString(host.tokens[0]))
+		actual, _ := ring.HostForToken(p.ParseString(host.tokens[0]))
 		if !actual.ConnectAddress().Equal(host.ConnectAddress()) {
 			t.Errorf("Expected address %v for token %q, but was %v", host.ConnectAddress(),
 				host.tokens[0], actual.ConnectAddress())
 		}
 	}
 
-	actual, _ := ring.GetHostForToken(p.ParseString("12"))
+	actual, _ := ring.HostForToken(p.ParseString("12"))
 	if !actual.ConnectAddress().Equal(hosts[1].ConnectAddress()) {
 		t.Errorf("Expected address 1 for token \"12\", but was %s", actual.ConnectAddress())
 	}
 
-	actual, _ = ring.GetHostForToken(p.ParseString("24324545443332"))
+	actual, _ = ring.HostForToken(p.ParseString("24324545443332"))
 	if !actual.ConnectAddress().Equal(hosts[0].ConnectAddress()) {
 		t.Errorf("Expected address 0 for token \"24324545443332\", but was %s", actual.ConnectAddress())
 	}
 }
 
-// Test of the tokenRing with the OrderedPartitioner
+// Test of the TokenRing with the OrderedPartitioner
 func TestTokenRing_Ordered(t *testing.T) {
 	// Tokens here more or less are similar layout to the int tokens above due
 	// to each numeric character translating to a consistently offset byte.
@@ -271,25 +271,25 @@ func TestTokenRing_Ordered(t *testing.T) {
 
 	var actual *HostInfo
 	for _, host := range hosts {
-		actual, _ := ring.GetHostForToken(p.ParseString(host.tokens[0]))
+		actual, _ := ring.HostForToken(p.ParseString(host.tokens[0]))
 		if !actual.ConnectAddress().Equal(host.ConnectAddress()) {
 			t.Errorf("Expected address %v for token %q, but was %v", host.ConnectAddress(),
 				host.tokens[0], actual.ConnectAddress())
 		}
 	}
 
-	actual, _ = ring.GetHostForToken(p.ParseString("12"))
+	actual, _ = ring.HostForToken(p.ParseString("12"))
 	if !actual.peer.Equal(hosts[1].peer) {
 		t.Errorf("Expected address 1 for token \"12\", but was %s", actual.ConnectAddress())
 	}
 
-	actual, _ = ring.GetHostForToken(p.ParseString("24324545443332"))
+	actual, _ = ring.HostForToken(p.ParseString("24324545443332"))
 	if !actual.ConnectAddress().Equal(hosts[1].ConnectAddress()) {
 		t.Errorf("Expected address 1 for token \"24324545443332\", but was %s", actual.ConnectAddress())
 	}
 }
 
-// Test of the tokenRing with the RandomPartitioner
+// Test of the TokenRing with the RandomPartitioner
 func TestTokenRing_Random(t *testing.T) {
 	// String tokens are parsed into big.Int in base 10
 	hosts := hostsForTests(4)
@@ -302,19 +302,19 @@ func TestTokenRing_Random(t *testing.T) {
 
 	var actual *HostInfo
 	for _, host := range hosts {
-		actual, _ := ring.GetHostForToken(p.ParseString(host.tokens[0]))
+		actual, _ := ring.HostForToken(p.ParseString(host.tokens[0]))
 		if !actual.ConnectAddress().Equal(host.ConnectAddress()) {
 			t.Errorf("Expected address %v for token %q, but was %v", host.ConnectAddress(),
 				host.tokens[0], actual.ConnectAddress())
 		}
 	}
 
-	actual, _ = ring.GetHostForToken(p.ParseString("12"))
+	actual, _ = ring.HostForToken(p.ParseString("12"))
 	if !actual.peer.Equal(hosts[1].peer) {
 		t.Errorf("Expected address 1 for token \"12\", but was %s", actual.ConnectAddress())
 	}
 
-	actual, _ = ring.GetHostForToken(p.ParseString("24324545443332"))
+	actual, _ = ring.HostForToken(p.ParseString("24324545443332"))
 	if !actual.ConnectAddress().Equal(hosts[0].ConnectAddress()) {
 		t.Errorf("Expected address 1 for token \"24324545443332\", but was %s", actual.ConnectAddress())
 	}

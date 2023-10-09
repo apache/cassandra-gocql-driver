@@ -141,18 +141,7 @@ func (ht hostToken) String() string {
 }
 
 // TokenRing is a data structure for organizing the relationship between tokens and hosts
-type TokenRing interface {
-	//GetHostForToken returns the host to which a token belongs
-	GetHostForToken(token Token) (host *HostInfo, endToken Token)
-
-	//GetTokenRanges returns all token ranges in the ring.
-	//All tokens within a range belong to the same host. You can obtain the owner by calling
-	//GetHostForToken with the End token in the range.
-	GetTokenRanges() []TokenRange
-}
-
-// tokenRing is a data structure for organizing the relationship between tokens and hosts
-type tokenRing struct {
+type TokenRing struct {
 	partitioner partitioner
 
 	// tokens map token range to primary replica.
@@ -165,8 +154,8 @@ type tokenRing struct {
 	hosts []*HostInfo
 }
 
-func newTokenRing(partitioner string, hosts []*HostInfo) (*tokenRing, error) {
-	tokenRing := &tokenRing{
+func newTokenRing(partitioner string, hosts []*HostInfo) (*TokenRing, error) {
+	tokenRing := &TokenRing{
 		hosts: hosts,
 	}
 
@@ -192,19 +181,19 @@ func newTokenRing(partitioner string, hosts []*HostInfo) (*tokenRing, error) {
 	return tokenRing, nil
 }
 
-func (t *tokenRing) Len() int {
+func (t *TokenRing) Len() int {
 	return len(t.tokens)
 }
 
-func (t *tokenRing) Less(i, j int) bool {
+func (t *TokenRing) Less(i, j int) bool {
 	return t.tokens[i].token.Less(t.tokens[j].token)
 }
 
-func (t *tokenRing) Swap(i, j int) {
+func (t *TokenRing) Swap(i, j int) {
 	t.tokens[i], t.tokens[j] = t.tokens[j], t.tokens[i]
 }
 
-func (t *tokenRing) String() string {
+func (t *TokenRing) String() string {
 	buf := &bytes.Buffer{}
 	buf.WriteString("TokenRing(")
 	if t.partitioner != nil {
@@ -226,10 +215,10 @@ func (t *tokenRing) String() string {
 	return string(buf.Bytes())
 }
 
-// GetTokenRanges returns all token ranges in the ring.
+// TokenRanges returns all token ranges in the ring.
 // All tokens within a range belong to the same host. You can obtain the owner by calling
-// GetHostForToken with the End token in the range.
-func (t *tokenRing) GetTokenRanges() []TokenRange {
+// HostForToken with the End token in the range.
+func (t *TokenRing) TokenRanges() []TokenRange {
 	if len(t.tokens) == 0 {
 		return nil
 	}
@@ -245,8 +234,8 @@ func (t *tokenRing) GetTokenRanges() []TokenRange {
 	return ranges
 }
 
-// GetHostForToken returns the host to which a token belongs
-func (t *tokenRing) GetHostForToken(token Token) (host *HostInfo, endToken Token) {
+// HostForToken returns the host to which a token belongs
+func (t *TokenRing) HostForToken(token Token) (host *HostInfo, endToken Token) {
 	if t == nil || len(t.tokens) == 0 {
 		return nil, nil
 	}

@@ -6,29 +6,23 @@ import (
 )
 
 // ClusterMetadata holds metadata about cluster topology.
-// All of its operations are read-only.
-type ClusterMetadata interface {
-	GetTokenRing() TokenRing
-}
-
-// clusterMetadata holds metadata about cluster topology.
 // It is used inside atomic.Value and shallow copies are used when replacing it,
 // so fields should not be modified in-place. Instead, to modify a field a copy of the field should be made
-// and the pointer in clusterMetadata updated to point to the new value.
-type clusterMetadata struct {
+// and the pointer in ClusterMetadata updated to point to the new value.
+type ClusterMetadata struct {
 	// replicas is map[keyspace]map[Token]hosts
 	replicas  map[string]tokenRingReplicas
-	tokenRing *tokenRing
+	tokenRing *TokenRing
 }
 
-// GetTokenRing returns the token ring
-func (m *clusterMetadata) GetTokenRing() TokenRing {
+// TokenRing returns the token ring
+func (m *ClusterMetadata) TokenRing() *TokenRing {
 	return m.tokenRing
 }
 
-// resetTokenRing creates a new tokenRing.
+// resetTokenRing creates a new TokenRing.
 // It must be called with t.mu locked.
-func (m *clusterMetadata) resetTokenRing(partitioner string, hosts []*HostInfo, logger StdLogger) {
+func (m *ClusterMetadata) resetTokenRing(partitioner string, hosts []*HostInfo, logger StdLogger) {
 	if partitioner == "" {
 		// partitioner not yet set
 		return
@@ -55,7 +49,7 @@ type clusterMetadataManager struct {
 	mu          sync.Mutex
 	hosts       cowHostList
 	partitioner string
-	metadata    atomic.Value // *clusterMetadata
+	metadata    atomic.Value // *ClusterMetadata
 
 	logger StdLogger
 }
@@ -135,28 +129,28 @@ func (m *clusterMetadataManager) removeHost(host *HostInfo) {
 // getMetadataReadOnly returns current cluster metadata.
 // Metadata uses copy on write, so the returned value should be only used for reading.
 // To obtain a copy that could be updated, use getMetadataForUpdate instead.
-func (m *clusterMetadataManager) getMetadataReadOnly() *clusterMetadata {
-	meta, _ := m.metadata.Load().(*clusterMetadata)
+func (m *clusterMetadataManager) getMetadataReadOnly() *ClusterMetadata {
+	meta, _ := m.metadata.Load().(*ClusterMetadata)
 	return meta
 }
 
-// getMetadataForUpdate returns clusterMetadata suitable for updating.
-// It is a SHALLOW copy of current metadata in case it was already set or new empty clusterMetadata otherwise.
+// getMetadataForUpdate returns ClusterMetadata suitable for updating.
+// It is a SHALLOW copy of current metadata in case it was already set or new empty ClusterMetadata otherwise.
 // This function should be called with t.mu mutex locked and the mutex should not be released before
 // storing the new metadata.
-func (m *clusterMetadataManager) getMetadataForUpdate() *clusterMetadata {
+func (m *clusterMetadataManager) getMetadataForUpdate() *ClusterMetadata {
 	metaReadOnly := m.getMetadataReadOnly()
-	meta := new(clusterMetadata)
+	meta := new(ClusterMetadata)
 	if metaReadOnly != nil {
 		*meta = *metaReadOnly
 	}
 	return meta
 }
 
-// updateReplicas updates replicas in clusterMetadata.
+// updateReplicas updates replicas in ClusterMetadata.
 // It must be called with t.mu mutex locked.
 // meta must not be nil and it's replicas field will be updated.
-func (m *clusterMetadataManager) updateReplicas(meta *clusterMetadata, keyspace string) {
+func (m *clusterMetadataManager) updateReplicas(meta *ClusterMetadata, keyspace string) {
 	newReplicas := make(map[string]tokenRingReplicas, len(meta.replicas))
 
 	ks, err := m.getKeyspaceMetadata(keyspace)

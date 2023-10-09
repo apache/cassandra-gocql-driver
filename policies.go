@@ -375,7 +375,7 @@ func TokenAwareHostPolicy(fallback HostSelectionPolicy, opts ...func(*tokenAware
 
 type tokenAwareHostPolicy struct {
 	fallback                 HostSelectionPolicy
-	getMetadataReadOnly      func() *clusterMetadata
+	getMetadataReadOnly      func() *ClusterMetadata
 	shuffleReplicas          bool
 	nonLocalReplicasFallback bool
 }
@@ -386,7 +386,7 @@ func (t *tokenAwareHostPolicy) Init(s *Session) {
 		// See https://github.com/scylladb/gocql/issues/94.
 		panic("sharing token aware host selection policy between sessions is not supported")
 	}
-	t.getMetadataReadOnly = func() *clusterMetadata { return s.metaMngr.getMetadataReadOnly() }
+	t.getMetadataReadOnly = func() *ClusterMetadata { return s.metaMngr.getMetadataReadOnly() }
 }
 
 func (t *tokenAwareHostPolicy) IsLocal(host *HostInfo) bool {
@@ -445,7 +445,7 @@ func (t *tokenAwareHostPolicy) Pick(qry ExecutableQuery) NextHost {
 
 	var replicas []*HostInfo
 	if ht == nil {
-		host, _ := meta.tokenRing.GetHostForToken(token)
+		host, _ := meta.tokenRing.HostForToken(token)
 		replicas = []*HostInfo{host}
 	} else {
 		replicas = ht.hosts

@@ -564,7 +564,7 @@ func (s *Session) KeyspaceMetadata(keyspace string) (*KeyspaceMetadata, error) {
 
 // ClusterMetadata returns the cluster metadata.
 // The returned value is a snapshot of the metadata at the time of the call. Do not store for later reuse.
-func (s *Session) ClusterMetadata() ClusterMetadata {
+func (s *Session) ClusterMetadata() *ClusterMetadata {
 	return s.metaMngr.getMetadataReadOnly()
 }
 
