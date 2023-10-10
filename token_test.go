@@ -14,7 +14,7 @@ import (
 	"testing"
 )
 
-// Tests of the murmur3Patitioner
+// Tests of the murmur3Partitioner
 func TestMurmur3Partitioner(t *testing.T) {
 	token := murmur3Partitioner{}.ParseString("-1053604476080545076")
 
@@ -132,10 +132,11 @@ func TestRandomToken(t *testing.T) {
 
 type intToken int
 
-func (i intToken) String() string        { return strconv.Itoa(int(i)) }
-func (i intToken) Less(token Token) bool { return i < token.(intToken) }
+func (i intToken) String() string                           { return strconv.Itoa(int(i)) }
+func (i intToken) Less(token Token) bool                    { return i < token.(intToken) }
+func (i intToken) MarshalCQL(info TypeInfo) ([]byte, error) { return Marshal(info, int(i)) }
 
-// Test of the Token ring implementation based on example at the start of this
+// Test of the token ring implementation based on example at the start of this
 // page of documentation:
 // http://www.datastax.com/docs/0.8/cluster_architecture/partitioning
 func TestTokenRing_Int(t *testing.T) {

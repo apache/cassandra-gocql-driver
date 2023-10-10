@@ -15,7 +15,14 @@ type ClusterMetadata struct {
 	tokenRing *TokenRing
 }
 
-// TokenRing returns the token ring
+// TokenRing returns the token ring.
+// Please note that the token ring is only available if at least one cluster node is known and up.
+// Several [ClusterConfig] parameters can affect the availability or reliability of the token ring:
+// * DisableInitialHostLookup will disable host discovery and therefore the token ring availability.
+// * Events.DisableNodeStatusEvents will turn off processing of STATUS_CHANGE events,
+//   therefore the token ring will not be updated in response to host UP/DOWN events.
+// * Events.DisableTopologyEvents will turn off processing of TOPOLOGY_CHANGE events,
+//	 therefore the token ring will not be updated in response to cluster topology changes.
 func (m *ClusterMetadata) TokenRing() *TokenRing {
 	return m.tokenRing
 }
@@ -31,7 +38,7 @@ func (m *ClusterMetadata) resetTokenRing(partitioner string, hosts []*HostInfo, 
 	// create a new Token ring
 	tokenRing, err := newTokenRing(partitioner, hosts)
 	if err != nil {
-		logger.Printf("Unable to update the Token ring due to error: %s", err)
+		logger.Printf("Unable to update the token ring due to error: %s", err)
 		return
 	}
 

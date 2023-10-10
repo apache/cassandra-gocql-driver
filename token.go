@@ -23,23 +23,13 @@ type partitioner interface {
 	ParseString(string) Token
 }
 
-// Token is a token
+// Token is a Cassandra token.
+// It can be used in queries such as:
+//  session.Query("SELECT * FROM my_table WHERE TOKEN(id) > ?", token)
 type Token interface {
 	fmt.Stringer
+	Marshaler
 	Less(Token) bool
-}
-
-// TokenRange represents a token range.
-// The start token is exclusive and the end token is inclusive.
-type TokenRange struct {
-	Start Token
-	End   Token
-}
-
-// WrapsAround returns true if the token range wraps around the highest token value and back to the first token.
-// In that case, all token values greater than Start and all token values less than or equal to End are part of the range.
-func (r *TokenRange) WrapsAround() bool {
-	return !r.Start.Less(r.End)
 }
 
 // murmur3 partitioner and token
@@ -69,6 +59,10 @@ func (m murmur3Token) Less(token Token) bool {
 	return m < token.(murmur3Token)
 }
 
+func (m murmur3Token) MarshalCQL(info TypeInfo) ([]byte, error) {
+	return Marshal(info, int64(m))
+}
+
 // order preserving partitioner and token
 type orderedPartitioner struct{}
 type orderedToken string
@@ -92,6 +86,10 @@ func (o orderedToken) String() string {
 
 func (o orderedToken) Less(token Token) bool {
 	return o < token.(orderedToken)
+}
+
+func (o orderedToken) MarshalCQL(info TypeInfo) ([]byte, error) {
+	return Marshal(info, string(o))
 }
 
 // random partitioner and token
@@ -129,6 +127,10 @@ func (r *randomToken) String() string {
 
 func (r *randomToken) Less(token Token) bool {
 	return -1 == (*big.Int)(r).Cmp((*big.Int)(token.(*randomToken)))
+}
+
+func (r *randomToken) MarshalCQL(info TypeInfo) ([]byte, error) {
+	return Marshal(info, (*big.Int)(r))
 }
 
 type hostToken struct {
@@ -215,23 +217,95 @@ func (t *TokenRing) String() string {
 	return string(buf.Bytes())
 }
 
-// TokenRanges returns all token ranges in the ring.
-// All tokens within a range belong to the same host. You can obtain the owner by calling
-// HostForToken with the End token in the range.
-func (t *TokenRing) TokenRanges() []TokenRange {
+// Tokens returns the token range corresponding to the primary replica.
+// The elements are sorted by token ascending.
+// The range for a given item starts after preceding range and ends with the token at the current position.
+// The end token is part of the range.
+// The lowest (i.e. index 0) range wraps around the ring (its preceding range is the one with the largest index).
+// You can obtain the owner host/vnode of the range by calling HostForToken with the end token.
+//
+// The following example constructs one TOKEN-based query for each token range:
+//	func buildTokenQueries(s *Session, t *TokenRing) []*Query {
+//		tokens := t.Tokens()
+//		if len(tokens) == 0 {
+//			return nil
+//		}
+//
+//		// If there's a single token (practically impossible), there is no need for a token range query
+//		// because all the tokens are assigned to the same host/vnode anyway
+//		if len(tokens) == 1 {
+//			return []*Query{
+//				s.Query("SELECT * FROM my_table"),
+//			}
+//		}
+//
+//		queries := make([]*Query, 0, len(tokens)+1)
+//		for i, token := range tokens {
+//			var query *Query
+//			if i == 0 {
+//				// The first range contains all the tokens less than or equal to tokens[0]
+//				query = s.Query("SELECT * FROM my_table WHERE TOKEN(id) <= ?", token)
+//			} else {
+//				// Tokens in intermediate ranges are between (tokens[i-1], tokens[i]]
+//				prevToken := tokens[i-1]
+//				query = s.Query("SELECT * FROM my_table WHERE TOKEN(id) > ? AND TOKEN(id) <= ?", prevToken, token)
+//			}
+//			queries = append(queries, query)
+//		}
+//
+//		// Add a final range containing all the tokens greater than the last token,
+//		// to complete the wraparound to tokens[0].
+//		queries = append(queries,
+//			s.Query("SELECT * FROM my_table WHERE TOKEN(id) > ?", tokens[len(tokens)-1]),
+//		)
+//		return queries
+//	}
+func (t *TokenRing) Tokens() []Token {
 	if len(t.tokens) == 0 {
 		return nil
 	}
 
-	ranges := make([]TokenRange, 0, len(t.tokens))
-	for i := 0; i+1 < len(t.tokens); i++ {
-		ranges = append(ranges, TokenRange{Start: t.tokens[i].token, End: t.tokens[i+1].token})
+	ranges := make([]Token, len(t.tokens))
+	for i := range t.tokens {
+		ranges[i] = t.tokens[i].token
 	}
 
-	// wrap around to the first in the ring
-	ranges = append(ranges, TokenRange{Start: t.tokens[len(t.tokens)-1].token, End: t.tokens[0].token})
-
 	return ranges
+}
+
+func buildTokenQueries(s *Session, t *TokenRing) []*Query {
+	tokens := t.Tokens()
+	if len(tokens) == 0 {
+		return nil
+	}
+
+	// If there's a single token (practically impossible), there is no need for a token range query
+	// because all the tokens are assigned to the same host/vnode anyway
+	if len(tokens) == 1 {
+		return []*Query{
+			s.Query("SELECT * FROM my_table"),
+		}
+	}
+
+	queries := make([]*Query, 0, len(tokens)+1)
+	for i, token := range tokens {
+		var query *Query
+		if i == 0 {
+			// The first range contains all the tokens less than or equal to tokens[0]
+			query = s.Query("SELECT * FROM my_table WHERE TOKEN(id) <= ?", token)
+		} else {
+			// Tokens in intermediate ranges are between (tokens[i-1], tokens[i]]
+			prevToken := tokens[i-1]
+			query = s.Query("SELECT * FROM my_table WHERE TOKEN(id) > ? AND TOKEN(id) <= ?", prevToken, token)
+		}
+		queries = append(queries, query)
+	}
+
+	// The last range contains all the tokens greater than the last token (completing the wraparound to tokens[0]).
+	queries = append(queries,
+		s.Query("SELECT * FROM my_table WHERE TOKEN(id) > ?", tokens[len(tokens)-1]),
+	)
+	return queries
 }
 
 // HostForToken returns the host to which a token belongs
