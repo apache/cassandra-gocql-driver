@@ -126,7 +126,9 @@ func (s *Session) handleSchemaEvent(frames []frame) {
 
 func (s *Session) handleKeyspaceChange(keyspace, change string) {
 	s.control.awaitSchemaAgreement()
-	s.policy.KeyspaceChanged(KeyspaceUpdateEvent{Keyspace: keyspace, Change: change})
+	update := KeyspaceUpdateEvent{Keyspace: keyspace, Change: change}
+	s.metaMngr.keyspaceChanged(update)
+	s.policy.KeyspaceChanged(update)
 }
 
 // handleNodeEvent handles inbound status and topology change events.
@@ -212,6 +214,7 @@ func (s *Session) handleNodeUp(eventIp net.IP, eventPort int) {
 func (s *Session) startPoolFill(host *HostInfo) {
 	// we let the pool call handleNodeConnected to change the host state
 	s.pool.addHost(host)
+	s.metaMngr.addHost(host)
 	s.policy.AddHost(host)
 }
 
@@ -241,6 +244,7 @@ func (s *Session) handleNodeDown(ip net.IP, port int) {
 
 		s.policy.HostDown(host)
 		hostID := host.HostID()
+		s.metaMngr.removeHost(host)
 		s.pool.removeHost(hostID)
 	}
 }

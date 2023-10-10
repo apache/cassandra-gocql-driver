@@ -402,10 +402,10 @@ func (h *HostInfo) HostnameAndPort() string {
 }
 
 func (h *HostInfo) ConnectAddressAndPort() string {
-        h.mu.Lock()
-        defer h.mu.Unlock()
-        addr, _ := h.connectAddressLocked()
-        return net.JoinHostPort(addr.String(), strconv.Itoa(h.port))
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	addr, _ := h.connectAddressLocked()
+	return net.JoinHostPort(addr.String(), strconv.Itoa(h.port))
 }
 
 func (h *HostInfo) String() string {
@@ -735,7 +735,7 @@ func refreshRing(r *ringDescriber) error {
 		r.session.removeHost(host)
 	}
 
-	r.session.metadata.setPartitioner(partitioner)
+	r.session.metaMngr.setPartitioner(partitioner)
 	r.session.policy.SetPartitioner(partitioner)
 	return nil
 }

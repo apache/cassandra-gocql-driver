@@ -22,7 +22,7 @@ func TestPlacementStrategy_SimpleStrategy(t *testing.T) {
 	hosts := []*HostInfo{host0, host25, host50, host75}
 
 	strat := &simpleStrategy{rf: 2}
-	tokenReplicas := strat.replicaMap(&tokenRing{hosts: hosts, tokens: tokens})
+	tokenReplicas := strat.replicaMap(&TokenRing{hosts: hosts, tokens: tokens})
 	if len(tokenReplicas) != len(tokens) {
 		t.Fatalf("expected replica map to have %d items but has %d", len(tokens), len(tokenReplicas))
 	}
@@ -122,21 +122,21 @@ func TestPlacementStrategy_NetworkStrategy(t *testing.T) {
 					hosts = append(hosts, h)
 				}
 
-				sort.Sort(&tokenRing{tokens: dcTokens})
+				sort.Sort(&TokenRing{tokens: dcTokens})
 				dcRing[dc] = dcTokens
 			}
 
 			if len(tokens) != hostsPerDC*totalDCs {
 				t.Fatalf("expected %d tokens in the ring got %d", hostsPerDC*totalDCs, len(tokens))
 			}
-			sort.Sort(&tokenRing{tokens: tokens})
+			sort.Sort(&TokenRing{tokens: tokens})
 
 			var expReplicas int
 			for _, rf := range test.strat.dcs {
 				expReplicas += rf
 			}
 
-			tokenReplicas := test.strat.replicaMap(&tokenRing{hosts: hosts, tokens: tokens})
+			tokenReplicas := test.strat.replicaMap(&TokenRing{hosts: hosts, tokens: tokens})
 			if len(tokenReplicas) != test.expectedReplicaMapSize {
 				t.Fatalf("expected replica map to have %d items but has %d", test.expectedReplicaMapSize,
 					len(tokenReplicas))

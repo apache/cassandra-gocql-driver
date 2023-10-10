@@ -652,6 +652,8 @@ func marshalBigInt(info TypeInfo, value interface{}) ([]byte, error) {
 		return encBigInt(int64(v)), nil
 	case big.Int:
 		return encBigInt2C(&v), nil
+	case *big.Int:
+		return encBigInt2C(v), nil
 	case string:
 		i, err := strconv.ParseInt(value.(string), 10, 64)
 		if err != nil {

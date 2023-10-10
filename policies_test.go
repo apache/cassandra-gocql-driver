@@ -5,7 +5,6 @@
 package gocql
 
 import (
-	"errors"
 	"fmt"
 	"net"
 	"sort"
@@ -47,12 +46,9 @@ func TestRoundRobbin(t *testing.T) {
 // round-robin host selection policy fallback.
 func TestHostPolicy_TokenAware_SimpleStrategy(t *testing.T) {
 	const keyspace = "myKeyspace"
+	const partitioner = "OrderedPartitioner"
 	policy := TokenAwareHostPolicy(RoundRobinHostPolicy())
 	policyInternal := policy.(*tokenAwareHostPolicy)
-	policyInternal.getKeyspaceName = func() string { return keyspace }
-	policyInternal.getKeyspaceMetadata = func(ks string) (*KeyspaceMetadata, error) {
-		return nil, errors.New("not initalized")
-	}
 
 	query := &Query{routingInfo: &queryRoutingInfo{}}
 	query.getKeyspace = func() string { return keyspace }
@@ -67,43 +63,34 @@ func TestHostPolicy_TokenAware_SimpleStrategy(t *testing.T) {
 	}
 
 	// set the hosts
-	hosts := [...]*HostInfo{
+	hosts := []*HostInfo{
 		{hostId: "0", connectAddress: net.IPv4(10, 0, 0, 1), tokens: []string{"00"}},
 		{hostId: "1", connectAddress: net.IPv4(10, 0, 0, 2), tokens: []string{"25"}},
 		{hostId: "2", connectAddress: net.IPv4(10, 0, 0, 3), tokens: []string{"50"}},
 		{hostId: "3", connectAddress: net.IPv4(10, 0, 0, 4), tokens: []string{"75"}},
 	}
-	for _, host := range &hosts {
+	for _, host := range hosts {
 		policy.AddHost(host)
 	}
 
-	policy.SetPartitioner("OrderedPartitioner")
-
-	policyInternal.getKeyspaceMetadata = func(keyspaceName string) (*KeyspaceMetadata, error) {
-		if keyspaceName != keyspace {
-			return nil, fmt.Errorf("unknown keyspace: %s", keyspaceName)
-		}
-		return &KeyspaceMetadata{
-			Name:          keyspace,
-			StrategyClass: "SimpleStrategy",
-			StrategyOptions: map[string]interface{}{
-				"class":              "SimpleStrategy",
-				"replication_factor": 2,
-			},
-		}, nil
-	}
+	policy.SetPartitioner(partitioner)
 	policy.KeyspaceChanged(KeyspaceUpdateEvent{Keyspace: keyspace})
 
 	// The SimpleStrategy above should generate the following replicas.
-	// It's handy to have as reference here.
-	assertDeepEqual(t, "replicas", map[string]tokenRingReplicas{
-		"myKeyspace": {
-			{orderedToken("00"), []*HostInfo{hosts[0], hosts[1]}},
-			{orderedToken("25"), []*HostInfo{hosts[1], hosts[2]}},
-			{orderedToken("50"), []*HostInfo{hosts[2], hosts[3]}},
-			{orderedToken("75"), []*HostInfo{hosts[3], hosts[0]}},
-		},
-	}, policyInternal.getMetadataReadOnly().replicas)
+	policyInternal.getMetadataReadOnly = func() *ClusterMetadata {
+		meta := &ClusterMetadata{
+			replicas: map[string]tokenRingReplicas{
+				"myKeyspace": {
+					{orderedToken("00"), []*HostInfo{hosts[0], hosts[1]}},
+					{orderedToken("25"), []*HostInfo{hosts[1], hosts[2]}},
+					{orderedToken("50"), []*HostInfo{hosts[2], hosts[3]}},
+					{orderedToken("75"), []*HostInfo{hosts[3], hosts[0]}},
+				},
+			},
+		}
+		meta.resetTokenRing(partitioner, hosts, nil)
+		return meta
+	}
 
 	// now the token ring is configured
 	query.RoutingKey([]byte("20"))
@@ -183,14 +170,11 @@ func TestHostPolicy_RoundRobin_NilHostInfo(t *testing.T) {
 }
 
 func TestHostPolicy_TokenAware_NilHostInfo(t *testing.T) {
+	const partitioner = "OrderedPartitioner"
 	policy := TokenAwareHostPolicy(RoundRobinHostPolicy())
 	policyInternal := policy.(*tokenAwareHostPolicy)
-	policyInternal.getKeyspaceName = func() string { return "myKeyspace" }
-	policyInternal.getKeyspaceMetadata = func(ks string) (*KeyspaceMetadata, error) {
-		return nil, errors.New("not initialized")
-	}
 
-	hosts := [...]*HostInfo{
+	hosts := []*HostInfo{
 		{connectAddress: net.IPv4(10, 0, 0, 0), tokens: []string{"00"}},
 		{connectAddress: net.IPv4(10, 0, 0, 1), tokens: []string{"25"}},
 		{connectAddress: net.IPv4(10, 0, 0, 2), tokens: []string{"50"}},
@@ -199,7 +183,14 @@ func TestHostPolicy_TokenAware_NilHostInfo(t *testing.T) {
 	for _, host := range hosts {
 		policy.AddHost(host)
 	}
-	policy.SetPartitioner("OrderedPartitioner")
+	policy.SetPartitioner(partitioner)
+
+	// We'll simulate a SimpleStrategy, which should generate the following replicas.
+	policyInternal.getMetadataReadOnly = func() *ClusterMetadata {
+		meta := &ClusterMetadata{replicas: map[string]tokenRingReplicas{}}
+		meta.resetTokenRing(partitioner, hosts, nil)
+		return meta
+	}
 
 	query := &Query{routingInfo: &queryRoutingInfo{}}
 	query.getKeyspace = func() string { return "myKeyspace" }
@@ -471,12 +462,9 @@ func TestHostPolicy_DCAwareRR(t *testing.T) {
 // with {"class": "NetworkTopologyStrategy", "a": 1, "b": 1, "c": 1} replication.
 func TestHostPolicy_TokenAware(t *testing.T) {
 	const keyspace = "myKeyspace"
+	const partitioner = "OrderedPartitioner"
 	policy := TokenAwareHostPolicy(DCAwareRoundRobinPolicy("local"))
 	policyInternal := policy.(*tokenAwareHostPolicy)
-	policyInternal.getKeyspaceName = func() string { return keyspace }
-	policyInternal.getKeyspaceMetadata = func(ks string) (*KeyspaceMetadata, error) {
-		return nil, errors.New("not initialized")
-	}
 
 	query := &Query{routingInfo: &queryRoutingInfo{}}
 	query.getKeyspace = func() string { return keyspace }
@@ -491,7 +479,7 @@ func TestHostPolicy_TokenAware(t *testing.T) {
 	}
 
 	// set the hosts
-	hosts := [...]*HostInfo{
+	hosts := []*HostInfo{
 		{hostId: "0", connectAddress: net.IPv4(10, 0, 0, 1), tokens: []string{"05"}, dataCenter: "remote1"},
 		{hostId: "1", connectAddress: net.IPv4(10, 0, 0, 2), tokens: []string{"10"}, dataCenter: "local"},
 		{hostId: "2", connectAddress: net.IPv4(10, 0, 0, 3), tokens: []string{"15"}, dataCenter: "remote2"},
@@ -509,6 +497,10 @@ func TestHostPolicy_TokenAware(t *testing.T) {
 		policy.AddHost(host)
 	}
 
+	policyInternal.getMetadataReadOnly = func() *ClusterMetadata {
+		return &ClusterMetadata{} // no replicas here, force the policy to use the fallback for now
+	}
+
 	// the token ring is not setup without the partitioner, but the fallback
 	// should work
 	if actual := policy.Pick(nil)(); actual == nil {
@@ -520,43 +512,32 @@ func TestHostPolicy_TokenAware(t *testing.T) {
 		t.Fatal("expected to get host from fallback got nil")
 	}
 
-	policy.SetPartitioner("OrderedPartitioner")
+	policy.SetPartitioner(partitioner)
+	policy.KeyspaceChanged(KeyspaceUpdateEvent{Keyspace: keyspace})
 
-	policyInternal.getKeyspaceMetadata = func(keyspaceName string) (*KeyspaceMetadata, error) {
-		if keyspaceName != keyspace {
-			return nil, fmt.Errorf("unknown keyspace: %s", keyspaceName)
-		}
-		return &KeyspaceMetadata{
-			Name:          keyspace,
-			StrategyClass: "NetworkTopologyStrategy",
-			StrategyOptions: map[string]interface{}{
-				"class":   "NetworkTopologyStrategy",
-				"local":   1,
-				"remote1": 1,
-				"remote2": 1,
+	// The NetworkTopologyStrategy should generate the following replicas.
+	policyInternal.getMetadataReadOnly = func() *ClusterMetadata {
+		meta := &ClusterMetadata{
+			replicas: map[string]tokenRingReplicas{
+				"myKeyspace": {
+					{orderedToken("05"), []*HostInfo{hosts[0], hosts[1], hosts[2]}},
+					{orderedToken("10"), []*HostInfo{hosts[1], hosts[2], hosts[3]}},
+					{orderedToken("15"), []*HostInfo{hosts[2], hosts[3], hosts[4]}},
+					{orderedToken("20"), []*HostInfo{hosts[3], hosts[4], hosts[5]}},
+					{orderedToken("25"), []*HostInfo{hosts[4], hosts[5], hosts[6]}},
+					{orderedToken("30"), []*HostInfo{hosts[5], hosts[6], hosts[7]}},
+					{orderedToken("35"), []*HostInfo{hosts[6], hosts[7], hosts[8]}},
+					{orderedToken("40"), []*HostInfo{hosts[7], hosts[8], hosts[9]}},
+					{orderedToken("45"), []*HostInfo{hosts[8], hosts[9], hosts[10]}},
+					{orderedToken("50"), []*HostInfo{hosts[9], hosts[10], hosts[11]}},
+					{orderedToken("55"), []*HostInfo{hosts[10], hosts[11], hosts[0]}},
+					{orderedToken("60"), []*HostInfo{hosts[11], hosts[0], hosts[1]}},
+				},
 			},
-		}, nil
+		}
+		meta.resetTokenRing(partitioner, hosts, nil)
+		return meta
 	}
-	policy.KeyspaceChanged(KeyspaceUpdateEvent{Keyspace: "myKeyspace"})
-
-	// The NetworkTopologyStrategy above should generate the following replicas.
-	// It's handy to have as reference here.
-	assertDeepEqual(t, "replicas", map[string]tokenRingReplicas{
-		"myKeyspace": {
-			{orderedToken("05"), []*HostInfo{hosts[0], hosts[1], hosts[2]}},
-			{orderedToken("10"), []*HostInfo{hosts[1], hosts[2], hosts[3]}},
-			{orderedToken("15"), []*HostInfo{hosts[2], hosts[3], hosts[4]}},
-			{orderedToken("20"), []*HostInfo{hosts[3], hosts[4], hosts[5]}},
-			{orderedToken("25"), []*HostInfo{hosts[4], hosts[5], hosts[6]}},
-			{orderedToken("30"), []*HostInfo{hosts[5], hosts[6], hosts[7]}},
-			{orderedToken("35"), []*HostInfo{hosts[6], hosts[7], hosts[8]}},
-			{orderedToken("40"), []*HostInfo{hosts[7], hosts[8], hosts[9]}},
-			{orderedToken("45"), []*HostInfo{hosts[8], hosts[9], hosts[10]}},
-			{orderedToken("50"), []*HostInfo{hosts[9], hosts[10], hosts[11]}},
-			{orderedToken("55"), []*HostInfo{hosts[10], hosts[11], hosts[0]}},
-			{orderedToken("60"), []*HostInfo{hosts[11], hosts[0], hosts[1]}},
-		},
-	}, policyInternal.getMetadataReadOnly().replicas)
 
 	// now the token ring is configured
 	query.RoutingKey([]byte("23"))
@@ -573,12 +554,9 @@ func TestHostPolicy_TokenAware(t *testing.T) {
 // with {"class": "NetworkTopologyStrategy", "a": 2, "b": 2, "c": 2} replication.
 func TestHostPolicy_TokenAware_NetworkStrategy(t *testing.T) {
 	const keyspace = "myKeyspace"
+	const partitioner = "OrderedPartitioner"
 	policy := TokenAwareHostPolicy(DCAwareRoundRobinPolicy("local"), NonLocalReplicasFallback())
 	policyInternal := policy.(*tokenAwareHostPolicy)
-	policyInternal.getKeyspaceName = func() string { return keyspace }
-	policyInternal.getKeyspaceMetadata = func(ks string) (*KeyspaceMetadata, error) {
-		return nil, errors.New("not initialized")
-	}
 
 	query := &Query{routingInfo: &queryRoutingInfo{}}
 	query.getKeyspace = func() string { return keyspace }
@@ -593,7 +571,7 @@ func TestHostPolicy_TokenAware_NetworkStrategy(t *testing.T) {
 	}
 
 	// set the hosts
-	hosts := [...]*HostInfo{
+	hosts := []*HostInfo{
 		{hostId: "0", connectAddress: net.IPv4(10, 0, 0, 1), tokens: []string{"05"}, dataCenter: "remote1"},
 		{hostId: "1", connectAddress: net.IPv4(10, 0, 0, 2), tokens: []string{"10"}, dataCenter: "local"},
 		{hostId: "2", connectAddress: net.IPv4(10, 0, 0, 3), tokens: []string{"15"}, dataCenter: "remote2"},
@@ -611,43 +589,32 @@ func TestHostPolicy_TokenAware_NetworkStrategy(t *testing.T) {
 		policy.AddHost(host)
 	}
 
-	policy.SetPartitioner("OrderedPartitioner")
-
-	policyInternal.getKeyspaceMetadata = func(keyspaceName string) (*KeyspaceMetadata, error) {
-		if keyspaceName != keyspace {
-			return nil, fmt.Errorf("unknown keyspace: %s", keyspaceName)
-		}
-		return &KeyspaceMetadata{
-			Name:          keyspace,
-			StrategyClass: "NetworkTopologyStrategy",
-			StrategyOptions: map[string]interface{}{
-				"class":   "NetworkTopologyStrategy",
-				"local":   2,
-				"remote1": 2,
-				"remote2": 2,
-			},
-		}, nil
-	}
-	policy.KeyspaceChanged(KeyspaceUpdateEvent{Keyspace: keyspace})
+	policy.SetPartitioner(partitioner)
+	policy.KeyspaceChanged(KeyspaceUpdateEvent{Keyspace: "myKeyspace"})
 
 	// The NetworkTopologyStrategy above should generate the following replicas.
-	// It's handy to have as reference here.
-	assertDeepEqual(t, "replicas", map[string]tokenRingReplicas{
-		keyspace: {
-			{orderedToken("05"), []*HostInfo{hosts[0], hosts[1], hosts[2], hosts[3], hosts[4], hosts[5]}},
-			{orderedToken("10"), []*HostInfo{hosts[1], hosts[2], hosts[3], hosts[4], hosts[5], hosts[6]}},
-			{orderedToken("15"), []*HostInfo{hosts[2], hosts[3], hosts[4], hosts[5], hosts[6], hosts[7]}},
-			{orderedToken("20"), []*HostInfo{hosts[3], hosts[4], hosts[5], hosts[6], hosts[7], hosts[8]}},
-			{orderedToken("25"), []*HostInfo{hosts[4], hosts[5], hosts[6], hosts[7], hosts[8], hosts[9]}},
-			{orderedToken("30"), []*HostInfo{hosts[5], hosts[6], hosts[7], hosts[8], hosts[9], hosts[10]}},
-			{orderedToken("35"), []*HostInfo{hosts[6], hosts[7], hosts[8], hosts[9], hosts[10], hosts[11]}},
-			{orderedToken("40"), []*HostInfo{hosts[7], hosts[8], hosts[9], hosts[10], hosts[11], hosts[0]}},
-			{orderedToken("45"), []*HostInfo{hosts[8], hosts[9], hosts[10], hosts[11], hosts[0], hosts[1]}},
-			{orderedToken("50"), []*HostInfo{hosts[9], hosts[10], hosts[11], hosts[0], hosts[1], hosts[2]}},
-			{orderedToken("55"), []*HostInfo{hosts[10], hosts[11], hosts[0], hosts[1], hosts[2], hosts[3]}},
-			{orderedToken("60"), []*HostInfo{hosts[11], hosts[0], hosts[1], hosts[2], hosts[3], hosts[4]}},
-		},
-	}, policyInternal.getMetadataReadOnly().replicas)
+	policyInternal.getMetadataReadOnly = func() *ClusterMetadata {
+		meta := &ClusterMetadata{
+			replicas: map[string]tokenRingReplicas{
+				keyspace: {
+					{orderedToken("05"), []*HostInfo{hosts[0], hosts[1], hosts[2], hosts[3], hosts[4], hosts[5]}},
+					{orderedToken("10"), []*HostInfo{hosts[1], hosts[2], hosts[3], hosts[4], hosts[5], hosts[6]}},
+					{orderedToken("15"), []*HostInfo{hosts[2], hosts[3], hosts[4], hosts[5], hosts[6], hosts[7]}},
+					{orderedToken("20"), []*HostInfo{hosts[3], hosts[4], hosts[5], hosts[6], hosts[7], hosts[8]}},
+					{orderedToken("25"), []*HostInfo{hosts[4], hosts[5], hosts[6], hosts[7], hosts[8], hosts[9]}},
+					{orderedToken("30"), []*HostInfo{hosts[5], hosts[6], hosts[7], hosts[8], hosts[9], hosts[10]}},
+					{orderedToken("35"), []*HostInfo{hosts[6], hosts[7], hosts[8], hosts[9], hosts[10], hosts[11]}},
+					{orderedToken("40"), []*HostInfo{hosts[7], hosts[8], hosts[9], hosts[10], hosts[11], hosts[0]}},
+					{orderedToken("45"), []*HostInfo{hosts[8], hosts[9], hosts[10], hosts[11], hosts[0], hosts[1]}},
+					{orderedToken("50"), []*HostInfo{hosts[9], hosts[10], hosts[11], hosts[0], hosts[1], hosts[2]}},
+					{orderedToken("55"), []*HostInfo{hosts[10], hosts[11], hosts[0], hosts[1], hosts[2], hosts[3]}},
+					{orderedToken("60"), []*HostInfo{hosts[11], hosts[0], hosts[1], hosts[2], hosts[3], hosts[4]}},
+				},
+			},
+		}
+		meta.resetTokenRing(partitioner, hosts, nil)
+		return meta
+	}
 
 	// now the token ring is configured
 	query.RoutingKey([]byte("18"))
@@ -694,18 +661,12 @@ func TestHostPolicy_RackAwareRR(t *testing.T) {
 // DC & Rack aware round-robin host selection policy fallback
 func TestHostPolicy_TokenAware_RackAware(t *testing.T) {
 	const keyspace = "myKeyspace"
+	const partitioner = "OrderedPartitioner"
 	policy := TokenAwareHostPolicy(RackAwareRoundRobinPolicy("local", "b"))
 	policyWithFallback := TokenAwareHostPolicy(RackAwareRoundRobinPolicy("local", "b"), NonLocalReplicasFallback())
 
 	policyInternal := policy.(*tokenAwareHostPolicy)
-	policyInternal.getKeyspaceName = func() string { return keyspace }
-	policyInternal.getKeyspaceMetadata = func(ks string) (*KeyspaceMetadata, error) {
-		return nil, errors.New("not initialized")
-	}
-
 	policyWithFallbackInternal := policyWithFallback.(*tokenAwareHostPolicy)
-	policyWithFallbackInternal.getKeyspaceName = policyInternal.getKeyspaceName
-	policyWithFallbackInternal.getKeyspaceMetadata = policyInternal.getKeyspaceMetadata
 
 	query := &Query{routingInfo: &queryRoutingInfo{}}
 	query.getKeyspace = func() string { return keyspace }
@@ -720,7 +681,7 @@ func TestHostPolicy_TokenAware_RackAware(t *testing.T) {
 	}
 
 	// set the hosts
-	hosts := [...]*HostInfo{
+	hosts := []*HostInfo{
 		{hostId: "0", connectAddress: net.IPv4(10, 0, 0, 1), tokens: []string{"05"}, dataCenter: "remote", rack: "a"},
 		{hostId: "1", connectAddress: net.IPv4(10, 0, 0, 2), tokens: []string{"10"}, dataCenter: "remote", rack: "b"},
 		{hostId: "2", connectAddress: net.IPv4(10, 0, 0, 3), tokens: []string{"15"}, dataCenter: "local", rack: "a"},
@@ -745,50 +706,45 @@ func TestHostPolicy_TokenAware_RackAware(t *testing.T) {
 		t.Fatal("expected to get host from fallback got nil")
 	}
 
+	policyInternal.getMetadataReadOnly = func() *ClusterMetadata {
+		return &ClusterMetadata{} // no replicas here, force the policy to use the fallback for now
+	}
+
 	query.RoutingKey([]byte("30"))
 	if actual := policy.Pick(query)(); actual == nil {
 		t.Fatal("expected to get host from fallback got nil")
 	}
 
-	policy.SetPartitioner("OrderedPartitioner")
-	policyWithFallback.SetPartitioner("OrderedPartitioner")
+	policy.SetPartitioner(partitioner)
+	policyWithFallback.SetPartitioner(partitioner)
 
-	policyInternal.getKeyspaceMetadata = func(keyspaceName string) (*KeyspaceMetadata, error) {
-		if keyspaceName != keyspace {
-			return nil, fmt.Errorf("unknown keyspace: %s", keyspaceName)
-		}
-		return &KeyspaceMetadata{
-			Name:          keyspace,
-			StrategyClass: "NetworkTopologyStrategy",
-			StrategyOptions: map[string]interface{}{
-				"class":  "NetworkTopologyStrategy",
-				"local":  2,
-				"remote": 2,
-			},
-		}, nil
-	}
-	policyWithFallbackInternal.getKeyspaceMetadata = policyInternal.getKeyspaceMetadata
-	policy.KeyspaceChanged(KeyspaceUpdateEvent{Keyspace: "myKeyspace"})
-	policyWithFallback.KeyspaceChanged(KeyspaceUpdateEvent{Keyspace: "myKeyspace"})
+	policy.KeyspaceChanged(KeyspaceUpdateEvent{Keyspace: keyspace})
+	policyWithFallback.KeyspaceChanged(KeyspaceUpdateEvent{Keyspace: keyspace})
 
 	// The NetworkTopologyStrategy above should generate the following replicas.
-	// It's handy to have as reference here.
-	assertDeepEqual(t, "replicas", map[string]tokenRingReplicas{
-		"myKeyspace": {
-			{orderedToken("05"), []*HostInfo{hosts[0], hosts[1], hosts[2], hosts[3]}},
-			{orderedToken("10"), []*HostInfo{hosts[1], hosts[2], hosts[3], hosts[4]}},
-			{orderedToken("15"), []*HostInfo{hosts[2], hosts[3], hosts[4], hosts[5]}},
-			{orderedToken("20"), []*HostInfo{hosts[3], hosts[4], hosts[5], hosts[6]}},
-			{orderedToken("25"), []*HostInfo{hosts[4], hosts[5], hosts[6], hosts[7]}},
-			{orderedToken("30"), []*HostInfo{hosts[5], hosts[6], hosts[7], hosts[8]}},
-			{orderedToken("35"), []*HostInfo{hosts[6], hosts[7], hosts[8], hosts[9]}},
-			{orderedToken("40"), []*HostInfo{hosts[7], hosts[8], hosts[9], hosts[10]}},
-			{orderedToken("45"), []*HostInfo{hosts[8], hosts[9], hosts[10], hosts[11]}},
-			{orderedToken("50"), []*HostInfo{hosts[9], hosts[10], hosts[11], hosts[0]}},
-			{orderedToken("55"), []*HostInfo{hosts[10], hosts[11], hosts[0], hosts[1]}},
-			{orderedToken("60"), []*HostInfo{hosts[11], hosts[0], hosts[1], hosts[2]}},
-		},
-	}, policyInternal.getMetadataReadOnly().replicas)
+	policyInternal.getMetadataReadOnly = func() *ClusterMetadata {
+		meta := &ClusterMetadata{
+			replicas: map[string]tokenRingReplicas{
+				"myKeyspace": {
+					{orderedToken("05"), []*HostInfo{hosts[0], hosts[1], hosts[2], hosts[3]}},
+					{orderedToken("10"), []*HostInfo{hosts[1], hosts[2], hosts[3], hosts[4]}},
+					{orderedToken("15"), []*HostInfo{hosts[2], hosts[3], hosts[4], hosts[5]}},
+					{orderedToken("20"), []*HostInfo{hosts[3], hosts[4], hosts[5], hosts[6]}},
+					{orderedToken("25"), []*HostInfo{hosts[4], hosts[5], hosts[6], hosts[7]}},
+					{orderedToken("30"), []*HostInfo{hosts[5], hosts[6], hosts[7], hosts[8]}},
+					{orderedToken("35"), []*HostInfo{hosts[6], hosts[7], hosts[8], hosts[9]}},
+					{orderedToken("40"), []*HostInfo{hosts[7], hosts[8], hosts[9], hosts[10]}},
+					{orderedToken("45"), []*HostInfo{hosts[8], hosts[9], hosts[10], hosts[11]}},
+					{orderedToken("50"), []*HostInfo{hosts[9], hosts[10], hosts[11], hosts[0]}},
+					{orderedToken("55"), []*HostInfo{hosts[10], hosts[11], hosts[0], hosts[1]}},
+					{orderedToken("60"), []*HostInfo{hosts[11], hosts[0], hosts[1], hosts[2]}},
+				},
+			},
+		}
+		meta.resetTokenRing(partitioner, hosts, nil)
+		return meta
+	}
+	policyWithFallbackInternal.getMetadataReadOnly = policyInternal.getMetadataReadOnly
 
 	query.RoutingKey([]byte("23"))
 

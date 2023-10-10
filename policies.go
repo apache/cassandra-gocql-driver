@@ -373,45 +373,20 @@ func TokenAwareHostPolicy(fallback HostSelectionPolicy, opts ...func(*tokenAware
 	return p
 }
 
-// clusterMeta holds metadata about cluster topology.
-// It is used inside atomic.Value and shallow copies are used when replacing it,
-// so fields should not be modified in-place. Instead, to modify a field a copy of the field should be made
-// and the pointer in clusterMeta updated to point to the new value.
-type clusterMeta struct {
-	// replicas is map[keyspace]map[token]hosts
-	replicas  map[string]tokenRingReplicas
-	tokenRing *tokenRing
-}
-
 type tokenAwareHostPolicy struct {
-	fallback            HostSelectionPolicy
-	getKeyspaceMetadata func(keyspace string) (*KeyspaceMetadata, error)
-	getKeyspaceName     func() string
-
+	fallback                 HostSelectionPolicy
+	getMetadataReadOnly      func() *ClusterMetadata
 	shuffleReplicas          bool
 	nonLocalReplicasFallback bool
-
-	// mu protects writes to hosts, partitioner, metadata.
-	// reads can be unlocked as long as they are not used for updating state later.
-	mu          sync.Mutex
-	hosts       cowHostList
-	partitioner string
-	metadata    atomic.Value // *clusterMeta
-
-	logger StdLogger
 }
 
 func (t *tokenAwareHostPolicy) Init(s *Session) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	if t.getKeyspaceMetadata != nil {
+	if t.getMetadataReadOnly != nil {
 		// Init was already called.
 		// See https://github.com/scylladb/gocql/issues/94.
 		panic("sharing token aware host selection policy between sessions is not supported")
 	}
-	t.getKeyspaceMetadata = s.KeyspaceMetadata
-	t.getKeyspaceName = func() string { return s.cfg.Keyspace }
-	t.logger = s.logger
+	t.getMetadataReadOnly = s.metaMngr.getMetadataReadOnly
 }
 
 func (t *tokenAwareHostPolicy) IsLocal(host *HostInfo) bool {
@@ -419,94 +394,24 @@ func (t *tokenAwareHostPolicy) IsLocal(host *HostInfo) bool {
 }
 
 func (t *tokenAwareHostPolicy) KeyspaceChanged(update KeyspaceUpdateEvent) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	meta := t.getMetadataForUpdate()
-	t.updateReplicas(meta, update.Keyspace)
-	t.metadata.Store(meta)
-}
-
-// updateReplicas updates replicas in clusterMeta.
-// It must be called with t.mu mutex locked.
-// meta must not be nil and it's replicas field will be updated.
-func (t *tokenAwareHostPolicy) updateReplicas(meta *clusterMeta, keyspace string) {
-	newReplicas := make(map[string]tokenRingReplicas, len(meta.replicas))
-
-	ks, err := t.getKeyspaceMetadata(keyspace)
-	if err == nil {
-		strat := getStrategy(ks, t.logger)
-		if strat != nil {
-			if meta != nil && meta.tokenRing != nil {
-				newReplicas[keyspace] = strat.replicaMap(meta.tokenRing)
-			}
-		}
-	}
-
-	for ks, replicas := range meta.replicas {
-		if ks != keyspace {
-			newReplicas[ks] = replicas
-		}
-	}
-
-	meta.replicas = newReplicas
+	t.fallback.KeyspaceChanged(update)
 }
 
 func (t *tokenAwareHostPolicy) SetPartitioner(partitioner string) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-
-	if t.partitioner != partitioner {
-		t.fallback.SetPartitioner(partitioner)
-		t.partitioner = partitioner
-		meta := t.getMetadataForUpdate()
-		meta.resetTokenRing(t.partitioner, t.hosts.get(), t.logger)
-		t.updateReplicas(meta, t.getKeyspaceName())
-		t.metadata.Store(meta)
-	}
+	t.fallback.SetPartitioner(partitioner)
 }
 
 func (t *tokenAwareHostPolicy) AddHost(host *HostInfo) {
-	t.mu.Lock()
-	if t.hosts.add(host) {
-		meta := t.getMetadataForUpdate()
-		meta.resetTokenRing(t.partitioner, t.hosts.get(), t.logger)
-		t.updateReplicas(meta, t.getKeyspaceName())
-		t.metadata.Store(meta)
-	}
-	t.mu.Unlock()
-
 	t.fallback.AddHost(host)
 }
 
 func (t *tokenAwareHostPolicy) AddHosts(hosts []*HostInfo) {
-	t.mu.Lock()
-
-	for _, host := range hosts {
-		t.hosts.add(host)
-	}
-
-	meta := t.getMetadataForUpdate()
-	meta.resetTokenRing(t.partitioner, t.hosts.get(), t.logger)
-	t.updateReplicas(meta, t.getKeyspaceName())
-	t.metadata.Store(meta)
-
-	t.mu.Unlock()
-
 	for _, host := range hosts {
 		t.fallback.AddHost(host)
 	}
 }
 
 func (t *tokenAwareHostPolicy) RemoveHost(host *HostInfo) {
-	t.mu.Lock()
-	if t.hosts.remove(host.ConnectAddress()) {
-		meta := t.getMetadataForUpdate()
-		meta.resetTokenRing(t.partitioner, t.hosts.get(), t.logger)
-		t.updateReplicas(meta, t.getKeyspaceName())
-		t.metadata.Store(meta)
-	}
-	t.mu.Unlock()
-
 	t.fallback.RemoveHost(host)
 }
 
@@ -516,46 +421,6 @@ func (t *tokenAwareHostPolicy) HostUp(host *HostInfo) {
 
 func (t *tokenAwareHostPolicy) HostDown(host *HostInfo) {
 	t.fallback.HostDown(host)
-}
-
-// getMetadataReadOnly returns current cluster metadata.
-// Metadata uses copy on write, so the returned value should be only used for reading.
-// To obtain a copy that could be updated, use getMetadataForUpdate instead.
-func (t *tokenAwareHostPolicy) getMetadataReadOnly() *clusterMeta {
-	meta, _ := t.metadata.Load().(*clusterMeta)
-	return meta
-}
-
-// getMetadataForUpdate returns clusterMeta suitable for updating.
-// It is a SHALLOW copy of current metadata in case it was already set or new empty clusterMeta otherwise.
-// This function should be called with t.mu mutex locked and the mutex should not be released before
-// storing the new metadata.
-func (t *tokenAwareHostPolicy) getMetadataForUpdate() *clusterMeta {
-	metaReadOnly := t.getMetadataReadOnly()
-	meta := new(clusterMeta)
-	if metaReadOnly != nil {
-		*meta = *metaReadOnly
-	}
-	return meta
-}
-
-// resetTokenRing creates a new tokenRing.
-// It must be called with t.mu locked.
-func (m *clusterMeta) resetTokenRing(partitioner string, hosts []*HostInfo, logger StdLogger) {
-	if partitioner == "" {
-		// partitioner not yet set
-		return
-	}
-
-	// create a new token ring
-	tokenRing, err := newTokenRing(partitioner, hosts)
-	if err != nil {
-		logger.Printf("Unable to update the token ring due to error: %s", err)
-		return
-	}
-
-	// replace the token ring
-	m.tokenRing = tokenRing
 }
 
 func (t *tokenAwareHostPolicy) Pick(qry ExecutableQuery) NextHost {
@@ -580,7 +445,7 @@ func (t *tokenAwareHostPolicy) Pick(qry ExecutableQuery) NextHost {
 
 	var replicas []*HostInfo
 	if ht == nil {
-		host, _ := meta.tokenRing.GetHostForToken(token)
+		host, _ := meta.tokenRing.HostForToken(token)
 		replicas = []*HostInfo{host}
 	} else {
 		replicas = ht.hosts

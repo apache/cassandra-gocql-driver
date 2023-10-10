@@ -53,7 +53,7 @@ type Session struct {
 	policy   HostSelectionPolicy
 
 	ring     ring
-	metadata clusterMetadata
+	metaMngr clusterMetadataManager
 
 	mu sync.RWMutex
 
@@ -192,6 +192,8 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 }
 
 func (s *Session) init() error {
+	s.metaMngr.init(s)
+
 	hosts, err := addrsToHosts(s.cfg.Hosts, s.cfg.Port, s.logger)
 	if err != nil {
 		return err
@@ -223,6 +225,7 @@ func (s *Session) init() error {
 			if err != nil {
 				return err
 			}
+			s.metaMngr.setPartitioner(partitioner)
 			s.policy.SetPartitioner(partitioner)
 			filteredHosts := make([]*HostInfo, 0, len(newHosts))
 			for _, host := range newHosts {
@@ -287,6 +290,8 @@ func (s *Session) init() error {
 		close(connectedCh)
 	}
 
+	s.metaMngr.addHosts(hosts)
+
 	// before waiting for them to connect, add them all to the policy so we can
 	// utilize efficiencies by calling AddHosts if the policy supports it
 	type bulkAddHosts interface {
@@ -333,10 +338,13 @@ func (s *Session) init() error {
 		return ErrNoConnectionsStarted
 	}
 
+	keyspaceUpdate := KeyspaceUpdateEvent{Keyspace: s.cfg.Keyspace}
+	s.metaMngr.keyspaceChanged(keyspaceUpdate)
+
 	// Invoke KeyspaceChanged to let the policy cache the session keyspace
 	// parameters. This is used by tokenAwareHostPolicy to discover replicas.
 	if !s.cfg.disableControlConn && s.cfg.Keyspace != "" {
-		s.policy.KeyspaceChanged(KeyspaceUpdateEvent{Keyspace: s.cfg.Keyspace})
+		s.policy.KeyspaceChanged(keyspaceUpdate)
 	}
 
 	s.sessionStateMu.Lock()
@@ -535,6 +543,7 @@ func (s *Session) executeQuery(qry *Query) (it *Iter) {
 }
 
 func (s *Session) removeHost(h *HostInfo) {
+	s.metaMngr.removeHost(h)
 	s.policy.RemoveHost(h)
 	hostID := h.HostID()
 	s.pool.removeHost(hostID)
@@ -551,6 +560,12 @@ func (s *Session) KeyspaceMetadata(keyspace string) (*KeyspaceMetadata, error) {
 	}
 
 	return s.schemaDescriber.getSchema(keyspace)
+}
+
+// ClusterMetadata returns the cluster metadata.
+// The returned value is a snapshot of the metadata at the time of the call. Do not store for later reuse.
+func (s *Session) ClusterMetadata() *ClusterMetadata {
+	return s.metaMngr.getMetadataReadOnly()
 }
 
 func (s *Session) getConn() *Conn {
