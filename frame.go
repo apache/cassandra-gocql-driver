@@ -14,6 +14,8 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"github.com/gocql/gocql/pkg/writers"
 )
 
 type unsetColumn struct{}
@@ -476,6 +478,26 @@ func (f *framer) trace() {
 // explicitly enables the custom payload flag
 func (f *framer) payload() {
 	f.flags |= flagCustomPayload
+}
+
+func (f *framer) writeRows(r writers.Rows, rows int) error {
+	r.Prepare(int32(rows))
+	read, err := r.WriteRows(f.buf)
+	f.buf = f.buf[read:]
+	return err
+}
+
+func (f *framer) writeRow(r writers.Rows) error {
+	r.Prepare(int32(1))
+	read, err := r.WriteRow(f.buf)
+	f.buf = f.buf[read:]
+	return err
+}
+
+func (f *framer) writeSolitaryRow(r writers.Row) error {
+	read, err := r.WriteRow(f.buf)
+	f.buf = f.buf[read:]
+	return err
 }
 
 // reads a frame form the wire into the framers buffer
@@ -1746,6 +1768,10 @@ func (f *framer) writeRegisterFrame(streamID int, w *writeRegisterFrame) error {
 	f.writeStringList(w.events)
 
 	return f.finish()
+}
+
+func (f *framer) notEmpty() bool {
+	return len(f.buf) > 0
 }
 
 func (f *framer) readByte() byte {

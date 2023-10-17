@@ -19,6 +19,7 @@ import (
 	"unicode"
 
 	"github.com/gocql/gocql/internal/lru"
+	"github.com/gocql/gocql/pkg/writers"
 )
 
 // Session is the interface used by users to interact with the database.
@@ -1416,6 +1417,60 @@ type Iter struct {
 
 	framer *framer
 	closed int32
+}
+
+func (iter *Iter) WriteRows(writer writers.Rows) error {
+	if iter.err != nil {
+		return iter.Close()
+	}
+	if iter.meta.colCount != writer.ColumnsInRow() {
+		return fmt.Errorf("WriteRows error. columns count in response %d, %T designed for %d columns", iter.meta.colCount, writer, writer.ColumnsInRow())
+	}
+	var err error
+	if iter.numRows == 1 {
+		err = iter.framer.writeRow(writer)
+	} else {
+		err = iter.framer.writeRows(writer, iter.numRows)
+	}
+	if err != nil {
+		iter.err = err
+		return iter.Close()
+	}
+	if iter.framer.notEmpty() {
+		iter.err = io.ErrUnexpectedEOF
+		return iter.Close()
+	}
+	if iter.next != nil {
+		next := iter.next.fetch()
+		if next.err != nil {
+			return next.Close()
+		}
+		err = next.WriteRows(writer)
+		if err != nil {
+			next.err = err
+		}
+		iter.err = next.Close()
+	}
+	return iter.Close()
+}
+
+func (iter *Iter) WriteSolitaryRow(writer writers.Row) error {
+	if iter.err != nil {
+		return iter.Close()
+	}
+	var err error
+	if iter.meta.colCount != writer.ColumnsInRow() {
+		return fmt.Errorf("WriteRows error. columns count in response %d, %T designed for %d columns", iter.meta.colCount, writer, writer.ColumnsInRow())
+	}
+	err = iter.framer.writeSolitaryRow(writer)
+	if err != nil {
+		iter.err = err
+		return iter.Close()
+	}
+	if iter.framer.notEmpty() {
+		iter.err = io.ErrUnexpectedEOF
+	}
+	return iter.Close()
 }
 
 // Host returns the host which the query was sent to.
