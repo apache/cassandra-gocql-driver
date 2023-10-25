@@ -109,10 +109,10 @@ var functionTemplate = template.Must(template.New("functions").
 		"stripFrozen": cqlHelpers.stripFrozen,
 	}).
 	Parse(`
-CREATE FUNCTION {{ escape .keyspaceName }}.{{ escape .fm.Name }} ( 
+CREATE FUNCTION {{ .keyspaceName }}.{{ .fm.Name }} ( 
     {{- range $i, $args := zip .fm.ArgumentNames .fm.ArgumentTypes }}
     {{- if ne $i 0 }}, {{ end }}
-    {{- escape (index $args 0) }}
+    {{- (index $args 0) }}
     {{ stripFrozen (index $args 1) }}
     {{- end -}})
     {{ if .fm.CalledOnNullInput }}CALLED{{ else }}RETURNS NULL{{ end }} ON NULL INPUT
@@ -167,19 +167,19 @@ var aggregatesTemplate = template.Must(template.New("aggregate").
 	}).
 	Parse(`
 CREATE AGGREGATE {{ .Keyspace }}.{{ .Name }}( 
-    {{- range $arg, $i := .ArgumentTypes }}
+    {{- range $i, $arg := .ArgumentTypes }}
     {{- if ne $i 0 }}, {{ end }}
     {{ stripFrozen $arg }}
     {{- end -}})
     SFUNC {{ .StateFunc.Name }}
-    STYPE {{ stripFrozen .State }}
+    STYPE {{ stripFrozen .StateType }}
     {{- if ne .FinalFunc.Name "" }}
     FINALFUNC {{ .FinalFunc.Name }}
     {{- end -}}
     {{- if ne .InitCond "" }}
     INITCOND {{ .InitCond }}
     {{- end -}}
-);
+;
 `))
 
 func (km *KeyspaceMetadata) aggregateToCQL(w io.Writer, am *AggregateMetadata) error {
