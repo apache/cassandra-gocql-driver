@@ -401,6 +401,9 @@ func (c *controlConn) attemptReconnectToAnyOfHosts(hosts []*HostInfo) (*Conn, er
 	for _, host := range hosts {
 		conn, err = c.session.connect(c.session.ctx, host, c)
 		if err != nil {
+			if c.session.cfg.ConvictionPolicy.AddFailure(err, host) {
+				c.session.handleNodeDown(host.ConnectAddress(), host.Port())
+			}
 			c.session.logger.Printf("gocql: unable to dial control conn %v:%v: %v\n", host.ConnectAddress(), host.Port(), err)
 			continue
 		}
