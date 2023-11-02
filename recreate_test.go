@@ -61,6 +61,12 @@ func TestRecreateSchema(t *testing.T) {
 			Input:    "testdata/recreate/udt.cql",
 			Golden:   "testdata/recreate/udt_golden.cql",
 		},
+		{
+			Name:     "Aggregates",
+			Keyspace: "gocqlx_aggregates",
+			Input:    "testdata/recreate/aggregates.cql",
+			Golden:   "testdata/recreate/aggregates_golden.cql",
+		},
 	}
 
 	for i := range tcs {

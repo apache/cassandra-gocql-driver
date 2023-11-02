@@ -4,7 +4,13 @@ services:
   node_1:
     image: ${SCYLLA_IMAGE}
     privileged: true
-    command: --smp 2 --memory 768M --seeds 192.168.100.11 --overprovisioned 1
+    command: |
+      --smp 2
+      --memory 768M
+      --seeds 192.168.100.11
+      --overprovisioned 1
+      --experimental-features udf
+      --enable-user-defined-functions true
     networks:
       public:
         ipv4_address: 192.168.100.11
