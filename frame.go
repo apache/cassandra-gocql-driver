@@ -427,6 +427,16 @@ func newFramerWithExts(compressor Compressor, version byte, cqlProtoExts []cqlPr
 		f.rateLimitingErrorCode = castedExt.rateLimitErrorCode
 	}
 
+	if tabletsExt := findCQLProtoExtByName(cqlProtoExts, tabletsRoutingV1); tabletsExt != nil {
+		_, ok := tabletsExt.(*tabletsRoutingV1Ext)
+		if !ok {
+			Logger.Println(
+				fmt.Errorf("Failed to cast CQL protocol extension identified by name %s to type %T",
+					tabletsRoutingV1, tabletsRoutingV1Ext{}))
+			return f
+		}
+	}
+
 	return f
 }
 

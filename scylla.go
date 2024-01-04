@@ -51,7 +51,37 @@ func findCQLProtoExtByName(exts []cqlProtocolExtension, name string) cqlProtocol
 const (
 	lwtAddMetadataMarkKey = "SCYLLA_LWT_ADD_METADATA_MARK"
 	rateLimitError        = "SCYLLA_RATE_LIMIT_ERROR"
+	tabletsRoutingV1      = "TABLETS_ROUTING_V1"
 )
+
+// "tabletsRoutingV1" CQL Protocol Extension.
+// This extension, if enabled (properly negotiated), allows Scylla server
+// to send a tablet information in `custom_payload`.
+//
+// Implements cqlProtocolExtension interface.
+type tabletsRoutingV1Ext struct {
+}
+
+var _ cqlProtocolExtension = &tabletsRoutingV1Ext{}
+
+// Factory function to deserialize and create an `tabletsRoutingV1Ext` instance
+// from SUPPORTED message payload.
+func newTabletsRoutingV1Ext(supported map[string][]string) *tabletsRoutingV1Ext {
+	if _, found := supported[tabletsRoutingV1]; found {
+		return &tabletsRoutingV1Ext{}
+	}
+	return nil
+}
+
+func (ext *tabletsRoutingV1Ext) serialize() map[string]string {
+	return map[string]string{
+		tabletsRoutingV1: "",
+	}
+}
+
+func (ext *tabletsRoutingV1Ext) name() string {
+	return tabletsRoutingV1
+}
 
 // "Rate limit" CQL Protocol Extension.
 // This extension, if enabled (properly negotiated), allows Scylla server
@@ -241,6 +271,11 @@ func parseCQLProtocolExtensions(supported map[string][]string) []cqlProtocolExte
 	rateLimitExt := newRateLimitExt(supported)
 	if rateLimitExt != nil {
 		exts = append(exts, rateLimitExt)
+	}
+
+	tabletsExt := newTabletsRoutingV1Ext(supported)
+	if tabletsExt != nil {
+		exts = append(exts, tabletsExt)
 	}
 
 	return exts
