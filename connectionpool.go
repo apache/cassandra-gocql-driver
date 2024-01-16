@@ -26,6 +26,12 @@ type SetPartitioner interface {
 	SetPartitioner(partitioner string)
 }
 
+// interface to implement to receive the tablets value
+// Experimental, this interface and use may change
+type SetTablets interface {
+	SetTablets(tablets []*TabletInfo)
+}
+
 func setupTLSConfig(sslOpts *SslOptions) (*tls.Config, error) {
 	//  Config.InsecureSkipVerify | EnableHostVerification | Result
 	//  Config is nil             | true                   | verify host
@@ -312,7 +318,7 @@ func newHostConnPool(session *Session, host *HostInfo, port, size int,
 }
 
 // Pick a connection from this connection pool for the given query.
-func (pool *hostConnPool) Pick(token token) *Conn {
+func (pool *hostConnPool) Pick(token token, keyspace string, table string) *Conn {
 	pool.mu.RLock()
 	defer pool.mu.RUnlock()
 
@@ -330,7 +336,7 @@ func (pool *hostConnPool) Pick(token token) *Conn {
 		}
 	}
 
-	return pool.connPicker.Pick(token)
+	return pool.connPicker.Pick(token, keyspace, table)
 }
 
 // Size returns the number of connections currently active in the pool

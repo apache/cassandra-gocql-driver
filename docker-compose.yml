@@ -32,6 +32,60 @@ services:
       interval: 5s
       timeout: 5s
       retries: 18
+  node_2:
+    image: scylladb/scylla-nightly
+    command: |
+      --experimental-features consistent-topology-changes
+      --experimental-features tablets
+      --smp 2
+      --memory 1G
+      --seeds 192.168.100.12
+    networks:
+      public:
+        ipv4_address: 192.168.100.12
+    healthcheck:
+      test: [ "CMD", "cqlsh", "192.168.100.12", "-e", "select * from system.local" ]
+      interval: 5s
+      timeout: 5s
+      retries: 18
+  node_3:
+    image: scylladb/scylla-nightly
+    command: |
+      --experimental-features consistent-topology-changes
+      --experimental-features tablets
+      --smp 2
+      --memory 1G
+      --seeds 192.168.100.12
+    networks:
+      public:
+        ipv4_address: 192.168.100.13
+    healthcheck:
+      test: [ "CMD", "cqlsh", "192.168.100.13", "-e", "select * from system.local" ]
+      interval: 5s
+      timeout: 5s
+      retries: 18
+    depends_on:
+      node_2:
+        condition: service_healthy
+  node_4:
+    image: scylladb/scylla-nightly
+    command: |
+      --experimental-features consistent-topology-changes
+      --experimental-features tablets
+      --smp 2
+      --memory 1G
+      --seeds 192.168.100.12
+    networks:
+      public:
+        ipv4_address: 192.168.100.14
+    healthcheck:
+      test: [ "CMD", "cqlsh", "192.168.100.14", "-e", "select * from system.local" ]
+      interval: 5s
+      timeout: 5s
+      retries: 18
+    depends_on:
+      node_3:
+        condition: service_healthy
 networks:
   public:
     driver: bridge

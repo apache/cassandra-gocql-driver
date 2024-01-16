@@ -472,12 +472,151 @@ func (h *HostInfo) ScyllaShardAwarePortTLS() uint16 {
 	return h.scyllaShardAwarePortTLS
 }
 
+// Experimental, this interface and use may change
+type ReplicaInfo struct {
+	hostId  UUID
+	shardId int
+}
+
+// Experimental, this interface and use may change
+type TabletInfo struct {
+	mu           sync.RWMutex
+	keyspaceName string
+	tableName    string
+	firstToken   int64
+	lastToken    int64
+	replicas     []ReplicaInfo
+}
+
+func (t *TabletInfo) KeyspaceName() string {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	return t.keyspaceName
+}
+
+func (t *TabletInfo) FirstToken() int64 {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	return t.firstToken
+}
+
+func (t *TabletInfo) LastToken() int64 {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	return t.lastToken
+}
+
+func (t *TabletInfo) TableName() string {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	return t.tableName
+}
+
+func (t *TabletInfo) Replicas() []ReplicaInfo {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	return t.replicas
+}
+
+// Search for place in tablets table with specific Keyspace and Table name
+func findTablets(tablets []*TabletInfo, k string, t string) (int, int) {
+	l := -1
+	r := -1
+	for i, tablet := range tablets {
+		if tablet.KeyspaceName() == k && tablet.TableName() == t {
+			if l == -1 {
+				l = i
+			}
+			r = i
+		} else if l != -1 {
+			break
+		}
+	}
+
+	return l, r
+}
+
+func addTabletToTabletsList(tablets []*TabletInfo, tablet *TabletInfo) []*TabletInfo {
+	l, r := findTablets(tablets, tablet.keyspaceName, tablet.tableName)
+	if l == -1 && r == -1 {
+		l = 0
+		r = 0
+	} else {
+		r = r + 1
+	}
+
+	l1, r1 := l, r
+	l2, r2 := l1, r1
+
+	// find first overlaping range
+	for l1 < r1 {
+		mid := (l1 + r1) / 2
+		if tablets[mid].FirstToken() < tablet.FirstToken() {
+			l1 = mid + 1
+		} else {
+			r1 = mid
+		}
+	}
+	start := l1
+
+	if start > l && tablets[start-1].LastToken() > tablet.FirstToken() {
+		start = start - 1
+	}
+
+	// find last overlaping range
+	for l2 < r2 {
+		mid := (l2 + r2) / 2
+		if tablets[mid].LastToken() < tablet.LastToken() {
+			l2 = mid + 1
+		} else {
+			r2 = mid
+		}
+	}
+	end := l2
+	if end < r && tablets[end].FirstToken() >= tablet.LastToken() {
+		end = end - 1
+	}
+	if end == len(tablets) {
+		end = end - 1
+	}
+
+	updated_tablets := tablets
+	if start <= end {
+		// Delete elements from index start to end
+		updated_tablets = append(tablets[:start], tablets[end+1:]...)
+	}
+	// Insert tablet element at index start
+	updated_tablets2 := append(updated_tablets[:start], append([]*TabletInfo{tablet}, updated_tablets[start:]...)...)
+	return updated_tablets2
+}
+
+// Search for place in tablets table for token starting from index l to index r
+func findTabletForToken(tablets []*TabletInfo, token token, l int, r int) *TabletInfo {
+	for l < r {
+		var m int
+		if r*l > 0 {
+			m = l + (r-l)/2
+		} else {
+			m = (r + l) / 2
+		}
+		if int64Token(tablets[m].LastToken()).Less(token) {
+			l = m + 1
+		} else {
+			r = m
+		}
+	}
+
+	return tablets[l]
+}
+
 // Polls system.peers at a specific interval to find new hosts
 type ringDescriber struct {
 	session         *Session
 	mu              sync.Mutex
 	prevHosts       []*HostInfo
 	prevPartitioner string
+	// Experimental, this interface and use may change
+	prevTablets []*TabletInfo
 }
 
 // Returns true if we are using system_schema.keyspaces instead of system.schema_keyspaces
@@ -835,6 +974,23 @@ func refreshRing(r *ringDescriber) error {
 
 	r.session.metadata.setPartitioner(partitioner)
 	r.session.policy.SetPartitioner(partitioner)
+
+	return nil
+}
+
+// Experimental, this interface and use may change
+func addTablet(r *ringDescriber, tablet *TabletInfo) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	tablets := r.session.getTablets()
+	tablets = addTabletToTabletsList(tablets, tablet)
+
+	r.session.ring.setTablets(tablets)
+	r.session.policy.SetTablets(tablets)
+
+	r.session.schemaDescriber.refreshTabletsSchema()
+
 	return nil
 }
 

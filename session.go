@@ -83,6 +83,8 @@ type Session struct {
 	isInitialized bool
 
 	logger StdLogger
+
+	tabletsRoutingV1 bool
 }
 
 var queryPool = &sync.Pool{
@@ -227,6 +229,9 @@ func (s *Session) init() error {
 		if err := s.control.connect(hosts); err != nil {
 			return err
 		}
+		s.control.getConn().conn.mu.Lock()
+		s.tabletsRoutingV1 = s.control.getConn().conn.tabletsRoutingV1
+		s.control.getConn().conn.mu.Unlock()
 
 		if !s.cfg.DisableInitialHostLookup {
 			var partitioner string
@@ -243,6 +248,12 @@ func (s *Session) init() error {
 			}
 
 			hosts = filteredHosts
+
+			if s.tabletsRoutingV1 {
+				tablets := []*TabletInfo{}
+				s.ring.setTablets(tablets)
+				s.policy.SetTablets(tablets)
+			}
 		}
 	}
 
@@ -566,6 +577,19 @@ func (s *Session) KeyspaceMetadata(keyspace string) (*KeyspaceMetadata, error) {
 	return s.schemaDescriber.getSchema(keyspace)
 }
 
+// TabletsMetadata returns the metadata about tablets
+// Experimental, this interface and use may change
+func (s *Session) TabletsMetadata() (*TabletsMetadata, error) {
+	// fail fast
+	if s.Closed() {
+		return nil, ErrSessionClosed
+	} else if !s.tabletsRoutingV1 {
+		return nil, ErrTabletsNotUsed
+	}
+
+	return s.schemaDescriber.getTabletsSchema(), nil
+}
+
 func (s *Session) getConn() *Conn {
 	hosts := s.ring.allHosts()
 	for _, host := range hosts {
@@ -576,12 +600,20 @@ func (s *Session) getConn() *Conn {
 		pool, ok := s.pool.getPool(host)
 		if !ok {
 			continue
-		} else if conn := pool.Pick(nil); conn != nil {
+		} else if conn := pool.Pick(nil, "", ""); conn != nil {
 			return conn
 		}
 	}
 
 	return nil
+}
+
+// Experimental, this interface and use may change
+func (s *Session) getTablets() []*TabletInfo {
+	s.ring.mu.Lock()
+	defer s.ring.mu.Unlock()
+
+	return s.ring.tabletList
 }
 
 // returns routing key indexes and type info
@@ -1181,6 +1213,10 @@ func (q *Query) Keyspace() string {
 // Table returns name of the table the query will be executed against.
 func (q *Query) Table() string {
 	return q.routingInfo.table
+}
+
+func (q *Query) GetSession() *Session {
+	return q.session
 }
 
 // GetRoutingKey gets the routing key to use for routing this query. If
@@ -1843,6 +1879,10 @@ func (b *Batch) Table() string {
 	return b.routingInfo.table
 }
 
+func (b *Batch) GetSession() *Session {
+	return b.session
+}
+
 // Attempts returns the number of attempts made to execute the batch.
 func (b *Batch) Attempts() int {
 	return b.metrics.attempts()
@@ -2347,6 +2387,7 @@ var (
 	ErrNoKeyspace           = errors.New("no keyspace provided")
 	ErrKeyspaceDoesNotExist = errors.New("keyspace does not exist")
 	ErrNoMetadata           = errors.New("no metadata available")
+	ErrTabletsNotUsed       = errors.New("tablets not used")
 )
 
 type ErrProtocol struct{ error }

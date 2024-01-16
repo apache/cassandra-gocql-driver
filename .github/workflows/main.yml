@@ -34,6 +34,8 @@ jobs:
           DOCKER_COMPOSE_VERSION: 2.20.0
         run: sudo curl -L "https://github.com/docker/compose/releases/download/${DOCKER_COMPOSE_VERSION}/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
 
+      - run: sudo sh -c "echo 2097152 >> /proc/sys/fs/aio-max-nr"
       - run: ./integration.sh cassandra scylla
       - run: ./integration.sh integration scylla
       - run: ./integration.sh ccm
+      - run: ./integration.sh tablet
