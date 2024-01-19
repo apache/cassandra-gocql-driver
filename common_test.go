@@ -199,8 +199,9 @@ func createSessionFromMultiNodeCluster(cluster *ClusterConfig, tb testing.TB) *S
 		if err = createTable(session, fmt.Sprintf(`CREATE KEYSPACE %s
 		WITH replication = {
 			'class': 'NetworkTopologyStrategy',
-			'replication_factor': 1,
-			'initial_tablets': 8
+			'replication_factor': 1
+		} AND tablets = {
+			'initial': 8
 		};`, keyspace)); err != nil {
 			panic(fmt.Sprintf("unable to create keyspace: %v", err))
 		}
