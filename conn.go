@@ -1318,7 +1318,7 @@ func (c *Conn) executeQuery(ctx context.Context, qry *Query) *Iter {
 	// frame checks that it is not 0
 	params.serialConsistency = qry.serialCons
 	params.defaultTimestamp = qry.defaultTimestamp
-	params.defaultTimestampValue = qry.defaultTimestampValue
+	params.defaultTimestampValueMicros = qry.defaultTimestampValueMicros
 
 	if len(qry.pageState) > 0 {
 		params.pagingState = qry.pageState
@@ -1525,13 +1525,13 @@ func (c *Conn) executeBatch(ctx context.Context, batch *Batch) *Iter {
 
 	n := len(batch.Entries)
 	req := &writeBatchFrame{
-		typ:                   batch.Type,
-		statements:            make([]batchStatment, n),
-		consistency:           batch.Cons,
-		serialConsistency:     batch.serialCons,
-		defaultTimestamp:      batch.defaultTimestamp,
-		defaultTimestampValue: batch.defaultTimestampValue,
-		customPayload:         batch.CustomPayload,
+		typ:                         batch.Type,
+		statements:                  make([]batchStatment, n),
+		consistency:                 batch.Cons,
+		serialConsistency:           batch.serialCons,
+		defaultTimestamp:            batch.defaultTimestamp,
+		defaultTimestampValueMicros: batch.defaultTimestampValueMicros,
+		customPayload:               batch.CustomPayload,
 	}
 
 	stmts := make(map[string]string, len(batch.Entries))

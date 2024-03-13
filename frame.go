@@ -1434,8 +1434,8 @@ type queryParams struct {
 	pagingState       []byte
 	serialConsistency SerialConsistency
 	// v3+
-	defaultTimestamp      bool
-	defaultTimestampValue int64
+	defaultTimestamp            bool
+	defaultTimestampValueMicros int64
 	// v5+
 	keyspace string
 }
@@ -1527,10 +1527,10 @@ func (f *framer) writeQueryParams(opts *queryParams) {
 	if f.proto > protoVersion2 && opts.defaultTimestamp {
 		// timestamp in microseconds
 		var ts int64
-		if opts.defaultTimestampValue != 0 {
-			ts = opts.defaultTimestampValue
+		if opts.defaultTimestampValueMicros != 0 {
+			ts = opts.defaultTimestampValueMicros
 		} else {
-			ts = time.Now().UnixNano() / 1000
+			ts = time.Now().UnixMicro()
 		}
 		f.writeLong(ts)
 	}
@@ -1633,9 +1633,9 @@ type writeBatchFrame struct {
 	consistency Consistency
 
 	// v3+
-	serialConsistency     SerialConsistency
-	defaultTimestamp      bool
-	defaultTimestampValue int64
+	serialConsistency           SerialConsistency
+	defaultTimestamp            bool
+	defaultTimestampValueMicros int64
 
 	//v4+
 	customPayload map[string][]byte
@@ -1710,10 +1710,10 @@ func (f *framer) writeBatchFrame(streamID int, w *writeBatchFrame, customPayload
 
 		if w.defaultTimestamp {
 			var ts int64
-			if w.defaultTimestampValue != 0 {
-				ts = w.defaultTimestampValue
+			if w.defaultTimestampValueMicros != 0 {
+				ts = w.defaultTimestampValueMicros
 			} else {
-				ts = time.Now().UnixNano() / 1000
+				ts = time.Now().UnixMicro()
 			}
 			f.writeLong(ts)
 		}
