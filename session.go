@@ -881,29 +881,29 @@ func (qm *queryMetrics) attempt(addAttempts int, addLatency time.Duration,
 
 // Query represents a CQL statement that can be executed.
 type Query struct {
-	stmt                  string
-	values                []interface{}
-	cons                  Consistency
-	pageSize              int
-	routingKey            []byte
-	pageState             []byte
-	prefetch              float64
-	trace                 Tracer
-	observer              QueryObserver
-	session               *Session
-	conn                  *Conn
-	rt                    RetryPolicy
-	spec                  SpeculativeExecutionPolicy
-	binding               func(q *QueryInfo) ([]interface{}, error)
-	serialCons            SerialConsistency
-	defaultTimestamp      bool
-	defaultTimestampValue int64
-	disableSkipMetadata   bool
-	context               context.Context
-	idempotent            bool
-	customPayload         map[string][]byte
-	metrics               *queryMetrics
-	refCount              uint32
+	stmt                        string
+	values                      []interface{}
+	cons                        Consistency
+	pageSize                    int
+	routingKey                  []byte
+	pageState                   []byte
+	prefetch                    float64
+	trace                       Tracer
+	observer                    QueryObserver
+	session                     *Session
+	conn                        *Conn
+	rt                          RetryPolicy
+	spec                        SpeculativeExecutionPolicy
+	binding                     func(q *QueryInfo) ([]interface{}, error)
+	serialCons                  SerialConsistency
+	defaultTimestamp            bool
+	defaultTimestampValueMicros int64
+	disableSkipMetadata         bool
+	context                     context.Context
+	idempotent                  bool
+	customPayload               map[string][]byte
+	metrics                     *queryMetrics
+	refCount                    uint32
 
 	disableAutoPage bool
 
@@ -1035,10 +1035,11 @@ func (q *Query) PageSize(n int) *Query {
 	return q
 }
 
-// DefaultTimestamp will enable the with default timestamp flag on the query.
-// If enable, this will replace the server side assigned
-// timestamp as default timestamp. Note that a timestamp in the query itself
-// will still override this timestamp. This is entirely optional.
+// DefaultTimestamp enables the with default timestamp flag on the query.
+// If enabled, gocql will assign a timestamp that will be used instead of the
+// server side assigned timestamp. Note that a timestamp in the query itself
+// will still override this timestamp. The default value of this setting comes
+// from ClusterConfig.DefaultTimestamp.
 //
 // Only available on protocol >= 3
 func (q *Query) DefaultTimestamp(enable bool) *Query {
@@ -1046,15 +1047,15 @@ func (q *Query) DefaultTimestamp(enable bool) *Query {
 	return q
 }
 
-// WithTimestamp will enable the with default timestamp flag on the query
-// like DefaultTimestamp does. But also allows to define value for timestamp.
-// It works the same way as USING TIMESTAMP in the query itself, but
-// should not break prepared query optimization.
+// WithTimestamp enables the with default timestamp flag on the query
+// like DefaultTimestamp, and sets the value. It works the same way as
+// USING TIMESTAMP in the query itself, but should not break prepared query
+// optimization. The timestamp is in Unix microseconds.
 //
 // Only available on protocol >= 3
-func (q *Query) WithTimestamp(timestamp int64) *Query {
+func (q *Query) WithTimestamp(timestampMicros int64) *Query {
 	q.DefaultTimestamp(true)
-	q.defaultTimestampValue = timestamp
+	q.defaultTimestampValueMicros = timestampMicros
 	return q
 }
 
@@ -1705,23 +1706,23 @@ func (n *nextIter) fetch() *Iter {
 }
 
 type Batch struct {
-	Type                  BatchType
-	Entries               []BatchEntry
-	Cons                  Consistency
-	routingKey            []byte
-	CustomPayload         map[string][]byte
-	rt                    RetryPolicy
-	spec                  SpeculativeExecutionPolicy
-	trace                 Tracer
-	observer              BatchObserver
-	session               *Session
-	serialCons            SerialConsistency
-	defaultTimestamp      bool
-	defaultTimestampValue int64
-	context               context.Context
-	cancelBatch           func()
-	keyspace              string
-	metrics               *queryMetrics
+	Type                        BatchType
+	Entries                     []BatchEntry
+	Cons                        Consistency
+	routingKey                  []byte
+	CustomPayload               map[string][]byte
+	rt                          RetryPolicy
+	spec                        SpeculativeExecutionPolicy
+	trace                       Tracer
+	observer                    BatchObserver
+	session                     *Session
+	serialCons                  SerialConsistency
+	defaultTimestamp            bool
+	defaultTimestampValueMicros int64
+	context                     context.Context
+	cancelBatch                 func()
+	keyspace                    string
+	metrics                     *queryMetrics
 
 	// routingInfo is a pointer because Query can be copied and copyable struct can't hold a mutex.
 	routingInfo *queryRoutingInfo
@@ -1899,10 +1900,11 @@ func (b *Batch) SerialConsistency(cons SerialConsistency) *Batch {
 	return b
 }
 
-// DefaultTimestamp will enable the with default timestamp flag on the query.
-// If enable, this will replace the server side assigned
-// timestamp as default timestamp. Note that a timestamp in the query itself
-// will still override this timestamp. This is entirely optional.
+// DefaultTimestamp enables the with default timestamp flag on the query.
+// If enabled, gocql will assign a timestamp that will be used instead of the
+// server side assigned timestamp. Note that a timestamp in the query itself
+// will still override this timestamp. The default value of this setting comes
+// from ClusterConfig.DefaultTimestamp.
 //
 // Only available on protocol >= 3
 func (b *Batch) DefaultTimestamp(enable bool) *Batch {
@@ -1910,15 +1912,15 @@ func (b *Batch) DefaultTimestamp(enable bool) *Batch {
 	return b
 }
 
-// WithTimestamp will enable the with default timestamp flag on the query
-// like DefaultTimestamp does. But also allows to define value for timestamp.
-// It works the same way as USING TIMESTAMP in the query itself, but
-// should not break prepared query optimization.
+// WithTimestamp enables the with default timestamp flag on the query
+// like DefaultTimestamp, and sets the value. It works the same way as
+// USING TIMESTAMP in the query itself, but should not break prepared query
+// optimization. The timestamp is in Unix microseconds.
 //
 // Only available on protocol >= 3
-func (b *Batch) WithTimestamp(timestamp int64) *Batch {
+func (b *Batch) WithTimestamp(timestampMicros int64) *Batch {
 	b.DefaultTimestamp(true)
-	b.defaultTimestampValue = timestamp
+	b.defaultTimestampValueMicros = timestampMicros
 	return b
 }
 
