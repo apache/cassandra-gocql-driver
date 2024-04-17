@@ -391,6 +391,17 @@ func ShuffleReplicas() func(*tokenAwareHostPolicy) {
 	}
 }
 
+// AvoidSlowReplicas enabled avoiding slow replicas
+//
+// TokenAwareHostPolicy normally does not check how busy replica is, with avoidSlowReplicas enabled it avoids replicas
+// if they have equal or more than MAX_IN_FLIGHT_THRESHOLD requests in flight
+func AvoidSlowReplicas(max_in_flight_threshold int) func(policy *tokenAwareHostPolicy) {
+	return func(t *tokenAwareHostPolicy) {
+		t.avoidSlowReplicas = true
+		MAX_IN_FLIGHT_THRESHOLD = max_in_flight_threshold
+	}
+}
+
 // NonLocalReplicasFallback enables fallback to replicas that are not considered local.
 //
 // TokenAwareHostPolicy used with DCAwareHostPolicy fallback first selects replicas by partition key in local DC, then
@@ -424,6 +435,8 @@ type clusterMeta struct {
 	tokenRing *tokenRing
 }
 
+var MAX_IN_FLIGHT_THRESHOLD int = 10
+
 type tokenAwareHostPolicy struct {
 	fallback            HostSelectionPolicy
 	getKeyspaceMetadata func(keyspace string) (*KeyspaceMetadata, error)
@@ -443,6 +456,8 @@ type tokenAwareHostPolicy struct {
 
 	// Experimental, this interface and use may change
 	tablets cowTabletList
+
+	avoidSlowReplicas bool
 }
 
 func (t *tokenAwareHostPolicy) Init(s *Session) {
@@ -685,6 +700,21 @@ func (t *tokenAwareHostPolicy) Pick(qry ExecutableQuery) NextHost {
 				replicas = shuffleHosts(replicas)
 			}
 		}
+	}
+
+	if s := qry.GetSession(); s != nil && t.avoidSlowReplicas {
+		healthyReplicas := make([]*HostInfo, 0, len(replicas))
+		unhealthyReplicas := make([]*HostInfo, 0, len(replicas))
+
+		for _, h := range replicas {
+			if h.IsBusy(s) {
+				unhealthyReplicas = append(unhealthyReplicas, h)
+			} else {
+				healthyReplicas = append(healthyReplicas, h)
+			}
+		}
+
+		replicas = append(healthyReplicas, unhealthyReplicas...)
 	}
 
 	var (

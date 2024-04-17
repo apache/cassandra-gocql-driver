@@ -10,6 +10,7 @@ type ConnPicker interface {
 	Pick(token, string, string) *Conn
 	Put(*Conn)
 	Remove(conn *Conn)
+	InFlight() int
 	Size() (int, int)
 	Close()
 
@@ -58,6 +59,11 @@ func (p *defaultConnPicker) Close() {
 			conn.Close()
 		}
 	}
+}
+
+func (p *defaultConnPicker) InFlight() int {
+	size := len(p.conns)
+	return size
 }
 
 func (p *defaultConnPicker) Size() (int, int) {
@@ -112,6 +118,10 @@ func (nopConnPicker) Put(*Conn) {
 }
 
 func (nopConnPicker) Remove(conn *Conn) {
+}
+
+func (nopConnPicker) InFlight() int {
+	return 0
 }
 
 func (nopConnPicker) Size() (int, int) {

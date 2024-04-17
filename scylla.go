@@ -544,6 +544,16 @@ func (p *scyllaConnPicker) Remove(conn *Conn) {
 	}
 }
 
+func (p *scyllaConnPicker) InFlight() int {
+	result := 0
+	for _, conn := range p.conns {
+		if conn != nil {
+			result = result + (conn.streams.InUse())
+		}
+	}
+	return result
+}
+
 func (p *scyllaConnPicker) Size() (int, int) {
 	return p.nrConns, p.nrShards - p.nrConns
 }
