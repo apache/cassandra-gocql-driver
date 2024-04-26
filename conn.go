@@ -1769,6 +1769,10 @@ func (c *Conn) querySystemPeers(ctx context.Context, version cassVersion) *Iter 
 	)
 
 	c.mu.Lock()
+	if isScyllaConn((c)) { // ScyllaDB does not support system.peers_v2
+		c.isSchemaV2 = false
+	}
+
 	isSchemaV2 := c.isSchemaV2
 	c.mu.Unlock()
 
