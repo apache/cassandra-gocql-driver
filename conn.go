@@ -277,7 +277,7 @@ func (s *Session) dialWithoutObserver(ctx context.Context, host *HostInfo, cfg *
 		errorHandler:  errorHandler,
 		compressor:    cfg.Compressor,
 		session:       s,
-		streams:       streams.New(cfg.ProtoVersion),
+		streams:       streams.NewStreamIDGenerator(s.cfg.ProtoVersion, s.cfg.MaxRequestsPerConn),
 		host:          host,
 		isSchemaV2:    true, // Try using "system.peers_v2" until proven otherwise
 		frameObserver: s.frameObserver,

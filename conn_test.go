@@ -693,6 +693,7 @@ func TestQueryTimeoutClose(t *testing.T) {
 func TestStream0(t *testing.T) {
 	// TODO: replace this with type check
 	const expErr = "gocql: received unexpected frame on stream 0"
+	const maxRequestsPerConn = 13
 
 	var buf bytes.Buffer
 	f := newFramer(nil, protoVersion4)
@@ -706,13 +707,22 @@ func TestStream0(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	srv := NewTestServer(t, defaultProto, context.Background())
+	defer srv.Stop()
+	cluster := testCluster(defaultProto, srv.Address)
+	s, err := cluster.CreateSession()
+	s.cfg.MaxRequestsPerConn = maxRequestsPerConn
+	if err != nil {
+		t.Fatalf("NewCluster: %v", err)
+	}
+
 	conn := &Conn{
 		r:       bufio.NewReader(&buf),
-		streams: streams.New(protoVersion4),
+		streams: streams.NewStreamIDGenerator(defaultProto, s.cfg.MaxRequestsPerConn),
 		logger:  &defaultLogger{},
 	}
 
-	err := conn.recv(context.Background())
+	err = conn.recv(context.Background())
 	if err == nil {
 		t.Fatal("expected to get an error on stream 0")
 	} else if !strings.HasPrefix(err.Error(), expErr) {
