@@ -87,7 +87,7 @@ func (c *controlConn) heartBeat() {
 		switch resp.(type) {
 		case *supportedFrame:
 			// Everything ok
-			sleepTime = 5 * time.Second
+			sleepTime = 30 * time.Second
 			continue
 		case error:
 			goto reconn

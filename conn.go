@@ -680,7 +680,7 @@ func (c *Conn) heartBeat(ctx context.Context) {
 		switch resp.(type) {
 		case *supportedFrame:
 			// Everything ok
-			sleepTime = 5 * time.Second
+			sleepTime = 30 * time.Second
 			failures = 0
 		case error:
 			// TODO: should we do something here?
