@@ -769,7 +769,7 @@ func (c *Conn) recv(ctx context.Context) error {
 		panic(fmt.Sprintf("call has incorrect streamID: got %d expected %d", call.streamID, head.stream))
 	}
 
-	framer := newFramer(c.compressor, c.version)
+	framer := newFramerWithExts(c.compressor, c.version, c.cqlProtoExts)
 
 	err = framer.readFrame(c, &head)
 	if err != nil {
