@@ -145,3 +145,7 @@ func (s *IDGenerator) Clear(stream int) (inuse bool) {
 func (s *IDGenerator) Available() int {
 	return s.NumStreams - int(atomic.LoadInt32(&s.inuseStreams)) - 1
 }
+
+func (s *IDGenerator) InUse() int {
+	return int(atomic.LoadInt32(&s.inuseStreams))
+}

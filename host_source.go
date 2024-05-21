@@ -409,6 +409,11 @@ func (h *HostInfo) IsUp() bool {
 	return h != nil && h.State() == NodeUp
 }
 
+func (h *HostInfo) IsBusy(s *Session) bool {
+	pool, ok := s.pool.getPool(h)
+	return ok && h != nil && pool.InFlight() >= MAX_IN_FLIGHT_THRESHOLD
+}
+
 func (h *HostInfo) HostnameAndPort() string {
 	h.mu.Lock()
 	defer h.mu.Unlock()

@@ -211,6 +211,17 @@ func (p *policyConnPool) SetHosts(hosts []*HostInfo) {
 	}
 }
 
+func (p *policyConnPool) InFlight() int {
+	p.mu.RLock()
+	count := 0
+	for _, pool := range p.hostConnPools {
+		count += pool.InFlight()
+	}
+	p.mu.RUnlock()
+
+	return count
+}
+
 func (p *policyConnPool) Size() int {
 	p.mu.RLock()
 	count := 0
@@ -345,6 +356,15 @@ func (pool *hostConnPool) Size() int {
 	defer pool.mu.RUnlock()
 
 	size, _ := pool.connPicker.Size()
+	return size
+}
+
+// Size returns the number of connections currently active in the pool
+func (pool *hostConnPool) InFlight() int {
+	pool.mu.RLock()
+	defer pool.mu.RUnlock()
+
+	size := pool.connPicker.InFlight()
 	return size
 }
 
