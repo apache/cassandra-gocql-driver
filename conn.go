@@ -94,7 +94,7 @@ type PasswordAuthenticator struct {
 
 func (p PasswordAuthenticator) Challenge(req []byte) ([]byte, Authenticator, error) {
 	if !approve(string(req), p.AllowedAuthenticators) {
-		return nil, nil, fmt.Errorf("unexpected authenticator %q", req)
+		return nil, nil, fmt.Errorf("gocql: unexpected authenticator %q", req)
 	}
 	resp := make([]byte, 2+len(p.Username)+len(p.Password))
 	resp[0] = 0
@@ -484,7 +484,7 @@ func (s *startupCoordinator) startup(ctx context.Context, supported map[string][
 
 func (s *startupCoordinator) authenticateHandshake(ctx context.Context, authFrame *authenticateFrame) error {
 	if s.conn.auth == nil {
-		return fmt.Errorf("authentication required (using %q)", authFrame.class)
+		return fmt.Errorf("gocql: authentication required (using %q)", authFrame.class)
 	}
 
 	resp, challenger, err := s.conn.auth.Challenge([]byte(authFrame.class))
@@ -517,7 +517,7 @@ func (s *startupCoordinator) authenticateHandshake(ctx context.Context, authFram
 				data: resp,
 			}
 		default:
-			return fmt.Errorf("unknown frame response during authentication: %v", v)
+			return fmt.Errorf("gocql: unknown frame response during authentication: %v", v)
 		}
 	}
 }
@@ -1019,7 +1019,7 @@ func (c *Conn) addCall(call *callReq) error {
 	}
 	existingCall := c.calls[call.streamID]
 	if existingCall != nil {
-		return fmt.Errorf("attempting to use stream already in use: %d -> %d", call.streamID,
+		return fmt.Errorf("gocql: attempting to use stream already in use: %d -> %d", call.streamID,
 			existingCall.streamID)
 	}
 	c.calls[call.streamID] = call
@@ -1291,7 +1291,7 @@ func (c *Conn) prepareStatement(ctx context.Context, stmt string, tracer Tracer)
 					response: x.respMeta,
 				}
 			case error:
-				flight.err = x
+				flight.err = fmt.Errorf("cassandra: %w", x)
 			default:
 				flight.err = NewErrProtocol("Unknown type in response to prepare frame: %s", x)
 			}
@@ -1528,7 +1528,7 @@ func (c *Conn) UseKeyspace(keyspace string) error {
 	switch x := resp.(type) {
 	case *resultKeyspaceFrame:
 	case error:
-		return x
+		return fmt.Errorf("cassandra: %w", x)
 	default:
 		return NewErrProtocol("unknown frame in response to USE: %v", x)
 	}
@@ -1636,7 +1636,7 @@ func (c *Conn) executeBatch(ctx context.Context, batch *Batch) *Iter {
 
 		return iter
 	case error:
-		return &Iter{err: x, framer: framer}
+		return &Iter{err: fmt.Errorf("cassandra: %w", x), framer: framer}
 	default:
 		return &Iter{err: NewErrProtocol("Unknown type in response to batch statement: %s", x), framer: framer}
 	}

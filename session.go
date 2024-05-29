@@ -127,7 +127,7 @@ func addrsToHosts(addrs []string, defaultPort int, logger StdLogger) ([]*HostInf
 		hosts = append(hosts, resolvedHosts...)
 	}
 	if len(hosts) == 0 {
-		return nil, errors.New("failed to resolve any of the provided hostnames")
+		return nil, ErrFailedResolveHostnames
 	}
 	return hosts, nil
 }
@@ -141,7 +141,7 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 
 	// Check that either Authenticator is set or AuthProvider, not both
 	if cfg.Authenticator != nil && cfg.AuthProvider != nil {
-		return nil, errors.New("Can't use both Authenticator and AuthProvider in cluster config.")
+		return nil, ErrAuthenticatorAndAuthProvider
 	}
 
 	// TODO: we should take a context in here at some point
@@ -192,7 +192,7 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 	connCfg, err := connConfig(&s.cfg)
 	if err != nil {
 		//TODO: Return a typed error
-		return nil, fmt.Errorf("gocql: unable to create session: %v", err)
+		return nil, fmt.Errorf("gocql: unable to create session: %w", err)
 	}
 	s.connCfg = connCfg
 
@@ -204,7 +204,7 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 			return nil, ErrNoConnectionsStarted
 		} else {
 			// TODO(zariel): dont wrap this error in fmt.Errorf, return a typed error
-			return nil, fmt.Errorf("gocql: unable to create session: %v", err)
+			return nil, fmt.Errorf("gocql: unable to create session: %w", err)
 		}
 	}
 
@@ -223,9 +223,9 @@ func (s *Session) init() error {
 		if s.cfg.ProtoVersion == 0 {
 			proto, err := s.control.discoverProtocol(hosts)
 			if err != nil {
-				return fmt.Errorf("unable to discover protocol version: %v", err)
+				return fmt.Errorf("gocql: unable to discover protocol version: %w", err)
 			} else if proto == 0 {
-				return errors.New("unable to discovery protocol version")
+				return errors.New("gocql: unable to discovery protocol version")
 			}
 
 			// TODO(zariel): we really only need this in 1 place
@@ -2279,22 +2279,22 @@ func (e Error) Error() string {
 }
 
 var (
-	ErrNotFound             = errors.New("not found")
-	ErrUnavailable          = errors.New("unavailable")
-	ErrUnsupported          = errors.New("feature not supported")
-	ErrTooManyStmts         = errors.New("too many statements")
-	ErrUseStmt              = errors.New("use statements aren't supported. Please see https://github.com/apache/cassandra-gocql-driver for explanation.")
-	ErrSessionClosed        = errors.New("session has been closed")
-	ErrNoConnections        = errors.New("gocql: no hosts available in the pool")
-	ErrNoKeyspace           = errors.New("no keyspace provided")
-	ErrKeyspaceDoesNotExist = errors.New("keyspace does not exist")
-	ErrNoMetadata           = errors.New("no metadata available")
+	ErrNotFound               = errors.New("gocql: not found")
+	ErrUnsupported            = errors.New("gocql: feature not supported")
+	ErrTooManyStmts           = errors.New("gocql: too many statements")
+	ErrUseStmt                = errors.New("gocql: use statements aren't supported. Please see https://github.com/apache/cassandra-gocql-driver for explanation.")
+	ErrSessionClosed          = errors.New("gocql: session has been closed")
+	ErrNoConnections          = errors.New("gocql: no hosts available in the pool")
+	ErrNoKeyspace             = errors.New("gocql: no keyspace provided")
+	ErrKeyspaceDoesNotExist   = errors.New("gocql: keyspace does not exist")
+	ErrNoMetadata             = errors.New("gocql: no metadata available")
+	ErrFailedResolveHostnames = errors.New("gocql: failed to resolve any of the provided hostnames")
 )
 
 type ErrProtocol struct{ error }
 
 func NewErrProtocol(format string, args ...interface{}) error {
-	return ErrProtocol{fmt.Errorf(format, args...)}
+	return ErrProtocol{fmt.Errorf(gocqlErr+format, args...)}
 }
 
 // BatchSizeMaximum is the maximum number of statements a batch operation can have.

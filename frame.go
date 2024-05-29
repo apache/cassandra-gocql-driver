@@ -254,7 +254,7 @@ func (c *Consistency) UnmarshalText(text []byte) error {
 	case "LOCAL_ONE":
 		*c = LocalOne
 	default:
-		return fmt.Errorf("invalid consistency %q", string(text))
+		return fmt.Errorf("gocql: invalid consistency %q", string(text))
 	}
 
 	return nil
@@ -315,7 +315,7 @@ func (s *SerialConsistency) UnmarshalText(text []byte) error {
 	case "LOCAL_SERIAL":
 		*s = LocalSerial
 	default:
-		return fmt.Errorf("invalid consistency %q", string(text))
+		return fmt.Errorf("gocql: invalid consistency %q", string(text))
 	}
 
 	return nil
@@ -326,7 +326,7 @@ const (
 )
 
 var (
-	ErrFrameTooBig = errors.New("frame length is bigger than the maximum allowed")
+	ErrFrameTooBig = errors.New("gocql: frame length is bigger than the maximum allowed")
 )
 
 const maxFrameHeaderSize = 9
@@ -469,7 +469,7 @@ func readHeader(r io.Reader, p []byte) (head frameHeader, err error) {
 
 	if version > protoVersion2 {
 		if len(p) != 9 {
-			return frameHeader{}, fmt.Errorf("not enough bytes to read header require 9 got: %d", len(p))
+			return frameHeader{}, fmt.Errorf("gocql: not enough bytes to read header require 9 got: %d", len(p))
 		}
 
 		head.stream = int(int16(p[2])<<8 | int16(p[3]))
@@ -477,7 +477,7 @@ func readHeader(r io.Reader, p []byte) (head frameHeader, err error) {
 		head.length = int(readInt(p[5:]))
 	} else {
 		if len(p) != 8 {
-			return frameHeader{}, fmt.Errorf("not enough bytes to read header require 8 got: %d", len(p))
+			return frameHeader{}, fmt.Errorf("gocql: not enough bytes to read header require 8 got: %d", len(p))
 		}
 
 		head.stream = int(int8(p[2]))
@@ -501,12 +501,12 @@ func (f *framer) payload() {
 // reads a frame form the wire into the framers buffer
 func (f *framer) readFrame(r io.Reader, head *frameHeader) error {
 	if head.length < 0 {
-		return fmt.Errorf("frame body length can not be less than 0: %d", head.length)
+		return fmt.Errorf("gocql: frame body length can not be less than 0: %d", head.length)
 	} else if head.length > maxFrameSize {
 		// need to free up the connection to be used again
 		_, err := io.CopyN(ioutil.Discard, r, int64(head.length))
 		if err != nil {
-			return fmt.Errorf("error whilst trying to discard frame with invalid length: %v", err)
+			return fmt.Errorf("gocql: error whilst trying to discard frame with invalid length: %w", err)
 		}
 		return ErrFrameTooBig
 	}
@@ -521,7 +521,7 @@ func (f *framer) readFrame(r io.Reader, head *frameHeader) error {
 	// assume the underlying reader takes care of timeouts and retries
 	n, err := io.ReadFull(r, f.buf)
 	if err != nil {
-		return fmt.Errorf("unable to read frame body: read %d/%d bytes: %v", n, head.length, err)
+		return fmt.Errorf("gocql: unable to read frame body: read %d/%d bytes: %w", n, head.length, err)
 	}
 
 	if head.flags&flagCompress == flagCompress {
@@ -531,7 +531,7 @@ func (f *framer) readFrame(r io.Reader, head *frameHeader) error {
 
 		f.buf, err = f.compres.Decode(f.buf)
 		if err != nil {
-			return err
+			return fmt.Errorf("gocql: %w", err)
 		}
 	}
 
@@ -707,7 +707,7 @@ func (f *framer) parseErrorFrame() frame {
 		// TODO(zariel): we should have some distinct types for these errors
 		return errD
 	default:
-		panic(fmt.Errorf("unknown error code: 0x%x", errD.code))
+		panic(fmt.Errorf("gocql: unknown error code: 0x%x", errD.code))
 	}
 }
 
@@ -776,7 +776,7 @@ func (f *framer) finish() error {
 		// TODO: only compress frames which are big enough
 		compressed, err := f.compres.Encode(f.buf[f.headSize:])
 		if err != nil {
-			return err
+			return fmt.Errorf("gocql: %w", err)
 		}
 
 		f.buf = append(f.buf[:f.headSize], compressed...)
@@ -856,7 +856,7 @@ func (w *writePrepareFrame) buildFrame(f *framer, streamID int) error {
 		if f.proto > protoVersion4 {
 			flags |= flagWithPreparedKeyspace
 		} else {
-			panic(fmt.Errorf("the keyspace can only be set with protocol 5 or higher"))
+			panic(fmt.Errorf("gocql: the keyspace can only be set with protocol 5 or higher"))
 		}
 	}
 	if f.proto > protoVersion4 {
@@ -955,7 +955,7 @@ func (f *framer) parsePreparedMetadata() preparedMetadata {
 	meta.flags = f.readInt()
 	meta.colCount = f.readInt()
 	if meta.colCount < 0 {
-		panic(fmt.Errorf("received negative column count: %d", meta.colCount))
+		panic(fmt.Errorf("gocql: received negative column count: %d", meta.colCount))
 	}
 	meta.actualColCount = meta.colCount
 
@@ -1052,7 +1052,7 @@ func (f *framer) parseResultMetadata() resultMetadata {
 	meta.flags = f.readInt()
 	meta.colCount = f.readInt()
 	if meta.colCount < 0 {
-		panic(fmt.Errorf("received negative column count: %d", meta.colCount))
+		panic(fmt.Errorf("gocql: received negative column count: %d", meta.colCount))
 	}
 	meta.actualColCount = meta.colCount
 
@@ -1139,7 +1139,7 @@ func (f *framer) parseResultRows() frame {
 
 	result.numRows = f.readInt()
 	if result.numRows < 0 {
-		panic(fmt.Errorf("invalid row_count in result frame: %d", result.numRows))
+		panic(fmt.Errorf("gocql: invalid row_count in result frame: %d", result.numRows))
 	}
 
 	return result
@@ -1507,7 +1507,7 @@ func (f *framer) writeQueryParams(opts *queryParams) {
 		if f.proto > protoVersion4 {
 			flags |= flagWithKeyspace
 		} else {
-			panic(fmt.Errorf("the keyspace can only be set with protocol 5 or higher"))
+			panic(fmt.Errorf("gocql: the keyspace can only be set with protocol 5 or higher"))
 		}
 	}
 
@@ -1770,7 +1770,7 @@ func (f *framer) writeRegisterFrame(streamID int, w *writeRegisterFrame) error {
 
 func (f *framer) readByte() byte {
 	if len(f.buf) < 1 {
-		panic(fmt.Errorf("not enough bytes in buffer to read byte require 1 got: %d", len(f.buf)))
+		panic(fmt.Errorf("gocql: not enough bytes in buffer to read byte require 1 got: %d", len(f.buf)))
 	}
 
 	b := f.buf[0]
@@ -1780,7 +1780,7 @@ func (f *framer) readByte() byte {
 
 func (f *framer) readInt() (n int) {
 	if len(f.buf) < 4 {
-		panic(fmt.Errorf("not enough bytes in buffer to read int require 4 got: %d", len(f.buf)))
+		panic(fmt.Errorf("gocql: not enough bytes in buffer to read int require 4 got: %d", len(f.buf)))
 	}
 
 	n = int(int32(f.buf[0])<<24 | int32(f.buf[1])<<16 | int32(f.buf[2])<<8 | int32(f.buf[3]))
@@ -1790,7 +1790,7 @@ func (f *framer) readInt() (n int) {
 
 func (f *framer) readShort() (n uint16) {
 	if len(f.buf) < 2 {
-		panic(fmt.Errorf("not enough bytes in buffer to read short require 2 got: %d", len(f.buf)))
+		panic(fmt.Errorf("gocql: not enough bytes in buffer to read short require 2 got: %d", len(f.buf)))
 	}
 	n = uint16(f.buf[0])<<8 | uint16(f.buf[1])
 	f.buf = f.buf[2:]
@@ -1801,7 +1801,7 @@ func (f *framer) readString() (s string) {
 	size := f.readShort()
 
 	if len(f.buf) < int(size) {
-		panic(fmt.Errorf("not enough bytes in buffer to read string require %d got: %d", size, len(f.buf)))
+		panic(fmt.Errorf("gocql: not enough bytes in buffer to read string require %d got: %d", size, len(f.buf)))
 	}
 
 	s = string(f.buf[:size])
@@ -1813,7 +1813,7 @@ func (f *framer) readLongString() (s string) {
 	size := f.readInt()
 
 	if len(f.buf) < size {
-		panic(fmt.Errorf("not enough bytes in buffer to read long string require %d got: %d", size, len(f.buf)))
+		panic(fmt.Errorf("gocql: not enough bytes in buffer to read long string require %d got: %d", size, len(f.buf)))
 	}
 
 	s = string(f.buf[:size])
@@ -1823,7 +1823,7 @@ func (f *framer) readLongString() (s string) {
 
 func (f *framer) readUUID() *UUID {
 	if len(f.buf) < 16 {
-		panic(fmt.Errorf("not enough bytes in buffer to read uuid require %d got: %d", 16, len(f.buf)))
+		panic(fmt.Errorf("gocql: not enough bytes in buffer to read uuid require %d got: %d", 16, len(f.buf)))
 	}
 
 	// TODO: how to handle this error, if it is a uuid, then sureley, problems?
@@ -1850,7 +1850,7 @@ func (f *framer) readBytesInternal() ([]byte, error) {
 	}
 
 	if len(f.buf) < size {
-		return nil, fmt.Errorf("not enough bytes in buffer to read bytes require %d got: %d", size, len(f.buf))
+		return nil, fmt.Errorf("gocql: not enough bytes in buffer to read bytes require %d got: %d", size, len(f.buf))
 	}
 
 	l := f.buf[:size]
@@ -1871,7 +1871,7 @@ func (f *framer) readBytes() []byte {
 func (f *framer) readShortBytes() []byte {
 	size := f.readShort()
 	if len(f.buf) < int(size) {
-		panic(fmt.Errorf("not enough bytes in buffer to read short bytes: require %d got %d", size, len(f.buf)))
+		panic(fmt.Errorf("gocql: not enough bytes in buffer to read short bytes: require %d got %d", size, len(f.buf)))
 	}
 
 	l := f.buf[:size]
@@ -1882,18 +1882,18 @@ func (f *framer) readShortBytes() []byte {
 
 func (f *framer) readInetAdressOnly() net.IP {
 	if len(f.buf) < 1 {
-		panic(fmt.Errorf("not enough bytes in buffer to read inet size require %d got: %d", 1, len(f.buf)))
+		panic(fmt.Errorf("gocql: not enough bytes in buffer to read inet size require %d got: %d", 1, len(f.buf)))
 	}
 
 	size := f.buf[0]
 	f.buf = f.buf[1:]
 
 	if !(size == 4 || size == 16) {
-		panic(fmt.Errorf("invalid IP size: %d", size))
+		panic(fmt.Errorf("gocql: invalid IP size: %d", size))
 	}
 
 	if len(f.buf) < 1 {
-		panic(fmt.Errorf("not enough bytes in buffer to read inet require %d got: %d", size, len(f.buf)))
+		panic(fmt.Errorf("gocql: not enough bytes in buffer to read inet require %d got: %d", size, len(f.buf)))
 	}
 
 	ip := make([]byte, size)
