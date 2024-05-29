@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Added Queries Rate Limiter which uses Token Bucket algorithm to the Session struct. 
+  Added RateLimiterConfig to the ClusterConfig struct. (#1731)
 
 ### Changed
 
