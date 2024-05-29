@@ -709,7 +709,7 @@ func TestStream0(t *testing.T) {
 	conn := &Conn{
 		r:       bufio.NewReader(&buf),
 		streams: streams.New(protoVersion4),
-		logger:  &defaultLogger{},
+		logger:  newInternalLoggerFromStdLogger(&defaultLogger{}, LogLevelNone),
 	}
 
 	err := conn.recv(context.Background())
