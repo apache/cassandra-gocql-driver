@@ -897,3 +897,51 @@ func (b *errorBroadcaster) stop() {
 	}
 	b.listeners = nil
 }
+
+// NewHostInfo is created for testing purposes when you need to mock HostInfo to test your own implementation of
+// HostSelectionPolicy, HostFilter etc.
+func NewHostInfo(
+	hostname string,
+	peer net.IP,
+	broadcastAddress net.IP,
+	listenAddress net.IP,
+	rpcAddress net.IP,
+	preferredIP net.IP,
+	connectAddress net.IP,
+	port int,
+	dataCenter string,
+	rack string,
+	hostId string,
+	workload string,
+	graph bool,
+	dseVersion string,
+	partitioner string,
+	clusterName string,
+	version cassVersion,
+	state nodeState,
+	schemaVersion string,
+	tokens []string,
+) *HostInfo {
+	return &HostInfo{
+		hostname:         hostname,
+		peer:             peer,
+		broadcastAddress: broadcastAddress,
+		listenAddress:    listenAddress,
+		rpcAddress:       rpcAddress,
+		preferredIP:      preferredIP,
+		connectAddress:   connectAddress,
+		port:             port,
+		dataCenter:       dataCenter,
+		rack:             rack,
+		hostId:           hostId,
+		workload:         workload,
+		graph:            graph,
+		dseVersion:       dseVersion,
+		partitioner:      partitioner,
+		clusterName:      clusterName,
+		version:          version,
+		state:            state,
+		schemaVersion:    schemaVersion,
+		tokens:           tokens,
+	}
+}

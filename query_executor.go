@@ -13,14 +13,17 @@ type ExecutableQuery interface {
 	attempt(keyspace string, end, start time.Time, iter *Iter, host *HostInfo)
 	retryPolicy() RetryPolicy
 	speculativeExecutionPolicy() SpeculativeExecutionPolicy
-	GetRoutingKey() ([]byte, error)
-	Keyspace() string
 	Table() string
 	IsIdempotent() bool
-
 	withContext(context.Context) ExecutableQuery
 
+	PickableQuery
 	RetryableQuery
+}
+
+type PickableQuery interface {
+	GetRoutingKey() ([]byte, error)
+	Keyspace() string
 }
 
 type queryExecutor struct {

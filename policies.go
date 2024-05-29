@@ -286,7 +286,7 @@ type HostSelectionPolicy interface {
 	// Multiple attempts of a single query execution won't call the returned NextHost function concurrently,
 	// so it's safe to have internal state without additional synchronization as long as every call to Pick returns
 	// a different instance of NextHost.
-	Pick(ExecutableQuery) NextHost
+	Pick(PickableQuery) NextHost
 }
 
 // SelectedHost is an interface returned when picking a host from a host
@@ -323,7 +323,7 @@ func (r *roundRobinHostPolicy) KeyspaceChanged(KeyspaceUpdateEvent) {}
 func (r *roundRobinHostPolicy) SetPartitioner(partitioner string)   {}
 func (r *roundRobinHostPolicy) Init(*Session)                       {}
 
-func (r *roundRobinHostPolicy) Pick(qry ExecutableQuery) NextHost {
+func (r *roundRobinHostPolicy) Pick(qry PickableQuery) NextHost {
 	nextStartOffset := atomic.AddUint64(&r.lastUsedHostIdx, 1)
 	return roundRobbin(int(nextStartOffset), r.hosts.get())
 }
@@ -558,7 +558,7 @@ func (m *clusterMeta) resetTokenRing(partitioner string, hosts []*HostInfo, logg
 	m.tokenRing = tokenRing
 }
 
-func (t *tokenAwareHostPolicy) Pick(qry ExecutableQuery) NextHost {
+func (t *tokenAwareHostPolicy) Pick(qry PickableQuery) NextHost {
 	if qry == nil {
 		return t.fallback.Pick(qry)
 	}
@@ -762,7 +762,7 @@ func (r *hostPoolHostPolicy) HostDown(host *HostInfo) {
 	r.RemoveHost(host)
 }
 
-func (r *hostPoolHostPolicy) Pick(qry ExecutableQuery) NextHost {
+func (r *hostPoolHostPolicy) Pick(qry PickableQuery) NextHost {
 	return func() SelectedHost {
 		r.mu.RLock()
 		defer r.mu.RUnlock()
@@ -894,7 +894,7 @@ func roundRobbin(shift int, hosts ...[]*HostInfo) NextHost {
 	}
 }
 
-func (d *dcAwareRR) Pick(q ExecutableQuery) NextHost {
+func (d *dcAwareRR) Pick(q PickableQuery) NextHost {
 	nextStartOffset := atomic.AddUint64(&d.lastUsedHostIdx, 1)
 	return roundRobbin(int(nextStartOffset), d.localHosts.get(), d.remoteHosts.get())
 }
@@ -956,7 +956,7 @@ func (d *rackAwareRR) RemoveHost(host *HostInfo) {
 func (d *rackAwareRR) HostUp(host *HostInfo)   { d.AddHost(host) }
 func (d *rackAwareRR) HostDown(host *HostInfo) { d.RemoveHost(host) }
 
-func (d *rackAwareRR) Pick(q ExecutableQuery) NextHost {
+func (d *rackAwareRR) Pick(q PickableQuery) NextHost {
 	nextStartOffset := atomic.AddUint64(&d.lastUsedHostIdx, 1)
 	return roundRobbin(int(nextStartOffset), d.hosts[0].get(), d.hosts[1].get(), d.hosts[2].get())
 }
