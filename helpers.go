@@ -25,6 +25,7 @@
 package gocql
 
 import (
+	"bytes"
 	"fmt"
 	"math/big"
 	"net"
@@ -466,4 +467,12 @@ func LookupIP(host string) ([]net.IP, error) {
 	}
 	return net.LookupIP(host)
 
+}
+
+func ringString(hosts []*HostInfo) string {
+	buf := new(bytes.Buffer)
+	for _, h := range hosts {
+		buf.WriteString("[" + h.ConnectAddress().String() + "-" + h.HostID() + ":" + h.State().String() + "]")
+	}
+	return buf.String()
 }

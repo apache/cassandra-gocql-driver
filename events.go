@@ -180,6 +180,8 @@ func (s *Session) handleNodeEvent(frames []frame) {
 	for _, frame := range frames {
 		switch f := frame.(type) {
 		case *topologyChangeEventFrame:
+			s.logger.Warning("gocql: received topology change event: %v",
+				NewLogField("frame", strings.Join([]string{f.change, "->", f.host.String(), ":", strconv.Itoa(f.port)}, "")))
 			topologyEventReceived = true
 		case *statusChangeEventFrame:
 			event, ok := sEvents[f.host.String()]

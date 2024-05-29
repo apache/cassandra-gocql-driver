@@ -105,15 +105,17 @@ func (c *controlConn) heartBeat() {
 
 		resp, err := c.writeFrame(&writeOptionsFrame{})
 		if err != nil {
+			c.session.logger.Debug("gocql: control connection heartbeat failed: %v.", NewLogField("err", err.Error()))
 			goto reconn
 		}
 
-		switch resp.(type) {
+		switch actualResp := resp.(type) {
 		case *supportedFrame:
 			// Everything ok
 			sleepTime = 5 * time.Second
 			continue
 		case error:
+			c.session.logger.Debug("gocql: control connection heartbeat failed: %v.", NewLogField("err", actualResp.Error()))
 			goto reconn
 		default:
 			c.session.logger.Error("gocql: unknown frame in response to options: %v", NewLogField("frame_type", fmt.Sprintf("%T", resp)))
@@ -235,12 +237,19 @@ func (c *controlConn) discoverProtocol(hosts []*HostInfo) (int, error) {
 		}
 
 		if err == nil {
+			c.session.logger.Debug("gocql: discovered protocol version %v using host %v (%s).",
+				NewLogField("protocol_version", connCfg.ProtoVersion), NewLogField("host_addr", host.ConnectAddress()), NewLogField("host_id", host.HostID()))
 			return connCfg.ProtoVersion, nil
 		}
 
 		if proto := parseProtocolFromError(err); proto > 0 {
+			c.session.logger.Debug("gocql: discovered protocol version %v using host %v (%s).",
+				NewLogField("protocol_version", proto), NewLogField("host_addr", host.ConnectAddress()), NewLogField("host_id", host.HostID()))
 			return proto, nil
 		}
+
+		c.session.logger.Debug("gocql: failed to discover protocol version using host %v (%v): %v.",
+			NewLogField("host_addr", host.ConnectAddress()), NewLogField("host_id", host.HostID()), NewLogField("err", err.Error()))
 	}
 
 	return 0, err
@@ -307,10 +316,16 @@ func (c *controlConn) setupConn(conn *Conn) error {
 		return err
 	}
 
-	host = c.session.ring.addOrUpdate(host)
+	var exists bool
+	host, exists = c.session.ring.addOrUpdate(host)
 
 	if c.session.cfg.filterHost(host) {
-		return fmt.Errorf("host was filtered: %v", host.ConnectAddress())
+		return fmt.Errorf("host was filtered: %v (%s)", host.ConnectAddress(), host.HostID())
+	}
+
+	if !exists {
+		c.session.logger.Info("gocql: adding host %v (%v).",
+			NewLogField("host_addr", host.ConnectAddress().String()), NewLogField("host_id", host.HostID()))
 	}
 
 	if err := c.registerEvents(conn); err != nil {
@@ -395,6 +410,9 @@ func (c *controlConn) reconnect() {
 }
 
 func (c *controlConn) attemptReconnect() (*Conn, error) {
+
+	c.session.logger.Info("gocql: reconnecting the control connection.")
+
 	hosts := c.session.ring.allHosts()
 	hosts = shuffleHosts(hosts)
 

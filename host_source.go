@@ -730,6 +730,7 @@ func refreshRing(r *ringDescriber) error {
 		}
 
 		if host, ok := r.session.ring.addHostIfMissing(h); !ok {
+			r.session.logger.Info("gocql: adding host %v (%v).", NewLogField("host_addr", h.ConnectAddress().String()), NewLogField("host_id", h.HostID()))
 			r.session.startPoolFill(h)
 		} else {
 			// host (by hostID) already exists; determine if IP has changed
@@ -748,6 +749,7 @@ func refreshRing(r *ringDescriber) error {
 				if _, alreadyExists := r.session.ring.addHostIfMissing(h); alreadyExists {
 					return fmt.Errorf("add new host=%s after removal: %w", h, ErrHostAlreadyExists)
 				}
+				r.session.logger.Info("gocql: adding host %v (%v).", NewLogField("host_addr", h.ConnectAddress().String()), NewLogField("host_id", h.HostID()))
 				// add new HostInfo (same hostID, new IP)
 				r.session.startPoolFill(h)
 			}
@@ -761,6 +763,7 @@ func refreshRing(r *ringDescriber) error {
 
 	r.session.metadata.setPartitioner(partitioner)
 	r.session.policy.SetPartitioner(partitioner)
+	r.session.logger.Info("gocql: refreshed ring: %v.", NewLogField("ring", ringString(r.session.ring.allHosts())))
 	return nil
 }
 
