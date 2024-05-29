@@ -337,7 +337,7 @@ func compileMetadata(
 	aggregates []AggregateMetadata,
 	views []ViewMetadata,
 	materializedViews []MaterializedViewMetadata,
-	logger StdLogger,
+	logger internalLogger,
 ) {
 	keyspace.Tables = make(map[string]*TableMetadata)
 	for i := range tables {
@@ -422,7 +422,7 @@ func compileMetadata(
 // column metadata as V2+ (because V1 doesn't support the "type" column in the
 // system.schema_columns table) so determining PartitionKey and ClusterColumns
 // is more complex.
-func compileV1Metadata(tables []TableMetadata, logger StdLogger) {
+func compileV1Metadata(tables []TableMetadata, logger internalLogger) {
 	for i := range tables {
 		table := &tables[i]
 
@@ -529,7 +529,7 @@ func compileV1Metadata(tables []TableMetadata, logger StdLogger) {
 }
 
 // The simpler compile case for V2+ protocol
-func compileV2Metadata(tables []TableMetadata, logger StdLogger) {
+func compileV2Metadata(tables []TableMetadata, logger internalLogger) {
 	for i := range tables {
 		table := &tables[i]
 
@@ -947,7 +947,7 @@ func getColumnMetadata(session *Session, keyspaceName string) ([]ColumnMetadata,
 	return columns, nil
 }
 
-func getTypeInfo(t string, logger StdLogger) TypeInfo {
+func getTypeInfo(t string, logger internalLogger) TypeInfo {
 	if strings.HasPrefix(t, apacheCassandraTypePrefix) {
 		t = apacheToCassandraType(t)
 	}
@@ -1185,7 +1185,7 @@ func getAggregatesMetadata(session *Session, keyspaceName string) ([]AggregateMe
 type typeParser struct {
 	input  string
 	index  int
-	logger StdLogger
+	logger internalLogger
 }
 
 // the type definition parser result
@@ -1197,7 +1197,7 @@ type typeParserResult struct {
 }
 
 // Parse the type definition used for validator and comparator schema data
-func parseType(def string, logger StdLogger) typeParserResult {
+func parseType(def string, logger internalLogger) typeParserResult {
 	parser := &typeParser{input: def, logger: logger}
 	return parser.parse()
 }
@@ -1258,11 +1258,11 @@ func (t *typeParser) parse() typeParserResult {
 				var name string
 				decoded, err := hex.DecodeString(*param.name)
 				if err != nil {
-					t.logger.Printf(
-						"Error parsing type '%s', contains collection name '%s' with an invalid format: %v",
-						t.input,
-						*param.name,
-						err,
+					t.logger.Warning(
+						"gocql: error parsing type '%s', contains collection name '%s' with an invalid format: %v",
+						NewLogField("type", t.input),
+						NewLogField("collection_name", *param.name),
+						NewLogField("err", err.Error()),
 					)
 					// just use the provided name
 					name = *param.name

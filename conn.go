@@ -140,28 +140,23 @@ type SslOptions struct {
 }
 
 type ConnConfig struct {
-	ProtoVersion   int
-	CQLVersion     string
-	Timeout        time.Duration
-	WriteTimeout   time.Duration
-	ConnectTimeout time.Duration
-	Dialer         Dialer
-	HostDialer     HostDialer
-	Compressor     Compressor
-	Authenticator  Authenticator
-	AuthProvider   func(h *HostInfo) (Authenticator, error)
-	Keepalive      time.Duration
-	Logger         StdLogger
+	ProtoVersion     int
+	CQLVersion       string
+	Timeout          time.Duration
+	WriteTimeout     time.Duration
+	ConnectTimeout   time.Duration
+	Dialer           Dialer
+	HostDialer       HostDialer
+	Compressor       Compressor
+	Authenticator    Authenticator
+	AuthProvider     func(h *HostInfo) (Authenticator, error)
+	Keepalive        time.Duration
+	Logger           StdLogger
+	StructuredLogger AdvancedLogger
+	MinimumLogLevel  LogLevel
 
 	tlsConfig       *tls.Config
 	disableCoalesce bool
-}
-
-func (c *ConnConfig) logger() StdLogger {
-	if c.Logger == nil {
-		return Logger
-	}
-	return c.Logger
 }
 
 type ConnErrorHandler interface {
@@ -225,7 +220,7 @@ type Conn struct {
 
 	timeouts int64
 
-	logger StdLogger
+	logger internalLogger
 }
 
 // connect establishes a connection to a Cassandra node using session's connection config.
@@ -289,7 +284,7 @@ func (s *Session) dialWithoutObserver(ctx context.Context, host *HostInfo, cfg *
 		},
 		ctx:            ctx,
 		cancel:         cancel,
-		logger:         cfg.logger(),
+		logger:         s.logger,
 		streamObserver: s.streamObserver,
 		writeTimeout:   writeTimeout,
 	}
@@ -726,7 +721,7 @@ func (c *Conn) recv(ctx context.Context) error {
 	delete(c.calls, head.stream)
 	c.mu.Unlock()
 	if call == nil || !ok {
-		c.logger.Printf("gocql: received response for stream which has no handler: header=%v\n", head)
+		c.logger.Warning("gocql: received response for stream which has no handler: header=%v\n", NewLogField("header", head))
 		return c.discardFrame(head)
 	} else if head.stream != call.streamID {
 		panic(fmt.Sprintf("call has incorrect streamID: got %d expected %d", call.streamID, head.stream))
@@ -1470,7 +1465,7 @@ func (c *Conn) executeQuery(ctx context.Context, qry *Query) *Iter {
 		iter := &Iter{framer: framer}
 		if err := c.awaitSchemaAgreement(ctx); err != nil {
 			// TODO: should have this behind a flag
-			c.logger.Println(err)
+			c.logger.Warning("gocql: error while awaiting for schema agreement after a schema change event: %v", NewLogField("err", err.Error()))
 		}
 		// dont return an error from this, might be a good idea to give a warning
 		// though. The impact of this returning an error would be that the cluster
@@ -1710,7 +1705,7 @@ func (c *Conn) awaitSchemaAgreement(ctx context.Context) (err error) {
 				goto cont
 			}
 			if !isValidPeer(host) || host.schemaVersion == "" {
-				c.logger.Printf("invalid peer or peer with empty schema_version: peer=%q", host)
+				c.logger.Warning("gocql: invalid peer or peer with empty schema_version: peer=%s", NewLogField("peer", host.ConnectAddress()))
 				continue
 			}
 

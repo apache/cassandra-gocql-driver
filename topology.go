@@ -90,12 +90,13 @@ func getReplicationFactorFromOpts(val interface{}) (int, error) {
 	}
 }
 
-func getStrategy(ks *KeyspaceMetadata, logger StdLogger) placementStrategy {
+func getStrategy(ks *KeyspaceMetadata, logger internalLogger) placementStrategy {
 	switch {
 	case strings.Contains(ks.StrategyClass, "SimpleStrategy"):
 		rf, err := getReplicationFactorFromOpts(ks.StrategyOptions["replication_factor"])
 		if err != nil {
-			logger.Printf("parse rf for keyspace %q: %v", ks.Name, err)
+			logger.Warning("gocql: parse rf for keyspace %v: %v",
+				NewLogField("keyspace", ks.Name), NewLogField("err", err.Error()))
 			return nil
 		}
 		return &simpleStrategy{rf: rf}
@@ -108,7 +109,8 @@ func getStrategy(ks *KeyspaceMetadata, logger StdLogger) placementStrategy {
 
 			rf, err := getReplicationFactorFromOpts(rf)
 			if err != nil {
-				logger.Println("parse rf for keyspace %q, dc %q: %v", err)
+				logger.Warning("gocql: parse rf for keyspace %v, dc %v: %v",
+					NewLogField("keyspace", ks.Name), NewLogField("dc", dc), NewLogField("err", err.Error()))
 				// skip DC if the rf is invalid/unsupported, so that we can at least work with other working DCs.
 				continue
 			}
@@ -119,7 +121,8 @@ func getStrategy(ks *KeyspaceMetadata, logger StdLogger) placementStrategy {
 	case strings.Contains(ks.StrategyClass, "LocalStrategy"):
 		return nil
 	default:
-		logger.Printf("parse rf for keyspace %q: unsupported strategy class: %v", ks.StrategyClass)
+		logger.Warning("gocql: parse rf for keyspace %v: unsupported strategy class: %v",
+			NewLogField("keyspace", ks.Name), NewLogField("strategy_class", ks.StrategyClass))
 		return nil
 	}
 }

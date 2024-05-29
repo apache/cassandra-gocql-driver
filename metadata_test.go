@@ -37,7 +37,7 @@ import (
 // from metadata schema queries (see getKeyspaceMetadata, getTableMetadata, and getColumnMetadata)
 func TestCompileMetadata(t *testing.T) {
 	// V1 tests - these are all based on real examples from the integration test ccm cluster
-	log := &defaultLogger{}
+	log := newInternalLoggerFromStdLogger(&defaultLogger{}, LogLevelNone)
 	keyspace := &KeyspaceMetadata{
 		Name: "V1Keyspace",
 	}
@@ -699,7 +699,7 @@ func assertParseNonCompositeType(
 	typeExpected assertTypeInfo,
 ) {
 
-	log := &defaultLogger{}
+	log := newInternalLoggerFromStdLogger(&defaultLogger{}, LogLevelNone)
 	result := parseType(def, log)
 	if len(result.reversed) != 1 {
 		t.Errorf("%s expected %d reversed values but there were %d", def, 1, len(result.reversed))
@@ -730,7 +730,7 @@ func assertParseCompositeType(
 	collectionsExpected map[string]assertTypeInfo,
 ) {
 
-	log := &defaultLogger{}
+	log := newInternalLoggerFromStdLogger(&defaultLogger{}, LogLevelNone)
 	result := parseType(def, log)
 	if len(result.reversed) != len(typesExpected) {
 		t.Errorf("%s expected %d reversed values but there were %d", def, len(typesExpected), len(result.reversed))

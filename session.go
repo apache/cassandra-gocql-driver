@@ -102,7 +102,7 @@ type Session struct {
 	// you can use initialized() to read the value.
 	isInitialized bool
 
-	logger StdLogger
+	logger internalLogger
 }
 
 var queryPool = &sync.Pool{
@@ -111,14 +111,14 @@ var queryPool = &sync.Pool{
 	},
 }
 
-func addrsToHosts(addrs []string, defaultPort int, logger StdLogger) ([]*HostInfo, error) {
+func addrsToHosts(addrs []string, defaultPort int, logger internalLogger) ([]*HostInfo, error) {
 	var hosts []*HostInfo
 	for _, hostaddr := range addrs {
 		resolvedHosts, err := hostInfo(hostaddr, defaultPort)
 		if err != nil {
 			// Try other hosts if unable to resolve DNS name
 			if _, ok := err.(*net.DNSError); ok {
-				logger.Printf("gocql: dns error: %v\n", err)
+				logger.Error("gocql: dns error: %v\n", NewLogField("err", err.Error()))
 				continue
 			}
 			return nil, err
@@ -156,7 +156,7 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 		connectObserver: cfg.ConnectObserver,
 		ctx:             ctx,
 		cancel:          cancel,
-		logger:          cfg.logger(),
+		logger:          cfg.newLogger(),
 	}
 
 	s.schemaDescriber = newSchemaDescriber(s)
@@ -391,13 +391,7 @@ func (s *Session) reconnectDownedHosts(intv time.Duration) {
 			hosts := s.ring.allHosts()
 
 			// Print session.ring for debug.
-			if gocqlDebug {
-				buf := bytes.NewBufferString("Session.ring:")
-				for _, h := range hosts {
-					buf.WriteString("[" + h.ConnectAddress().String() + ":" + h.State().String() + "]")
-				}
-				s.logger.Println(buf.String())
-			}
+			s.logger.Debug("gocql: current ring: %v.", NewLogField("ring", ringString(hosts)))
 
 			for _, h := range hosts {
 				if h.IsUp() {

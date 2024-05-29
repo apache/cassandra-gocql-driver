@@ -162,7 +162,7 @@ func getCassandraBaseType(name string) Type {
 	}
 }
 
-func getCassandraType(name string, logger StdLogger) TypeInfo {
+func getCassandraType(name string, logger internalLogger) TypeInfo {
 	if strings.HasPrefix(name, "frozen<") {
 		return getCassandraType(strings.TrimPrefix(name[:len(name)-1], "frozen<"), logger)
 	} else if strings.HasPrefix(name, "set<") {
@@ -178,7 +178,8 @@ func getCassandraType(name string, logger StdLogger) TypeInfo {
 	} else if strings.HasPrefix(name, "map<") {
 		names := splitCompositeTypes(strings.TrimPrefix(name[:len(name)-1], "map<"))
 		if len(names) != 2 {
-			logger.Printf("Error parsing map type, it has %d subelements, expecting 2\n", len(names))
+			logger.Warning("gocql: error parsing map type, it has %d subelements, expecting 2\n",
+				NewLogField("subelements_number", len(names)))
 			return NativeType{
 				typ: TypeCustom,
 			}
