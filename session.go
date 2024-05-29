@@ -238,19 +238,6 @@ func (s *Session) init() error {
 			return err
 		}
 
-		controlHostConn := s.control.getConn()
-		var controlHost *HostInfo
-		var controlHostAddr string
-		var controlHostId string
-		if controlHostConn != nil {
-			controlHost = controlHostConn.host
-			controlHostAddr = controlHost.ConnectAddress().String()
-			controlHostId = controlHost.HostID()
-		}
-
-		s.logger.Info("gocql: control connection successfully connected to host %v (%v).",
-			NewLogField("host_addr", controlHostAddr), NewLogField("host_id", controlHostId))
-
 		if !s.cfg.DisableInitialHostLookup {
 			var partitioner string
 			newHosts, partitioner, err := s.hostSource.GetHosts()

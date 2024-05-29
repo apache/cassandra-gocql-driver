@@ -338,6 +338,10 @@ func (c *controlConn) setupConn(conn *Conn) error {
 	}
 
 	c.conn.Store(ch)
+
+	c.session.logger.Info("gocql: control connection connected to %v (%s).",
+		NewLogField("host_addr", host.ConnectAddress().String()), NewLogField("host_id", host.HostID()))
+
 	if c.session.initialized() {
 		// We connected to control conn, so add the connect the host in pool as well.
 		// Notify session we can start trying to connect to the node.
@@ -486,6 +490,11 @@ func (c *controlConn) HandleError(conn *Conn, err error, closed bool) {
 	if oldConn != nil && oldConn.conn != conn {
 		return
 	}
+
+	c.session.logger.Info("gocql: control connection error %v (%s): %v\n",
+		NewLogField("host_addr", conn.host.ConnectAddress().String()),
+		NewLogField("host_id", conn.host.HostID()),
+		NewLogField("err", err.Error()))
 
 	c.reconnect()
 }
