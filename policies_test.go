@@ -43,6 +43,32 @@ func TestRoundRobbin(t *testing.T) {
 	}
 }
 
+func TestRoundRobbinSameConnectAddress(t *testing.T) {
+	policy := RoundRobinHostPolicy()
+
+	hosts := [...]*HostInfo{
+		{hostId: "0", connectAddress: net.IPv4(0, 0, 0, 1), port: 9042},
+		{hostId: "1", connectAddress: net.IPv4(0, 0, 0, 1), port: 9043},
+	}
+
+	for _, host := range hosts {
+		policy.AddHost(host)
+	}
+
+	got := make(map[string]bool)
+	it := policy.Pick(nil)
+	for h := it(); h != nil; h = it() {
+		id := h.Info().hostId
+		if got[id] {
+			t.Fatalf("got duplicate host: %v", id)
+		}
+		got[id] = true
+	}
+	if len(got) != len(hosts) {
+		t.Fatalf("expected %d hosts got %d", len(hosts), len(got))
+	}
+}
+
 // Tests of the token-aware host selection policy implementation with a
 // round-robin host selection policy fallback.
 func TestHostPolicy_TokenAware_SimpleStrategy(t *testing.T) {
