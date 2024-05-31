@@ -244,7 +244,7 @@ type schemaDescriber struct {
 	session *Session
 	mu      sync.Mutex
 
-	cache        map[string]*KeyspaceMetadata
+	cache map[string]*KeyspaceMetadata
 
 	// Experimental, this interface and use may change
 	tabletsCache *TabletsMetadata

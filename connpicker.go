@@ -7,7 +7,7 @@ import (
 )
 
 type ConnPicker interface {
-	Pick(token, string, string) *Conn
+	Pick(Token, string, string) *Conn
 	Put(*Conn)
 	Remove(conn *Conn)
 	InFlight() int
@@ -71,7 +71,7 @@ func (p *defaultConnPicker) Size() (int, int) {
 	return size, p.size - size
 }
 
-func (p *defaultConnPicker) Pick(token, string, string) *Conn {
+func (p *defaultConnPicker) Pick(Token, string, string) *Conn {
 	pos := int(atomic.AddUint32(&p.pos, 1) - 1)
 	size := len(p.conns)
 
@@ -110,7 +110,7 @@ func (*defaultConnPicker) NextShard() (shardID, nrShards int) {
 // to the point where we have first connection.
 type nopConnPicker struct{}
 
-func (nopConnPicker) Pick(token, string, string) *Conn {
+func (nopConnPicker) Pick(Token, string, string) *Conn {
 	return nil
 }
 

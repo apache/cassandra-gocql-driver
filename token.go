@@ -19,14 +19,14 @@ import (
 // a token partitioner
 type partitioner interface {
 	Name() string
-	Hash([]byte) token
-	ParseString(string) token
+	Hash([]byte) Token
+	ParseString(string) Token
 }
 
-// a token
-type token interface {
+// a Token
+type Token interface {
 	fmt.Stringer
-	Less(token) bool
+	Less(Token) bool
 }
 
 // murmur3 partitioner
@@ -36,13 +36,13 @@ func (p murmur3Partitioner) Name() string {
 	return "Murmur3Partitioner"
 }
 
-func (p murmur3Partitioner) Hash(partitionKey []byte) token {
+func (p murmur3Partitioner) Hash(partitionKey []byte) Token {
 	h1 := murmur.Murmur3H1(partitionKey)
 	return int64Token(h1)
 }
 
 // murmur3 little-endian, 128-bit hash, but returns only h1
-func (p murmur3Partitioner) ParseString(str string) token {
+func (p murmur3Partitioner) ParseString(str string) Token {
 	return parseInt64Token(str)
 }
 
@@ -58,7 +58,7 @@ func (m int64Token) String() string {
 	return strconv.FormatInt(int64(m), 10)
 }
 
-func (m int64Token) Less(token token) bool {
+func (m int64Token) Less(token Token) bool {
 	return m < token.(int64Token)
 }
 
@@ -70,12 +70,12 @@ func (p orderedPartitioner) Name() string {
 	return "OrderedPartitioner"
 }
 
-func (p orderedPartitioner) Hash(partitionKey []byte) token {
+func (p orderedPartitioner) Hash(partitionKey []byte) Token {
 	// the partition key is the token
 	return orderedToken(partitionKey)
 }
 
-func (p orderedPartitioner) ParseString(str string) token {
+func (p orderedPartitioner) ParseString(str string) Token {
 	return orderedToken(str)
 }
 
@@ -83,7 +83,7 @@ func (o orderedToken) String() string {
 	return string(o)
 }
 
-func (o orderedToken) Less(token token) bool {
+func (o orderedToken) Less(token Token) bool {
 	return o < token.(orderedToken)
 }
 
@@ -98,7 +98,7 @@ func (r randomPartitioner) Name() string {
 // 2 ** 128
 var maxHashInt, _ = new(big.Int).SetString("340282366920938463463374607431768211456", 10)
 
-func (p randomPartitioner) Hash(partitionKey []byte) token {
+func (p randomPartitioner) Hash(partitionKey []byte) Token {
 	sum := md5.Sum(partitionKey)
 	val := new(big.Int)
 	val.SetBytes(sum[:])
@@ -110,7 +110,7 @@ func (p randomPartitioner) Hash(partitionKey []byte) token {
 	return (*randomToken)(val)
 }
 
-func (p randomPartitioner) ParseString(str string) token {
+func (p randomPartitioner) ParseString(str string) Token {
 	val := new(big.Int)
 	val.SetString(str, 10)
 	return (*randomToken)(val)
@@ -120,12 +120,12 @@ func (r *randomToken) String() string {
 	return (*big.Int)(r).String()
 }
 
-func (r *randomToken) Less(token token) bool {
+func (r *randomToken) Less(token Token) bool {
 	return -1 == (*big.Int)(r).Cmp((*big.Int)(token.(*randomToken)))
 }
 
 type hostToken struct {
-	token token
+	token Token
 	host  *HostInfo
 }
 
@@ -212,7 +212,7 @@ func (t *tokenRing) String() string {
 //
 // It returns two tokens. First is token that exactly corresponds to the partition key (and could be used to
 // determine shard, for example), second token is the endToken that corresponds to the host.
-func (t *tokenRing) GetHostForPartitionKey(partitionKey []byte) (host *HostInfo, token token, endToken token) {
+func (t *tokenRing) GetHostForPartitionKey(partitionKey []byte) (host *HostInfo, token Token, endToken Token) {
 	if t == nil {
 		return nil, nil, nil
 	}
@@ -222,7 +222,7 @@ func (t *tokenRing) GetHostForPartitionKey(partitionKey []byte) (host *HostInfo,
 	return host, token, endToken
 }
 
-func (t *tokenRing) GetHostForToken(token token) (host *HostInfo, endToken token) {
+func (t *tokenRing) GetHostForToken(token Token) (host *HostInfo, endToken Token) {
 	if t == nil || len(t.tokens) == 0 {
 		return nil, nil
 	}

@@ -323,20 +323,20 @@ type HostSelectionPolicy interface {
 // selection policy.
 type SelectedHost interface {
 	Info() *HostInfo
-	Token() token
+	Token() Token
 	Mark(error)
 }
 
 type selectedHost struct {
 	info  *HostInfo
-	token token
+	token Token
 }
 
 func (host selectedHost) Info() *HostInfo {
 	return host.info
 }
 
-func (host selectedHost) Token() token {
+func (host selectedHost) Token() Token {
 	return host.token
 }
 
@@ -928,7 +928,7 @@ func (host selectedHostPoolHost) Info() *HostInfo {
 	return host.info
 }
 
-func (host selectedHostPoolHost) Token() token {
+func (host selectedHostPoolHost) Token() Token {
 	return nil
 }
 

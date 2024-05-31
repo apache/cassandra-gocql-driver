@@ -435,10 +435,10 @@ func (h *HostInfo) Hostname() string {
 }
 
 func (h *HostInfo) ConnectAddressAndPort() string {
-        h.mu.Lock()
-        defer h.mu.Unlock()
-        addr, _ := h.connectAddressLocked()
-        return net.JoinHostPort(addr.String(), strconv.Itoa(h.port))
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	addr, _ := h.connectAddressLocked()
+	return net.JoinHostPort(addr.String(), strconv.Itoa(h.port))
 }
 
 func (h *HostInfo) String() string {
@@ -596,7 +596,7 @@ func addTabletToTabletsList(tablets []*TabletInfo, tablet *TabletInfo) []*Tablet
 }
 
 // Search for place in tablets table for token starting from index l to index r
-func findTabletForToken(tablets []*TabletInfo, token token, l int, r int) *TabletInfo {
+func findTabletForToken(tablets []*TabletInfo, token Token, l int, r int) *TabletInfo {
 	for l < r {
 		var m int
 		if r*l > 0 {

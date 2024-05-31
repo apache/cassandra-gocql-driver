@@ -329,7 +329,7 @@ func newHostConnPool(session *Session, host *HostInfo, port, size int,
 }
 
 // Pick a connection from this connection pool for the given query.
-func (pool *hostConnPool) Pick(token token, keyspace string, table string) *Conn {
+func (pool *hostConnPool) Pick(token Token, keyspace string, table string) *Conn {
 	pool.mu.RLock()
 	defer pool.mu.RUnlock()
 

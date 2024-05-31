@@ -353,7 +353,7 @@ func newScyllaConnPicker(conn *Conn) *scyllaConnPicker {
 	}
 }
 
-func (p *scyllaConnPicker) Pick(t token, keyspace string, table string) *Conn {
+func (p *scyllaConnPicker) Pick(t Token, keyspace string, table string) *Conn {
 	if len(p.conns) == 0 {
 		return nil
 	}
@@ -378,13 +378,13 @@ func (p *scyllaConnPicker) Pick(t token, keyspace string, table string) *Conn {
 		conn.mu.Lock()
 		if conn.tabletsRoutingV1 {
 			tablets := conn.session.getTablets()
-	
+
 			// Search for tablets with Keyspace and Table from the Query
 			l, r := findTablets(tablets, keyspace, table)
-	
+
 			if l != -1 {
 				tablet := findTabletForToken(tablets, mmt, l, r)
-	
+
 				for _, replica := range tablet.replicas {
 					if replica.hostId.String() == p.hostId {
 						idx = replica.shardId
@@ -396,7 +396,7 @@ func (p *scyllaConnPicker) Pick(t token, keyspace string, table string) *Conn {
 
 		break
 	}
-	
+
 	if idx == -1 {
 		idx = p.shardOf(mmt)
 	}
@@ -415,7 +415,7 @@ func (p *scyllaConnPicker) maybeReplaceWithLessBusyConnection(c *Conn) *Conn {
 		return c
 	}
 	alternative := p.leastBusyConn()
-	if alternative == nil || alternative.AvailableStreams() * 120 > c.AvailableStreams() * 100 {
+	if alternative == nil || alternative.AvailableStreams()*120 > c.AvailableStreams()*100 {
 		return c
 	} else {
 		return alternative
@@ -423,7 +423,7 @@ func (p *scyllaConnPicker) maybeReplaceWithLessBusyConnection(c *Conn) *Conn {
 }
 
 func isHeavyLoaded(c *Conn) bool {
-    return c.streams.NumStreams / 2 > c.AvailableStreams();
+	return c.streams.NumStreams/2 > c.AvailableStreams()
 }
 
 func (p *scyllaConnPicker) leastBusyConn() *Conn {

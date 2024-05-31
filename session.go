@@ -2171,10 +2171,10 @@ type routingKeyInfoLRU struct {
 }
 
 type routingKeyInfo struct {
-	indexes  []int
-	types    []TypeInfo
-	keyspace string
-	table    string
+	indexes     []int
+	types       []TypeInfo
+	keyspace    string
+	table       string
 	lwt         bool
 	partitioner partitioner
 }

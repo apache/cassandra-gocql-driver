@@ -9,7 +9,7 @@ import (
 
 type hostTokens struct {
 	// token is end (inclusive) of token range these hosts belong to
-	token token
+	token Token
 	hosts []*HostInfo
 }
 
@@ -24,7 +24,7 @@ func (h tokenRingReplicas) Less(i, j int) bool { return h[i].token.Less(h[j].tok
 func (h tokenRingReplicas) Len() int           { return len(h) }
 func (h tokenRingReplicas) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
 
-func (h tokenRingReplicas) replicasFor(t token) *hostTokens {
+func (h tokenRingReplicas) replicasFor(t Token) *hostTokens {
 	if len(h) == 0 {
 		return nil
 	}
