@@ -12,7 +12,6 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
-	"net"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -64,7 +63,7 @@ func (c *cowHostList) add(host *HostInfo) bool {
 	return true
 }
 
-func (c *cowHostList) remove(ip net.IP) bool {
+func (c *cowHostList) remove(host *HostInfo) bool {
 	c.mu.Lock()
 	l := c.get()
 	size := len(l)
@@ -76,7 +75,7 @@ func (c *cowHostList) remove(ip net.IP) bool {
 	found := false
 	newL := make([]*HostInfo, 0, size)
 	for i := 0; i < len(l); i++ {
-		if !l[i].ConnectAddress().Equal(ip) {
+		if !l[i].Equal(host) {
 			newL = append(newL, l[i])
 		} else {
 			found = true
@@ -333,7 +332,7 @@ func (r *roundRobinHostPolicy) AddHost(host *HostInfo) {
 }
 
 func (r *roundRobinHostPolicy) RemoveHost(host *HostInfo) {
-	r.hosts.remove(host.ConnectAddress())
+	r.hosts.remove(host)
 }
 
 func (r *roundRobinHostPolicy) HostUp(host *HostInfo) {
@@ -499,7 +498,7 @@ func (t *tokenAwareHostPolicy) AddHosts(hosts []*HostInfo) {
 
 func (t *tokenAwareHostPolicy) RemoveHost(host *HostInfo) {
 	t.mu.Lock()
-	if t.hosts.remove(host.ConnectAddress()) {
+	if t.hosts.remove(host) {
 		meta := t.getMetadataForUpdate()
 		meta.resetTokenRing(t.partitioner, t.hosts.get(), t.logger)
 		t.updateReplicas(meta, t.getKeyspaceName())
@@ -843,9 +842,9 @@ func (d *dcAwareRR) AddHost(host *HostInfo) {
 
 func (d *dcAwareRR) RemoveHost(host *HostInfo) {
 	if d.IsLocal(host) {
-		d.localHosts.remove(host.ConnectAddress())
+		d.localHosts.remove(host)
 	} else {
-		d.remoteHosts.remove(host.ConnectAddress())
+		d.remoteHosts.remove(host)
 	}
 }
 
@@ -950,7 +949,7 @@ func (d *rackAwareRR) AddHost(host *HostInfo) {
 
 func (d *rackAwareRR) RemoveHost(host *HostInfo) {
 	dist := d.HostTier(host)
-	d.hosts[dist].remove(host.ConnectAddress())
+	d.hosts[dist].remove(host)
 }
 
 func (d *rackAwareRR) HostUp(host *HostInfo)   { d.AddHost(host) }

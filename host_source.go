@@ -141,7 +141,7 @@ func (h *HostInfo) Equal(host *HostInfo) bool {
 		return true
 	}
 
-	return h.ConnectAddress().Equal(host.ConnectAddress())
+	return h.HostID() == host.HostID() && h.ConnectAddressAndPort() == host.ConnectAddressAndPort()
 }
 
 func (h *HostInfo) Peer() net.IP {
@@ -402,10 +402,10 @@ func (h *HostInfo) HostnameAndPort() string {
 }
 
 func (h *HostInfo) ConnectAddressAndPort() string {
-        h.mu.Lock()
-        defer h.mu.Unlock()
-        addr, _ := h.connectAddressLocked()
-        return net.JoinHostPort(addr.String(), strconv.Itoa(h.port))
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	addr, _ := h.connectAddressLocked()
+	return net.JoinHostPort(addr.String(), strconv.Itoa(h.port))
 }
 
 func (h *HostInfo) String() string {
