@@ -25,6 +25,8 @@ jobs:
       - run: go vet
       - name: Run unit tests
         run: go test -v -tags unit -race
+      - name: Run fuzz tests
+        run: go test -v -fuzz=Fuzz -parallel=1 -fuzztime 10s
   integration-cassandra:
     timeout-minutes: 15
     needs:
