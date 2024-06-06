@@ -6,6 +6,7 @@ package gocql
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/tls"
 	"errors"
@@ -194,6 +195,8 @@ type Conn struct {
 	currentKeyspace string
 	host            *HostInfo
 	isSchemaV2      bool
+
+	connReady bool
 
 	session *Session
 
@@ -391,6 +394,8 @@ func (s *startupCoordinator) setupConn(ctx context.Context) error {
 		return errors.New("gocql: no response to connection startup within timeout")
 	}
 
+	// connection is set up and ready to use native proto v5 if it is set
+	s.conn.connReady = true
 	return nil
 }
 
@@ -428,6 +433,7 @@ func (s *startupCoordinator) startup(ctx context.Context, supported map[string][
 		"CQL_VERSION":    s.conn.cfg.CQLVersion,
 		"DRIVER_NAME":    driverName,
 		"DRIVER_VERSION": driverVersion,
+		//"COMPRESSION":    "none",
 	}
 
 	if s.conn.compressor != nil {
@@ -567,14 +573,43 @@ func (c *Conn) Close() {
 func (c *Conn) serve(ctx context.Context) {
 	var err error
 	for err == nil {
-		err = c.recv(ctx)
+		// If native proto v5+ is used and conn is set up, then we should
+		// unwrap payload body from v5 compressed/uncompressed frame
+		if c.version > protoVersion4 && c.connReady {
+			err = c.recvV5Frame(ctx)
+		} else {
+			err = c.recv(ctx)
+		}
 	}
 
 	c.closeWithError(err)
 }
 
-func (c *Conn) discardFrame(head frameHeader) error {
-	_, err := io.CopyN(ioutil.Discard, c, int64(head.length))
+// readUncompressedFrame
+func (c *Conn) recvV5Frame(ctx context.Context) error {
+	var payload []byte
+	var isSelfContained bool
+	var err error
+
+	if c.compressor != nil {
+		// TODO implement reading of compressed frames
+	} else {
+		payload, isSelfContained, err = readUncompressedFrame(c.r)
+	}
+	if err != nil {
+		return err
+	}
+
+	if isSelfContained {
+		// TODO handle case when there are more than 1 envelop inside the frame
+		return c.processFrame(ctx, bytes.NewBuffer(payload))
+	}
+
+	return nil
+}
+
+func (c *Conn) discardFrame(r io.Reader, head frameHeader) error {
+	_, err := io.CopyN(ioutil.Discard, r, int64(head.length))
 	if err != nil {
 		return err
 	}
@@ -640,6 +675,10 @@ func (c *Conn) heartBeat(ctx context.Context) {
 }
 
 func (c *Conn) recv(ctx context.Context) error {
+	return c.processFrame(ctx, c)
+}
+
+func (c *Conn) processFrame(ctx context.Context, r io.Reader) error {
 	// not safe for concurrent reads
 
 	// read a full header, ignore timeouts, as this is being ran in a loop
@@ -650,7 +689,7 @@ func (c *Conn) recv(ctx context.Context) error {
 
 	headStartTime := time.Now()
 	// were just reading headers over and over and copy bodies
-	head, err := readHeader(c.r, c.headerBuf[:])
+	head, err := readHeader(r, c.headerBuf[:])
 	headEndTime := time.Now()
 	if err != nil {
 		return err
@@ -674,7 +713,7 @@ func (c *Conn) recv(ctx context.Context) error {
 	} else if head.stream == -1 {
 		// TODO: handle cassandra event frames, we shouldnt get any currently
 		framer := newFramer(c.compressor, c.version)
-		if err := framer.readFrame(c, &head); err != nil {
+		if err := framer.readFrame(r, &head); err != nil {
 			return err
 		}
 		go c.session.handleEvent(framer)
@@ -707,14 +746,14 @@ func (c *Conn) recv(ctx context.Context) error {
 	c.mu.Unlock()
 	if call == nil || !ok {
 		c.logger.Printf("gocql: received response for stream which has no handler: header=%v\n", head)
-		return c.discardFrame(head)
+		return c.discardFrame(r, head)
 	} else if head.stream != call.streamID {
 		panic(fmt.Sprintf("call has incorrect streamID: got %d expected %d", call.streamID, head.stream))
 	}
 
 	framer := newFramer(c.compressor, c.version)
 
-	err = framer.readFrame(c, &head)
+	err = framer.readFrame(r, &head)
 	if err != nil {
 		// only net errors should cause the connection to be closed. Though
 		// cassandra returning corrupt frames will be returned here as well.
@@ -1066,7 +1105,18 @@ func (c *Conn) exec(ctx context.Context, req frameBuilder, tracer Tracer) (*fram
 		return nil, err
 	}
 
-	n, err := c.w.writeContext(ctx, framer.buf)
+	var n int
+
+	if c.connReady && c.version > protoVersion4 {
+		buf, err := newUncompressedFrame(framer.buf, true)
+		if err != nil {
+			return nil, fmt.Errorf("gocql: failed to create uncompressed frame for stream: %d, err: %w", stream, err)
+		}
+
+		n, err = c.w.writeContext(ctx, buf)
+	} else {
+		n, err = c.w.writeContext(ctx, framer.buf)
+	}
 	if err != nil {
 		// closeWithError will block waiting for this stream to either receive a response
 		// or for us to timeout, close the timeout chan here. Im not entirely sure
@@ -1203,9 +1253,10 @@ type StreamObserverContext interface {
 }
 
 type preparedStatment struct {
-	id       []byte
-	request  preparedMetadata
-	response resultMetadata
+	id         []byte
+	metadataID []byte
+	request    preparedMetadata
+	response   resultMetadata
 }
 
 type inflightPrepare struct {
@@ -1264,7 +1315,8 @@ func (c *Conn) prepareStatement(ctx context.Context, stmt string, tracer Tracer)
 				flight.preparedStatment = &preparedStatment{
 					// defensively copy as we will recycle the underlying buffer after we
 					// return.
-					id: copyBytes(x.preparedID),
+					id:         copyBytes(x.preparedID),
+					metadataID: copyBytes(x.reqMeta.id),
 					// the type info's should _not_ have a reference to the framers read buffer,
 					// therefore we can just copy them directly.
 					request:  x.reqMeta,
@@ -1374,9 +1426,10 @@ func (c *Conn) executeQuery(ctx context.Context, qry *Query) *Iter {
 		params.skipMeta = !(c.session.cfg.DisableSkipMetadata || qry.disableSkipMetadata)
 
 		frame = &writeExecuteFrame{
-			preparedID:    info.id,
-			params:        params,
-			customPayload: qry.customPayload,
+			preparedID:         info.id,
+			preparedMetadataID: info.metadataID,
+			params:             params,
+			customPayload:      qry.customPayload,
 		}
 
 		// Set "keyspace" and "table" property in the query if it is present in preparedMetadata

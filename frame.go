@@ -6,6 +6,7 @@ package gocql
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
@@ -914,6 +915,9 @@ func (f *framer) readTypeInfo() TypeInfo {
 }
 
 type preparedMetadata struct {
+	// only for native proto >= 5
+	id []byte
+
 	resultMetadata
 
 	// proto v4+
@@ -931,6 +935,10 @@ func (r preparedMetadata) String() string {
 func (f *framer) parsePreparedMetadata() preparedMetadata {
 	// TODO: deduplicate this from parseMetadata
 	meta := preparedMetadata{}
+
+	if f.proto > protoVersion4 {
+		meta.id = f.readShortBytes()
+	}
 
 	meta.flags = f.readInt()
 	meta.colCount = f.readInt()
@@ -1579,8 +1587,9 @@ func (f frameWriterFunc) buildFrame(framer *framer, streamID int) error {
 }
 
 type writeExecuteFrame struct {
-	preparedID []byte
-	params     queryParams
+	preparedID         []byte
+	preparedMetadataID []byte
+	params             queryParams
 
 	// v4+
 	customPayload map[string][]byte
@@ -1591,16 +1600,21 @@ func (e *writeExecuteFrame) String() string {
 }
 
 func (e *writeExecuteFrame) buildFrame(fr *framer, streamID int) error {
-	return fr.writeExecuteFrame(streamID, e.preparedID, &e.params, &e.customPayload)
+	return fr.writeExecuteFrame(streamID, e.preparedID, e.preparedMetadataID, &e.params, &e.customPayload)
 }
 
-func (f *framer) writeExecuteFrame(streamID int, preparedID []byte, params *queryParams, customPayload *map[string][]byte) error {
+func (f *framer) writeExecuteFrame(streamID int, preparedID, preparedMetadataID []byte, params *queryParams, customPayload *map[string][]byte) error {
 	if len(*customPayload) > 0 {
 		f.payload()
 	}
 	f.writeHeader(f.flags, opExecute, streamID)
 	f.writeCustomPayload(customPayload)
 	f.writeShortBytes(preparedID)
+
+	if f.proto > protoVersion4 {
+		f.writeShortBytes(preparedMetadataID)
+	}
+
 	if f.proto > protoVersion1 {
 		f.writeQueryParams(params)
 	} else {
@@ -2049,4 +2063,126 @@ func (f *framer) writeBytesMap(m map[string][]byte) {
 		f.writeString(k)
 		f.writeBytes(v)
 	}
+}
+
+func readUncompressedFrame(r io.Reader) ([]byte, bool, error) {
+	const uncompressedFrameHeaderSize = 6
+	header := [uncompressedFrameHeaderSize + 1]byte{}
+
+	_, err := io.ReadFull(r, header[:uncompressedFrameHeaderSize])
+	if err != nil {
+		return nil, false, fmt.Errorf("gocql: failed to read uncompressed frame, err: %w", err)
+	}
+
+	computedHeaderCRC24 := cassandraCrc24(header[:3])
+	readHeaderCRC24 := binary.LittleEndian.Uint32(header[3:]) & 0xFFFFFF
+	if computedHeaderCRC24 != readHeaderCRC24 {
+		return nil, false, fmt.Errorf("gocql: header crc24 mismatch, computed: %d, got: %d", computedHeaderCRC24, readHeaderCRC24)
+	}
+
+	// Extract the payload length and self-contained flag
+	headerInt := binary.LittleEndian.Uint32(header[:4])
+	payloadLen := int(headerInt & 0x1FFFF)
+	isSelfContained := (headerInt & (1 << 17)) != 0
+
+	payload := make([]byte, payloadLen)
+	_, err = io.ReadFull(r, payload)
+	if err != nil {
+		return nil, false, fmt.Errorf("gocql: failed to read uncompressed frame payload, err: %w", err)
+	}
+
+	// reading payload crc32
+	_, err = io.ReadFull(r, header[:4])
+	if err != nil {
+		return nil, false, fmt.Errorf("gocql: failed to read payload crc32, err: %w", err)
+	}
+
+	computedPayloadCRC32 := cassandraCrc32(payload)
+	readPayloadCRC32 := binary.LittleEndian.Uint32(header[:4])
+	if computedPayloadCRC32 != readPayloadCRC32 {
+		return nil, false, fmt.Errorf("gocql: payload crc32 mismatch, computed: %d, got: %d", computedPayloadCRC32, readPayloadCRC32)
+	}
+
+	return payload, isSelfContained, nil
+}
+
+//func newUncompressedFrame(payload []byte, isSelfContained bool) ([]byte, error) {
+//	const maxPayloadSize = 128 * 1024
+//	const headerSize = 6
+//
+//	payloadLen := len(payload)
+//	if payloadLen > maxPayloadSize {
+//		return nil, errors.New("payload exceeds maximum size of 128KiB")
+//	}
+//
+//	// Create the header
+//	header := make([]byte, headerSize+1)
+//	headerInt := uint32(payloadLen) & 0x1FFFF // 17 bits for payload length
+//	if isSelfContained {
+//		headerInt |= 1 << 17 // Set the self-contained flag
+//	}
+//
+//	binary.LittleEndian.PutUint32(header[:4], headerInt)
+//	// Calculate Of24 for the header
+//	crc := cassandraCrc24(header[:3])
+//	binary.LittleEndian.PutUint32(header[3:], crc)
+//
+//	// Create the frame
+//	frame := make([]byte, headerSize+payloadLen+4) // 4 bytes for CRC32
+//	copy(frame, header[:headerSize])
+//	copy(frame[headerSize:], payload)
+//
+//	// Calculate CRC32 for the payload
+//	payloadCRC32 := cassandraCrc32(payload)
+//	binary.LittleEndian.PutUint32(frame[headerSize+payloadLen:], payloadCRC32)
+//
+//	return frame, nil
+//}
+
+func newUncompressedFrame(payload []byte, isSelfContained bool) ([]byte, error) {
+	const (
+		maxPayloadSize    = 128 * 1024
+		headerSize        = 6
+		payloadLengthBits = 17
+		selfContainedBit  = 1 << 17
+	)
+
+	payloadLen := len(payload)
+	if payloadLen > maxPayloadSize {
+		return nil, errors.New("payload exceeds maximum size of 128KiB")
+	}
+
+	// Create the header
+	header := make([]byte, headerSize)
+
+	// First 3 bytes: payload length and self-contained flag
+	headerInt := uint32(payloadLen) & ((1 << payloadLengthBits) - 1) // 17 bits for payload length
+	if isSelfContained {
+		headerInt |= selfContainedBit // Set the self-contained flag
+	}
+
+	// Encode the first 3 bytes as a single little-endian integer
+	header[0] = byte(headerInt)
+	header[1] = byte(headerInt >> 8)
+	header[2] = byte(headerInt >> 16)
+
+	// Calculate CRC24 for the first 3 bytes of the header
+	crc := cassandraCrc24(header[:3])
+
+	// Encode CRC24 into the next 3 bytes of the header
+	header[3] = byte(crc)
+	header[4] = byte(crc >> 8)
+	header[5] = byte(crc >> 16)
+
+	// Create the frame
+	frameSize := headerSize + payloadLen + 4 // 4 bytes for CRC32
+	frame := make([]byte, frameSize)
+	copy(frame, header)
+	copy(frame[headerSize:], payload)
+
+	// Calculate CRC32 for the payload
+	payloadCRC32 := cassandraCrc32(payload)
+	binary.LittleEndian.PutUint32(frame[headerSize+payloadLen:], payloadCRC32)
+
+	return frame, nil
 }
