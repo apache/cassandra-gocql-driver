@@ -2106,57 +2106,24 @@ func readUncompressedFrame(r io.Reader) ([]byte, bool, error) {
 	return payload, isSelfContained, nil
 }
 
-//func newUncompressedFrame(payload []byte, isSelfContained bool) ([]byte, error) {
-//	const maxPayloadSize = 128 * 1024
-//	const headerSize = 6
-//
-//	payloadLen := len(payload)
-//	if payloadLen > maxPayloadSize {
-//		return nil, errors.New("payload exceeds maximum size of 128KiB")
-//	}
-//
-//	// Create the header
-//	header := make([]byte, headerSize+1)
-//	headerInt := uint32(payloadLen) & 0x1FFFF // 17 bits for payload length
-//	if isSelfContained {
-//		headerInt |= 1 << 17 // Set the self-contained flag
-//	}
-//
-//	binary.LittleEndian.PutUint32(header[:4], headerInt)
-//	// Calculate Of24 for the header
-//	crc := cassandraCrc24(header[:3])
-//	binary.LittleEndian.PutUint32(header[3:], crc)
-//
-//	// Create the frame
-//	frame := make([]byte, headerSize+payloadLen+4) // 4 bytes for CRC32
-//	copy(frame, header[:headerSize])
-//	copy(frame[headerSize:], payload)
-//
-//	// Calculate CRC32 for the payload
-//	payloadCRC32 := cassandraCrc32(payload)
-//	binary.LittleEndian.PutUint32(frame[headerSize+payloadLen:], payloadCRC32)
-//
-//	return frame, nil
-//}
+const maxPayloadSize = 128*1024 - 1
 
 func newUncompressedFrame(payload []byte, isSelfContained bool) ([]byte, error) {
 	const (
-		maxPayloadSize    = 128 * 1024
-		headerSize        = 6
-		payloadLengthBits = 17
-		selfContainedBit  = 1 << 17
+		headerSize       = 6
+		selfContainedBit = 1 << 17
 	)
 
 	payloadLen := len(payload)
 	if payloadLen > maxPayloadSize {
-		return nil, errors.New("payload exceeds maximum size of 128KiB")
+		return nil, fmt.Errorf("payload length (%d) excides maximum size of 128 KiB", payloadLen)
 	}
 
 	// Create the header
 	header := make([]byte, headerSize)
 
 	// First 3 bytes: payload length and self-contained flag
-	headerInt := uint32(payloadLen) & ((1 << payloadLengthBits) - 1) // 17 bits for payload length
+	headerInt := uint32(payloadLen) & 0x1FFFF
 	if isSelfContained {
 		headerInt |= selfContainedBit // Set the self-contained flag
 	}

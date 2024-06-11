@@ -433,7 +433,6 @@ func (s *startupCoordinator) startup(ctx context.Context, supported map[string][
 		"CQL_VERSION":    s.conn.cfg.CQLVersion,
 		"DRIVER_NAME":    driverName,
 		"DRIVER_VERSION": driverVersion,
-		//"COMPRESSION":    "none",
 	}
 
 	if s.conn.compressor != nil {
