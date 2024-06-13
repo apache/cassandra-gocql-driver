@@ -604,7 +604,21 @@ func (c *Conn) recvV5Frame(ctx context.Context) error {
 		return c.processFrame(ctx, bytes.NewBuffer(payload))
 	}
 
-	return nil
+	head, err := readHeader(bytes.NewBuffer(payload), c.headerBuf[:])
+	if err != nil {
+		return err
+	}
+
+	bytesToRead := head.length - len(payload) + 9
+
+	buf := bytes.NewBuffer(payload)
+
+	err = c.recvMultiFrame(ctx, buf, bytesToRead)
+	if err != nil {
+		return err
+	}
+
+	return c.processFrame(ctx, buf)
 }
 
 func (c *Conn) discardFrame(r io.Reader, head frameHeader) error {
@@ -1786,6 +1800,21 @@ func (c *Conn) awaitSchemaAgreement(ctx context.Context) (err error) {
 
 	// not exported
 	return fmt.Errorf("gocql: cluster schema versions not consistent: %+v", schemas)
+}
+
+func (c *Conn) recvMultiFrame(ctx context.Context, src io.Writer, expectedPayloadLength int) error {
+	var read int
+	for read != expectedPayloadLength {
+		segment, _, err := readUncompressedFrame(c.r)
+		if err != nil {
+			return fmt.Errorf("failed to read multi-frame frame: %w", err)
+		}
+
+		n, _ := src.Write(segment)
+		read += n
+	}
+
+	return nil
 }
 
 var (

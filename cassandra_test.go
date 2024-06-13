@@ -11,6 +11,7 @@ import (
 	"io"
 	"math"
 	"math/big"
+	"math/rand"
 	"net"
 	"reflect"
 	"strconv"
@@ -3332,4 +3333,50 @@ func TestProtoV5_Batch(t *testing.T) {
 
 	assertEqual(t, "id", results[1].id, 2)
 	assertEqual(t, "text_col", results[1].textCol, "test2")
+}
+
+func TestProtoV5_LongQuery(t *testing.T) {
+	cluster := NewCluster("127.0.0.1")
+	cluster.ProtoVersion = 5
+	//cluster.PoolConfig = gocql.PoolConfig{
+	//	HostSelectionPolicy: &MockedHostSelectionPolicy{},
+	//}
+	cluster.ConnectTimeout = time.Hour
+	cluster.Timeout = time.Hour
+
+	session, err := cluster.CreateSession()
+	if err != nil {
+		panic(err)
+	}
+
+	defer session.Close()
+
+	//longString := randomString(200_000)
+	//
+	//err = session.Query("INSERT INTO ks.test (id, field) VALUES (?, ?)", "1", longString).Exec()
+	//if err != nil {
+	//	panic(err)
+	//}
+
+	result := map[string]interface{}{}
+	err = session.Query("SELECT * FROM ks.test").MapScan(result)
+	if err != nil {
+		panic(err)
+	}
+
+	str := result["field"].(string)
+
+	fmt.Println(str)
+	fmt.Println(len(str))
+}
+
+func randomString(n int) string {
+	source := rand.NewSource(time.Now().UnixMilli())
+	r := rand.New(source)
+	var aplhabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+	buf := make([]byte, n)
+	for i := 0; i < n; i++ {
+		buf[i] = aplhabet[r.Intn(len(aplhabet))]
+	}
+	return string(buf)
 }

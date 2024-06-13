@@ -5,6 +5,7 @@
 package gocql
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
 	"errors"
@@ -380,7 +381,8 @@ type framer struct {
 	// 0 after a read.
 	readBuffer []byte
 
-	buf []byte
+	buf  []byte
+	read int
 
 	customPayload map[string][]byte
 }
@@ -517,6 +519,22 @@ func (f *framer) readFrame(r io.Reader, head *frameHeader) error {
 	}
 
 	f.header = head
+	f.read += n
+	return nil
+}
+
+func (f *framer) readMultiFrame(r io.Reader) error {
+	buf, _, err := readUncompressedFrame(r)
+	if err != nil {
+		return err
+	}
+
+	n, err := io.ReadFull(bytes.NewBuffer(buf), f.buf[f.read:])
+	if err != nil {
+		return fmt.Errorf("unable to read multi frame body: read %d/%d bytes: %v", n, f.read, err)
+	}
+
+	f.read += n
 	return nil
 }
 
