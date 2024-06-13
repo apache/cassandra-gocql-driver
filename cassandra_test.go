@@ -3029,14 +3029,12 @@ func TestDiscoverViaProxy(t *testing.T) {
 	session := createSessionFromCluster(cluster, t)
 	defer session.Close()
 
-	// we shouldnt need this but to be safe
-	time.Sleep(1 * time.Second)
-
 	session.pool.mu.RLock()
+
 	for _, host := range clusterHosts {
 		found := false
 		for _, hi := range session.pool.hostConnPools {
-			if hi.host.ConnectAddress().String() == host {
+			if hi.host.RPCAddress().String() == host {
 				found = true
 				break
 			}
