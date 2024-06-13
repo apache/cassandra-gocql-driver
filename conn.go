@@ -1120,16 +1120,27 @@ func (c *Conn) exec(ctx context.Context, req frameBuilder, tracer Tracer) (*fram
 
 	var n int
 
-	if c.connReady && c.version > protoVersion4 {
-		buf, err := newUncompressedFrame(framer.buf, true)
+	if c.version > protoVersion4 && c.connReady {
+		err = framer.prepareModernLayout()
 		if err != nil {
-			return nil, fmt.Errorf("gocql: failed to create uncompressed frame for stream: %d, err: %w", stream, err)
+			// closeWithError will block waiting for this stream to either receive a response
+			// or for us to timeout.
+			close(call.timeout)
+			// We failed to serialize the frame into a buffer.
+			// This should not affect the connection as we didn't write anything. We just free the current call.
+			c.mu.Lock()
+			if !c.closed {
+				delete(c.calls, call.streamID)
+			}
+			c.mu.Unlock()
+			// We need to release the stream after we remove the call from c.calls, otherwise the existingCall != nil
+			// check above could fail.
+			c.releaseStream(call)
+			return nil, err
 		}
-
-		n, err = c.w.writeContext(ctx, buf)
-	} else {
-		n, err = c.w.writeContext(ctx, framer.buf)
 	}
+
+	n, err = c.w.writeContext(ctx, framer.buf)
 	if err != nil {
 		// closeWithError will block waiting for this stream to either receive a response
 		// or for us to timeout, close the timeout chan here. Im not entirely sure
@@ -1802,9 +1813,9 @@ func (c *Conn) awaitSchemaAgreement(ctx context.Context) (err error) {
 	return fmt.Errorf("gocql: cluster schema versions not consistent: %+v", schemas)
 }
 
-func (c *Conn) recvMultiFrame(ctx context.Context, src io.Writer, expectedPayloadLength int) error {
+func (c *Conn) recvMultiFrame(ctx context.Context, src io.Writer, bytesToRead int) error {
 	var read int
-	for read != expectedPayloadLength {
+	for read != bytesToRead {
 		segment, _, err := readUncompressedFrame(c.r)
 		if err != nil {
 			return fmt.Errorf("failed to read multi-frame frame: %w", err)

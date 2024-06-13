@@ -3336,38 +3336,31 @@ func TestProtoV5_Batch(t *testing.T) {
 }
 
 func TestProtoV5_LongQuery(t *testing.T) {
-	cluster := NewCluster("127.0.0.1")
-	cluster.ProtoVersion = 5
-	//cluster.PoolConfig = gocql.PoolConfig{
-	//	HostSelectionPolicy: &MockedHostSelectionPolicy{},
-	//}
-	cluster.ConnectTimeout = time.Hour
-	cluster.Timeout = time.Hour
+	session := createSession(t, func(config *ClusterConfig) {
+		config.ProtoVersion = 5
+	})
+	defer session.Close()
 
-	session, err := cluster.CreateSession()
-	if err != nil {
-		panic(err)
+	if err := createTable(session, "CREATE TABLE gocql_test.native_v5_long_query(id int, text_col text, PRIMARY KEY (id))"); err != nil {
+		t.Fatal(err)
 	}
 
 	defer session.Close()
 
-	//longString := randomString(200_000)
-	//
-	//err = session.Query("INSERT INTO ks.test (id, field) VALUES (?, ?)", "1", longString).Exec()
-	//if err != nil {
-	//	panic(err)
-	//}
+	longString := randomString(2_000_000)
 
-	result := map[string]interface{}{}
-	err = session.Query("SELECT * FROM ks.test").MapScan(result)
+	err := session.Query("INSERT INTO gocql_test.native_v5_long_query (id, text_col) VALUES (?, ?)", "1", longString).Exec()
 	if err != nil {
-		panic(err)
+		t.Fatal(err)
 	}
 
-	str := result["field"].(string)
+	var result string
+	err = session.Query("SELECT text_col FROM gocql_test.native_v5_long_query").Scan(&result)
+	if err != nil {
+		t.Fatal(err)
+	}
 
-	fmt.Println(str)
-	fmt.Println(len(str))
+	assertEqual(t, "result should equal inserted longString", longString, result)
 }
 
 func randomString(n int) string {

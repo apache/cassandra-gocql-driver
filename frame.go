@@ -767,7 +767,7 @@ func (f *framer) finish() error {
 		return ErrFrameTooBig
 	}
 
-	if f.buf[1]&flagCompress == flagCompress {
+	if f.proto < protoVersion5 && f.buf[1]&flagCompress == flagCompress {
 		if f.compres == nil {
 			panic("compress flag set with no compressor")
 		}
@@ -2081,6 +2081,35 @@ func (f *framer) writeBytesMap(m map[string][]byte) {
 		f.writeString(k)
 		f.writeBytes(v)
 	}
+}
+
+func (f *framer) prepareModernLayout() error {
+	if f.proto < protoVersion5 {
+		panic("Modern layout is not supported with version V4 or less")
+	}
+
+	selfContained := true
+
+	var adjustedBuf []byte
+	for len(f.buf) > maxPayloadSize {
+		frame, err := newUncompressedFrame(f.buf[:maxPayloadSize], false)
+		if err != nil {
+			return err
+		}
+
+		adjustedBuf = append(adjustedBuf, frame...)
+		f.buf = f.buf[maxPayloadSize:]
+		selfContained = false
+	}
+
+	frame, err := newUncompressedFrame(f.buf, selfContained)
+	if err != nil {
+		return err
+	}
+	adjustedBuf = append(adjustedBuf, frame...)
+	f.buf = adjustedBuf
+
+	return nil
 }
 
 func readUncompressedFrame(r io.Reader) ([]byte, bool, error) {
