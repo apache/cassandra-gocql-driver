@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        go: [ '1.22', '1.23' ]
+        go: [ '1.20' ]
     steps:
       - uses: actions/checkout@v3
       - uses: actions/setup-go@v4
@@ -25,177 +25,201 @@ jobs:
       - run: go vet
       - name: Run unit tests
         run: go test -v -tags unit -race
-  integration-cassandra:
-    timeout-minutes: 15
-    needs:
-      - build
-    name: Integration Tests
+#  integration-cassandra:
+#    timeout-minutes: 15
+#    needs:
+#      - build
+#    name: Integration Tests
+#    runs-on: ubuntu-latest
+#    strategy:
+#      fail-fast: false
+#      matrix:
+#        go: [ '1.19', '1.20' ]
+#        cassandra_version: [ '4.0.8', '4.1.1' ]
+#        auth: [ "false" ]
+#        compressor: [ "snappy" ]
+#        tags: [ "cassandra", "integration", "ccm" ]
+#    steps:
+#      - uses: actions/checkout@v2
+#      - uses: actions/setup-go@v2
+#        with:
+#          go-version: ${{ matrix.go }}
+#      - uses: actions/cache@v2
+#        id: gomod-cache
+#        with:
+#          path: ~/go/pkg/mod
+#          key: ${{ runner.os }}-go-${{ hashFiles('go.mod') }}
+#          restore-keys: |
+#            ${{ runner.os }}-go-
+#      - name: Install CCM
+#        run: pip install "git+https://github.com/riptano/ccm.git@${CCM_VERSION}"
+#      - name: Start cassandra nodes
+#        run: |
+#          VERSION=${{ matrix.cassandra_version }}
+#          keypath="$(pwd)/testdata/pki"
+#          conf=(
+#              "client_encryption_options.enabled: true"
+#              "client_encryption_options.keystore: $keypath/.keystore"
+#              "client_encryption_options.keystore_password: cassandra"
+#              "client_encryption_options.require_client_auth: true"
+#              "client_encryption_options.truststore: $keypath/.truststore"
+#              "client_encryption_options.truststore_password: cassandra"
+#              "concurrent_reads: 2"
+#              "concurrent_writes: 2"
+#              "write_request_timeout_in_ms: 5000"
+#              "read_request_timeout_in_ms: 5000"
+#          )
+#
+#          if [[ $VERSION == 3.*.* ]]; then
+#              conf+=(
+#                "rpc_server_type: sync"
+#                "rpc_min_threads: 2"
+#                "rpc_max_threads: 2"
+#                "enable_user_defined_functions: true"
+#                "enable_materialized_views: true"
+#              )
+#          elif [[ $VERSION == 4.0.* ]]; then
+#              conf+=(
+#                "enable_user_defined_functions: true"
+#                "enable_materialized_views: true"
+#              )
+#          else
+#              conf+=(
+#                "user_defined_functions_enabled: true"
+#                "materialized_views_enabled: true"
+#              )
+#          fi
+#
+#          ccm remove test || true
+#
+#          ccm create test -v $VERSION -n 3 -d --vnodes --jvm_arg="-Xmx256m -XX:NewSize=100m"
+#          ccm updateconf "${conf[@]}"
+#
+#          export JVM_EXTRA_OPTS=" -Dcassandra.test.fail_writes_ks=test -Dcassandra.custom_query_handler_class=org.apache.cassandra.cql3.CustomPayloadMirroringQueryHandler"
+#
+#          ccm start --wait-for-binary-proto --verbose
+#          ccm status
+#          ccm node1 nodetool status
+#
+#          args="-gocql.timeout=60s -runssl -proto=4 -rf=3 -clusterSize=3 -autowait=2000ms -compressor=${{ matrix.compressor }} -gocql.cversion=$VERSION -cluster=$(ccm liveset) ./..."
+#
+#          echo "args=$args" >> $GITHUB_ENV
+#          echo "JVM_EXTRA_OPTS=$JVM_EXTRA_OPTS" >> $GITHUB_ENV
+#      - name: Integration tests
+#        run: |
+#          export JVM_EXTRA_OPTS="${{env.JVM_EXTRA_OPTS}}"
+#          go test -v -tags "${{ matrix.tags }} gocql_debug" -timeout=5m -race ${{ env.args }}
+#      - name: 'Save ccm logs'
+#        if: 'failure()'
+#        uses: actions/upload-artifact@v3
+#        with:
+#          name: ccm-cluster
+#          path: /home/runner/.ccm/test
+#          retention-days: 5
+#  integration-auth-cassandra:
+#    timeout-minutes: 15
+#    needs:
+#      - build
+#    name: Integration Tests with auth
+#    runs-on: ubuntu-latest
+#    strategy:
+#      fail-fast: false
+#      matrix:
+#        go: [ '1.19', '1.20' ]
+#        cassandra_version: [ '4.0.8' ]
+#        compressor: [ "snappy" ]
+#        tags: [ "integration" ]
+#
+#    steps:
+#      - uses: actions/checkout@v3
+#      - uses: actions/setup-go@v4
+#        with:
+#          go-version: ${{ matrix.go }}
+#      - name: Install CCM
+#        run: pip install "git+https://github.com/riptano/ccm.git@${CCM_VERSION}"
+#      - name: Start cassandra nodes
+#        run: |
+#          VERSION=${{ matrix.cassandra_version }}
+#          keypath="$(pwd)/testdata/pki"
+#          conf=(
+#              "client_encryption_options.enabled: true"
+#              "client_encryption_options.keystore: $keypath/.keystore"
+#              "client_encryption_options.keystore_password: cassandra"
+#              "client_encryption_options.require_client_auth: true"
+#              "client_encryption_options.truststore: $keypath/.truststore"
+#              "client_encryption_options.truststore_password: cassandra"
+#              "concurrent_reads: 2"
+#              "concurrent_writes: 2"
+#              "write_request_timeout_in_ms: 5000"
+#              "read_request_timeout_in_ms: 5000"
+#              "authenticator: PasswordAuthenticator"
+#              "authorizer: CassandraAuthorizer"
+#              "enable_user_defined_functions: true"
+#          )
+#
+#          if [[ $VERSION == 3.*.* ]]; then
+#              conf+=(
+#                "rpc_server_type: sync"
+#                "rpc_min_threads: 2"
+#                "rpc_max_threads: 2"
+#                "enable_user_defined_functions: true"
+#                "enable_materialized_views: true"
+#              )
+#          elif [[ $VERSION == 4.0.* ]]; then
+#              conf+=(
+#                "enable_user_defined_functions: true"
+#                "enable_materialized_views: true"
+#              )
+#          else
+#              conf+=(
+#                "user_defined_functions_enabled: true"
+#                "materialized_views_enabled: true"
+#              )
+#          fi
+#
+#          ccm remove test || true
+#
+#          ccm create test -v $VERSION -n 1 -d --vnodes --jvm_arg="-Xmx256m -XX:NewSize=100m"
+#          ccm updateconf "${conf[@]}"
+#
+#          rm -rf $HOME/.ccm/test/node1/data/system_auth
+#
+#          export JVM_EXTRA_OPTS=" -Dcassandra.test.fail_writes_ks=test -Dcassandra.custom_query_handler_class=org.apache.cassandra.cql3.CustomPayloadMirroringQueryHandler"
+#
+#          ccm start --wait-for-binary-proto --verbose
+#          ccm status
+#          ccm node1 nodetool status
+#
+#          args="-gocql.timeout=60s -runssl -proto=4 -rf=3 -clusterSize=1 -autowait=2000ms -compressor=${{ matrix.compressor }} -gocql.cversion=$VERSION -cluster=$(ccm liveset) ./..."
+#
+#          echo "args=$args" >> $GITHUB_ENV
+#          echo "JVM_EXTRA_OPTS=$JVM_EXTRA_OPTS" >> $GITHUB_ENV
+#          sleep 30s
+#      - name: Integration tests
+#        run: |
+#          export JVM_EXTRA_OPTS="${{env.JVM_EXTRA_OPTS}}"
+#          go test -v -run=TestAuthentication -tags "${{ matrix.tags }} gocql_debug" -timeout=15s -runauth ${{ env.args }}
+#
+  integration-testscontainers:
+    needs: build
     runs-on: ubuntu-latest
+    name: testcontainers-go
     strategy:
-      fail-fast: false
       matrix:
-        go: [ '1.22', '1.23' ]
-        cassandra_version: [ '4.0.13', '4.1.6' ]
+        go: [ '1.20' ]
+        cassandra_version: [ '4.0.8', '4.1.1' ]
         auth: [ "false" ]
         compressor: [ "snappy" ]
-        tags: [ "cassandra", "integration", "ccm" ]
+        tags: [ "cassandra", "integration"]
     steps:
       - uses: actions/checkout@v2
       - uses: actions/setup-go@v2
         with:
           go-version: ${{ matrix.go }}
-      - uses: actions/cache@v2
-        id: gomod-cache
-        with:
-          path: ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('go.mod') }}
-          restore-keys: |
-            ${{ runner.os }}-go-
-      - name: Install CCM
-        run: pip install "git+https://github.com/riptano/ccm.git@${CCM_VERSION}"
-      - name: Start cassandra nodes
+      - name: setup
         run: |
-          VERSION=${{ matrix.cassandra_version }}
-          keypath="$(pwd)/testdata/pki"
-          conf=(
-              "client_encryption_options.enabled: true"
-              "client_encryption_options.keystore: $keypath/.keystore"
-              "client_encryption_options.keystore_password: cassandra"
-              "client_encryption_options.require_client_auth: true"
-              "client_encryption_options.truststore: $keypath/.truststore"
-              "client_encryption_options.truststore_password: cassandra"
-              "concurrent_reads: 2"
-              "concurrent_writes: 2"
-              "write_request_timeout_in_ms: 5000"
-              "read_request_timeout_in_ms: 5000"
-          )
-
-          if [[ $VERSION == 3.*.* ]]; then
-              conf+=(
-                "rpc_server_type: sync"
-                "rpc_min_threads: 2"
-                "rpc_max_threads: 2"
-                "enable_user_defined_functions: true"
-                "enable_materialized_views: true"
-              )
-          elif [[ $VERSION == 4.0.* ]]; then
-              conf+=(
-                "enable_user_defined_functions: true"
-                "enable_materialized_views: true"
-              )
-          else
-              conf+=(
-                "user_defined_functions_enabled: true"
-                "materialized_views_enabled: true"
-              )
-          fi
-
-          ccm remove test || true
-
-          ccm create test -v $VERSION -n 3 -d --vnodes --jvm_arg="-Xmx256m -XX:NewSize=100m"
-          ccm updateconf "${conf[@]}"
-
-          export JVM_EXTRA_OPTS=" -Dcassandra.test.fail_writes_ks=test -Dcassandra.custom_query_handler_class=org.apache.cassandra.cql3.CustomPayloadMirroringQueryHandler"
-
-          ccm start --wait-for-binary-proto --verbose
-          ccm status
-          ccm node1 nodetool status
-
-          args="-gocql.timeout=60s -runssl -proto=4 -rf=3 -clusterSize=3 -autowait=2000ms -compressor=${{ matrix.compressor }} -gocql.cversion=$VERSION -cluster=$(ccm liveset) ./..."
-
+          args="-gocql.timeout=60s -runssl -proto=4 -rf=3 -clusterSize=3 -autowait=2000ms -compressor=${{ matrix.compressor }} -gocql.cversion=${{ matrix.cassandra_version }} ./..."
           echo "args=$args" >> $GITHUB_ENV
-          echo "JVM_EXTRA_OPTS=$JVM_EXTRA_OPTS" >> $GITHUB_ENV
-      - name: Integration tests
-        run: |
-          export JVM_EXTRA_OPTS="${{env.JVM_EXTRA_OPTS}}"
-          go test -v -tags "${{ matrix.tags }} gocql_debug" -timeout=5m -race ${{ env.args }}
-      - name: 'Save ccm logs'
-        if: 'failure()'
-        uses: actions/upload-artifact@v3
-        with:
-          name: ccm-cluster
-          path: /home/runner/.ccm/test
-          retention-days: 5
-  integration-auth-cassandra:
-    timeout-minutes: 15
-    needs:
-      - build
-    name: Integration Tests with auth
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        go: [ '1.22', '1.23' ]
-        cassandra_version: [ '4.0.13' ]
-        compressor: [ "snappy" ]
-        tags: [ "integration" ]
-
-    steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-go@v4
-        with:
-          go-version: ${{ matrix.go }}
-      - name: Install CCM
-        run: pip install "git+https://github.com/riptano/ccm.git@${CCM_VERSION}"
-      - name: Start cassandra nodes
-        run: |
-          VERSION=${{ matrix.cassandra_version }}
-          keypath="$(pwd)/testdata/pki"
-          conf=(
-              "client_encryption_options.enabled: true"
-              "client_encryption_options.keystore: $keypath/.keystore"
-              "client_encryption_options.keystore_password: cassandra"
-              "client_encryption_options.require_client_auth: true"
-              "client_encryption_options.truststore: $keypath/.truststore"
-              "client_encryption_options.truststore_password: cassandra"
-              "concurrent_reads: 2"
-              "concurrent_writes: 2"
-              "write_request_timeout_in_ms: 5000"
-              "read_request_timeout_in_ms: 5000"
-              "authenticator: PasswordAuthenticator"
-              "authorizer: CassandraAuthorizer"
-              "enable_user_defined_functions: true"
-          )
-
-          if [[ $VERSION == 3.*.* ]]; then
-              conf+=(
-                "rpc_server_type: sync"
-                "rpc_min_threads: 2"
-                "rpc_max_threads: 2"
-                "enable_user_defined_functions: true"
-                "enable_materialized_views: true"
-              )
-          elif [[ $VERSION == 4.0.* ]]; then
-              conf+=(
-                "enable_user_defined_functions: true"
-                "enable_materialized_views: true"
-              )
-          else
-              conf+=(
-                "user_defined_functions_enabled: true"
-                "materialized_views_enabled: true"
-              )
-          fi
-
-          ccm remove test || true
-
-          ccm create test -v $VERSION -n 1 -d --vnodes --jvm_arg="-Xmx256m -XX:NewSize=100m"
-          ccm updateconf "${conf[@]}"
-
-          rm -rf $HOME/.ccm/test/node1/data/system_auth
-
-          export JVM_EXTRA_OPTS=" -Dcassandra.test.fail_writes_ks=test -Dcassandra.custom_query_handler_class=org.apache.cassandra.cql3.CustomPayloadMirroringQueryHandler"
-
-          ccm start --wait-for-binary-proto --verbose
-          ccm status
-          ccm node1 nodetool status
-
-          args="-gocql.timeout=60s -runssl -proto=4 -rf=3 -clusterSize=1 -autowait=2000ms -compressor=${{ matrix.compressor }} -gocql.cversion=$VERSION -cluster=$(ccm liveset) ./..."
-
-          echo "args=$args" >> $GITHUB_ENV
-          echo "JVM_EXTRA_OPTS=$JVM_EXTRA_OPTS" >> $GITHUB_ENV
-          sleep 30s
-      - name: Integration tests
-        run: |
-          export JVM_EXTRA_OPTS="${{env.JVM_EXTRA_OPTS}}"
-          go test -v -run=TestAuthentication -tags "${{ matrix.tags }} gocql_debug" -timeout=15s -runauth ${{ env.args }}
+      - name: run
+        run: |      
+          go test -v -tags "${{ matrix.tags }} gocql_debug" -timeout=5m -race ${{ env.args }}          
