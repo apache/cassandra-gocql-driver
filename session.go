@@ -118,7 +118,7 @@ func addrsToHosts(addrs []string, defaultPort int, logger internalLogger) ([]*Ho
 		if err != nil {
 			// Try other hosts if unable to resolve DNS name
 			if _, ok := err.(*net.DNSError); ok {
-				logger.Error("gocql: dns error: %v\n", NewLogField("err", err.Error()))
+				logger.Error("dns error: %v", NewLogField("err", err.Error()))
 				continue
 			}
 			return nil, err
@@ -231,7 +231,7 @@ func (s *Session) init() error {
 			// TODO(zariel): we really only need this in 1 place
 			s.cfg.ProtoVersion = proto
 			s.connCfg.ProtoVersion = proto
-			s.logger.Info("gocql: discovered protocol version %v.", NewLogField("protocol_version", proto))
+			s.logger.Info("discovered protocol version %v.", NewLogField("protocol_version", proto))
 		}
 
 		if err := s.control.connect(hosts); err != nil {
@@ -253,9 +253,9 @@ func (s *Session) init() error {
 			}
 
 			hosts = filteredHosts
-			s.logger.Info("gocql: refreshed ring: %v.", NewLogField("ring", ringString(hosts)))
+			s.logger.Info("refreshed ring: %v.", NewLogField("ring", ringString(hosts)))
 		} else {
-			s.logger.Info("gocql: not performing a ring refresh because DisableInitialHostLookup is true.")
+			s.logger.Info("not performing a ring refresh because DisableInitialHostLookup is true.")
 		}
 	}
 
@@ -291,7 +291,7 @@ func (s *Session) init() error {
 			continue
 		}
 		if !exists {
-			s.logger.Info("gocql: adding host %v (%v).",
+			s.logger.Info("adding host %v (%v).",
 				NewLogField("host_addr", host.ConnectAddress().String()), NewLogField("host_id", host.HostID()))
 		}
 
@@ -371,7 +371,7 @@ func (s *Session) init() error {
 	s.isInitialized = true
 	s.sessionStateMu.Unlock()
 
-	s.logger.Info("gocql: Session initialized successfully.")
+	s.logger.Info("Session initialized successfully.")
 	return nil
 }
 
@@ -397,17 +397,17 @@ func (s *Session) reconnectDownedHosts(intv time.Duration) {
 	for {
 		select {
 		case <-reconnectTicker.C:
-			s.logger.Debug("gocql: connecting to downed hosts if there is any.")
+			s.logger.Debug("connecting to downed hosts if there is any.")
 			hosts := s.ring.allHosts()
 
 			// Print session.ring for debug.
-			s.logger.Debug("gocql: current ring: %v.", NewLogField("ring", ringString(hosts)))
+			s.logger.Debug("current ring: %v.", NewLogField("ring", ringString(hosts)))
 
 			for _, h := range hosts {
 				if h.IsUp() {
 					continue
 				}
-				s.logger.Info("gocql: reconnecting to downed host %v:%d (%v).",
+				s.logger.Info("reconnecting to downed host %v:%d (%v).",
 					NewLogField("host_addr", h.ConnectAddress().String()),
 					NewLogField("host_port", h.Port()),
 					NewLogField("host_id", h.HostID()))
@@ -563,7 +563,7 @@ func (s *Session) executeQuery(qry *Query) (it *Iter) {
 }
 
 func (s *Session) removeHost(h *HostInfo) {
-	s.logger.Warning("gocql: removing host %v (%v).", NewLogField("host_addr", h.ConnectAddress().String()), NewLogField("host_id", h.HostID()))
+	s.logger.Warning("removing host %v (%v).", NewLogField("host_addr", h.ConnectAddress().String()), NewLogField("host_id", h.HostID()))
 	s.policy.RemoveHost(h)
 	hostID := h.HostID()
 	s.pool.removeHost(hostID)

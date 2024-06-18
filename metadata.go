@@ -1259,7 +1259,7 @@ func (t *typeParser) parse() typeParserResult {
 				decoded, err := hex.DecodeString(*param.name)
 				if err != nil {
 					t.logger.Warning(
-						"gocql: error parsing type '%s', contains collection name '%s' with an invalid format: %v",
+						"error parsing type '%s', contains collection name '%s' with an invalid format: %v",
 						NewLogField("type", t.input),
 						NewLogField("collection_name", *param.name),
 						NewLogField("err", err.Error()),

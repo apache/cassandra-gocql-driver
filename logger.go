@@ -173,7 +173,7 @@ func (recv loggerAdapter) logLegacy(msg string, fields ...LogField) {
 		values[i] = v.Value
 		i++
 	}
-	recv.legacyLogger.Printf(msg, values...)
+	recv.legacyLogger.Printf(strings.Join([]string{"gocql: ", msg, "\n"}, ""), values...)
 }
 
 func (recv loggerAdapter) Error(msg string, fields ...LogField) {

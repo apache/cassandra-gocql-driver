@@ -570,7 +570,7 @@ func (m *clusterMeta) resetTokenRing(partitioner string, hosts []*HostInfo, logg
 	// create a new token ring
 	tokenRing, err := newTokenRing(partitioner, hosts)
 	if err != nil {
-		logger.Warning("gocql: unable to update the token ring due to error: %s", NewLogField("err", err.Error()))
+		logger.Warning("unable to update the token ring due to error: %s", NewLogField("err", err.Error()))
 		return
 	}
 

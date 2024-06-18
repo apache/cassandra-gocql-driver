@@ -488,11 +488,11 @@ func (pool *hostConnPool) logConnectErr(err error) {
 	if opErr, ok := err.(*net.OpError); ok && (opErr.Op == "dial" || opErr.Op == "read") {
 		// connection refused
 		// these are typical during a node outage so avoid log spam.
-		pool.logger.Debug("gocql: unable to dial %s (%s): %v\n",
+		pool.logger.Debug("unable to dial %s (%s): %v",
 			NewLogField("host_addr", pool.host.ConnectAddress()), NewLogField("host_id", pool.host.HostID()), NewLogField("err", err.Error()))
 	} else if err != nil {
 		// unexpected error
-		pool.logger.Debug("gocql: failed to connect to %s (%s) due to error: %v",
+		pool.logger.Debug("failed to connect to %s (%s) due to error: %v",
 			NewLogField("host_addr", pool.host.ConnectAddress()), NewLogField("host_id", pool.host.HostID()), NewLogField("err", err.Error()))
 	}
 }
@@ -500,7 +500,7 @@ func (pool *hostConnPool) logConnectErr(err error) {
 // transition back to a not-filling state.
 func (pool *hostConnPool) fillingStopped(err error) {
 	if err != nil {
-		pool.logger.Warning("gocql: connection pool filling failed %s (%s): %v\n",
+		pool.logger.Warning("connection pool filling failed %s (%s): %v",
 			NewLogField("host_addr", pool.host.ConnectAddress()), NewLogField("host_id", pool.host.HostID()), NewLogField("err", err.Error()))
 		// wait for some time to avoid back-to-back filling
 		// this provides some time between failed attempts
@@ -517,7 +517,7 @@ func (pool *hostConnPool) fillingStopped(err error) {
 
 	// if we errored and the size is now zero, make sure the host is marked as down
 	// see https://github.com/apache/cassandra-gocql-driver/issues/1614
-	pool.logger.Debug("gocql: conns of pool after stopped %s (%s): %v\n",
+	pool.logger.Debug("conns of pool after stopped %s (%s): %v",
 		NewLogField("host_addr", host.ConnectAddress()), NewLogField("host_id", host.HostID()), NewLogField("count", count))
 	if err != nil && count == 0 {
 		if pool.session.cfg.ConvictionPolicy.AddFailure(err, host) {
@@ -574,7 +574,7 @@ func (pool *hostConnPool) connect() (err error) {
 				break
 			}
 		}
-		pool.logger.Warning("gocql: connection failed %s (%s): %v, reconnecting with %v\n",
+		pool.logger.Warning("connection failed %s (%s): %v, reconnecting with %v",
 			NewLogField("host", pool.host.ConnectAddress()),
 			NewLogField("host_id", pool.host.HostID()),
 			NewLogField("err", err.Error()),
@@ -625,7 +625,7 @@ func (pool *hostConnPool) HandleError(conn *Conn, err error, closed bool) {
 		return
 	}
 
-	pool.logger.Info("gocql: pool connection error %v: %v\n",
+	pool.logger.Info("pool connection error %v: %v",
 		NewLogField("addr", conn.addr), NewLogField("err", err.Error()))
 
 	// find the connection index

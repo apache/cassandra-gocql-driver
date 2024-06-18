@@ -330,7 +330,7 @@ func (cfg *ClusterConfig) translateAddressPort(addr net.IP, port int, logger int
 		return addr, port
 	}
 	newAddr, newPort := cfg.AddressTranslator.Translate(addr, port)
-	logger.Debug("gocql: translating address '%v:%d' to '%v:%d'",
+	logger.Debug("translating address '%v:%d' to '%v:%d'",
 		NewLogField("old_addr", addr), NewLogField("old_port", port),
 		NewLogField("new_addr", newAddr), NewLogField("new_port", newPort))
 	return newAddr, newPort

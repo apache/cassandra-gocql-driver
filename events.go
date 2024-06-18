@@ -103,7 +103,7 @@ func (e *eventDebouncer) debounce(frame frame) {
 	if len(e.events) < eventBufferSize {
 		e.events = append(e.events, frame)
 	} else {
-		e.logger.Warning("gocql: %s: buffer full, dropping event frame: %s",
+		e.logger.Warning("%s: buffer full, dropping event frame: %s",
 			NewLogField("event_name", e.name), NewLogField("frame", frame))
 	}
 
@@ -113,11 +113,11 @@ func (e *eventDebouncer) debounce(frame frame) {
 func (s *Session) handleEvent(framer *framer) {
 	frame, err := framer.parseFrame()
 	if err != nil {
-		s.logger.Error("gocql: unable to parse event frame: %v\n", NewLogField("err", err.Error()))
+		s.logger.Error("unable to parse event frame: %v", NewLogField("err", err.Error()))
 		return
 	}
 
-	s.logger.Debug("gocql: handling event frame: %v\n", NewLogField("frame", frame.String()))
+	s.logger.Debug("handling event frame: %v", NewLogField("frame", frame.String()))
 
 	switch f := frame.(type) {
 	case *schemaChangeKeyspace, *schemaChangeFunction,
@@ -127,7 +127,7 @@ func (s *Session) handleEvent(framer *framer) {
 	case *topologyChangeEventFrame, *statusChangeEventFrame:
 		s.nodeEvents.debounce(frame)
 	default:
-		s.logger.Error("gocql: invalid event frame (%v): %v\n",
+		s.logger.Error("invalid event frame (%v): %v",
 			NewLogField("frame_type", fmt.Sprintf("%T", f)), NewLogField("frame", f.String()))
 	}
 }
@@ -180,7 +180,7 @@ func (s *Session) handleNodeEvent(frames []frame) {
 	for _, frame := range frames {
 		switch f := frame.(type) {
 		case *topologyChangeEventFrame:
-			s.logger.Warning("gocql: received topology change event: %v",
+			s.logger.Warning("received topology change event: %v",
 				NewLogField("frame", strings.Join([]string{f.change, "->", f.host.String(), ":", strconv.Itoa(f.port)}, "")))
 			topologyEventReceived = true
 		case *statusChangeEventFrame:
@@ -198,7 +198,7 @@ func (s *Session) handleNodeEvent(frames []frame) {
 	}
 
 	for _, f := range sEvents {
-		s.logger.Info("gocql: dispatching status change event: %v\n",
+		s.logger.Info("dispatching status change event: %v",
 			NewLogField("frame", strings.Join([]string{f.change, "->", f.host.String(), ":", strconv.Itoa(f.port)}, "")))
 
 		// ignore events we received if they were disabled
@@ -217,7 +217,7 @@ func (s *Session) handleNodeEvent(frames []frame) {
 }
 
 func (s *Session) handleNodeUp(eventIp net.IP, eventPort int) {
-	s.logger.Info("gocql: node is UP: %s:%d\n",
+	s.logger.Info("node is UP: %s:%d",
 		NewLogField("event_ip", eventIp.String()), NewLogField("event_port", eventPort))
 
 	host, ok := s.ring.getHostByIP(eventIp.String())
@@ -243,7 +243,7 @@ func (s *Session) startPoolFill(host *HostInfo) {
 }
 
 func (s *Session) handleNodeConnected(host *HostInfo) {
-	s.logger.Debug("gocql: connected to node: %s:%d (%s)\n",
+	s.logger.Debug("connected to node: %s:%d (%s)",
 		NewLogField("host_addr", host.ConnectAddress()), NewLogField("port", host.Port()), NewLogField("host_id", host.HostID()))
 
 	host.setState(NodeUp)
@@ -254,7 +254,7 @@ func (s *Session) handleNodeConnected(host *HostInfo) {
 }
 
 func (s *Session) handleNodeDown(ip net.IP, port int) {
-	s.logger.Warning("gocql: node is DOWN: %s:%d\n",
+	s.logger.Warning("node is DOWN: %s:%d",
 		NewLogField("host_addr", ip.String()), NewLogField("port", port))
 
 	host, ok := s.ring.getHostByIP(ip.String())

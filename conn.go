@@ -721,7 +721,7 @@ func (c *Conn) recv(ctx context.Context) error {
 	delete(c.calls, head.stream)
 	c.mu.Unlock()
 	if call == nil || !ok {
-		c.logger.Warning("gocql: received response for stream which has no handler: header=%v\n", NewLogField("header", head))
+		c.logger.Warning("received response for stream which has no handler: header=%v", NewLogField("header", head))
 		return c.discardFrame(head)
 	} else if head.stream != call.streamID {
 		panic(fmt.Sprintf("call has incorrect streamID: got %d expected %d", call.streamID, head.stream))
@@ -1465,7 +1465,7 @@ func (c *Conn) executeQuery(ctx context.Context, qry *Query) *Iter {
 		iter := &Iter{framer: framer}
 		if err := c.awaitSchemaAgreement(ctx); err != nil {
 			// TODO: should have this behind a flag
-			c.logger.Warning("gocql: error while awaiting for schema agreement after a schema change event: %v", NewLogField("err", err.Error()))
+			c.logger.Warning("error while awaiting for schema agreement after a schema change event: %v", NewLogField("err", err.Error()))
 		}
 		// dont return an error from this, might be a good idea to give a warning
 		// though. The impact of this returning an error would be that the cluster
@@ -1705,7 +1705,7 @@ func (c *Conn) awaitSchemaAgreement(ctx context.Context) (err error) {
 				goto cont
 			}
 			if !isValidPeer(host) || host.schemaVersion == "" {
-				c.logger.Warning("gocql: invalid peer or peer with empty schema_version: peer=%s", NewLogField("peer", host.ConnectAddress()))
+				c.logger.Warning("invalid peer or peer with empty schema_version: peer=%s", NewLogField("peer", host.ConnectAddress()))
 				continue
 			}
 
