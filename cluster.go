@@ -261,9 +261,12 @@ type ClusterConfig struct {
 	// If not specified, Logger will be used instead.
 	StructuredLogger AdvancedLogger
 
-	// MinimumLogLevel for this ClusterConfig.
+	// LegacyLogLevel for this ClusterConfig, this is only applied for legacy loggers (field Logger).
+	// This log level is not applied to StructuredLogger because the log level is already a part of the interface
+	// so the implementation can decide when not to log something.
+	//
 	// If not specified, LogLevelWarn will be used as the default.
-	MinimumLogLevel LogLevel
+	LegacyLogLevel LogLevel
 
 	// internal config for testing
 	disableControlConn bool
@@ -300,19 +303,19 @@ func NewCluster(hosts ...string) *ClusterConfig {
 		ConvictionPolicy:       &SimpleConvictionPolicy{},
 		ReconnectionPolicy:     &ConstantReconnectionPolicy{MaxRetries: 3, Interval: 1 * time.Second},
 		WriteCoalesceWaitTime:  200 * time.Microsecond,
-		MinimumLogLevel:        LogLevelWarn,
+		LegacyLogLevel:         LogLevelWarn,
 	}
 	return cfg
 }
 
 func (cfg *ClusterConfig) newLogger() loggerAdapter {
 	if cfg.StructuredLogger != nil {
-		return newInternalLoggerFromAdvancedLogger(cfg.StructuredLogger, cfg.MinimumLogLevel)
+		return newInternalLoggerFromAdvancedLogger(cfg.StructuredLogger)
 	}
 	if cfg.Logger == nil {
-		return newInternalLoggerFromStdLogger(Logger, cfg.MinimumLogLevel)
+		return newInternalLoggerFromStdLogger(Logger, cfg.LegacyLogLevel)
 	}
-	return newInternalLoggerFromStdLogger(cfg.Logger, cfg.MinimumLogLevel)
+	return newInternalLoggerFromStdLogger(cfg.Logger, cfg.LegacyLogLevel)
 }
 
 // CreateSession initializes the cluster based on this config and returns a

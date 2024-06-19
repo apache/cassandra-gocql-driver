@@ -95,9 +95,9 @@ func (l *defaultLogger) Println(v ...interface{})               { log.Println(v.
 var Logger StdLogger = &defaultLogger{}
 
 var nilInternalLogger internalLogger = loggerAdapter{
-	minimumLogLevel: LogLevelNone,
-	advLogger:       nopLogger{},
-	legacyLogger:    nil,
+	legacyLogLevel: LogLevelNone,
+	advLogger:      nopLogger{},
+	legacyLogger:   nil,
 }
 
 type LogLevel int
@@ -150,13 +150,12 @@ type AdvancedLogger interface {
 
 type internalLogger interface {
 	AdvancedLogger
-	MinimumLogLevel() LogLevel
 }
 
 type loggerAdapter struct {
-	minimumLogLevel LogLevel
-	advLogger       AdvancedLogger
-	legacyLogger    StdLogger
+	legacyLogLevel LogLevel
+	advLogger      AdvancedLogger
+	legacyLogger   StdLogger
 }
 
 func (recv loggerAdapter) logLegacy(msg string, fields ...LogField) {
@@ -177,61 +176,48 @@ func (recv loggerAdapter) logLegacy(msg string, fields ...LogField) {
 }
 
 func (recv loggerAdapter) Error(msg string, fields ...LogField) {
-	if LogLevelError <= recv.minimumLogLevel {
-		if recv.advLogger != nil {
-			recv.advLogger.Error(msg, fields...)
-		} else {
-			recv.logLegacy(msg, fields...)
-		}
+	if recv.advLogger != nil {
+		recv.advLogger.Error(msg, fields...)
+	} else if LogLevelError <= recv.legacyLogLevel {
+		recv.logLegacy(msg, fields...)
 	}
 }
 
 func (recv loggerAdapter) Warning(msg string, fields ...LogField) {
-	if LogLevelWarn <= recv.minimumLogLevel {
-		if recv.advLogger != nil {
-			recv.advLogger.Warning(msg, fields...)
-		} else {
-			recv.logLegacy(msg, fields...)
-		}
+	if recv.advLogger != nil {
+		recv.advLogger.Warning(msg, fields...)
+	} else if LogLevelWarn <= recv.legacyLogLevel {
+		recv.logLegacy(msg, fields...)
 	}
 }
 
 func (recv loggerAdapter) Info(msg string, fields ...LogField) {
-	if LogLevelInfo <= recv.minimumLogLevel {
-		if recv.advLogger != nil {
-			recv.advLogger.Info(msg, fields...)
-		} else {
-			recv.logLegacy(msg, fields...)
-		}
+	if recv.advLogger != nil {
+		recv.advLogger.Info(msg, fields...)
+	} else if LogLevelInfo <= recv.legacyLogLevel {
+		recv.logLegacy(msg, fields...)
 	}
 }
 
 func (recv loggerAdapter) Debug(msg string, fields ...LogField) {
-	if LogLevelDebug <= recv.minimumLogLevel {
-		if recv.advLogger != nil {
-			recv.advLogger.Debug(msg, fields...)
-		} else {
-			recv.logLegacy(msg, fields...)
-		}
+	if recv.advLogger != nil {
+		recv.advLogger.Debug(msg, fields...)
+	} else if LogLevelDebug <= recv.legacyLogLevel {
+		recv.logLegacy(msg, fields...)
 	}
 }
 
-func (recv loggerAdapter) MinimumLogLevel() LogLevel {
-	return recv.minimumLogLevel
-}
-
-func newInternalLoggerFromAdvancedLogger(logger AdvancedLogger, level LogLevel) loggerAdapter {
+func newInternalLoggerFromAdvancedLogger(logger AdvancedLogger) loggerAdapter {
 	return loggerAdapter{
-		minimumLogLevel: level,
-		advLogger:       logger,
-		legacyLogger:    nil,
+		advLogger:    logger,
+		legacyLogger: nil,
 	}
 }
 
 func newInternalLoggerFromStdLogger(logger StdLogger, level LogLevel) loggerAdapter {
 	return loggerAdapter{
-		minimumLogLevel: level,
-		advLogger:       nil,
-		legacyLogger:    logger,
+		legacyLogLevel: level,
+		advLogger:      nil,
+		legacyLogger:   logger,
 	}
 }

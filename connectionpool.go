@@ -156,7 +156,7 @@ func connConfig(cfg *ClusterConfig) (*ConnConfig, error) {
 		Keepalive:        cfg.SocketKeepalive,
 		Logger:           cfg.Logger,
 		StructuredLogger: cfg.StructuredLogger,
-		MinimumLogLevel:  cfg.MinimumLogLevel,
+		LegacyLogLevel:   cfg.LegacyLogLevel,
 	}, nil
 }
 
