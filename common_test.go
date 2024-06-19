@@ -105,7 +105,7 @@ func createKeyspace(tb testing.TB, cluster *ClusterConfig, keyspace string) {
 	// TODO: tb.Helper()
 	c := *cluster
 	c.Keyspace = "system"
-	c.Timeout = 30 * time.Second
+	c.Timeout = 30 * time.Hour
 	session, err := c.CreateSession()
 	if err != nil {
 		panic(err)

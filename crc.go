@@ -7,7 +7,7 @@ var (
 	initialCRC32Bytes = []byte{0xfa, 0x2d, 0x55, 0xca}
 )
 
-func cassandraCrc32(b []byte) uint32 {
+func Checksum(b []byte) uint32 {
 	crc := crc32.NewIEEE()
 	crc.Reset()
 	crc.Write(initialCRC32Bytes)
@@ -20,7 +20,7 @@ const (
 	crc24Poly = 0x1974F0B
 )
 
-func cassandraCrc24(buf []byte) uint32 {
+func KoopmanChecksum(buf []byte) uint32 {
 	crc := crc24Init
 	for _, b := range buf {
 		crc ^= int(b) << 16

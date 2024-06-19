@@ -8,6 +8,7 @@ type Compressor interface {
 	Name() string
 	Encode(data []byte) ([]byte, error)
 	Decode(data []byte) ([]byte, error)
+	DecodeSized(data []byte, size uint32) ([]byte, error)
 }
 
 // SnappyCompressor implements the Compressor interface and can be used to
@@ -25,4 +26,9 @@ func (s SnappyCompressor) Encode(data []byte) ([]byte, error) {
 
 func (s SnappyCompressor) Decode(data []byte) ([]byte, error) {
 	return snappy.Decode(nil, data)
+}
+
+func (s SnappyCompressor) DecodeSized(data []byte, size uint32) ([]byte, error) {
+	buf := make([]byte, size)
+	return snappy.Decode(buf, data)
 }

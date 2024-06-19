@@ -591,7 +591,7 @@ func (c *Conn) recvV5Frame(ctx context.Context) error {
 	var err error
 
 	if c.compressor != nil {
-		// TODO implement reading of compressed frames
+		payload, isSelfContained, err = readCompressedFrame(c.r, c.compressor)
 	} else {
 		payload, isSelfContained, err = readUncompressedFrame(c.r)
 	}
@@ -1815,8 +1815,14 @@ func (c *Conn) awaitSchemaAgreement(ctx context.Context) (err error) {
 
 func (c *Conn) recvMultiFrame(ctx context.Context, src io.Writer, bytesToRead int) error {
 	var read int
+	var segment []byte
+	var err error
 	for read != bytesToRead {
-		segment, _, err := readUncompressedFrame(c.r)
+		if c.compressor != nil {
+			segment, _, err = readCompressedFrame(c.r, c.compressor)
+		} else {
+			segment, _, err = readUncompressedFrame(c.r)
+		}
 		if err != nil {
 			return fmt.Errorf("failed to read multi-frame frame: %w", err)
 		}

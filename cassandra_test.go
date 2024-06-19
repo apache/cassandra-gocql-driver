@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/gocql/gocql/lz4"
 	"io"
 	"math"
 	"math/big"
@@ -3372,4 +3373,36 @@ func randomString(n int) string {
 		buf[i] = aplhabet[r.Intn(len(aplhabet))]
 	}
 	return string(buf)
+}
+
+func TestCompressedQuery(t *testing.T) {
+	session := createSession(t, func(config *ClusterConfig) {
+		config.ProtoVersion = 5
+		config.Compressor = lz4.LZ4Compressor{}
+		config.Timeout = time.Hour
+		config.ConnectTimeout = time.Hour
+		config.WriteTimeout = time.Hour
+	})
+	defer session.Close()
+
+	if err := createTable(session, "CREATE TABLE gocql_test.native_v5_query_compressed(id int, text_col text, PRIMARY KEY (id))"); err != nil {
+		t.Fatal(err)
+	}
+
+	defer session.Close()
+
+	str := randomString(20)
+
+	err := session.Query("INSERT INTO gocql_test.native_v5_query_compressed (id, text_col) VALUES (?, ?)", "1", str).Exec()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var result string
+	err = session.Query("SELECT text_col FROM gocql_test.native_v5_query_compressed").Scan(&result)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	assertEqual(t, "result should equal inserted str", str, result)
 }
