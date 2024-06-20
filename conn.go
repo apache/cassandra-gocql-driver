@@ -394,7 +394,7 @@ func (s *startupCoordinator) setupConn(ctx context.Context) error {
 		return errors.New("gocql: no response to connection startup within timeout")
 	}
 
-	// connection is set up and ready to use native proto v5 if it is set
+	// connection is set up and ready to use native proto v5
 	s.conn.connReady = true
 	return nil
 }
@@ -584,12 +584,15 @@ func (c *Conn) serve(ctx context.Context) {
 	c.closeWithError(err)
 }
 
-// readUncompressedFrame
 func (c *Conn) recvV5Frame(ctx context.Context) error {
-	var payload []byte
-	var isSelfContained bool
-	var err error
+	const frameHeaderLength = 9
+	var (
+		payload         []byte
+		isSelfContained bool
+		err             error
+	)
 
+	// Read frame based on compression
 	if c.compressor != nil {
 		payload, isSelfContained, err = readCompressedFrame(c.r, c.compressor)
 	} else {
@@ -600,7 +603,8 @@ func (c *Conn) recvV5Frame(ctx context.Context) error {
 	}
 
 	if isSelfContained {
-		// TODO handle case when there are more than 1 envelop inside the frame
+		// Handle case when there is more than one envelope inside the frame
+		// TODO: Implement handling for multiple envelopes
 		return c.processFrame(ctx, bytes.NewBuffer(payload))
 	}
 
@@ -609,12 +613,12 @@ func (c *Conn) recvV5Frame(ctx context.Context) error {
 		return err
 	}
 
-	bytesToRead := head.length - len(payload) + 9
+	// Calculate bytes to read
+	bytesToRead := head.length - len(payload) + frameHeaderLength
 
 	buf := bytes.NewBuffer(payload)
 
-	err = c.recvMultiFrame(ctx, buf, bytesToRead)
-	if err != nil {
+	if err = c.recvMultiFrame(buf, bytesToRead); err != nil {
 		return err
 	}
 
@@ -1813,11 +1817,16 @@ func (c *Conn) awaitSchemaAgreement(ctx context.Context) (err error) {
 	return fmt.Errorf("gocql: cluster schema versions not consistent: %+v", schemas)
 }
 
-func (c *Conn) recvMultiFrame(ctx context.Context, src io.Writer, bytesToRead int) error {
-	var read int
-	var segment []byte
-	var err error
+func (c *Conn) recvMultiFrame(src io.Writer, bytesToRead int) error {
+	var (
+		read    int
+		segment []byte
+		err     error
+	)
+
+	// Loop until the total bytes read equals the expected bytes to read
 	for read != bytesToRead {
+		// Read frame based on compression
 		if c.compressor != nil {
 			segment, _, err = readCompressedFrame(c.r, c.compressor)
 		} else {
@@ -1827,6 +1836,7 @@ func (c *Conn) recvMultiFrame(ctx context.Context, src io.Writer, bytesToRead in
 			return fmt.Errorf("failed to read multi-frame frame: %w", err)
 		}
 
+		// Write the segment to the destination writer
 		n, _ := src.Write(segment)
 		read += n
 	}
