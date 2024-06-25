@@ -1160,12 +1160,19 @@ func (c *Conn) exec(ctx context.Context, req frameBuilder, tracer Tracer) (*fram
 		return resp.framer, nil
 	case <-timeoutCh:
 		close(call.timeout)
+		c.logger.Debug("Request timed out on connection %v (%v)",
+			NewLogField("host_id", c.host.HostID()), NewLogField("addr", c.host.ConnectAddress()))
 		c.handleTimeout()
 		return nil, ErrTimeoutNoResponse
 	case <-ctxDone:
+		c.logger.Debug("Request failed because context elapsed out on connection %v (%v): %v",
+			NewLogField("host_id", c.host.HostID()), NewLogField("addr", c.host.ConnectAddress()),
+			NewLogField("ctx_err", ctx.Err().Error()))
 		close(call.timeout)
 		return nil, ctx.Err()
 	case <-c.ctx.Done():
+		c.logger.Debug("Request failed because connection closed %v (%v).",
+			NewLogField("host_id", c.host.HostID()), NewLogField("addr", c.host.ConnectAddress()))
 		close(call.timeout)
 		return nil, ErrConnectionClosed
 	}
