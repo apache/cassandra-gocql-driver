@@ -6,23 +6,38 @@ This guide outlines the process of landing patches in gocql and the general appr
 
 ## Background
 
-The goal of the gocql project is to provide a stable and robust CQL driver for Go. gocql is a community driven project that is coordinated by a small team of core developers.
+The goal of the gocql project is to provide a stable and robust CQL driver for Go.  This is a community driven project that is coordinated by a small team of developers in and around the Apache Cassandra project.  For security, governance and administration issues please refer to the Cassandra Project Management Committee.
 
 ## Minimum Requirement Checklist
 
 The following is a check list of requirements that need to be satisfied in order for us to merge your patch:
 
-* You should raise a pull request to gocql/gocql on Github
+* You should raise a pull request to apache/cassandra-gocql-driver on Github
 * The pull request has a title that clearly summarizes the purpose of the patch
 * The motivation behind the patch is clearly defined in the pull request summary
-* Your name and email have been added to the `AUTHORS` file (for copyright purposes)
+* You agree that your contribution is donated to the Apache Software Foundation (appropriate copyright is on all new files)
 * The patch will merge cleanly
-* The test coverage does not fall below the critical threshold (currently 64%) 
-* The merge commit passes the regression test suite on Travis
+* The test coverage does not fall
+* The merge commit passes the regression test suite on GitHub Actions
 * `go fmt` has been applied to the submitted code
 * Notable changes (i.e. new features or changed behavior, bugfixes) are appropriately documented in CHANGELOG.md, functional changes also in godoc
+* A correctly formatted commit message, see below
 
 If there are any requirements that can't be reasonably satisfied, please state this either on the pull request or as part of discussion on the mailing list. Where appropriate, the core team may apply discretion and make an exception to these requirements.
+
+## Commit Message
+
+The Apache Cassandra project has a commit message precendence like
+```
+<One sentence description, usually Jira title or CHANGES.txt summary>
+
+ patch by <Authors>; reviewed by <Reviewers> for CASSANDRA-#####
+```
+
+The 'patch by …; reviewed by' line is important.  It permits our review-than-commit procedure, allowing commits from non-git-branch patches.  It is also parsed to build the project contribulyse statistics found [here](https://nightlies.apache.org/cassandra/devbranch/misc/contribulyze/html/).
+
+
+Background:  https://cassandra.apache.org/_/development/how_to_commit.html#tips
 
 ## Beyond The Checklist
 
@@ -45,12 +60,3 @@ Generally speaking, a pull request can get merged by any one of the project's co
 ### Supported Features
 
 gocql is a low level wire driver for Cassandra CQL. By and large, we would like to keep the functional scope of the library as narrow as possible. We think that gocql should be tight and focused, and we will be naturally skeptical of things that could just as easily be implemented in a higher layer. Inevitably you will come across something that could be implemented in a higher layer, save for a minor change to the core API. In this instance, please strike up a conversation in the Cassandra community. Chances are we will understand what you are trying to achieve and will try to accommodate this in a maintainable way.
-
-## Officially Supported Server Versions
-
-Currently, the officially supported versions of the Cassandra server include:
-
-* 1.2.18
-* 2.0.9
-
-Chances are that gocql will work with many other versions. If you would like us to support a particular version of Cassandra, please start a conversation about what version you'd like us to consider. We are more likely to accept a new version if you help out by extending the regression suite to cover the new version to be supported.
