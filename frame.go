@@ -1659,6 +1659,9 @@ type writeBatchFrame struct {
 
 	//v4+
 	customPayload map[string][]byte
+
+	//v5+
+	keyspace string
 }
 
 func (w *writeBatchFrame) buildFrame(framer *framer, streamID int) error {
@@ -1718,6 +1721,13 @@ func (f *framer) writeBatchFrame(streamID int, w *writeBatchFrame, customPayload
 			flags |= flagDefaultTimestamp
 		}
 
+		if w.keyspace != "" {
+			if f.proto < protoVersion5 {
+				panic(fmt.Errorf("the keyspace can only be set with protocol 5 or higher"))
+			}
+			flags |= flagWithKeyspace
+		}
+
 		if f.proto > protoVersion4 {
 			f.writeUint(uint32(flags))
 		} else {
@@ -1736,6 +1746,10 @@ func (f *framer) writeBatchFrame(streamID int, w *writeBatchFrame, customPayload
 				ts = time.Now().UnixNano() / 1000
 			}
 			f.writeLong(ts)
+		}
+
+		if w.keyspace != "" {
+			f.writeString(w.keyspace)
 		}
 	}
 

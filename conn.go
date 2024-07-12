@@ -1554,6 +1554,10 @@ func (c *Conn) executeBatch(ctx context.Context, batch *Batch) *Iter {
 		customPayload:         batch.CustomPayload,
 	}
 
+	if c.version > protoVersion4 {
+		req.keyspace = c.currentKeyspace
+	}
+
 	stmts := make(map[string]string, len(batch.Entries))
 
 	for i := 0; i < n; i++ {
