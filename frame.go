@@ -170,14 +170,15 @@ const (
 	flagNoMetaData      int = 0x04
 
 	// query flags
-	flagValues                byte = 0x01
-	flagSkipMetaData          byte = 0x02
-	flagPageSize              byte = 0x04
-	flagWithPagingState       byte = 0x08
-	flagWithSerialConsistency byte = 0x10
-	flagDefaultTimestamp      byte = 0x20
-	flagWithNameValues        byte = 0x40
-	flagWithKeyspace          byte = 0x80
+	flagValues                byte   = 0x01
+	flagSkipMetaData          byte   = 0x02
+	flagPageSize              byte   = 0x04
+	flagWithPagingState       byte   = 0x08
+	flagWithSerialConsistency byte   = 0x10
+	flagDefaultTimestamp      byte   = 0x20
+	flagWithNameValues        byte   = 0x40
+	flagWithKeyspace          byte   = 0x80
+	flagWithNowInSeconds      uint16 = 0x100
 
 	// prepare flags
 	flagWithPreparedKeyspace uint32 = 0x01
@@ -1457,12 +1458,14 @@ type queryParams struct {
 	defaultTimestamp      bool
 	defaultTimestampValue int64
 	// v5+
-	keyspace string
+	keyspace          string
+	nowInSeconds      bool
+	nowInSecondsValue int
 }
 
 func (q queryParams) String() string {
-	return fmt.Sprintf("[query_params consistency=%v skip_meta=%v page_size=%d paging_state=%q serial_consistency=%v default_timestamp=%v values=%v keyspace=%s]",
-		q.consistency, q.skipMeta, q.pageSize, q.pagingState, q.serialConsistency, q.defaultTimestamp, q.values, q.keyspace)
+	return fmt.Sprintf("[query_params consistency=%v skip_meta=%v page_size=%d paging_state=%q serial_consistency=%v default_timestamp=%v values=%v keyspace=%s now_in_seconds=%v]",
+		q.consistency, q.skipMeta, q.pageSize, q.pagingState, q.serialConsistency, q.defaultTimestamp, q.values, q.keyspace, q.nowInSeconds)
 }
 
 func (f *framer) writeQueryParams(opts *queryParams) {
@@ -1512,7 +1515,13 @@ func (f *framer) writeQueryParams(opts *queryParams) {
 	}
 
 	if f.proto > protoVersion4 {
-		f.writeUint(uint32(flags))
+		flags := uint32(flags)
+
+		if opts.nowInSeconds {
+			flags |= uint32(flagWithNowInSeconds)
+		}
+
+		f.writeUint(flags)
 	} else {
 		f.writeByte(flags)
 	}
@@ -1550,13 +1559,17 @@ func (f *framer) writeQueryParams(opts *queryParams) {
 		if opts.defaultTimestampValue != 0 {
 			ts = opts.defaultTimestampValue
 		} else {
-			ts = time.Now().UnixNano() / 1000
+			ts = time.Now().UnixNano() / 1e6
 		}
 		f.writeLong(ts)
 	}
 
 	if opts.keyspace != "" {
 		f.writeString(opts.keyspace)
+	}
+
+	if f.proto > protoVersion4 && opts.nowInSeconds {
+		f.writeInt(int32(opts.nowInSecondsValue))
 	}
 }
 
@@ -1659,6 +1672,11 @@ type writeBatchFrame struct {
 
 	//v4+
 	customPayload map[string][]byte
+
+	//v5+
+	keyspace          string
+	nowInSeconds      bool
+	nowInSecondsValue int
 }
 
 func (w *writeBatchFrame) buildFrame(framer *framer, streamID int) error {
@@ -1719,7 +1737,16 @@ func (f *framer) writeBatchFrame(streamID int, w *writeBatchFrame, customPayload
 		}
 
 		if f.proto > protoVersion4 {
-			f.writeUint(uint32(flags))
+			flags := uint32(flags)
+			if w.keyspace != "" {
+				flags |= uint32(flagWithKeyspace)
+			}
+
+			if w.nowInSeconds {
+				flags |= uint32(flagWithNowInSeconds)
+			}
+
+			f.writeUint(flags)
 		} else {
 			f.writeByte(flags)
 		}
@@ -1736,6 +1763,17 @@ func (f *framer) writeBatchFrame(streamID int, w *writeBatchFrame, customPayload
 				ts = time.Now().UnixNano() / 1000
 			}
 			f.writeLong(ts)
+		}
+
+		if w.keyspace != "" {
+			if f.proto < protoVersion5 {
+				panic(fmt.Errorf("the keyspace can only be set with protocol 5 or higher"))
+			}
+			f.writeString(w.keyspace)
+		}
+
+		if f.proto > protoVersion4 && w.nowInSeconds {
+			f.writeInt(int32(w.nowInSecondsValue))
 		}
 	}
 

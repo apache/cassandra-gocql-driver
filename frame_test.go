@@ -127,3 +127,67 @@ func TestFrameReadTooLong(t *testing.T) {
 		t.Fatalf("expected to get header %v got %v", opReady, head.op)
 	}
 }
+
+func Test_framer_writeQueryParams_nowInSeconds(t *testing.T) {
+	framer := newFramer(nil, protoVersion5)
+	frame := writeExecuteFrame{
+		preparedID: []byte{1, 2, 3},
+		customPayload: map[string][]byte{
+			"key1": []byte("value1"),
+		},
+		params: queryParams{
+			nowInSeconds:      true,
+			nowInSecondsValue: 123,
+		},
+	}
+
+	err := framer.writeExecuteFrame(123, frame.preparedID, &frame.params, &frame.customPayload)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// skipping header
+	framer.buf = framer.buf[9:]
+
+	assertDeepEqual(t, "customPayload", frame.customPayload, framer.readBytesMap())
+	assertDeepEqual(t, "preparedID", frame.preparedID, framer.readShortBytes())
+	assertDeepEqual(t, "constistency", frame.params.consistency, Consistency(framer.readShort()))
+
+	flags := framer.readInt()
+	if flags&int(flagWithNowInSeconds) != int(flagWithNowInSeconds) {
+		t.Fatal("expected flagNowInSeconds to be set, but it is not")
+	}
+
+	assertDeepEqual(t, "nowInSeconds", frame.params.nowInSecondsValue, framer.readInt())
+}
+
+func Test_framer_writeBatchFrame(t *testing.T) {
+	framer := newFramer(nil, protoVersion5)
+	frame := writeBatchFrame{
+		customPayload: map[string][]byte{
+			"key1": []byte("value1"),
+		},
+		nowInSeconds:      true,
+		nowInSecondsValue: 123,
+	}
+
+	err := framer.writeBatchFrame(123, &frame, frame.customPayload)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// skipping header
+	framer.buf = framer.buf[9:]
+
+	assertDeepEqual(t, "customPayload", frame.customPayload, framer.readBytesMap())
+	assertDeepEqual(t, "typ", frame.typ, BatchType(framer.readByte()))
+	assertDeepEqual(t, "len(statements)", len(frame.statements), int(framer.readShort()))
+	assertDeepEqual(t, "consistency", frame.consistency, Consistency(framer.readShort()))
+
+	flags := framer.readInt()
+	if flags&int(flagWithNowInSeconds) != int(flagWithNowInSeconds) {
+		t.Fatal("expected flagNowInSeconds to be set, but it is not")
+	}
+
+	assertDeepEqual(t, "nowInSeconds", frame.nowInSecondsValue, framer.readInt())
+}

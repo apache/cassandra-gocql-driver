@@ -84,3 +84,68 @@ func TestBatch_WithTimestamp(t *testing.T) {
 		t.Errorf("got ts %d, expected %d", storedTs, micros)
 	}
 }
+
+func TestQuery_WithNowInSeconds(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+
+	if session.cfg.ProtoVersion < protoVersion5 {
+		t.Skip("Query now in seconds are only available on protocol >= 5")
+	}
+
+	if err := createTable(session, `CREATE TABLE query_now_in_seconds (id int primary key, val text)`); err != nil {
+		t.Fatal(err)
+	}
+
+	// Using 30 minutes ago timestamp as a starting point for TTL
+	seconds := time.Now().Add(-time.Minute*30).UnixMicro() / 1e6
+
+	err := session.
+		Query("INSERT INTO query_now_in_seconds (id, val) VALUES (?, ?) USING TTL 3600", 1, "val").
+		WithNowInSeconds(int(seconds)).
+		Exec()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var ttl int64
+	if err := session.Query(`SELECT TTL(val) FROM query_now_in_seconds WHERE id = ?`, 1).Scan(&ttl); err != nil {
+		t.Fatal(err)
+	}
+
+	if ttl > 1800 {
+		t.Errorf("got ttl %d, expected <= 1800", ttl)
+	}
+}
+
+func TestBatch_WithNowInSeconds(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+
+	if session.cfg.ProtoVersion < protoVersion5 {
+		t.Skip("Batch now in seconds are only available on protocol >= 5")
+	}
+
+	if err := createTable(session, `CREATE TABLE batch_now_in_seconds (id int primary key, val text)`); err != nil {
+		t.Fatal(err)
+	}
+
+	// Using 30 minutes ago timestamp as a starting point for TTL
+	seconds := time.Now().Add(-time.Minute*30).UnixMicro() / 1e6
+
+	b := session.NewBatch(LoggedBatch)
+	b.WithNowInSeconds(int(seconds))
+	b.Query("INSERT INTO batch_now_in_seconds (id, val) VALUES (?, ?) USING TTL 3600", 1, "val")
+	if err := session.ExecuteBatch(b); err != nil {
+		t.Fatal(err)
+	}
+
+	var ttl int64
+	if err := session.Query(`SELECT TTL(val) FROM batch_now_in_seconds WHERE id = ?`, 1).Scan(&ttl); err != nil {
+		t.Fatal(err)
+	}
+
+	if ttl > 1800 {
+		t.Errorf("got ttl %d, expected <= 1800", ttl)
+	}
+}
