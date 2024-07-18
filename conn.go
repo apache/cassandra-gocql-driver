@@ -26,6 +26,7 @@ package gocql
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/tls"
 	"errors"
@@ -214,6 +215,14 @@ type Conn struct {
 	currentKeyspace string
 	host            *HostInfo
 	isSchemaV2      bool
+
+	// Only for proto v5+.
+	// Indicates if STARTUP has been completed.
+	// github.com/apache/cassandra/blob/trunk/doc/native_protocol_v5.spec
+	// 2.3.1 Initial Handshake
+	// 	In order to support both v5 and earlier formats, the v5 framing format is not
+	//  applied to message exchanges before an initial handshake is completed.
+	startupCompleted bool
 
 	session *Session
 
@@ -474,8 +483,12 @@ func (s *startupCoordinator) startup(ctx context.Context, supported map[string][
 	case error:
 		return v
 	case *readyFrame:
+		// Connection is successfully set up and ready to use Native Protocol v5
+		s.conn.startupCompleted = true
 		return nil
 	case *authenticateFrame:
+		// Connection is successfully set up and ready to use Native Protocol v5
+		s.conn.startupCompleted = true
 		return s.authenticateHandshake(ctx, v)
 	default:
 		return NewErrProtocol("Unknown type of response to startup frame: %s", v)
@@ -593,8 +606,8 @@ func (c *Conn) serve(ctx context.Context) {
 	c.closeWithError(err)
 }
 
-func (c *Conn) discardFrame(head frameHeader) error {
-	_, err := io.CopyN(ioutil.Discard, c, int64(head.length))
+func (c *Conn) discardFrame(r io.Reader, head frameHeader) error {
+	_, err := io.CopyN(ioutil.Discard, r, int64(head.length))
 	if err != nil {
 		return err
 	}
@@ -660,6 +673,16 @@ func (c *Conn) heartBeat(ctx context.Context) {
 }
 
 func (c *Conn) recv(ctx context.Context) error {
+	// If startup is completed and native proto 5+ is set up then we should
+	// unwrap payload body from v5 compressed/uncompressed frame
+	if c.startupCompleted && c.version > protoVersion4 {
+		return c.recvProtoV5Frame(ctx)
+	}
+
+	return c.processFrame(ctx, c)
+}
+
+func (c *Conn) processFrame(ctx context.Context, r io.Reader) error {
 	// not safe for concurrent reads
 
 	// read a full header, ignore timeouts, as this is being ran in a loop
@@ -670,7 +693,7 @@ func (c *Conn) recv(ctx context.Context) error {
 
 	headStartTime := time.Now()
 	// were just reading headers over and over and copy bodies
-	head, err := readHeader(c.r, c.headerBuf[:])
+	head, err := readHeader(r, c.headerBuf[:])
 	headEndTime := time.Now()
 	if err != nil {
 		return err
@@ -694,7 +717,7 @@ func (c *Conn) recv(ctx context.Context) error {
 	} else if head.stream == -1 {
 		// TODO: handle cassandra event frames, we shouldnt get any currently
 		framer := newFramer(c.compressor, c.version)
-		if err := framer.readFrame(c, &head); err != nil {
+		if err := framer.readFrame(r, &head); err != nil {
 			return err
 		}
 		go c.session.handleEvent(framer)
@@ -727,14 +750,14 @@ func (c *Conn) recv(ctx context.Context) error {
 	c.mu.Unlock()
 	if call == nil || !ok {
 		c.logger.Printf("gocql: received response for stream which has no handler: header=%v\n", head)
-		return c.discardFrame(head)
+		return c.discardFrame(r, head)
 	} else if head.stream != call.streamID {
 		panic(fmt.Sprintf("call has incorrect streamID: got %d expected %d", call.streamID, head.stream))
 	}
 
 	framer := newFramer(c.compressor, c.version)
 
-	err = framer.readFrame(c, &head)
+	err = framer.readFrame(r, &head)
 	if err != nil {
 		// only net errors should cause the connection to be closed. Though
 		// cassandra returning corrupt frames will be returned here as well.
@@ -775,6 +798,47 @@ func (c *Conn) handleTimeout() {
 	if TimeoutLimit > 0 && atomic.AddInt64(&c.timeouts, 1) > TimeoutLimit {
 		c.closeWithError(ErrTooManyTimeouts)
 	}
+}
+
+func (c *Conn) recvProtoV5Frame(ctx context.Context) error {
+	var (
+		payload         []byte
+		isSelfContained bool
+		err             error
+	)
+
+	// Read frame based on compression
+	if c.compressor != nil {
+		payload, isSelfContained, err = readCompressedFrame(c.r, c.compressor)
+	} else {
+		payload, isSelfContained, err = readUncompressedFrame(c.r)
+	}
+	if err != nil {
+		return err
+	}
+
+	if isSelfContained {
+		return c.processAllEnvelopesInFrame(ctx, bytes.NewReader(payload))
+	}
+
+	head, err := readHeader(bytes.NewReader(payload), c.headerBuf[:])
+	if err != nil {
+		return err
+	}
+
+	const envelopeHeaderLength = 9
+	buf := bytes.NewBuffer(make([]byte, 0, head.length+envelopeHeaderLength))
+	buf.Write(payload)
+
+	// Computing how many bytes of message left to read
+	bytesToRead := head.length - len(payload) + envelopeHeaderLength
+
+	err = c.recvLastsFrames(buf, bytesToRead)
+	if err != nil {
+		return err
+	}
+
+	return c.processFrame(ctx, buf)
 }
 
 type callReq struct {
@@ -1086,7 +1150,29 @@ func (c *Conn) exec(ctx context.Context, req frameBuilder, tracer Tracer) (*fram
 		return nil, err
 	}
 
-	n, err := c.w.writeContext(ctx, framer.buf)
+	var n int
+
+	if c.version > protoVersion4 && c.startupCompleted {
+		err = framer.prepareModernLayout()
+		if err != nil {
+			// closeWithError will block waiting for this stream to either receive a response
+			// or for us to timeout.
+			close(call.timeout)
+			// We failed to serialize the frame into a buffer.
+			// This should not affect the connection as we didn't write anything. We just free the current call.
+			c.mu.Lock()
+			if !c.closed {
+				delete(c.calls, call.streamID)
+			}
+			c.mu.Unlock()
+			// We need to release the stream after we remove the call from c.calls, otherwise the existingCall != nil
+			// check above could fail.
+			c.releaseStream(call)
+			return nil, err
+		}
+	}
+
+	n, err = c.w.writeContext(ctx, framer.buf)
 	if err != nil {
 		// closeWithError will block waiting for this stream to either receive a response
 		// or for us to timeout, close the timeout chan here. Im not entirely sure
@@ -1223,9 +1309,10 @@ type StreamObserverContext interface {
 }
 
 type preparedStatment struct {
-	id       []byte
-	request  preparedMetadata
-	response resultMetadata
+	id               []byte
+	resultMetadataID []byte
+	request          preparedMetadata
+	response         resultMetadata
 }
 
 type inflightPrepare struct {
@@ -1235,7 +1322,7 @@ type inflightPrepare struct {
 	preparedStatment *preparedStatment
 }
 
-func (c *Conn) prepareStatement(ctx context.Context, stmt string, tracer Tracer) (*preparedStatment, error) {
+func (c *Conn) prepareStatementForKeyspace(ctx context.Context, stmt string, tracer Tracer, keyspace string) (*preparedStatment, error) {
 	stmtCacheKey := c.session.stmtsLRU.keyFor(c.host.HostID(), c.currentKeyspace, stmt)
 	flight, ok := c.session.stmtsLRU.execIfMissing(stmtCacheKey, func(lru *lru.Cache) *inflightPrepare {
 		flight := &inflightPrepare{
@@ -1253,7 +1340,7 @@ func (c *Conn) prepareStatement(ctx context.Context, stmt string, tracer Tracer)
 				statement: stmt,
 			}
 			if c.version > protoVersion4 {
-				prep.keyspace = c.currentKeyspace
+				prep.keyspace = keyspace
 			}
 
 			// we won the race to do the load, if our context is canceled we shouldnt
@@ -1284,7 +1371,8 @@ func (c *Conn) prepareStatement(ctx context.Context, stmt string, tracer Tracer)
 				flight.preparedStatment = &preparedStatment{
 					// defensively copy as we will recycle the underlying buffer after we
 					// return.
-					id: copyBytes(x.preparedID),
+					id:               copyBytes(x.preparedID),
+					resultMetadataID: copyBytes(x.resultMetadataID),
 					// the type info's should _not_ have a reference to the framers read buffer,
 					// therefore we can just copy them directly.
 					request:  x.reqMeta,
@@ -1308,6 +1396,10 @@ func (c *Conn) prepareStatement(ctx context.Context, stmt string, tracer Tracer)
 	case <-flight.done:
 		return flight.preparedStatment, flight.err
 	}
+}
+
+func (c *Conn) prepareStatement(ctx context.Context, stmt string, tracer Tracer) (*preparedStatment, error) {
+	return c.prepareStatementForKeyspace(ctx, stmt, tracer, c.currentKeyspace)
 }
 
 func marshalQueryValue(typ TypeInfo, value interface{}, dst *queryValues) error {
@@ -1347,7 +1439,9 @@ func (c *Conn) executeQuery(ctx context.Context, qry *Query) *Iter {
 		params.pageSize = qry.pageSize
 	}
 	if c.version > protoVersion4 {
-		params.keyspace = c.currentKeyspace
+		params.keyspace = qry.keyspace
+		params.nowInSeconds = qry.nowInSeconds
+		params.nowInSecondsValue = qry.nowInSecondsValue
 	}
 
 	var (
@@ -1358,7 +1452,7 @@ func (c *Conn) executeQuery(ctx context.Context, qry *Query) *Iter {
 	if !qry.skipPrepare && qry.shouldPrepare() {
 		// Prepare all DML queries. Other queries can not be prepared.
 		var err error
-		info, err = c.prepareStatement(ctx, qry.stmt, qry.trace)
+		info, err = c.prepareStatementForKeyspace(ctx, qry.stmt, qry.trace, qry.keyspace)
 		if err != nil {
 			return &Iter{err: err}
 		}
@@ -1394,9 +1488,10 @@ func (c *Conn) executeQuery(ctx context.Context, qry *Query) *Iter {
 		params.skipMeta = !(c.session.cfg.DisableSkipMetadata || qry.disableSkipMetadata)
 
 		frame = &writeExecuteFrame{
-			preparedID:    info.id,
-			params:        params,
-			customPayload: qry.customPayload,
+			preparedID:       info.id,
+			params:           params,
+			customPayload:    qry.customPayload,
+			resultMetadataID: info.resultMetadataID,
 		}
 
 		// Set "keyspace" and "table" property in the query if it is present in preparedMetadata
@@ -1430,6 +1525,24 @@ func (c *Conn) executeQuery(ctx context.Context, qry *Query) *Iter {
 	case *resultVoidFrame:
 		return &Iter{framer: framer}
 	case *resultRowsFrame:
+		if x.meta.newMetadataID != nil {
+			stmtCacheKey := c.session.stmtsLRU.keyFor(c.host.HostID(), c.currentKeyspace, qry.stmt)
+			inflight, ok := c.session.stmtsLRU.get(stmtCacheKey)
+			if !ok {
+				// We didn't find the stmt in the cache, so we just re-prepare it
+				return c.executeQuery(ctx, qry)
+			}
+
+			// Updating the result metadata id in prepared stmt
+			//
+			// If a RESULT/Rows message reports
+			//      changed resultset metadata with the Metadata_changed flag, the reported new
+			//      resultset metadata must be used in subsequent executions
+			inflight.preparedStatment.resultMetadataID = x.meta.newMetadataID
+			inflight.preparedStatment.response = x.meta
+			return c.executeQuery(ctx, qry)
+		}
+
 		iter := &Iter{
 			meta:    x.meta,
 			framer:  framer,
@@ -1554,6 +1667,12 @@ func (c *Conn) executeBatch(ctx context.Context, batch *Batch) *Iter {
 		customPayload:         batch.CustomPayload,
 	}
 
+	if c.version > protoVersion4 {
+		req.keyspace = batch.keyspace
+		req.nowInSeconds = batch.nowInSeconds
+		req.nowInSecondsValue = batch.nowInSecondsValue
+	}
+
 	stmts := make(map[string]string, len(batch.Entries))
 
 	for i := 0; i < n; i++ {
@@ -1561,7 +1680,7 @@ func (c *Conn) executeBatch(ctx context.Context, batch *Batch) *Iter {
 		b := &req.statements[i]
 
 		if len(entry.Args) > 0 || entry.binding != nil {
-			info, err := c.prepareStatement(batch.Context(), entry.Stmt, batch.trace)
+			info, err := c.prepareStatementForKeyspace(batch.Context(), entry.Stmt, batch.trace, batch.keyspace)
 			if err != nil {
 				return &Iter{err: err}
 			}
@@ -1754,6 +1873,41 @@ func (c *Conn) awaitSchemaAgreement(ctx context.Context) (err error) {
 
 	// not exported
 	return fmt.Errorf("gocql: cluster schema versions not consistent: %+v", schemas)
+}
+
+// recvLastsFrames reads proto v5 frames from Conn.r and writes decoded payload to dst.
+// It reads data until the bytesToRead is reached.
+// If Conn.compressor is not nil, it processes Compressed Format frames.
+func (c *Conn) recvLastsFrames(dst *bytes.Buffer, bytesToRead int) error {
+	var read int
+	var segment []byte
+	var err error
+	for read != bytesToRead {
+		// Read frame based on compression
+		if c.compressor != nil {
+			segment, _, err = readCompressedFrame(c.r, c.compressor)
+		} else {
+			segment, _, err = readUncompressedFrame(c.r)
+		}
+		if err != nil {
+			return fmt.Errorf("gocql: failed to read non self-contained frame: %w", err)
+		}
+
+		// Write the segment to the destination writer
+		n, _ := dst.Write(segment)
+		read += n
+	}
+
+	return nil
+}
+
+func (c *Conn) processAllEnvelopesInFrame(ctx context.Context, r *bytes.Reader) error {
+	var err error
+	for r.Len() > 0 && err == nil {
+		err = c.processFrame(ctx, r)
+	}
+
+	return err
 }
 
 var (

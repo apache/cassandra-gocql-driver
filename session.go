@@ -936,6 +936,10 @@ type Query struct {
 
 	// routingInfo is a pointer because Query can be copied and copyable struct can't hold a mutex.
 	routingInfo *queryRoutingInfo
+
+	keyspace          string
+	nowInSeconds      bool
+	nowInSecondsValue int
 }
 
 type queryRoutingInfo struct {
@@ -1423,6 +1427,25 @@ func (q *Query) releaseAfterExecution() {
 	q.decRefCount()
 }
 
+// SetKeyspace will enable keyspace flag on the query.
+// It allows to specify the keyspace that the query should be executed in
+//
+// Only available on protocol >= 5.
+func (q *Query) SetKeyspace(keyspace string) *Query {
+	q.keyspace = keyspace
+	return q
+}
+
+// WithNowInSeconds will enable the with now_in_seconds flag on the query.
+// Also, it allows to define now_in_seconds value.
+//
+// Only available on protocol >= 5.
+func (q *Query) WithNowInSeconds(now int) *Query {
+	q.nowInSeconds = true
+	q.nowInSecondsValue = now
+	return q
+}
+
 // Iter represents an iterator that can be used to iterate over all rows that
 // were returned by a query. The iterator might send additional queries to the
 // database during the iteration if paging was enabled.
@@ -1742,6 +1765,8 @@ type Batch struct {
 	cancelBatch           func()
 	keyspace              string
 	metrics               *queryMetrics
+	nowInSeconds          bool
+	nowInSecondsValue     int
 
 	// routingInfo is a pointer because Query can be copied and copyable struct can't hold a mutex.
 	routingInfo *queryRoutingInfo
@@ -2040,6 +2065,25 @@ func (b *Batch) borrowForExecution() {
 func (b *Batch) releaseAfterExecution() {
 	// empty, because Batch has no equivalent of Query.Release()
 	// that would race with speculative executions.
+}
+
+// SetKeyspace will enable keyspace flag on the query.
+// It allows to specify the keyspace that the query should be executed in
+//
+// Only available on protocol >= 5.
+func (b *Batch) SetKeyspace(keyspace string) *Batch {
+	b.keyspace = keyspace
+	return b
+}
+
+// WithNowInSeconds will enable the with now_in_seconds flag on the query.
+// Also, it allows to define now_in_seconds value.
+//
+// Only available on protocol >= 5.
+func (b *Batch) WithNowInSeconds(now int) *Batch {
+	b.nowInSeconds = true
+	b.nowInSecondsValue = now
+	return b
 }
 
 type BatchType byte

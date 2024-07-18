@@ -32,6 +32,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/stretchr/testify/require"
 	"io"
 	"math"
 	"math/big"
@@ -3287,4 +3288,151 @@ func TestQuery_NamedValues(t *testing.T) {
 	if err := session.Query("SELECT VALUE from gocql_test.named_query WHERE id = :id", NamedValue("id", 1)).Scan(&value); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func TestQuery_WithNowInSeconds(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+
+	if session.cfg.ProtoVersion < protoVersion5 {
+		t.Skip("Query now in seconds are only available on protocol >= 5")
+	}
+
+	if err := createTable(session, `CREATE TABLE query_now_in_seconds (id int primary key, val text)`); err != nil {
+		t.Fatal(err)
+	}
+
+	err := session.Query("INSERT INTO query_now_in_seconds (id, val) VALUES (?, ?) USING TTL 20", 1, "val").
+		WithNowInSeconds(int(0)).
+		Exec()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var remainingTTL int
+	err = session.Query(`SELECT TTL(val) FROM query_now_in_seconds WHERE id = ?`, 1).
+		WithNowInSeconds(10).
+		Scan(&remainingTTL)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	require.Equal(t, remainingTTL, 10)
+}
+
+func TestQuery_SetKeyspace(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+
+	if session.cfg.ProtoVersion < protoVersion5 {
+		t.Skip("keyspace for QUERY message is not supported in protocol < 5")
+	}
+
+	const keyspaceStmt = `
+		CREATE KEYSPACE IF NOT EXISTS gocql_query_keyspace_override_test 
+		WITH replication = {
+			'class': 'SimpleStrategy', 
+			'replication_factor': '1'
+		};
+`
+
+	err := session.Query(keyspaceStmt).Exec()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = createTable(session, "CREATE TABLE IF NOT EXISTS gocql_query_keyspace_override_test.query_keyspace(id int, value text, PRIMARY KEY (id))")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	expectedID := 1
+	expectedText := "text"
+
+	// Testing PREPARE message
+	err = session.Query("INSERT INTO gocql_query_keyspace_override_test.query_keyspace (id, value) VALUES (?, ?)", expectedID, expectedText).Exec()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var (
+		id   int
+		text string
+	)
+
+	q := session.Query("SELECT * FROM gocql_query_keyspace_override_test.query_keyspace").
+		SetKeyspace("gocql_query_keyspace_override_test")
+	err = q.Scan(&id, &text)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	require.Equal(t, expectedID, id)
+	require.Equal(t, expectedText, text)
+
+	// Testing QUERY message
+	id = 0
+	text = ""
+
+	q = session.Query("SELECT * FROM gocql_query_keyspace_override_test.query_keyspace").
+		SetKeyspace("gocql_query_keyspace_override_test")
+	q.skipPrepare = true
+	err = q.Scan(&id, &text)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	require.Equal(t, expectedID, id)
+	require.Equal(t, expectedText, text)
+}
+
+func TestLargeSizeQuery(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+
+	if err := createTable(session, "CREATE TABLE gocql_test.large_size_query(id int, text_col text, PRIMARY KEY (id))"); err != nil {
+		t.Fatal(err)
+	}
+
+	defer session.Close()
+
+	longString := strings.Repeat("a", 500_000)
+
+	err := session.Query("INSERT INTO gocql_test.large_size_query (id, text_col) VALUES (?, ?)", "1", longString).Exec()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var result string
+	err = session.Query("SELECT text_col FROM gocql_test.large_size_query").Scan(&result)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	require.Equal(t, longString, result)
+}
+
+func TestQueryCompressionNotWorthIt(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+
+	if err := createTable(session, "CREATE TABLE gocql_test.compression_now_worth_it(id int, text_col text, PRIMARY KEY (id))"); err != nil {
+		t.Fatal(err)
+	}
+
+	defer session.Close()
+
+	str := "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890!@#$%^&*()_+"
+	err := session.Query("INSERT INTO gocql_test.large_size_query (id, text_col) VALUES (?, ?)", "1", str).Exec()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var result string
+	err = session.Query("SELECT text_col FROM gocql_test.large_size_query").Scan(&result)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	require.Equal(t, str, result)
 }
