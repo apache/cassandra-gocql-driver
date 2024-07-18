@@ -37,8 +37,12 @@ jobs:
         go: [ '1.22', '1.23' ]
         cassandra_version: [ '4.0.13', '4.1.6' ]
         auth: [ "false" ]
-        compressor: [ "snappy" ]
+        compressor: [ "snappy", "lz4" ]
         tags: [ "cassandra", "integration", "ccm" ]
+        proto_version: [ "4", "5" ]
+        exclude:
+          - proto_version: "5"
+            compressor: "snappy"
     steps:
       - uses: actions/checkout@v2
       - uses: actions/setup-go@v2
@@ -102,7 +106,7 @@ jobs:
           ccm status
           ccm node1 nodetool status
 
-          args="-gocql.timeout=60s -runssl -proto=4 -rf=3 -clusterSize=3 -autowait=2000ms -compressor=${{ matrix.compressor }} -gocql.cversion=$VERSION -cluster=$(ccm liveset) ./..."
+          args="-gocql.timeout=60s -runssl -proto=${{ matrix.proto_version }} -rf=3 -clusterSize=3 -autowait=2000ms -compressor=${{ matrix.compressor }} -gocql.cversion=$VERSION -cluster=$(ccm liveset) ./..."
 
           echo "args=$args" >> $GITHUB_ENV
           echo "JVM_EXTRA_OPTS=$JVM_EXTRA_OPTS" >> $GITHUB_ENV
@@ -115,7 +119,7 @@ jobs:
         if: 'failure()'
         uses: actions/upload-artifact@v4
         with:
-          name: ccm-cluster-cassandra-${{ matrix.cassandra_version }}-go-${{ matrix.go }}-tag-${{ matrix.tags }}
+          name: ccm-cluster-cassandra-${{ matrix.cassandra_version }}-go-${{ matrix.go }}-tag-${{ matrix.tags }}-proto-version-${{ matrix.proto_version }}-compressor-${{ matrix.compressor }}
           path: /home/runner/.ccm/test
           retention-days: 5
   integration-auth-cassandra:
@@ -129,9 +133,12 @@ jobs:
       matrix:
         go: [ '1.22', '1.23' ]
         cassandra_version: [ '4.0.13' ]
-        compressor: [ "snappy" ]
+        compressor: [ "snappy", "lz4" ]
         tags: [ "integration" ]
-
+        proto_version: [ "4", "5" ]
+        exclude:
+          - proto_version: "5"
+            compressor: "snappy"
     steps:
       - uses: actions/checkout@v3
       - uses: actions/setup-go@v4
@@ -193,7 +200,7 @@ jobs:
           ccm status
           ccm node1 nodetool status
 
-          args="-gocql.timeout=60s -runssl -proto=4 -rf=3 -clusterSize=1 -autowait=2000ms -compressor=${{ matrix.compressor }} -gocql.cversion=$VERSION -cluster=$(ccm liveset) ./..."
+          args="-gocql.timeout=60s -runssl -proto=${{ matrix.proto_version }} -rf=3 -clusterSize=1 -autowait=2000ms -compressor=${{ matrix.compressor }} -gocql.cversion=$VERSION -cluster=$(ccm liveset) ./..."
 
           echo "args=$args" >> $GITHUB_ENV
           echo "JVM_EXTRA_OPTS=$JVM_EXTRA_OPTS" >> $GITHUB_ENV

@@ -47,6 +47,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/gocql/gocql/internal/streams"
 )
 
@@ -711,12 +713,14 @@ func TestStream0(t *testing.T) {
 	}
 
 	conn := &Conn{
-		r:       bufio.NewReader(&buf),
+		r: &connReader{
+			r: bufio.NewReader(&buf),
+		},
 		streams: streams.New(protoVersion4),
 		logger:  &defaultLogger{},
 	}
 
-	err := conn.recv(context.Background())
+	err := conn.recv(context.Background(), false)
 	if err == nil {
 		t.Fatal("expected to get an error on stream 0")
 	} else if !strings.HasPrefix(err.Error(), expErr) {
@@ -1338,12 +1342,12 @@ func (srv *TestServer) process(conn net.Conn, reqFrame *framer) {
 		id := binary.BigEndian.Uint64(b)
 		// <query_parameters>
 		reqFrame.readConsistency() // <consistency>
-		var flags byte
+		var flags uint32
 		if srv.protocol > protoVersion4 {
 			ui := reqFrame.readInt()
-			flags = byte(ui)
+			flags = uint32(ui)
 		} else {
-			flags = reqFrame.readByte()
+			flags = uint32(reqFrame.readByte())
 		}
 		switch id {
 		case 1:
@@ -1418,4 +1422,98 @@ func (srv *TestServer) readFrame(conn net.Conn) (*framer, error) {
 	}
 
 	return framer, nil
+}
+
+func TestConnProcessAllFramesInSingleSegment(t *testing.T) {
+	server, client, err := tcpConnPair()
+	require.NoError(t, err)
+
+	c := &Conn{
+		r: &connReader{
+			conn: server,
+			r:    bufio.NewReader(server),
+		},
+		calls:      make(map[int]*callReq),
+		version:    protoVersion5,
+		addr:       server.RemoteAddr().String(),
+		streams:    streams.New(protoVersion5),
+		isSchemaV2: true,
+		w: &deadlineContextWriter{
+			w:         server,
+			timeout:   time.Second * 10,
+			semaphore: make(chan struct{}, 1),
+			quit:      make(chan struct{}),
+		},
+		writeTimeout: time.Second * 10,
+	}
+
+	call1 := &callReq{
+		timeout:  make(chan struct{}),
+		streamID: 1,
+		resp:     make(chan callResp),
+	}
+
+	call2 := &callReq{
+		timeout:  make(chan struct{}),
+		streamID: 2,
+		resp:     make(chan callResp),
+	}
+
+	c.calls[1] = call1
+	c.calls[2] = call2
+
+	req := writeQueryFrame{
+		statement: "SELECT * FROM system.local",
+		params: queryParams{
+			consistency: Quorum,
+			keyspace:    "gocql_test",
+		},
+	}
+
+	framer1 := newFramer(nil, protoVersion5)
+	err = req.buildFrame(framer1, 1)
+	require.NoError(t, err)
+
+	framer2 := newFramer(nil, protoVersion5)
+	err = req.buildFrame(framer2, 2)
+	require.NoError(t, err)
+
+	go func() {
+		var buf []byte
+		buf = append(buf, framer1.buf...)
+		buf = append(buf, framer2.buf...)
+
+		uncompressedSegment, err := newUncompressedSegment(buf, true)
+		require.NoError(t, err)
+
+		_, err = client.Write(uncompressedSegment)
+		require.NoError(t, err)
+	}()
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Hour)
+	defer cancel()
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- c.recvSegment(ctx)
+	}()
+
+	go func() {
+		resp1 := <-call1.resp
+		close(call1.timeout)
+		// Skipping here the header of the frame because resp.framer contains already parsed header
+		// and resp.framer.buf contains frame body
+		require.Equal(t, framer1.buf[9:], resp1.framer.buf)
+
+		resp2 := <-call2.resp
+		close(call2.timeout)
+		require.Equal(t, framer2.buf[9:], resp2.framer.buf)
+	}()
+
+	select {
+	case <-ctx.Done():
+		t.Fatal("Timed out waiting for frames")
+	case err := <-errCh:
+		require.NoError(t, err)
+	}
 }

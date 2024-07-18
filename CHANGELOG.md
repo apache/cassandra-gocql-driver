@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Support for Native Protocol 5. Following protocol changes exposed new API 
+  Query.SetKeyspace(), Query.WithNowInSeconds(), Batch.SetKeyspace(), Batch.WithNowInSeconds() (CASSGO-1)
+
 ### Changed
 
 - Don't restrict server authenticator unless PasswordAuthentictor.AllowedAuthenticators is provided (CASSGO-19)
@@ -36,6 +39,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Standardized spelling of datacenter (CASSGO-35)
 
 - Refactor HostInfo creation and ConnectAddress() method (CASSGO-45)
+
+- gocql.Compressor interface changes to follow append-like design. Bumped Go version to 1.19 (CASSGO-1)
 
 ### Fixed
 - Cassandra version unmarshal fix (CASSGO-49)
