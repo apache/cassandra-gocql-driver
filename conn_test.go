@@ -47,6 +47,7 @@ import (
 	"time"
 
 	"github.com/gocql/gocql/internal/streams"
+	"github.com/stretchr/testify/require"
 )
 
 const (
@@ -1299,4 +1300,98 @@ func (srv *TestServer) readFrame(conn net.Conn) (*framer, error) {
 	}
 
 	return framer, nil
+}
+
+func TestConnProcessAllEnvelopesInSingleFrame(t *testing.T) {
+	server, client, err := tcpConnPair()
+	require.NoError(t, err)
+
+	c := &Conn{
+		conn:             server,
+		r:                bufio.NewReader(server),
+		calls:            make(map[int]*callReq),
+		version:          protoVersion5,
+		addr:             server.RemoteAddr().String(),
+		streams:          streams.New(protoVersion5),
+		isSchemaV2:       true,
+		startupCompleted: true,
+		w: &deadlineContextWriter{
+			w:         server,
+			timeout:   time.Second * 10,
+			semaphore: make(chan struct{}, 1),
+			quit:      make(chan struct{}),
+		},
+		logger:       Logger,
+		writeTimeout: time.Second * 10,
+	}
+
+	call1 := &callReq{
+		timeout:  make(chan struct{}),
+		streamID: 1,
+		resp:     make(chan callResp),
+	}
+
+	call2 := &callReq{
+		timeout:  make(chan struct{}),
+		streamID: 2,
+		resp:     make(chan callResp),
+	}
+
+	c.calls[1] = call1
+	c.calls[2] = call2
+
+	req := writeQueryFrame{
+		statement: "SELECT * FROM system.local",
+		params: queryParams{
+			consistency: Quorum,
+			keyspace:    "gocql_test",
+		},
+	}
+
+	framer1 := newFramer(nil, protoVersion5)
+	err = req.buildFrame(framer1, 1)
+	require.NoError(t, err)
+
+	framer2 := newFramer(nil, protoVersion5)
+	err = req.buildFrame(framer2, 2)
+	require.NoError(t, err)
+
+	go func() {
+		var buf []byte
+		buf = append(buf, framer1.buf...)
+		buf = append(buf, framer2.buf...)
+
+		uncompressedFrame, err := newUncompressedFrame(buf, true)
+		require.NoError(t, err)
+
+		_, err = client.Write(uncompressedFrame)
+		require.NoError(t, err)
+	}()
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Hour)
+	defer cancel()
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- c.recvProtoV5Frame(ctx)
+	}()
+
+	go func() {
+		resp1 := <-call1.resp
+		close(call1.timeout)
+		// Skipping here the header of the envelope because resp.framer contains already parsed header
+		// and resp.framer.buf contains envelope body
+		require.Equal(t, framer1.buf[9:], resp1.framer.buf)
+
+		resp2 := <-call2.resp
+		close(call2.timeout)
+		require.Equal(t, framer2.buf[9:], resp2.framer.buf)
+	}()
+
+	select {
+	case <-ctx.Done():
+		t.Fatal("Timed out waiting for frames")
+	case err := <-errCh:
+		require.NoError(t, err)
+	}
 }
