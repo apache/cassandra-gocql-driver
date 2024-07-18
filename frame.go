@@ -942,6 +942,9 @@ type preparedMetadata struct {
 	keyspace string
 
 	table string
+
+	// proto v5+
+	id []byte
 }
 
 func (r preparedMetadata) String() string {
@@ -951,6 +954,10 @@ func (r preparedMetadata) String() string {
 func (f *framer) parsePreparedMetadata() preparedMetadata {
 	// TODO: deduplicate this from parseMetadata
 	meta := preparedMetadata{}
+
+	if f.proto > protoVersion4 {
+		meta.id = copyBytes(f.readShortBytes())
+	}
 
 	meta.flags = f.readInt()
 	meta.colCount = f.readInt()
@@ -1604,6 +1611,9 @@ type writeExecuteFrame struct {
 
 	// v4+
 	customPayload map[string][]byte
+
+	// v5+
+	preparedMetadataID []byte
 }
 
 func (e *writeExecuteFrame) String() string {
@@ -1611,16 +1621,21 @@ func (e *writeExecuteFrame) String() string {
 }
 
 func (e *writeExecuteFrame) buildFrame(fr *framer, streamID int) error {
-	return fr.writeExecuteFrame(streamID, e.preparedID, &e.params, &e.customPayload)
+	return fr.writeExecuteFrame(streamID, e.preparedID, e.preparedMetadataID, &e.params, &e.customPayload)
 }
 
-func (f *framer) writeExecuteFrame(streamID int, preparedID []byte, params *queryParams, customPayload *map[string][]byte) error {
+func (f *framer) writeExecuteFrame(streamID int, preparedID, preparedMetadataID []byte, params *queryParams, customPayload *map[string][]byte) error {
 	if len(*customPayload) > 0 {
 		f.payload()
 	}
 	f.writeHeader(f.flags, opExecute, streamID)
 	f.writeCustomPayload(customPayload)
 	f.writeShortBytes(preparedID)
+
+	if f.proto > protoVersion4 {
+		f.writeShortBytes(preparedMetadataID)
+	}
+
 	if f.proto > protoVersion1 {
 		f.writeQueryParams(params)
 	} else {

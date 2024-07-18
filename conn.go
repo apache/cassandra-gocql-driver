@@ -1394,9 +1394,10 @@ func (c *Conn) executeQuery(ctx context.Context, qry *Query) *Iter {
 		params.skipMeta = !(c.session.cfg.DisableSkipMetadata || qry.disableSkipMetadata)
 
 		frame = &writeExecuteFrame{
-			preparedID:    info.id,
-			params:        params,
-			customPayload: qry.customPayload,
+			preparedID:         info.id,
+			params:             params,
+			customPayload:      qry.customPayload,
+			preparedMetadataID: info.request.id,
 		}
 
 		// Set "keyspace" and "table" property in the query if it is present in preparedMetadata
