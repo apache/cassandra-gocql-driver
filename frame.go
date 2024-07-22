@@ -150,14 +150,14 @@ const (
 	flagNoMetaData      int = 0x04
 
 	// query flags
-	flagValues                byte = 0x01
-	flagSkipMetaData          byte = 0x02
-	flagPageSize              byte = 0x04
-	flagWithPagingState       byte = 0x08
-	flagWithSerialConsistency byte = 0x10
-	flagDefaultTimestamp      byte = 0x20
-	flagWithNameValues        byte = 0x40
-	flagWithKeyspace          byte = 0x80
+	flagValues                uint32 = 0x01
+	flagSkipMetaData                 = 0x02
+	flagPageSize                     = 0x04
+	flagWithPagingState              = 0x08
+	flagWithSerialConsistency        = 0x10
+	flagDefaultTimestamp             = 0x20
+	flagWithNameValues               = 0x40
+	flagWithKeyspace                 = 0x80
 
 	// prepare flags
 	flagWithPreparedKeyspace uint32 = 0x01
@@ -1452,7 +1452,9 @@ func (f *framer) writeQueryParams(opts *queryParams) {
 		return
 	}
 
-	var flags byte
+	var flags uint32
+	names := false
+
 	if len(opts.values) > 0 {
 		flags |= flagValues
 	}
@@ -1468,33 +1470,21 @@ func (f *framer) writeQueryParams(opts *queryParams) {
 	if opts.serialConsistency > 0 {
 		flags |= flagWithSerialConsistency
 	}
-
-	names := false
-
-	// protoV3 specific things
-	if f.proto > protoVersion2 {
-		if opts.defaultTimestamp {
-			flags |= flagDefaultTimestamp
-		}
-
-		if len(opts.values) > 0 && opts.values[0].name != "" {
-			flags |= flagWithNameValues
-			names = true
-		}
+	if opts.defaultTimestamp {
+		flags |= flagDefaultTimestamp
+	}
+	if len(opts.values) > 0 && opts.values[0].name != "" {
+		flags |= flagWithNameValues
+		names = true
+	}
+	if opts.keyspace != "" && f.proto >= protoVersion5 {
+		flags |= flagWithKeyspace
 	}
 
-	if opts.keyspace != "" {
-		if f.proto > protoVersion4 {
-			flags |= flagWithKeyspace
-		} else {
-			panic(fmt.Errorf("the keyspace can only be set with protocol 5 or higher"))
-		}
-	}
-
-	if f.proto > protoVersion4 {
-		f.writeUint(uint32(flags))
+	if f.proto < protoVersion5 {
+		f.writeByte(byte(flags))
 	} else {
-		f.writeByte(flags)
+		f.writeUint(flags)
 	}
 
 	if n := len(opts.values); n > 0 {
@@ -1535,7 +1525,7 @@ func (f *framer) writeQueryParams(opts *queryParams) {
 		f.writeLong(ts)
 	}
 
-	if opts.keyspace != "" {
+	if opts.keyspace != "" && f.proto >= protoVersion5 {
 		f.writeString(opts.keyspace)
 	}
 }
