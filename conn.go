@@ -26,6 +26,7 @@ package gocql
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/tls"
 	"errors"
@@ -214,6 +215,14 @@ type Conn struct {
 	currentKeyspace string
 	host            *HostInfo
 	isSchemaV2      bool
+
+	// Only for proto v5+.
+	// Indicates if Conn is ready to use Native Protocol V5.
+	// github.com/apache/cassandra/blob/trunk/doc/native_protocol_v5.spec
+	// 2.3.1 Initial Handshake
+	// 	In order to support both v5 and earlier formats, the v5 framing format is not
+	//  applied to message exchanges before an initial handshake is completed.
+	connReady bool
 
 	session *Session
 
@@ -474,8 +483,12 @@ func (s *startupCoordinator) startup(ctx context.Context, supported map[string][
 	case error:
 		return v
 	case *readyFrame:
+		// Connection is successfully set up and ready to use Native Protocol v5
+		s.conn.connReady = true
 		return nil
 	case *authenticateFrame:
+		// Connection is successfully set up and ready to use Native Protocol v5
+		s.conn.connReady = true
 		return s.authenticateHandshake(ctx, v)
 	default:
 		return NewErrProtocol("Unknown type of response to startup frame: %s", v)
@@ -593,8 +606,8 @@ func (c *Conn) serve(ctx context.Context) {
 	c.closeWithError(err)
 }
 
-func (c *Conn) discardFrame(head frameHeader) error {
-	_, err := io.CopyN(ioutil.Discard, c, int64(head.length))
+func (c *Conn) discardFrame(r io.Reader, head frameHeader) error {
+	_, err := io.CopyN(ioutil.Discard, r, int64(head.length))
 	if err != nil {
 		return err
 	}
@@ -660,6 +673,16 @@ func (c *Conn) heartBeat(ctx context.Context) {
 }
 
 func (c *Conn) recv(ctx context.Context) error {
+	// If native proto v5+ is used and conn is set up, then we should
+	// unwrap payload body from v5 compressed/uncompressed frame
+	if c.version > protoVersion4 && c.connReady {
+		return c.recvProtoV5Frame(ctx)
+	}
+
+	return c.processFrame(ctx, c)
+}
+
+func (c *Conn) processFrame(ctx context.Context, r io.Reader) error {
 	// not safe for concurrent reads
 
 	// read a full header, ignore timeouts, as this is being ran in a loop
@@ -670,7 +693,7 @@ func (c *Conn) recv(ctx context.Context) error {
 
 	headStartTime := time.Now()
 	// were just reading headers over and over and copy bodies
-	head, err := readHeader(c.r, c.headerBuf[:])
+	head, err := readHeader(r, c.headerBuf[:])
 	headEndTime := time.Now()
 	if err != nil {
 		return err
@@ -694,7 +717,7 @@ func (c *Conn) recv(ctx context.Context) error {
 	} else if head.stream == -1 {
 		// TODO: handle cassandra event frames, we shouldnt get any currently
 		framer := newFramer(c.compressor, c.version)
-		if err := framer.readFrame(c, &head); err != nil {
+		if err := framer.readFrame(r, &head); err != nil {
 			return err
 		}
 		go c.session.handleEvent(framer)
@@ -727,14 +750,14 @@ func (c *Conn) recv(ctx context.Context) error {
 	c.mu.Unlock()
 	if call == nil || !ok {
 		c.logger.Printf("gocql: received response for stream which has no handler: header=%v\n", head)
-		return c.discardFrame(head)
+		return c.discardFrame(r, head)
 	} else if head.stream != call.streamID {
 		panic(fmt.Sprintf("call has incorrect streamID: got %d expected %d", call.streamID, head.stream))
 	}
 
 	framer := newFramer(c.compressor, c.version)
 
-	err = framer.readFrame(c, &head)
+	err = framer.readFrame(r, &head)
 	if err != nil {
 		// only net errors should cause the connection to be closed. Though
 		// cassandra returning corrupt frames will be returned here as well.
@@ -775,6 +798,48 @@ func (c *Conn) handleTimeout() {
 	if TimeoutLimit > 0 && atomic.AddInt64(&c.timeouts, 1) > TimeoutLimit {
 		c.closeWithError(ErrTooManyTimeouts)
 	}
+}
+
+func (c *Conn) recvProtoV5Frame(ctx context.Context) error {
+	var (
+		payload         []byte
+		isSelfContained bool
+		err             error
+	)
+
+	// Read frame based on compression
+	if c.compressor != nil {
+		payload, isSelfContained, err = readCompressedFrame(c.r, c.compressor)
+	} else {
+		payload, isSelfContained, err = readUncompressedFrame(c.r)
+	}
+	if err != nil {
+		return err
+	}
+
+	if isSelfContained {
+		// TODO handle case when there are more than 1 envelop inside the frame
+		return c.processFrame(ctx, bytes.NewBuffer(payload))
+	}
+
+	head, err := readHeader(bytes.NewBuffer(payload), c.headerBuf[:])
+	if err != nil {
+		return err
+	}
+
+	const envelopeHeaderLength = 9
+	buf := bytes.NewBuffer(make([]byte, 0, head.length+envelopeHeaderLength))
+	buf.Write(payload)
+
+	// Computing how many bytes of message left to read
+	bytesToRead := head.length - len(payload) + envelopeHeaderLength
+
+	err = c.recvLastsFrames(buf, bytesToRead)
+	if err != nil {
+		return err
+	}
+
+	return c.processFrame(ctx, buf)
 }
 
 type callReq struct {
@@ -1086,7 +1151,29 @@ func (c *Conn) exec(ctx context.Context, req frameBuilder, tracer Tracer) (*fram
 		return nil, err
 	}
 
-	n, err := c.w.writeContext(ctx, framer.buf)
+	var n int
+
+	if c.version > protoVersion4 && c.connReady {
+		err = framer.prepareModernLayout()
+		if err != nil {
+			// closeWithError will block waiting for this stream to either receive a response
+			// or for us to timeout.
+			close(call.timeout)
+			// We failed to serialize the frame into a buffer.
+			// This should not affect the connection as we didn't write anything. We just free the current call.
+			c.mu.Lock()
+			if !c.closed {
+				delete(c.calls, call.streamID)
+			}
+			c.mu.Unlock()
+			// We need to release the stream after we remove the call from c.calls, otherwise the existingCall != nil
+			// check above could fail.
+			c.releaseStream(call)
+			return nil, err
+		}
+	}
+
+	n, err = c.w.writeContext(ctx, framer.buf)
 	if err != nil {
 		// closeWithError will block waiting for this stream to either receive a response
 		// or for us to timeout, close the timeout chan here. Im not entirely sure
@@ -1223,9 +1310,10 @@ type StreamObserverContext interface {
 }
 
 type preparedStatment struct {
-	id       []byte
-	request  preparedMetadata
-	response resultMetadata
+	id         []byte
+	metadataID []byte
+	request    preparedMetadata
+	response   resultMetadata
 }
 
 type inflightPrepare struct {
@@ -1756,6 +1844,32 @@ func (c *Conn) awaitSchemaAgreement(ctx context.Context) (err error) {
 
 	// not exported
 	return fmt.Errorf("gocql: cluster schema versions not consistent: %+v", schemas)
+}
+
+// recvLastsFrames reads proto v5 frames from Conn.r and writes decoded payload to dst.
+// It reads data until the bytesToRead is reached.
+// If Conn.compressor is not nil, it processes Compressed Format frames.
+func (c *Conn) recvLastsFrames(dst *bytes.Buffer, bytesToRead int) error {
+	var read int
+	var segment []byte
+	var err error
+	for read != bytesToRead {
+		// Read frame based on compression
+		if c.compressor != nil {
+			segment, _, err = readCompressedFrame(c.r, c.compressor)
+		} else {
+			segment, _, err = readUncompressedFrame(c.r)
+		}
+		if err != nil {
+			return fmt.Errorf("gocql: failed to read non self-contained frame: %w", err)
+		}
+
+		// Write the segment to the destination writer
+		n, _ := dst.Write(segment)
+		read += n
+	}
+
+	return nil
 }
 
 var (

@@ -35,6 +35,7 @@ import (
 	"io"
 	"math"
 	"math/big"
+	"math/rand"
 	"net"
 	"reflect"
 	"strconv"
@@ -3287,4 +3288,41 @@ func TestQuery_NamedValues(t *testing.T) {
 	if err := session.Query("SELECT VALUE from gocql_test.named_query WHERE id = :id", NamedValue("id", 1)).Scan(&value); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func TestLargeSizeQuery(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+
+	if err := createTable(session, "CREATE TABLE gocql_test.large_size_query(id int, text_col text, PRIMARY KEY (id))"); err != nil {
+		t.Fatal(err)
+	}
+
+	defer session.Close()
+
+	longString := randomString(2_000_000)
+
+	err := session.Query("INSERT INTO gocql_test.large_size_query (id, text_col) VALUES (?, ?)", "1", longString).Exec()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var result string
+	err = session.Query("SELECT text_col FROM gocql_test.large_size_query").Scan(&result)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	assertEqual(t, "result should equal inserted longString", longString, result)
+}
+
+func randomString(n int) string {
+	source := rand.NewSource(time.Now().UnixMilli())
+	r := rand.New(source)
+	var aplhabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+	buf := make([]byte, n)
+	for i := 0; i < n; i++ {
+		buf[i] = aplhabet[r.Intn(len(aplhabet))]
+	}
+	return string(buf)
 }

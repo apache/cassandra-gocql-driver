@@ -25,7 +25,9 @@
 package gocql
 
 import (
+	"bytes"
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
@@ -524,7 +526,7 @@ func (f *framer) readFrame(r io.Reader, head *frameHeader) error {
 		return fmt.Errorf("unable to read frame body: read %d/%d bytes: %v", n, head.length, err)
 	}
 
-	if head.flags&flagCompress == flagCompress {
+	if f.proto < protoVersion5 && head.flags&flagCompress == flagCompress {
 		if f.compres == nil {
 			return NewErrProtocol("no compressor available with compressed frame body")
 		}
@@ -768,7 +770,7 @@ func (f *framer) finish() error {
 		return ErrFrameTooBig
 	}
 
-	if f.buf[1]&flagCompress == flagCompress {
+	if f.proto < protoVersion5 && f.buf[1]&flagCompress == flagCompress {
 		if f.compres == nil {
 			panic("compress flag set with no compressor")
 		}
@@ -2082,4 +2084,252 @@ func (f *framer) writeBytesMap(m map[string][]byte) {
 		f.writeString(k)
 		f.writeBytes(v)
 	}
+}
+
+func (f *framer) prepareModernLayout() error {
+	// Ensure protocol version is V5 or higher
+	if f.proto < protoVersion5 {
+		panic("Modern layout is not supported with version V4 or less")
+	}
+
+	selfContained := true
+
+	var (
+		adjustedBuf []byte
+		tempBuf     []byte
+		err         error
+	)
+
+	// Process the buffer in chunks if it exceeds the max payload size
+	for len(f.buf) > maxPayloadSize {
+		if f.compres != nil {
+			tempBuf, err = newCompressedFrame(f.buf[:maxPayloadSize], false, f.compres)
+		} else {
+			tempBuf, err = newUncompressedFrame(f.buf[:maxPayloadSize], false)
+		}
+		if err != nil {
+			return err
+		}
+
+		adjustedBuf = append(adjustedBuf, tempBuf...)
+		f.buf = f.buf[maxPayloadSize:]
+		selfContained = false
+	}
+
+	// Process the remaining buffer
+	if f.compres != nil {
+		tempBuf, err = newCompressedFrame(f.buf, selfContained, f.compres)
+	} else {
+		tempBuf, err = newUncompressedFrame(f.buf, selfContained)
+	}
+	if err != nil {
+		return err
+	}
+
+	adjustedBuf = append(adjustedBuf, tempBuf...)
+	f.buf = adjustedBuf
+
+	return nil
+}
+
+func readUncompressedFrame(r io.Reader) ([]byte, bool, error) {
+	const headerSize = 6
+	header := [headerSize + 1]byte{}
+
+	// Read the frame header
+	if _, err := io.ReadFull(r, header[:headerSize]); err != nil {
+		return nil, false, fmt.Errorf("gocql: failed to read uncompressed frame, err: %w", err)
+	}
+
+	// Compute and verify the header CRC24
+	computedHeaderCRC24 := KoopmanChecksum(header[:3])
+	readHeaderCRC24 := binary.LittleEndian.Uint32(header[3:]) & 0xFFFFFF
+	if computedHeaderCRC24 != readHeaderCRC24 {
+		return nil, false, fmt.Errorf("gocql: header crc24 mismatch, computed: %d, got: %d", computedHeaderCRC24, readHeaderCRC24)
+	}
+
+	// Extract the payload length and self-contained flag
+	headerInt := binary.LittleEndian.Uint32(header[:4])
+	payloadLen := int(headerInt & 0x1FFFF)
+	isSelfContained := (headerInt & (1 << 17)) != 0
+
+	// Read the payload
+	payload := make([]byte, payloadLen)
+	if _, err := io.ReadFull(r, payload); err != nil {
+		return nil, false, fmt.Errorf("gocql: failed to read uncompressed frame payload, err: %w", err)
+	}
+
+	// Read and verify the payload CRC32
+	if _, err := io.ReadFull(r, header[:4]); err != nil {
+		return nil, false, fmt.Errorf("gocql: failed to read payload crc32, err: %w", err)
+	}
+
+	computedPayloadCRC32 := ChecksumIEEE(payload)
+	readPayloadCRC32 := binary.LittleEndian.Uint32(header[:4])
+	if computedPayloadCRC32 != readPayloadCRC32 {
+		return nil, false, fmt.Errorf("gocql: payload crc32 mismatch, computed: %d, got: %d", computedPayloadCRC32, readPayloadCRC32)
+	}
+
+	return payload, isSelfContained, nil
+}
+
+const maxPayloadSize = 128*1024 - 1
+
+func newUncompressedFrame(payload []byte, isSelfContained bool) ([]byte, error) {
+	const (
+		headerSize       = 6
+		selfContainedBit = 1 << 17
+	)
+
+	payloadLen := len(payload)
+	if payloadLen > maxPayloadSize {
+		return nil, fmt.Errorf("payload length (%d) exceeds maximum size of 128 KiB", payloadLen)
+	}
+
+	header := make([]byte, headerSize)
+
+	// First 3 bytes: payload length and self-contained flag
+	headerInt := uint32(payloadLen) & 0x1FFFF
+	if isSelfContained {
+		headerInt |= selfContainedBit // Set the self-contained flag
+	}
+
+	// Encode the first 3 bytes as a single little-endian integer
+	header[0] = byte(headerInt)
+	header[1] = byte(headerInt >> 8)
+	header[2] = byte(headerInt >> 16)
+
+	// Calculate CRC24 for the first 3 bytes of the header
+	crc := KoopmanChecksum(header[:3])
+
+	// Encode CRC24 into the next 3 bytes of the header
+	header[3] = byte(crc)
+	header[4] = byte(crc >> 8)
+	header[5] = byte(crc >> 16)
+
+	// Create the frame
+	frameSize := headerSize + payloadLen + 4 // 4 bytes for CRC32
+	frame := make([]byte, frameSize)
+	copy(frame, header)               // Copy the header to the frame
+	copy(frame[headerSize:], payload) // Copy the payload to the frame
+
+	// Calculate CRC32 for the payload
+	payloadCRC32 := ChecksumIEEE(payload)
+	binary.LittleEndian.PutUint32(frame[headerSize+payloadLen:], payloadCRC32)
+
+	return frame, nil
+}
+
+func newCompressedFrame(uncompressedPayload []byte, isSelfContained bool, compressor Compressor) ([]byte, error) {
+	uncompressedLen := len(uncompressedPayload)
+	if uncompressedLen > maxPayloadSize {
+		return nil, fmt.Errorf("uncompressed compressed payload length exceedes max size of frame payload %d/%d", uncompressedLen, maxPayloadSize)
+	}
+
+	compressedPayload, err := compressor.Encode(uncompressedPayload)
+	if err != nil {
+		return nil, err
+	}
+
+	// Skip the first 4 bytes because the size of the uncompressed payload is written in the frame header, not in the
+	// body of the compressed envelope
+	compressedPayload = compressedPayload[4:]
+
+	compressedLen := len(compressedPayload)
+
+	// Compression is not worth it
+	if uncompressedLen < compressedLen {
+		// native_protocol_v5.spec
+		// 2.2
+		//  An uncompressed length of 0 signals that the compressed payload
+		//  should be used as-is and not decompressed.
+		compressedPayload = uncompressedPayload
+		compressedLen = uncompressedLen
+		uncompressedLen = 0
+	}
+
+	// Combine compressed and uncompressed lengths and set the self-contained flag if needed
+	combined := uint64(compressedLen) | uint64(uncompressedLen)<<17
+	if isSelfContained {
+		combined |= 1 << 34
+	}
+
+	var headerBuf [8]byte
+
+	// Write the combined value into the header buffer
+	binary.LittleEndian.PutUint64(headerBuf[:], combined)
+
+	// Create a buffer with enough capacity to hold the header, compressed payload, and checksums
+	buf := bytes.NewBuffer(make([]byte, 0, 8+compressedLen+4))
+
+	// Write the first 5 bytes of the header (compressed and uncompressed sizes)
+	buf.Write(headerBuf[:5])
+
+	// Compute and write the CRC24 checksum of the first 5 bytes
+	headerChecksum := KoopmanChecksum(headerBuf[:5])
+	binary.LittleEndian.PutUint32(headerBuf[:], headerChecksum)
+	buf.Write(headerBuf[:3])
+	buf.Write(compressedPayload)
+
+	// Compute and write the CRC32 checksum of the payload
+	payloadChecksum := ChecksumIEEE(compressedPayload)
+	binary.LittleEndian.PutUint32(headerBuf[:], payloadChecksum)
+	buf.Write(headerBuf[:4])
+
+	return buf.Bytes(), nil
+}
+
+func readCompressedFrame(r io.Reader, compressor Compressor) ([]byte, bool, error) {
+	var (
+		headerBuf [8]byte
+		err       error
+	)
+
+	if _, err = io.ReadFull(r, headerBuf[:]); err != nil {
+		return nil, false, err
+	}
+
+	// Reading checksum from frame header
+	readHeaderChecksum := uint32(headerBuf[5]) | uint32(headerBuf[6])<<8 | uint32(headerBuf[7])<<16
+	if computedHeaderChecksum := KoopmanChecksum(headerBuf[:5]); computedHeaderChecksum != readHeaderChecksum {
+		return nil, false, fmt.Errorf("gocql: crc24 mismatch in frame header, read: %d, computed: %d", readHeaderChecksum, computedHeaderChecksum)
+	}
+
+	// First 17 bits - payload size after compression
+	compressedLen := uint32(headerBuf[0]) | uint32(headerBuf[1])<<8 | uint32(headerBuf[2]&0x1)<<16
+
+	// The next 17 bits - payload size before compression
+	uncompressedLen := (uint32(headerBuf[2]) >> 1) | uint32(headerBuf[3])<<7 | uint32(headerBuf[4]&0b11)<<15
+
+	// Self-contained flag
+	selfContained := (headerBuf[4] & 0b100) != 0
+
+	compressedPayload := make([]byte, compressedLen)
+	if _, err = io.ReadFull(r, compressedPayload); err != nil {
+		return nil, false, err
+	}
+
+	if _, err = io.ReadFull(r, headerBuf[:4]); err != nil {
+		return nil, false, err
+	}
+
+	// Ensuring if payload checksum matches
+	readPayloadChecksum := binary.LittleEndian.Uint32(headerBuf[:4])
+	if computedPayloadChecksum := ChecksumIEEE(compressedPayload); readPayloadChecksum != computedPayloadChecksum {
+		return nil, false, fmt.Errorf("gocql: crc32 mismatch in payload, read: %d, computed: %d", readPayloadChecksum, computedPayloadChecksum)
+	}
+
+	var uncompressedPayload []byte
+	if uncompressedLen > 0 {
+		if uncompressedPayload, err = compressor.DecodeSized(compressedPayload, uncompressedLen); err != nil {
+			return nil, false, err
+		}
+		if uint32(len(uncompressedPayload)) != uncompressedLen {
+			return nil, false, fmt.Errorf("gocql: length mismatch after payload decompression, got %d, expected %d", len(uncompressedPayload), uncompressedLen)
+		}
+	} else {
+		uncompressedPayload = compressedPayload
+	}
+
+	return uncompressedPayload, selfContained, nil
 }
