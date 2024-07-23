@@ -37,7 +37,7 @@ jobs:
         go: [ '1.19', '1.20' ]
         cassandra_version: [ '4.0.8', '4.1.1' ]
         auth: [ "false" ]
-        compressor: [ "snappy" ]
+        compressor: [ "lz4" ]
         tags: [ "cassandra", "integration", "ccm" ]
     steps:
       - uses: actions/checkout@v2
@@ -101,7 +101,7 @@ jobs:
           ccm status
           ccm node1 nodetool status
 
-          args="-gocql.timeout=60s -runssl -proto=4 -rf=3 -clusterSize=3 -autowait=2000ms -compressor=${{ matrix.compressor }} -gocql.cversion=$VERSION -cluster=$(ccm liveset) ./..."
+          args="-gocql.timeout=60s -runssl -proto=5 -rf=3 -clusterSize=3 -autowait=2000ms -compressor=${{ matrix.compressor }} -gocql.cversion=$VERSION -cluster=$(ccm liveset) ./..."
 
           echo "args=$args" >> $GITHUB_ENV
           echo "JVM_EXTRA_OPTS=$JVM_EXTRA_OPTS" >> $GITHUB_ENV
@@ -127,7 +127,7 @@ jobs:
       matrix:
         go: [ '1.19', '1.20' ]
         cassandra_version: [ '4.0.8' ]
-        compressor: [ "snappy" ]
+        compressor: [ "lz4" ]
         tags: [ "integration" ]
 
     steps:
@@ -190,7 +190,7 @@ jobs:
           ccm status
           ccm node1 nodetool status
 
-          args="-gocql.timeout=60s -runssl -proto=4 -rf=3 -clusterSize=1 -autowait=2000ms -compressor=${{ matrix.compressor }} -gocql.cversion=$VERSION -cluster=$(ccm liveset) ./..."
+          args="-gocql.timeout=60s -runssl -proto=5 -rf=3 -clusterSize=1 -autowait=2000ms -compressor=${{ matrix.compressor }} -gocql.cversion=$VERSION -cluster=$(ccm liveset) ./..."
 
           echo "args=$args" >> $GITHUB_ENV
           echo "JVM_EXTRA_OPTS=$JVM_EXTRA_OPTS" >> $GITHUB_ENV
