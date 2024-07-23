@@ -1284,7 +1284,8 @@ func (c *Conn) prepareStatement(ctx context.Context, stmt string, tracer Tracer)
 				flight.preparedStatment = &preparedStatment{
 					// defensively copy as we will recycle the underlying buffer after we
 					// return.
-					id: copyBytes(x.preparedID),
+					id:         copyBytes(x.preparedID),
+					metadataID: copyBytes(x.reqMeta.id),
 					// the type info's should _not_ have a reference to the framers read buffer,
 					// therefore we can just copy them directly.
 					request:  x.reqMeta,
@@ -1394,9 +1395,10 @@ func (c *Conn) executeQuery(ctx context.Context, qry *Query) *Iter {
 		params.skipMeta = !(c.session.cfg.DisableSkipMetadata || qry.disableSkipMetadata)
 
 		frame = &writeExecuteFrame{
-			preparedID:    info.id,
-			params:        params,
-			customPayload: qry.customPayload,
+			preparedID:         info.id,
+			preparedMetadataID: info.metadataID,
+			params:             params,
+			customPayload:      qry.customPayload,
 		}
 
 		// Set "keyspace" and "table" property in the query if it is present in preparedMetadata
