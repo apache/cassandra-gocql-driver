@@ -133,6 +133,7 @@ type HostInfo struct {
 	state            nodeState
 	schemaVersion    string
 	tokens           []string
+	isRackNil        bool
 }
 
 func (h *HostInfo) Equal(host *HostInfo) bool {
@@ -460,9 +461,18 @@ func (s *Session) hostInfoFromMap(row map[string]interface{}, host *HostInfo) (*
 				return nil, fmt.Errorf(assertErrorMsg, "data_center")
 			}
 		case "rack":
-			host.rack, ok = value.(string)
+			rack, ok := value.(*string)
 			if !ok {
-				return nil, fmt.Errorf(assertErrorMsg, "rack")
+				host.rack, ok = value.(string)
+				if !ok {
+					return nil, fmt.Errorf(assertErrorMsg, "rack")
+				}
+			} else {
+				if rack != nil {
+					host.rack = *rack
+				} else {
+					host.isRackNil = true
+				}
 			}
 		case "host_id":
 			hostId, ok := value.(UUID)
@@ -649,7 +659,7 @@ func isValidPeer(host *HostInfo) bool {
 	return !(len(host.RPCAddress()) == 0 ||
 		host.hostId == "" ||
 		host.dataCenter == "" ||
-		host.rack == "" ||
+		host.isRackNil ||
 		len(host.tokens) == 0)
 }
 
