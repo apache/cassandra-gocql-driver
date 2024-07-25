@@ -69,6 +69,13 @@ configure_cassandra() {
     "concurrent_writes:2"
   )
 
+  if [[ $AUTH_TEST == true ]]; then
+    conf+=(
+      "authenticator: PasswordAuthenticator"
+      "authorizer: CassandraAuthorizer"
+        )
+  fi
+
   if [[ $CASS_VERSION == 3.*.* ]]; then
     conf+=(
       "rpc_server_type:sync"
