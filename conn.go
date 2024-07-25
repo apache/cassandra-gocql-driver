@@ -1689,36 +1689,37 @@ func (c *Conn) querySystemLocal(ctx context.Context) *Iter {
 func (c *Conn) awaitSchemaAgreement(ctx context.Context) (err error) {
 	const localSchemas = "SELECT schema_version FROM system.local WHERE key='local'"
 
-	var versions map[string]struct{}
+	versions := make(map[string]struct{})
 	var schemaVersion string
 
 	endDeadline := time.Now().Add(c.session.cfg.MaxWaitSchemaAgreement)
 
 	for time.Now().Before(endDeadline) {
-		iter := c.querySystemPeers(ctx, c.host.version)
+		iter := &Iter{}
+		if !c.session.cfg.DisableHostLookup {
+			iter = c.querySystemPeers(ctx, c.host.version)
 
-		versions = make(map[string]struct{})
-
-		rows, err := iter.SliceMap()
-		if err != nil {
-			goto cont
-		}
-
-		for _, row := range rows {
-			host, err := c.session.hostInfoFromMap(row, &HostInfo{connectAddress: c.host.ConnectAddress(), port: c.session.cfg.Port})
+			rows, err := iter.SliceMap()
 			if err != nil {
 				goto cont
 			}
-			if !isValidPeer(host) || host.schemaVersion == "" {
-				c.logger.Printf("invalid peer or peer with empty schema_version: peer=%q", host)
-				continue
+
+			for _, row := range rows {
+				host, err := c.session.hostInfoFromMap(row, &HostInfo{connectAddress: c.host.ConnectAddress(), port: c.session.cfg.Port})
+				if err != nil {
+					goto cont
+				}
+				if !isValidPeer(host) || host.schemaVersion == "" {
+					c.logger.Printf("invalid peer or peer with empty schema_version: peer=%q", host)
+					continue
+				}
+
+				versions[host.schemaVersion] = struct{}{}
 			}
 
-			versions[host.schemaVersion] = struct{}{}
-		}
-
-		if err = iter.Close(); err != nil {
-			goto cont
+			if err = iter.Close(); err != nil {
+				goto cont
+			}
 		}
 
 		iter = c.query(ctx, localSchemas)

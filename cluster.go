@@ -189,12 +189,12 @@ type ClusterConfig struct {
 	// set to 10.0.0.1 which is what will be used to connect to.
 	IgnorePeerAddr bool
 
-	// If DisableInitialHostLookup then the driver will not attempt to get host info
+	// If DisableHostLookup then the driver will not attempt to get host info
 	// from the system.peers table, this will mean that the driver will connect to
 	// hosts supplied and will not attempt to lookup the hosts information, this will
 	// mean that data_centre, rack and token information will not be available and as
 	// such host filtering and token aware query routing will not be available.
-	DisableInitialHostLookup bool
+	DisableHostLookup bool
 
 	// Configure events the driver will register for
 	Events struct {
