@@ -103,3 +103,56 @@ func TestFrameReadTooLong(t *testing.T) {
 		t.Fatalf("expected to get header %v got %v", opReady, head.op)
 	}
 }
+
+func TestV5FuzzBugs(t *testing.T) {
+	// these inputs are found using go-fuzz (https://github.com/dvyukov/go-fuzz)
+	// and should cause a panic unless fixed.
+	tests := [][]int{
+		{0, 0, 0, 0, 0, 160, 0, 0, 0},
+		{128, 0, 0, 14, 0, 0, 0, 0, 0, 0, 0},
+		{128, 0, 0, 0, 0, 0, 9, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+		{160, 255, 1, 174, 239, 113, 69, 242, 26},
+		{130, 48, 48, 8, 0, 0, 0, 99, 0, 0, 0, 2, 48, 48, 48, 1, 0, 0, 0, 3,
+			0, 10, 48, 48, 48, 48, 48, 48, 48, 48, 48, 0, 20, 48, 48, 48, 48, 48,
+			48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 0, 2, 48, 48, 48, 0, 7, 48,
+			48, 48, 48, 48, 48, 0, 5, 48, 48, 48, 48, 48, 48, 255, 48, 48, 48,
+			48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48},
+		{130, 230, 48, 0, 0, 0, 0, 48},
+		{130, 48, 48, 8, 0, 0, 0, 8, 48, 0, 0, 0, 4, 48, 48, 48},
+		{130, 48, 48, 0, 0, 0, 0, 16, 48, 0, 0, 18, 0, 0, 48, 48, 48, 48, 48},
+		{131, 48, 48, 48, 8, 0, 0, 0, 20, 0, 0, 0, 2, 48, 48, 48, 48, 48,
+			48, 48, 48},
+		{131, 48, 48, 48, 8, 0, 0, 0, 48, 0, 0, 0, 4, 0, 16, 48, 48, 48, 48,
+			48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 101, 48, 48, 48, 48, 48,
+			128, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48},
+	}
+
+	for i, test := range tests {
+		t.Logf("test %d input: %v", i, test)
+
+		byteTest := make([]byte, len(test))
+		for j, v := range test {
+			byteTest[j] = byte(v)
+		}
+
+		r := bytes.NewReader(byteTest)
+		head, err := readHeader(r, make([]byte, 9))
+		if err != nil {
+			continue
+		}
+
+		framer := newFramer(nil, byte(head.version))
+		err = framer.readFrame(r, &head)
+		if err != nil {
+			continue
+		}
+
+		frame, err := framer.parseFrame()
+		if err != nil {
+			continue
+		}
+
+		t.Errorf("(%d) expected to fail for input % X", i, test)
+		t.Errorf("(%d) frame=%+#v", i, frame)
+	}
+}
