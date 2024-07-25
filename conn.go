@@ -1898,20 +1898,20 @@ func (c *Conn) querySystemLocal(ctx context.Context) *Iter {
 func (c *Conn) awaitSchemaAgreement(ctx context.Context) (err error) {
 	const localSchemas = "SELECT schema_version FROM system.local WHERE key='local'"
 
-	var versions map[string]struct{}
+	versions := make(map[string]struct{})
 	var schemaVersion string
 
 	endDeadline := time.Now().Add(c.session.cfg.MaxWaitSchemaAgreement)
 
 	for time.Now().Before(endDeadline) {
-		iter := c.querySystemPeers(ctx, c.host.version)
+		iter := &Iter{}
+		if !c.session.cfg.DisableHostLookup {
+			iter = c.querySystemPeers(ctx, c.host.version)
 
-		versions = make(map[string]struct{})
-
-		rows, err := iter.SliceMap()
-		if err != nil {
-			goto cont
-		}
+			rows, err := iter.SliceMap()
+			if err != nil {
+				goto cont
+			}
 
 		for _, row := range rows {
 			h, err := NewHostInfo(c.host.ConnectAddress(), c.session.cfg.Port)
@@ -1927,11 +1927,12 @@ func (c *Conn) awaitSchemaAgreement(ctx context.Context) (err error) {
 				continue
 			}
 
-			versions[host.schemaVersion] = struct{}{}
-		}
+				versions[host.schemaVersion] = struct{}{}
+			}
 
-		if err = iter.Close(); err != nil {
-			goto cont
+			if err = iter.Close(); err != nil {
+				goto cont
+			}
 		}
 
 		iter = c.query(ctx, localSchemas)
