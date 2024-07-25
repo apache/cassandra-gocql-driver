@@ -22,6 +22,29 @@ func TestMain(m *testing.M) {
 
 	flag.Parse()
 
+	cassandraVersion := flagCassVersion.String()[1:]
+
+	jvmOpts := "-Dcassandra.test.fail_writes_ks=test -Dcassandra.custom_query_handler_class=org.apache.cassandra.cql3.CustomPayloadMirroringQueryHandler"
+	if *clusterSize == 1 {
+		// speeds up the creation of a single-node cluster.
+		jvmOpts += " -Dcassandra.initial_token=0 -Dcassandra.skip_wait_for_gossip_to_settle=0"
+	}
+
+	env := map[string]string{
+		"JVM_OPTS":                  jvmOpts,
+		"CASSANDRA_SEEDS":           "cassandra1",
+		"CASSANDRA_DC":              "datacenter1",
+		"HEAP_NEWSIZE":              "100M",
+		"MAX_HEAP_SIZE":             "256M",
+		"CASSANDRA_RACK":            "rack1",
+		"CASSANDRA_ENDPOINT_SNITCH": "GossipingPropertyFileSnitch",
+		"CASS_VERSION":              cassandraVersion,
+	}
+
+	if *flagRunAuthTest {
+		env["AUTH_TEST"] = "true"
+	}
+
 	networkRequest := testcontainers.GenericNetworkRequest{
 		NetworkRequest: testcontainers.NetworkRequest{
 			Name: "cassandra",
@@ -33,22 +56,12 @@ func TestMain(m *testing.M) {
 	}
 	defer cassandraNetwork.Remove(ctx)
 
-	cassandraVersion := flagCassVersion.String()[1:]
 	// Function to create a Cassandra container (node)
 	createCassandraContainer := func(number int) (string, error) {
 		req := testcontainers.ContainerRequest{
 			Image:        "cassandra:" + cassandraVersion,
 			ExposedPorts: []string{"9042/tcp"},
-			Env: map[string]string{
-				"JVM_OPTS":                  "-Dcassandra.test.fail_writes_ks=test -Dcassandra.custom_query_handler_class=org.apache.cassandra.cql3.CustomPayloadMirroringQueryHandler",
-				"CASSANDRA_SEEDS":           "cassandra1",
-				"CASSANDRA_DC":              "datacenter1",
-				"HEAP_NEWSIZE":              "100M",
-				"MAX_HEAP_SIZE":             "256M",
-				"CASSANDRA_RACK":            "rack1",
-				"CASSANDRA_ENDPOINT_SNITCH": "GossipingPropertyFileSnitch",
-				"CASS_VERSION":              cassandraVersion,
-			},
+			Env:          env,
 			Files: []testcontainers.ContainerFile{
 				{
 					HostFilePath:      "./testdata/pki/.keystore",
@@ -71,7 +84,7 @@ func TestMain(m *testing.M) {
 			LifecycleHooks: []testcontainers.ContainerLifecycleHooks{{
 				PostStarts: []testcontainers.ContainerHook{
 					func(ctx context.Context, c testcontainers.Container) error {
-						// wait for cassandra config to initialize
+						// wait for cassandra config.yaml to initialize
 						time.Sleep(100 * time.Millisecond)
 
 						code, _, err := c.Exec(ctx, []string{"bash", "./update_container_cass_config.sh"})
@@ -118,6 +131,11 @@ func TestMain(m *testing.M) {
 		}
 
 		*flagCluster += ip
+	}
+
+	if *flagRunAuthTest {
+		// it requires additional time to properly build Cassandra with authentication.
+		time.Sleep(10 * time.Second)
 	}
 
 	// run all tests
