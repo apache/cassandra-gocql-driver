@@ -44,7 +44,7 @@ import (
 	"time"
 	"unicode"
 
-	inf "gopkg.in/inf.v0"
+	"gopkg.in/inf.v0"
 )
 
 func TestEmptyHosts(t *testing.T) {
@@ -2016,6 +2016,24 @@ func TestGetKeyspaceMetadata(t *testing.T) {
 	}
 	if rfInt != *flagRF {
 		t.Errorf("Expected replication factor to be %d but was %d", *flagRF, rfInt)
+	}
+}
+
+func TestGetVirtualKeyspaceMetadata(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+
+	virtualKeyspaceMatadata, err := session.VirtualKeyspaceMetadata("system_views")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(virtualKeyspaceMatadata.Tables) == 0 {
+		t.Fatal("virtualKeyspaceMatadata.Tables is empty")
+	}
+	for _, table := range virtualKeyspaceMatadata.Tables {
+		if table.Keyspace != "system_views" {
+			t.Fatalf("Expected table keyspace to be 'system_views' but got '%s'", table.Keyspace)
+		}
 	}
 }
 
