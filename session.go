@@ -13,7 +13,7 @@
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
- * limitations under the Lficense.
+ * limitations under the License.
  */
 /*
  * Content before git sha 34fdeebefcbf183ed7f916f931aa0586fdaa1b40
