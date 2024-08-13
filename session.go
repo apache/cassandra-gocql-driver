@@ -13,7 +13,7 @@
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
- * limitations under the License.
+ * limitations under the Lficense.
  */
 /*
  * Content before git sha 34fdeebefcbf183ed7f916f931aa0586fdaa1b40
@@ -307,6 +307,19 @@ func (s *Session) init() error {
 		close(connectedCh)
 	}
 
+	// If we disable the initial host lookup, we need to still check if the
+	// cluster is using the newer system schema or not... however, if control
+	// connection is disable, we really have no choice, so we just make our
+	// best guess...
+	if !s.cfg.disableControlConn && s.cfg.DisableInitialHostLookup {
+		newer, _ := checkSystemSchema(s.control)
+		s.useSystemSchema = newer
+	} else {
+		version := s.ring.rrHost().Version()
+		s.useSystemSchema = version.AtLeast(3, 0, 0)
+		s.hasAggregatesAndFunctions = version.AtLeast(2, 2, 0)
+	}
+
 	// before waiting for them to connect, add them all to the policy so we can
 	// utilize efficiencies by calling AddHosts if the policy supports it
 	type bulkAddHosts interface {
@@ -334,19 +347,6 @@ func (s *Session) init() error {
 	// See if there are any connections in the pool
 	if s.cfg.ReconnectInterval > 0 {
 		go s.reconnectDownedHosts(s.cfg.ReconnectInterval)
-	}
-
-	// If we disable the initial host lookup, we need to still check if the
-	// cluster is using the newer system schema or not... however, if control
-	// connection is disable, we really have no choice, so we just make our
-	// best guess...
-	if !s.cfg.disableControlConn && s.cfg.DisableInitialHostLookup {
-		newer, _ := checkSystemSchema(s.control)
-		s.useSystemSchema = newer
-	} else {
-		version := s.ring.rrHost().Version()
-		s.useSystemSchema = version.AtLeast(3, 0, 0)
-		s.hasAggregatesAndFunctions = version.AtLeast(2, 2, 0)
 	}
 
 	if s.pool.Size() == 0 {
