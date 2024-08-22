@@ -1,5 +1,5 @@
-//go:build (ccm && ignore) || ignore
-// +build ccm,ignore ignore
+//go:build tc
+// +build tc
 
 /*
  * Licensed to the Apache Software Foundation (ASF) under one
@@ -28,83 +28,52 @@
 package gocql
 
 import (
-	"log"
+	"context"
 	"testing"
 	"time"
-
-	"github.com/gocql/gocql/internal/ccm"
 )
 
 func TestEventDiscovery(t *testing.T) {
-	t.Skip("FLAKE skipping")
-	if err := ccm.AllUp(); err != nil {
-		t.Fatal(err)
-	}
-
 	session := createSession(t)
 	defer session.Close()
 
-	status, err := ccm.Status()
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Logf("status=%+v\n", status)
-
-	session.pool.mu.RLock()
-	poolHosts := session.pool.hostConnPools // TODO: replace with session.ring
-	t.Logf("poolhosts=%+v\n", poolHosts)
 	// check we discovered all the nodes in the ring
-	for _, host := range status {
-		if _, ok := poolHosts[host.Addr]; !ok {
-			t.Errorf("did not discover %q", host.Addr)
+	for _, node := range cassNodes {
+		host := session.ring.getHost(node.ID)
+		if host == nil {
+			t.Errorf("did not discover %q", node.Addr)
 		}
-	}
-	session.pool.mu.RUnlock()
-	if t.Failed() {
-		t.FailNow()
+		if t.Failed() {
+			t.FailNow()
+		}
 	}
 }
 
 func TestEventNodeDownControl(t *testing.T) {
-	t.Skip("FLAKE skipping")
+	ctx := context.Background()
 	const targetNode = "node1"
-	if err := ccm.AllUp(); err != nil {
-		t.Fatal(err)
-	}
 
-	status, err := ccm.Status()
-	if err != nil {
-		t.Fatal(err)
-	}
-
+	node := cassNodes[targetNode]
 	cluster := createCluster()
-	cluster.Hosts = []string{status[targetNode].Addr}
+	cluster.Hosts = []string{node.Addr}
 	session := createSessionFromCluster(cluster, t)
 	defer session.Close()
 
-	t.Log("marking " + targetNode + " as down")
-	if err := ccm.NodeDown(targetNode); err != nil {
+	t.Logf("marking node %q down \n", targetNode)
+	if err := node.TC.Stop(ctx, nil); err != nil {
 		t.Fatal(err)
 	}
+	defer func(ctx context.Context) {
+		if err := restoreCluster(ctx); err != nil {
+			t.Fatalf("couldn't restore a cluster : %v", err)
+		}
+	}(ctx)
 
-	t.Logf("status=%+v\n", status)
-	t.Logf("marking node %q down: %v\n", targetNode, status[targetNode])
-
-	time.Sleep(5 * time.Second)
-
-	session.pool.mu.RLock()
-
-	poolHosts := session.pool.hostConnPools
-	node := status[targetNode]
-	t.Logf("poolhosts=%+v\n", poolHosts)
-
-	if _, ok := poolHosts[node.Addr]; ok {
-		session.pool.mu.RUnlock()
+	if _, ok := getPool(session.pool, node.ID); ok {
 		t.Fatal("node not removed after remove event")
 	}
-	session.pool.mu.RUnlock()
 
-	host := session.ring.getHost(node.Addr)
+	host := session.ring.getHost(node.ID)
 	if host == nil {
 		t.Fatal("node not in metadata ring")
 	} else if host.IsUp() {
@@ -113,40 +82,28 @@ func TestEventNodeDownControl(t *testing.T) {
 }
 
 func TestEventNodeDown(t *testing.T) {
-	t.Skip("FLAKE skipping")
+	ctx := context.Background()
+
 	const targetNode = "node3"
-	if err := ccm.AllUp(); err != nil {
-		t.Fatal(err)
-	}
+	node := cassNodes[targetNode]
 
 	session := createSession(t)
 	defer session.Close()
 
-	if err := ccm.NodeDown(targetNode); err != nil {
+	if err := node.TC.Stop(ctx, nil); err != nil {
 		t.Fatal(err)
 	}
+	defer func(ctx context.Context) {
+		if err := restoreCluster(ctx); err != nil {
+			t.Fatalf("couldn't restore a cluster : %v", err)
+		}
+	}(ctx)
 
-	status, err := ccm.Status()
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Logf("status=%+v\n", status)
-	t.Logf("marking node %q down: %v\n", targetNode, status[targetNode])
-
-	time.Sleep(5 * time.Second)
-
-	session.pool.mu.RLock()
-	defer session.pool.mu.RUnlock()
-
-	poolHosts := session.pool.hostConnPools
-	node := status[targetNode]
-	t.Logf("poolhosts=%+v\n", poolHosts)
-
-	if _, ok := poolHosts[node.Addr]; ok {
-		t.Fatal("node not removed after remove event")
+	if _, ok := getPool(session.pool, node.ID); ok {
+		t.Errorf("node not removed after remove event")
 	}
 
-	host := session.ring.getHost(node.Addr)
+	host := session.ring.getHost(node.ID)
 	if host == nil {
 		t.Fatal("node not in metadata ring")
 	} else if host.IsUp() {
@@ -155,55 +112,39 @@ func TestEventNodeDown(t *testing.T) {
 }
 
 func TestEventNodeUp(t *testing.T) {
-	t.Skip("FLAKE skipping")
-	if err := ccm.AllUp(); err != nil {
-		t.Fatal(err)
-	}
-
-	status, err := ccm.Status()
-	if err != nil {
-		t.Fatal(err)
-	}
-	log.Printf("status=%+v\n", status)
+	ctx := context.Background()
 
 	session := createSession(t)
 	defer session.Close()
 
 	const targetNode = "node2"
-	node := status[targetNode]
+	node := cassNodes[targetNode]
 
-	_, ok := session.pool.getPool(node.Addr)
-	if !ok {
-		session.pool.mu.RLock()
-		t.Errorf("target pool not in connection pool: addr=%q pools=%v", status[targetNode].Addr, session.pool.hostConnPools)
-		session.pool.mu.RUnlock()
+	if _, ok := getPool(session.pool, node.ID); !ok {
+		t.Errorf("target pool not in connection pool: addr=%q pools=%v", node.Addr, session.pool.hostConnPools)
 		t.FailNow()
 	}
 
-	if err := ccm.NodeDown(targetNode); err != nil {
+	if err := node.TC.Stop(ctx, nil); err != nil {
 		t.Fatal(err)
 	}
 
-	time.Sleep(5 * time.Second)
-
-	_, ok = session.pool.getPool(node.Addr)
-	if ok {
+	if _, ok := getPool(session.pool, node.ID); ok {
 		t.Fatal("node not removed after remove event")
 	}
 
-	if err := ccm.NodeUp(targetNode); err != nil {
-		t.Fatal(err)
+	if err := restoreCluster(ctx); err != nil {
+		t.Fatalf("couldn't restore a cluster : %v", err)
 	}
 
 	// cassandra < 2.2 needs 10 seconds to start up the binary service
 	time.Sleep(15 * time.Second)
 
-	_, ok = session.pool.getPool(node.Addr)
-	if !ok {
+	if _, ok := getPool(session.pool, node.ID); !ok {
 		t.Fatal("node not added after node added event")
 	}
 
-	host := session.ring.getHost(node.Addr)
+	host := session.ring.getHost(node.ID)
 	if host == nil {
 		t.Fatal("node not in metadata ring")
 	} else if !host.IsUp() {
@@ -212,29 +153,23 @@ func TestEventNodeUp(t *testing.T) {
 }
 
 func TestEventFilter(t *testing.T) {
-	t.Skip("FLAKE skipping")
-	if err := ccm.AllUp(); err != nil {
-		t.Fatal(err)
-	}
-
-	status, err := ccm.Status()
-	if err != nil {
-		t.Fatal(err)
-	}
-	log.Printf("status=%+v\n", status)
+	ctx := context.Background()
 
 	cluster := createCluster()
-	cluster.HostFilter = WhiteListHostFilter(status["node1"].Addr)
+
+	whiteListedNodeName := "node1"
+	whiteListedNode := cassNodes[whiteListedNodeName]
+	cluster.HostFilter = WhiteListHostFilter(whiteListedNode.Addr)
+
 	session := createSessionFromCluster(cluster, t)
 	defer session.Close()
 
-	if _, ok := session.pool.getPool(status["node1"].Addr); !ok {
-		t.Errorf("should have %v in pool but dont", "node1")
+	if _, ok := getPool(session.pool, whiteListedNode.ID); !ok {
+		t.Errorf("should have %v in pool but dont", whiteListedNodeName)
 	}
 
 	for _, host := range [...]string{"node2", "node3"} {
-		_, ok := session.pool.getPool(status[host].Addr)
-		if ok {
+		if _, ok := getPool(session.pool, cassNodes[host].ID); ok {
 			t.Errorf("should not have %v in pool", host)
 		}
 	}
@@ -243,19 +178,18 @@ func TestEventFilter(t *testing.T) {
 		t.FailNow()
 	}
 
-	if err := ccm.NodeDown("node2"); err != nil {
+	shutdownNode := cassNodes["node2"]
+
+	if err := shutdownNode.TC.Stop(ctx, nil); err != nil {
 		t.Fatal(err)
 	}
 
-	time.Sleep(5 * time.Second)
-
-	if err := ccm.NodeUp("node2"); err != nil {
-		t.Fatal(err)
+	if err := restoreCluster(ctx); err != nil {
+		t.Fatalf("couldn't restore a cluster : %v", err)
 	}
 
-	time.Sleep(15 * time.Second)
 	for _, host := range [...]string{"node2", "node3"} {
-		_, ok := session.pool.getPool(status[host].Addr)
+		_, ok := getPool(session.pool, cassNodes[host].ID)
 		if ok {
 			t.Errorf("should not have %v in pool", host)
 		}
@@ -264,51 +198,35 @@ func TestEventFilter(t *testing.T) {
 	if t.Failed() {
 		t.FailNow()
 	}
-
 }
 
 func TestEventDownQueryable(t *testing.T) {
-	t.Skip("FLAKE skipping")
-	if err := ccm.AllUp(); err != nil {
-		t.Fatal(err)
-	}
+	ctx := context.Background()
 
-	status, err := ccm.Status()
-	if err != nil {
-		t.Fatal(err)
-	}
-	log.Printf("status=%+v\n", status)
-
-	const targetNode = "node1"
-
-	addr := status[targetNode].Addr
+	targetNode := cassNodes["node1"]
 
 	cluster := createCluster()
-	cluster.Hosts = []string{addr}
-	cluster.HostFilter = WhiteListHostFilter(addr)
+	cluster.Hosts = []string{targetNode.Addr}
+	cluster.HostFilter = WhiteListHostFilter(targetNode.Addr)
 	session := createSessionFromCluster(cluster, t)
 	defer session.Close()
 
-	if pool, ok := session.pool.getPool(addr); !ok {
-		t.Fatalf("should have %v in pool but dont", addr)
+	if pool, ok := getPool(session.pool, targetNode.ID); !ok {
+		t.Fatalf("should have %v in pool but dont", targetNode.Addr)
 	} else if !pool.host.IsUp() {
 		t.Fatalf("host is not up %v", pool.host)
 	}
 
-	if err := ccm.NodeDown(targetNode); err != nil {
+	if err := targetNode.TC.Stop(ctx, nil); err != nil {
 		t.Fatal(err)
 	}
 
-	time.Sleep(5 * time.Second)
-
-	if err := ccm.NodeUp(targetNode); err != nil {
-		t.Fatal(err)
+	if err := restoreCluster(ctx); err != nil {
+		t.Fatalf("couldn't preserve a cluster : %v", err)
 	}
 
-	time.Sleep(15 * time.Second)
-
-	if pool, ok := session.pool.getPool(addr); !ok {
-		t.Fatalf("should have %v in pool but dont", addr)
+	if pool, ok := getPool(session.pool, targetNode.ID); !ok {
+		t.Fatalf("should have %v in pool but dont", targetNode.Addr)
 	} else if !pool.host.IsUp() {
 		t.Fatalf("host is not up %v", pool.host)
 	}
