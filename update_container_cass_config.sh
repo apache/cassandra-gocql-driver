@@ -59,12 +59,6 @@ update_property() {
 configure_cassandra() {
   local keypath="testdata"
   local conf=(
-    "client_encryption_options.enabled:true"
-    "client_encryption_options.keystore:$keypath/.keystore"
-    "client_encryption_options.keystore_password:cassandra"
-    "client_encryption_options.require_client_auth:true"
-    "client_encryption_options.truststore:$keypath/.truststore"
-    "client_encryption_options.truststore_password:cassandra"
     "concurrent_reads:2"
     "concurrent_writes:2"
   )
@@ -73,6 +67,17 @@ configure_cassandra() {
     conf+=(
       "authenticator: PasswordAuthenticator"
       "authorizer: CassandraAuthorizer"
+        )
+  fi
+
+  if [[ $RUN_SSL_TEST == true ]]; then
+    conf+=(
+      "client_encryption_options.enabled:true"
+      "client_encryption_options.keystore:$keypath/.keystore"
+      "client_encryption_options.keystore_password:cassandra"
+      "client_encryption_options.require_client_auth:true"
+      "client_encryption_options.truststore:$keypath/.truststore"
+      "client_encryption_options.truststore_password:cassandra"
         )
   fi
 

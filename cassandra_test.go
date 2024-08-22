@@ -764,7 +764,6 @@ func TestBatch(t *testing.T) {
 }
 
 func TestUnpreparedBatch(t *testing.T) {
-	t.Skip("FLAKE skipping")
 	session := createSession(t)
 	defer session.Close()
 
