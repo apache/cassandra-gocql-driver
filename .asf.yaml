@@ -19,6 +19,7 @@ notifications:
   commits:      commits@cassandra.apache.org
   issues:       commits@cassandra.apache.org
   pullrequests: pr@cassandra.apache.org
+  jira_options: link worklog
 
 github:
   description: "GoCQL Driver for Apache Cassandra®"
@@ -31,6 +32,5 @@ github:
     wiki: false
     issues: true
     projects: false
-
-notifications:
-  jira_options: link worklog
+  autolink_jira:
+    - CASSANDRA
