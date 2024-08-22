@@ -1,5 +1,5 @@
-//go:build ccm
-// +build ccm
+//go:build tc
+// +build tc
 
 /*
  * Licensed to the Apache Software Foundation (ASF) under one
@@ -28,17 +28,16 @@
 package gocql
 
 import (
+	"context"
 	"fmt"
 	"sync"
 	"testing"
 	"time"
-
-	"github.com/gocql/gocql/internal/ccm"
 )
 
 type TestHostFilter struct {
 	mu           sync.Mutex
-	allowedHosts map[string]ccm.Host
+	allowedHosts map[string]TChost
 }
 
 func (f *TestHostFilter) Accept(h *HostInfo) bool {
@@ -48,37 +47,27 @@ func (f *TestHostFilter) Accept(h *HostInfo) bool {
 	return ok
 }
 
-func (f *TestHostFilter) SetAllowedHosts(hosts map[string]ccm.Host) {
+func (f *TestHostFilter) SetAllowedHosts(hosts map[string]TChost) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.allowedHosts = hosts
 }
 
 func TestControlConn_ReconnectRefreshesRing(t *testing.T) {
-	if err := ccm.AllUp(); err != nil {
-		t.Fatal(err)
-	}
+	ctx := context.Background()
 
-	allCcmHosts, err := ccm.Status()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if len(allCcmHosts) < 2 {
+	if len(cassNodes) < 2 {
 		t.Skip("this test requires at least 2 nodes")
 	}
 
-	allAllowedHosts := map[string]ccm.Host{}
-	var firstNode *ccm.Host
-	for _, node := range allCcmHosts {
-		if firstNode == nil {
-			firstNode = &node
-		}
+	allAllowedHosts := map[string]TChost{}
+	for _, node := range cassNodes {
 		allAllowedHosts[node.Addr] = node
 	}
 
-	allowedHosts := map[string]ccm.Host{
-		firstNode.Addr: *firstNode,
+	firstNode := cassNodes["node1"]
+	allowedHosts := map[string]TChost{
+		firstNode.Addr: firstNode,
 	}
 
 	testFilter := &TestHostFilter{allowedHosts: allowedHosts}
@@ -99,9 +88,9 @@ func TestControlConn_ReconnectRefreshesRing(t *testing.T) {
 	ccHost := controlConnection.host
 
 	var ccHostName string
-	for _, node := range allCcmHosts {
+	for name, node := range cassNodes {
 		if node.Addr == ccHost.ConnectAddress().String() {
-			ccHostName = node.Name
+			ccHostName = name
 			break
 		}
 	}
@@ -110,25 +99,15 @@ func TestControlConn_ReconnectRefreshesRing(t *testing.T) {
 		t.Fatal("could not find name of control host")
 	}
 
-	if err := ccm.NodeDown(ccHostName); err != nil {
+	if err := cassNodes[ccHostName].TC.Stop(ctx, nil); err != nil {
 		t.Fatal()
 	}
 
-	defer func() {
-		ccmStatus, err := ccm.Status()
-		if err != nil {
-			t.Logf("could not bring nodes back up after test: %v", err)
-			return
+	defer func(ctx context.Context) {
+		if err := restoreCluster(ctx); err != nil {
+			t.Fatalf("couldn't restore a cluster : %v", err)
 		}
-		for _, node := range ccmStatus {
-			if node.State == ccm.NodeStateDown {
-				err = ccm.NodeUp(node.Name)
-				if err != nil {
-					t.Logf("could not bring node %v back up after test: %v", node.Name, err)
-				}
-			}
-		}
-	}()
+	}(ctx)
 
 	assertNodeDown := func() error {
 		hosts := session.ring.currentHosts()
@@ -159,19 +138,19 @@ func TestControlConn_ReconnectRefreshesRing(t *testing.T) {
 	}
 
 	if assertErr != nil {
-		t.Fatal(err)
+		t.Fatal(assertErr)
 	}
 
 	testFilter.SetAllowedHosts(allAllowedHosts)
 
-	if err = ccm.NodeUp(ccHostName); err != nil {
+	if err := restoreCluster(ctx); err != nil {
 		t.Fatal(err)
 	}
 
 	assertNodeUp := func() error {
 		hosts := session.ring.currentHosts()
-		if len(hosts) != len(allCcmHosts) {
-			return fmt.Errorf("expected %v hosts in ring but there were %v", len(allCcmHosts), len(hosts))
+		if len(hosts) != len(cassNodes) {
+			return fmt.Errorf("expected %v hosts in ring but there were %v", len(ccHostName), len(hosts))
 		}
 		for _, host := range hosts {
 			if !host.IsUp() {
@@ -181,8 +160,8 @@ func TestControlConn_ReconnectRefreshesRing(t *testing.T) {
 		session.pool.mu.RLock()
 		poolsLen := len(session.pool.hostConnPools)
 		session.pool.mu.RUnlock()
-		if poolsLen != len(allCcmHosts) {
-			return fmt.Errorf("expected %v connection pool but there were %v", len(allCcmHosts), poolsLen)
+		if poolsLen != len(cassNodes) {
+			return fmt.Errorf("expected %v connection pool but there were %v", len(ccHostName), poolsLen)
 		}
 		return nil
 	}
@@ -196,6 +175,6 @@ func TestControlConn_ReconnectRefreshesRing(t *testing.T) {
 	}
 
 	if assertErr != nil {
-		t.Fatal(err)
+		t.Fatal(assertErr)
 	}
 }
