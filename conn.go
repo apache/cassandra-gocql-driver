@@ -43,25 +43,11 @@ import (
 	"github.com/gocql/gocql/internal/streams"
 )
 
-var (
-	defaultApprovedAuthenticators = []string{
-		"org.apache.cassandra.auth.PasswordAuthenticator",
-		"com.instaclustr.cassandra.auth.SharedSecretAuthenticator",
-		"com.datastax.bdp.cassandra.auth.DseAuthenticator",
-		"io.aiven.cassandra.auth.AivenAuthenticator",
-		"com.ericsson.bss.cassandra.ecaudit.auth.AuditPasswordAuthenticator",
-		"com.amazon.helenus.auth.HelenusAuthenticator",
-		"com.ericsson.bss.cassandra.ecaudit.auth.AuditAuthenticator",
-		"com.scylladb.auth.SaslauthdAuthenticator",
-		"com.scylladb.auth.TransitionalAuthenticator",
-		"com.instaclustr.cassandra.auth.InstaclustrPasswordAuthenticator",
-	}
-)
-
-// approve the authenticator with the list of allowed authenticators or default list if approvedAuthenticators is empty.
+// approve the authenticator with the list of allowed authenticators. If the provided list is empty,
+// the given authenticator is allowed.
 func approve(authenticator string, approvedAuthenticators []string) bool {
 	if len(approvedAuthenticators) == 0 {
-		approvedAuthenticators = defaultApprovedAuthenticators
+		return true
 	}
 	for _, s := range approvedAuthenticators {
 		if authenticator == s {
@@ -86,9 +72,15 @@ type Authenticator interface {
 	Success(data []byte) error
 }
 
+// PasswordAuthenticator specifies credentials to be used when authenticating.
+// It can be configured with an "allow list" of authenticator class names to avoid
+// attempting to authenticate with Cassandra if it doesn't provide an expected authenticator.
 type PasswordAuthenticator struct {
-	Username              string
-	Password              string
+	Username string
+	Password string
+	// Setting this to nil or empty will allow authenticating with any authenticator
+	// provided by the server.  This is the default behavior of most other driver
+	// implementations.
 	AllowedAuthenticators []string
 }
 
