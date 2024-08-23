@@ -56,6 +56,8 @@ const (
 func TestApprove(t *testing.T) {
 	tests := map[bool]bool{
 		approve("org.apache.cassandra.auth.PasswordAuthenticator", []string{}):                                          true,
+		approve("org.apache.cassandra.auth.MutualTlsWithPasswordFallbackAuthenticator", []string{}):                     true,
+		approve("org.apache.cassandra.auth.MutualTlsAuthenticator", []string{}):                                         true,
 		approve("com.instaclustr.cassandra.auth.SharedSecretAuthenticator", []string{}):                                 true,
 		approve("com.datastax.bdp.cassandra.auth.DseAuthenticator", []string{}):                                         true,
 		approve("io.aiven.cassandra.auth.AivenAuthenticator", []string{}):                                               true,

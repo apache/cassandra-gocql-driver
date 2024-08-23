@@ -46,6 +46,8 @@ import (
 var (
 	defaultApprovedAuthenticators = []string{
 		"org.apache.cassandra.auth.PasswordAuthenticator",
+		"org.apache.cassandra.auth.MutualTlsAuthenticator",
+		"org.apache.cassandra.auth.MutualTlsWithPasswordFallbackAuthenticator",
 		"com.instaclustr.cassandra.auth.SharedSecretAuthenticator",
 		"com.datastax.bdp.cassandra.auth.DseAuthenticator",
 		"io.aiven.cassandra.auth.AivenAuthenticator",
