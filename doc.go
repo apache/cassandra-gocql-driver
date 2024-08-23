@@ -81,6 +81,16 @@
 //	 }
 //	 defer session.Close()
 //
+// By default, PasswordAuthenticator will attempt to authenticate regardless of what implementation the server returns
+// in its AUTHENTICATE message as its authenticator, (e.g. org.apache.cassandra.auth.PasswordAuthenticator).  If you
+// wish to restrict this you may use PasswordAuthenticator.AllowedAuthenticators:
+//
+//	 cluster.Authenticator = gocql.PasswordAuthenticator {
+//			Username:              "user",
+//			Password:              "password"
+//			AllowedAuthenticators: []string{"org.apache.cassandra.auth.PasswordAuthenticator"},
+//	 }
+//
 // # Transport layer security
 //
 // It is possible to secure traffic between the client and server with TLS.
