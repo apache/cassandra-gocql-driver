@@ -57,6 +57,8 @@ type Session struct {
 	routingKeyInfoCache routingKeyInfoLRU
 	schemaDescriber     *schemaDescriber
 	trace               Tracer
+	queryInterceptor    QueryInterceptor
+	batchInterceptor    BatchInterceptor
 	queryObserver       QueryObserver
 	batchObserver       BatchObserver
 	connectObserver     ConnectObserver
@@ -182,6 +184,8 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 		policy: cfg.PoolConfig.HostSelectionPolicy,
 	}
 
+	s.queryInterceptor = cfg.QueryInterceptor
+	s.batchInterceptor = cfg.BatchInterceptor
 	s.queryObserver = cfg.QueryObserver
 	s.batchObserver = cfg.BatchObserver
 	s.connectObserver = cfg.ConnectObserver
@@ -543,7 +547,14 @@ func (s *Session) executeQuery(qry *Query) (it *Iter) {
 		return &Iter{err: ErrSessionClosed}
 	}
 
-	iter, err := s.executor.executeQuery(qry)
+	var iter *Iter
+	var err error
+	if s.queryInterceptor != nil {
+		iter, err = s.queryInterceptor.InterceptQuery(qry, s.executor.executeQuery)
+	} else {
+		iter, err = s.executor.executeQuery(qry)
+	}
+
 	if err != nil {
 		return &Iter{err: err}
 	}
@@ -744,7 +755,14 @@ func (s *Session) executeBatch(batch *Batch) *Iter {
 		return &Iter{err: ErrTooManyStmts}
 	}
 
-	iter, err := s.executor.executeQuery(batch)
+	var iter *Iter
+	var err error
+	if s.batchInterceptor != nil {
+		iter, err = s.batchInterceptor.InterceptBatch(batch, s.executor.executeQuery)
+	} else {
+		iter, err = s.executor.executeQuery(batch)
+	}
+
 	if err != nil {
 		return &Iter{err: err}
 	}
@@ -2203,6 +2221,36 @@ type ObservedQuery struct {
 	// Attempt is the index of attempt at executing this query.
 	// The first attempt is number zero and any retries have non-zero attempt number.
 	Attempt int
+}
+
+// QueryHandler is a function that executes a single query.
+type QueryHandler = func(*Query) (*Iter, error)
+
+// QueryInterceptor is the interface implemented by query interceptors / middleware.
+//
+// Interceptors are well-suited to logic that is not specific to a single query or batch.
+type QueryInterceptor interface {
+	// InterceptQuery is invoked once immediately before a query execution. It is not invoked before retry attempts or
+	// speculative execution attempts.
+
+	// The interceptor is responsible for calling the `handler` function and returning the handler result. Failure to
+	// call the handler will panic. If the interceptor wants to skip query execution, it should return an error.
+	InterceptQuery(qry *Query, handler QueryHandler) (*Iter, error)
+}
+
+// BatchHandler is a function that executes a single batch.
+type BatchHandler = func(*Batch) (*Iter, error)
+
+// BatchInterceptor is the interface implemented by batch interceptors / middleware.
+//
+// Interceptors are well-suited to logic that is not specific to a single query or batch.
+type BatchInterceptor interface {
+	// InterceptBatch is invoked once immediately before a batch execution. It is not invoked before retry attempts or
+	// speculative execution attempts.
+
+	// The interceptor is responsible for calling the `handler` function and returning the handler result. Failure to
+	// call the handler will panic. If the interceptor wants to skip batch execution, it should return an error.
+	InterceptBatch(batch *Batch, handler BatchHandler) (*Iter, error)
 }
 
 // QueryObserver is the interface implemented by query observers / stat collectors.

@@ -362,6 +362,26 @@
 //
 // See Example_userDefinedTypesMap, Example_userDefinedTypesStruct, ExampleUDTMarshaler, ExampleUDTUnmarshaler.
 //
+// # Query Interceptors
+//
+// Query Interceptors wrap query execution and can be used to inject logic that should apply to all query and batch
+// executions. For example, interceptors can be used for rate limiting, logging, attaching distributed tracing
+// metadata to the context, modifying queries, and inspecting query results.
+//
+// Interceptors are invoked once prior to query execution and are not re-invoked on retry attempts or speculative
+// execution attempts. Interceptors are responsible for calling the provided handler and returning a non-nil Iter
+// or error.
+//
+//	type MyQueryInterceptor struct {}
+//
+//	func (q MyQueryInterceptor) InterceptQuery(qry *gocql.Query, handler gocql.QueryHandler) (*gocql.Iter, error) {
+//	    return handler(qry.WithContext(context.WithValue(qry.Context(), "trace-id", "123")))
+//	}
+//
+//	func (q MyQueryInterceptor) InterceptBatch(batch *gocql.Batch, handler gocql.BatchHandler) (*gocql.Iter, error) {
+//	    return handler(batch.WithContext(context.WithValue(batch.Context(), "trace-id", "456")))
+//	}
+//
 // # Metrics and tracing
 //
 // It is possible to provide observer implementations that could be used to gather metrics:
