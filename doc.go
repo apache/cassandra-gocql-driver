@@ -362,6 +362,18 @@
 //
 // See Example_userDefinedTypesMap, Example_userDefinedTypesStruct, ExampleUDTMarshaler, ExampleUDTUnmarshaler.
 //
+// # Interceptors
+//
+// A QueryAttemptInterceptor wraps query execution and can be used to inject logic that should apply to all query
+// and batch execution attempts. For example, interceptors can be used for rate limiting, logging, attaching
+// distributed tracing metadata to the context, modifying queries, and inspecting query results.
+//
+// A QueryAttemptInterceptor will be invoked once prior to each query execution attempt, including retry attempts
+// and speculative execution attempts. Interceptors are responsible for calling the provided handler and returning
+// a non-nil Iter.
+//
+// See Example_interceptor for full example.
+//
 // # Metrics and tracing
 //
 // It is possible to provide observer implementations that could be used to gather metrics:
