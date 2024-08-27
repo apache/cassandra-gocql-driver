@@ -232,6 +232,7 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 	s.executor = &queryExecutor{
 		pool:   s.pool,
 		policy: cfg.PoolConfig.HostSelectionPolicy,
+		interceptor: cfg.QueryAttemptInterceptor,
 	}
 
 	s.policy.Init(s)

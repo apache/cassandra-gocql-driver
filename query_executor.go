@@ -58,7 +58,7 @@ type Statement interface {
 
 type internalRequest interface {
 	execute(ctx context.Context, conn *Conn) *Iter
-	attempt(keyspace string, end, start time.Time, iter *Iter, host *HostInfo)
+	attempt(ctx context.Context, keyspace string, end, start time.Time, iter *Iter, host *HostInfo)
 	retryPolicy() RetryPolicy
 	speculativeExecutionPolicy() SpeculativeExecutionPolicy
 	getQueryMetrics() *queryMetrics
@@ -69,16 +69,45 @@ type internalRequest interface {
 }
 
 type queryExecutor struct {
-	pool   *policyConnPool
-	policy HostSelectionPolicy
+	pool        *policyConnPool
+	policy      HostSelectionPolicy
+	interceptor QueryAttemptInterceptor
+}
+
+// QueryAttemptHandler is a function that attempts query execution.
+type QueryAttemptHandler = func(context.Context, ExecutableStatement, *Conn) *Iter
+
+// QueryAttemptInterceptor is the interface implemented by query interceptors / middleware.
+//
+// Interceptors are well-suited to logic that is not specific to a single query or batch.
+type QueryAttemptInterceptor interface {
+	// Intercept is invoked once immediately before a query execution attempt, including retry attempts and
+	// speculative execution attempts.
+
+	// The interceptor is responsible for calling the `handler` function and returning the handler result. Failure to
+	// call the handler will panic. If the interceptor wants to halt query execution and prevent retries, it should
+	// return an error.
+	Intercept(ctx context.Context, query ExecutableStatement, conn *Conn, handler QueryAttemptHandler) *Iter
 }
 
 func (q *queryExecutor) attemptQuery(ctx context.Context, qry internalRequest, conn *Conn) *Iter {
 	start := time.Now()
-	iter := qry.execute(ctx, conn)
-	end := time.Now()
 
-	qry.attempt(q.pool.keyspace, end, start, iter, conn.host)
+	var iter *Iter
+	if q.interceptor != nil {
+		// Propagate interceptor context modifications.
+		_ctx := ctx
+		iter = q.interceptor.Intercept(_ctx, qry, conn, func(_ctx context.Context, qry ExecutableQuery, c *Conn) *Iter {
+			ctx = _ctx
+			return qry.execute(ctx, conn)
+		})
+	} else {
+		iter = qry.execute(ctx, conn)
+		return iter
+	}
+
+	end := time.Now()
+	qry.attempt(ctx, q.pool.keyspace, end, start, iter, conn.host)
 
 	return iter
 }
