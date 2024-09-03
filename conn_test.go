@@ -435,7 +435,7 @@ func TestQueryMultinodeWithMetrics(t *testing.T) {
 	// 1 retry per host
 	rt := &SimpleRetryPolicy{NumRetries: 3}
 	observer := &testQueryObserver{metrics: make(map[string]*hostMetrics), verbose: false, logger: log}
-	qry := db.Query("kill").RetryPolicy(rt).Observer(observer)
+	qry := db.Query("kill").RetryPolicy(rt).Observer(observer).Idempotent(true)
 	if err := qry.Exec(); err == nil {
 		t.Fatalf("expected error")
 	}

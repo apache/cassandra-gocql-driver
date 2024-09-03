@@ -32,6 +32,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/stretchr/testify/require"
 	"io"
 	"math"
 	"math/big"
@@ -1063,6 +1064,55 @@ func matchSliceMap(t *testing.T, sliceMap []map[string]interface{}, testMap map[
 	}
 	if sliceMap[0]["testint"] != testMap["testint"] {
 		t.Fatal("returned testint did not match")
+	}
+}
+
+type MyRetryPolicy struct {
+}
+
+func (*MyRetryPolicy) Attempt(q RetryableQuery) bool {
+	if q.Attempts() > 5 {
+		return false
+	}
+	return true
+}
+
+func (*MyRetryPolicy) GetRetryType(error) RetryType {
+	return Retry
+}
+
+func Test_RetryPolicyIdempotence(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+
+	testCases := []struct {
+		name                  string
+		idempotency           bool
+		expectedNumberOfTries int
+	}{
+		{
+			name:                  "with retry",
+			idempotency:           true,
+			expectedNumberOfTries: 6,
+		},
+		{
+			name:                  "without retry",
+			idempotency:           false,
+			expectedNumberOfTries: 1,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			q := session.Query("INSERT INTO  gocql_test.not_existing_table(event_id, time, args) VALUES (?,?,?)", 4, UUIDFromTime(time.Now()), "test")
+
+			q.Idempotent(tc.idempotency)
+			q.RetryPolicy(&MyRetryPolicy{})
+			q.Consistency(All)
+
+			_ = q.Exec()
+			require.Equal(t, tc.expectedNumberOfTries, q.Attempts())
+		})
 	}
 }
 
