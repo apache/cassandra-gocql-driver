@@ -14,6 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Retry policy now takes into account query idempotency (CASSGO-27)
+
 ## [1.7.0] - 2024-09-23
 
 This release is the first after the donation of gocql to the Apache Software Foundation (ASF)

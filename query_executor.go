@@ -166,7 +166,7 @@ func (q *queryExecutor) do(ctx context.Context, qry ExecutableQuery, hostIter Ne
 
 		// Exit if the query was successful
 		// or no retry policy defined or retry attempts were reached
-		if iter.err == nil || rt == nil || !rt.Attempt(qry) {
+		if iter.err == nil || !qry.IsIdempotent() || rt == nil || !rt.Attempt(qry) {
 			return iter
 		}
 		lastErr = iter.err
