@@ -176,7 +176,10 @@ func (q *queryExecutor) do(ctx context.Context, qry ExecutableQuery, hostIter Ne
 		case Retry:
 			// retry on the same host
 			continue
-		case Rethrow, Ignore:
+		case Rethrow:
+			return iter
+		case Ignore:
+			iter.err = nil
 			return iter
 		case RetryNextHost:
 			// retry on the next host
