@@ -27,7 +27,13 @@ package gocql
 import "runtime/debug"
 
 const (
-	mainModule = "github.com/gocql/gocql"
+	defaultDriverName = "github.com/apache/cassandra-gocql-driver"
+
+	// This string MUST have this value since we explicitly test against the
+	// current main package returned by runtime/debug below.  Also note the
+	// package name used here may change in a future (2.x) release; in that case
+	// this constant will be updated as well.
+	mainPackage = "github.com/gocql/gocql"
 )
 
 var driverName string
@@ -38,9 +44,13 @@ func init() {
 	buildInfo, ok := debug.ReadBuildInfo()
 	if ok {
 		for _, d := range buildInfo.Deps {
-			if d.Path == mainModule {
-				driverName = mainModule
+			if d.Path == mainPackage {
+				driverName = defaultDriverName
 				driverVersion = d.Version
+				// If there's a replace directive in play for the gocql package
+				// then use that information for path and version instead.  This
+				// will allow forks or other local packages to clearly identify
+				// themselves as distinct from mainPackage above.
 				if d.Replace != nil {
 					driverName = d.Replace.Path
 					driverVersion = d.Replace.Version
