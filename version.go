@@ -27,7 +27,7 @@ package gocql
 import "runtime/debug"
 
 const (
-	mainModule = "github.com/gocql/gocql"
+	mainModule = "github.com/apache/cassandra-gocql-driver"
 )
 
 var driverName string
