@@ -1173,8 +1173,14 @@ func (f *framer) parseResultPrepared() frame {
 	frame := &resultPreparedFrame{
 		frameHeader: *f.header,
 		preparedID:  f.readShortBytes(),
-		reqMeta:     f.parsePreparedMetadata(),
 	}
+
+	if f.proto > protoVersion4 {
+		// TODO handle result_metadata_id for native proto 5
+		_ = f.readShortBytes()
+	}
+
+	frame.reqMeta = f.parsePreparedMetadata()
 
 	if f.proto < protoVersion2 {
 		return frame

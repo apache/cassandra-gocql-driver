@@ -2042,6 +2042,12 @@ func (b *Batch) releaseAfterExecution() {
 	// that would race with speculative executions.
 }
 
+// SetKeyspace allows to specify the keyspace that the query should be executed in.
+func (b *Batch) SetKeyspace(keyspace string) *Batch {
+	b.keyspace = keyspace
+	return b
+}
+
 type BatchType byte
 
 const (

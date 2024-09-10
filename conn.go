@@ -1235,7 +1235,7 @@ type inflightPrepare struct {
 	preparedStatment *preparedStatment
 }
 
-func (c *Conn) prepareStatement(ctx context.Context, stmt string, tracer Tracer) (*preparedStatment, error) {
+func (c *Conn) prepareStatementWithKeyspace(ctx context.Context, stmt string, tracer Tracer, keyspace string) (*preparedStatment, error) {
 	stmtCacheKey := c.session.stmtsLRU.keyFor(c.host.HostID(), c.currentKeyspace, stmt)
 	flight, ok := c.session.stmtsLRU.execIfMissing(stmtCacheKey, func(lru *lru.Cache) *inflightPrepare {
 		flight := &inflightPrepare{
@@ -1253,7 +1253,7 @@ func (c *Conn) prepareStatement(ctx context.Context, stmt string, tracer Tracer)
 				statement: stmt,
 			}
 			if c.version > protoVersion4 {
-				prep.keyspace = c.currentKeyspace
+				prep.keyspace = keyspace
 			}
 
 			// we won the race to do the load, if our context is canceled we shouldnt
@@ -1308,6 +1308,10 @@ func (c *Conn) prepareStatement(ctx context.Context, stmt string, tracer Tracer)
 	case <-flight.done:
 		return flight.preparedStatment, flight.err
 	}
+}
+
+func (c *Conn) prepareStatement(ctx context.Context, stmt string, tracer Tracer) (*preparedStatment, error) {
+	return c.prepareStatementWithKeyspace(ctx, stmt, tracer, c.currentKeyspace)
 }
 
 func marshalQueryValue(typ TypeInfo, value interface{}, dst *queryValues) error {
@@ -1555,7 +1559,7 @@ func (c *Conn) executeBatch(ctx context.Context, batch *Batch) *Iter {
 	}
 
 	if c.version > protoVersion4 {
-		req.keyspace = c.currentKeyspace
+		req.keyspace = batch.keyspace
 	}
 
 	stmts := make(map[string]string, len(batch.Entries))
@@ -1565,7 +1569,7 @@ func (c *Conn) executeBatch(ctx context.Context, batch *Batch) *Iter {
 		b := &req.statements[i]
 
 		if len(entry.Args) > 0 || entry.binding != nil {
-			info, err := c.prepareStatement(batch.Context(), entry.Stmt, batch.trace)
+			info, err := c.prepareStatementWithKeyspace(batch.Context(), entry.Stmt, batch.trace, batch.keyspace)
 			if err != nil {
 				return &Iter{err: err}
 			}

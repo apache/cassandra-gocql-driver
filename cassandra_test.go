@@ -32,6 +32,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/stretchr/testify/require"
 	"io"
 	"math"
 	"math/big"
@@ -3297,7 +3298,20 @@ func TestBatchKeyspaceField(t *testing.T) {
 		t.Skip("keyspace for BATCH message is not supported in protocol < 5")
 	}
 
-	err := createTable(session, "CREATE TABLE batch_keyspace(id int, value text, PRIMARY KEY (id))")
+	const keyspaceStmt = `
+		CREATE KEYSPACE IF NOT EXISTS gocql_keyspace_override_test 
+		WITH replication = {
+			'class': 'SimpleStrategy', 
+			'replication_factor': '1'
+		};
+`
+
+	err := session.Query(keyspaceStmt).Exec()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = createTable(session, "CREATE TABLE IF NOT EXISTS gocql_keyspace_override_test.batch_keyspace(id int, value text, PRIMARY KEY (id))")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -3305,7 +3319,7 @@ func TestBatchKeyspaceField(t *testing.T) {
 	ids := []int{1, 2}
 	texts := []string{"val1", "val2"}
 
-	b := session.NewBatch(LoggedBatch)
+	b := session.NewBatch(LoggedBatch).SetKeyspace("gocql_keyspace_override_test")
 	b.Query("INSERT INTO batch_keyspace(id, value) VALUES (?, ?)", ids[0], texts[0])
 	b.Query("INSERT INTO batch_keyspace(id, value) VALUES (?, ?)", ids[1], texts[1])
 	err = session.ExecuteBatch(b)
@@ -3318,16 +3332,11 @@ func TestBatchKeyspaceField(t *testing.T) {
 		text string
 	)
 
-	iter := session.Query("SELECT * FROM batch_keyspace").Iter()
+	iter := session.Query("SELECT * FROM gocql_keyspace_override_test.batch_keyspace").Iter()
 	defer iter.Close()
 
 	for i := 0; iter.Scan(&id, &text); i++ {
-		if id != ids[i] {
-			t.Fatalf("expected id %v, got %v", ids[i], id)
-		}
-
-		if text != texts[i] {
-			t.Fatalf("expected text %v, got %v", texts[i], text)
-		}
+		require.Equal(t, id, ids[i])
+		require.Equal(t, text, texts[i])
 	}
 }
