@@ -82,7 +82,6 @@ func (q *queryExecutor) attemptQuery(ctx context.Context, qry ExecutableQuery, c
 		})
 	} else {
 		iter = qry.execute(ctx, conn)
-		return iter
 	}
 
 	end := time.Now()
