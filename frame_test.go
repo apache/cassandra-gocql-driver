@@ -135,11 +135,11 @@ func Test_framer_writeExecuteFrame_preparedMetadataID(t *testing.T) {
 		customPayload: map[string][]byte{
 			"key1": []byte("value1"),
 		},
-		preparedMetadataID: []byte{4, 5, 6},
+		resultMetadataID: []byte{4, 5, 6},
 	}
 
 	expectedStreamID := 123
-	err := f.writeExecuteFrame(expectedStreamID, frame.preparedID, frame.preparedMetadataID, &frame.params, &frame.customPayload)
+	err := f.writeExecuteFrame(expectedStreamID, frame.preparedID, frame.resultMetadataID, &frame.params, &frame.customPayload)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -149,5 +149,5 @@ func Test_framer_writeExecuteFrame_preparedMetadataID(t *testing.T) {
 
 	assertDeepEqual(t, "customPayload", frame.customPayload, f.readBytesMap())
 	assertDeepEqual(t, "preparedID", frame.preparedID, f.readShortBytes())
-	assertDeepEqual(t, "preparedMetadataID", frame.preparedMetadataID, f.readShortBytes())
+	assertDeepEqual(t, "resultMetadataID", frame.resultMetadataID, f.readShortBytes())
 }

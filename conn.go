@@ -1223,9 +1223,10 @@ type StreamObserverContext interface {
 }
 
 type preparedStatment struct {
-	id       []byte
-	request  preparedMetadata
-	response resultMetadata
+	id               []byte
+	resultMetadataID []byte
+	request          preparedMetadata
+	response         resultMetadata
 }
 
 type inflightPrepare struct {
@@ -1284,7 +1285,8 @@ func (c *Conn) prepareStatement(ctx context.Context, stmt string, tracer Tracer)
 				flight.preparedStatment = &preparedStatment{
 					// defensively copy as we will recycle the underlying buffer after we
 					// return.
-					id: copyBytes(x.preparedID),
+					id:               copyBytes(x.preparedID),
+					resultMetadataID: copyBytes(x.resultMetadataID),
 					// the type info's should _not_ have a reference to the framers read buffer,
 					// therefore we can just copy them directly.
 					request:  x.reqMeta,
@@ -1394,10 +1396,10 @@ func (c *Conn) executeQuery(ctx context.Context, qry *Query) *Iter {
 		params.skipMeta = !(c.session.cfg.DisableSkipMetadata || qry.disableSkipMetadata)
 
 		frame = &writeExecuteFrame{
-			preparedID:         info.id,
-			params:             params,
-			customPayload:      qry.customPayload,
-			preparedMetadataID: info.request.id,
+			preparedID:       info.id,
+			params:           params,
+			customPayload:    qry.customPayload,
+			resultMetadataID: info.resultMetadataID,
 		}
 
 		// Set "keyspace" and "table" property in the query if it is present in preparedMetadata
@@ -1431,6 +1433,25 @@ func (c *Conn) executeQuery(ctx context.Context, qry *Query) *Iter {
 	case *resultVoidFrame:
 		return &Iter{framer: framer}
 	case *resultRowsFrame:
+		if x.meta.newMetadataID != nil {
+			// TODO update the stmts cache with new metadata id
+			stmtCacheKey := c.session.stmtsLRU.keyFor(c.host.HostID(), c.currentKeyspace, qry.stmt)
+			inflight, ok := c.session.stmtsLRU.get(stmtCacheKey)
+			if !ok {
+				// We didn't find the stmt in the cache, so we just re-prepare it
+				return c.executeQuery(ctx, qry)
+			}
+
+			// Updating the result metadata id in prepared stmt
+			//
+			// If a RESULT/Rows message reports
+			//      changed resultset metadata with the Metadata_changed flag, the reported new
+			//      resultset metadata must be used in subsequent executions
+			inflight.preparedStatment.resultMetadataID = x.meta.newMetadataID
+			inflight.preparedStatment.response = x.meta
+			return c.executeQuery(ctx, qry)
+		}
+
 		iter := &Iter{
 			meta:    x.meta,
 			framer:  framer,
