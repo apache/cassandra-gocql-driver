@@ -14,6 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Remove global NewBatch function (CASSGO-15)
 
+- Detailed description for NumConns (CASSGO-3)
+
 ### Fixed
 
 - Retry policy now takes into account query idempotency (CASSGO-27)

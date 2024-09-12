@@ -102,7 +102,13 @@ type ClusterConfig struct {
 	// Initial keyspace. Optional.
 	Keyspace string
 
-	// Number of connections per host.
+	// The size of the connection pool for each host.
+	// The pool filling runs in separate gourutine during the session initialization phase.
+	// gocql will always try to get 1 connection on each host pool
+	// during session initialization AND it will attempt
+	// to fill each pool afterward asynchronously if NumConns > 1.
+	// Notice: There is no guarantee that pool filling will be finished in the initialization phase.
+	// Also, it describes a maximum number of connections at the same time.
 	// Default: 2
 	NumConns int
 
