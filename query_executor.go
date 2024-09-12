@@ -103,7 +103,6 @@ func (q *queryExecutor) attemptQuery(ctx context.Context, qry internalRequest, c
 		})
 	} else {
 		iter = qry.execute(ctx, conn)
-		return iter
 	}
 
 	end := time.Now()
