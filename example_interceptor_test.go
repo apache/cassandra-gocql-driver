@@ -55,7 +55,7 @@ func (q MyQueryAttemptInterceptor) Intercept(
 
 	// Optionally bypass the handler and return an error to prevent query execution.
 	// For example, to simulate query timeouts.
-	if q.injectFault && attempt.Number == 1 {
+	if q.injectFault && attempt.Attempts == 0 {
 		<-time.After(1 * time.Second)
 		return gocql.NewIterWithErr(gocql.RequestErrWriteTimeout{})
 	}
