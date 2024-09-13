@@ -31,6 +31,7 @@ package gocql
 import (
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -1072,13 +1073,17 @@ func getFunctionsMetadata(session *Session, keyspaceName string) ([]FunctionMeta
 	if session.cfg.ProtoVersion == protoVersion1 || !session.hasAggregatesAndFunctions {
 		return nil, nil
 	}
+	var withoutBody bool
 	var tableName string
 	if session.useSystemSchema {
 		tableName = "system_schema.functions"
 	} else {
 		tableName = "system.schema_functions"
 	}
-	stmt := fmt.Sprintf(`
+FuncsStmt:
+	var stmt string
+	if !withoutBody {
+		stmt = fmt.Sprintf(`
 		SELECT
 			function_name,
 			argument_types,
@@ -1089,6 +1094,18 @@ func getFunctionsMetadata(session *Session, keyspaceName string) ([]FunctionMeta
 			return_type
 		FROM %s
 		WHERE keyspace_name = ?`, tableName)
+	} else {
+		stmt = fmt.Sprintf(`
+		SELECT
+			function_name,
+			argument_types,
+			argument_names,
+			called_on_null_input,
+			language,
+			return_type
+		FROM %s
+		WHERE keyspace_name = ?`, tableName)
+	}
 
 	var functions []FunctionMetadata
 
@@ -1097,14 +1114,25 @@ func getFunctionsMetadata(session *Session, keyspaceName string) ([]FunctionMeta
 		function := FunctionMetadata{Keyspace: keyspaceName}
 		var argumentTypes []string
 		var returnType string
-		err := rows.Scan(&function.Name,
-			&argumentTypes,
-			&function.ArgumentNames,
-			&function.Body,
-			&function.CalledOnNullInput,
-			&function.Language,
-			&returnType,
-		)
+		var err error
+		if !withoutBody {
+			err = rows.Scan(&function.Name,
+				&argumentTypes,
+				&function.ArgumentNames,
+				&function.Body,
+				&function.CalledOnNullInput,
+				&function.Language,
+				&returnType,
+			)
+		} else {
+			err = rows.Scan(&function.Name,
+				&argumentTypes,
+				&function.ArgumentNames,
+				&function.CalledOnNullInput,
+				&function.Language,
+				&returnType,
+			)
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -1117,6 +1145,14 @@ func getFunctionsMetadata(session *Session, keyspaceName string) ([]FunctionMeta
 	}
 
 	if err := rows.Err(); err != nil {
+		if !withoutBody {
+			// Yugabyte doesn't support the body column in the functions table
+			var rerr RequestError
+			if errors.As(err, &rerr) && rerr.Code() == ErrCodeInvalid {
+				withoutBody = true
+				goto FuncsStmt
+			}
+		}
 		return nil, err
 	}
 
@@ -1127,14 +1163,17 @@ func getAggregatesMetadata(session *Session, keyspaceName string) ([]AggregateMe
 	if session.cfg.ProtoVersion == protoVersion1 || !session.hasAggregatesAndFunctions {
 		return nil, nil
 	}
+	var withoutReturnType bool
 	var tableName string
 	if session.useSystemSchema {
 		tableName = "system_schema.aggregates"
 	} else {
 		tableName = "system.schema_aggregates"
 	}
-
-	stmt := fmt.Sprintf(`
+AggsStmt:
+	var stmt string
+	if !withoutReturnType {
+		stmt = fmt.Sprintf(`
 		SELECT
 			aggregate_name,
 			argument_types,
@@ -1145,6 +1184,18 @@ func getAggregatesMetadata(session *Session, keyspaceName string) ([]AggregateMe
 			state_type
 		FROM %s
 		WHERE keyspace_name = ?`, tableName)
+	} else {
+		stmt = fmt.Sprintf(`
+		SELECT
+			aggregate_name,
+			argument_types,
+			final_func,
+			initcond,
+			state_func,
+			state_type
+		FROM %s
+		WHERE keyspace_name = ?`, tableName)
+	}
 
 	var aggregates []AggregateMetadata
 
@@ -1154,14 +1205,25 @@ func getAggregatesMetadata(session *Session, keyspaceName string) ([]AggregateMe
 		var argumentTypes []string
 		var returnType string
 		var stateType string
-		err := rows.Scan(&aggregate.Name,
-			&argumentTypes,
-			&aggregate.finalFunc,
-			&aggregate.InitCond,
-			&returnType,
-			&aggregate.stateFunc,
-			&stateType,
-		)
+		var err error
+		if !withoutReturnType {
+			err = rows.Scan(&aggregate.Name,
+				&argumentTypes,
+				&aggregate.finalFunc,
+				&aggregate.InitCond,
+				&returnType,
+				&aggregate.stateFunc,
+				&stateType,
+			)
+		} else {
+			err = rows.Scan(&aggregate.Name,
+				&argumentTypes,
+				&aggregate.finalFunc,
+				&aggregate.InitCond,
+				&aggregate.stateFunc,
+				&stateType,
+			)
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -1175,6 +1237,14 @@ func getAggregatesMetadata(session *Session, keyspaceName string) ([]AggregateMe
 	}
 
 	if err := rows.Err(); err != nil {
+		if !withoutReturnType {
+			// Yugabyte doesn't support the return_type column in the aggregates table
+			var rerr RequestError
+			if errors.As(err, &rerr) && rerr.Code() == ErrCodeInvalid {
+				withoutReturnType = true
+				goto AggsStmt
+			}
+		}
 		return nil, err
 	}
 
