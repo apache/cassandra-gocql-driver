@@ -74,8 +74,19 @@ type queryExecutor struct {
 	interceptor QueryAttemptInterceptor
 }
 
+type QueryAttempt struct {
+	// The query to execute, either a *gocql.Query or *gocql.Batch.
+	Query ExecutableStatement
+	// The connection used to execute the query.
+	Conn *Conn
+	// The host that will receive the query.
+	Host *HostInfo
+	// The number of previous query attempts. 0 for the initial attempt, 1 for the first retry, etc.
+	Attempts int
+}
+
 // QueryAttemptHandler is a function that attempts query execution.
-type QueryAttemptHandler = func(context.Context, ExecutableStatement, *Conn) *Iter
+type QueryAttemptHandler = func(context.Context, QueryAttempt) *Iter
 
 // QueryAttemptInterceptor is the interface implemented by query interceptors / middleware.
 //
@@ -87,7 +98,7 @@ type QueryAttemptInterceptor interface {
 	// The interceptor is responsible for calling the `handler` function and returning the handler result. Failure to
 	// call the handler will panic. If the interceptor wants to halt query execution and prevent retries, it should
 	// return an error.
-	Intercept(ctx context.Context, query ExecutableStatement, conn *Conn, handler QueryAttemptHandler) *Iter
+	Intercept(ctx context.Context, attempt QueryAttempt, handler QueryAttemptHandler) *Iter
 }
 
 func (q *queryExecutor) attemptQuery(ctx context.Context, qry internalRequest, conn *Conn) *Iter {
@@ -97,9 +108,15 @@ func (q *queryExecutor) attemptQuery(ctx context.Context, qry internalRequest, c
 	if q.interceptor != nil {
 		// Propagate interceptor context modifications.
 		_ctx := ctx
-		iter = q.interceptor.Intercept(_ctx, qry, conn, func(_ctx context.Context, qry ExecutableQuery, c *Conn) *Iter {
+		attempt := QueryAttempt{
+			Query:    qry,
+			Conn:     conn,
+			Host:     conn.host,
+			Attempts: qry.Attempts(),
+		}
+		iter = q.interceptor.Intercept(_ctx, attempt, func(_ctx context.Context, attempt QueryAttempt) *Iter {
 			ctx = _ctx
-			return qry.execute(ctx, conn)
+			return attempt.Query.execute(ctx, attempt.Conn)
 		})
 	} else {
 		iter = qry.execute(ctx, conn)

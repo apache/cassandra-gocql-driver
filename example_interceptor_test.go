@@ -26,7 +26,6 @@ package gocql_test
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"time"
 
@@ -39,17 +38,16 @@ type MyQueryAttemptInterceptor struct {
 
 func (q MyQueryAttemptInterceptor) Intercept(
 	ctx context.Context,
-	query gocql.ExecutableQuery,
-	conn *gocql.Conn,
+	attempt gocql.QueryAttempt,
 	handler gocql.QueryAttemptHandler,
 ) *gocql.Iter {
-	switch q := query.(type) {
+	switch q := attempt.Query.(type) {
 	case *gocql.Query:
 		// Inspect or modify query
-		query = q
+		attempt.Query = q
 	case *gocql.Batch:
 		// Inspect or modify batch
-		query = q
+		attempt.Query = q
 	}
 
 	// Inspect or modify context
@@ -57,13 +55,13 @@ func (q MyQueryAttemptInterceptor) Intercept(
 
 	// Optionally bypass the handler and return an error to prevent query execution.
 	// For example, to simulate query timeouts.
-	if q.injectFault && query.Attempts() == 0 {
+	if q.injectFault && attempt.Number == 1 {
 		<-time.After(1 * time.Second)
 		return gocql.NewIterWithErr(gocql.RequestErrWriteTimeout{})
 	}
 
 	// The interceptor *must* invoke the handler to execute the query.
-	return handler(ctx, query, conn)
+	return handler(ctx, attempt)
 }
 
 // Example_interceptor demonstrates how to implement a QueryAttemptInterceptor.
@@ -87,6 +85,4 @@ func Example_interceptor() {
 	if err != nil {
 		log.Fatalf("query failed %T", err)
 	}
-	fmt.Println(stringValue)
-	// Output: MOOOO!
 }
