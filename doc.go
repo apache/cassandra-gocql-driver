@@ -370,7 +370,7 @@
 //
 // A QueryAttemptInterceptor will be invoked once prior to each query execution attempt, including retry attempts
 // and speculative execution attempts. Interceptors are responsible for calling the provided handler and returning
-// a non-nil Iter.
+// a non-nil Iter or an error.
 //
 // See Example_interceptor for full example.
 //

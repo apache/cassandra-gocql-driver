@@ -1449,11 +1449,6 @@ func (iter *Iter) Columns() []ColumnInfo {
 	return iter.meta.columns
 }
 
-// NewIterWithErr return a new *Iter with an error.
-func NewIterWithErr(err error) *Iter {
-	return &Iter{err: err}
-}
-
 type Scanner interface {
 	// Next advances the row pointer to point at the next row, the row is valid until
 	// the next call of Next. It returns true if there is a row which is available to be

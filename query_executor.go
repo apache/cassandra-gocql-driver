@@ -74,15 +74,16 @@ type QueryAttemptInterceptor interface {
 	// Intercept is invoked once immediately before a query execution attempt, including retry attempts and
 	// speculative execution attempts.
 
-	// The interceptor is responsible for calling the `handler` function and returning the handler result. Failure to
-	// call the handler will panic. If the interceptor wants to halt query execution and prevent retries, it should
-	// return an error.
-	Intercept(ctx context.Context, attempt QueryAttempt, handler QueryAttemptHandler) *Iter
+	// The interceptor is responsible for calling the `handler` function and returning the handler result. If the
+	// interceptor wants to bypass the handler and skip query execution, it should return an error. Failure to
+	// return either the handler result or an error will panic.
+	Intercept(ctx context.Context, attempt QueryAttempt, handler QueryAttemptHandler) (*Iter, error)
 }
 
 func (q *queryExecutor) attemptQuery(ctx context.Context, qry ExecutableQuery, conn *Conn) *Iter {
 	start := time.Now()
 	var iter *Iter
+	var err error
 	if q.interceptor != nil {
 		// Propagate interceptor context modifications.
 		_ctx := ctx
@@ -92,10 +93,13 @@ func (q *queryExecutor) attemptQuery(ctx context.Context, qry ExecutableQuery, c
 			Host:     conn.host,
 			Attempts: qry.Attempts(),
 		}
-		iter = q.interceptor.Intercept(_ctx, attempt, func(_ctx context.Context, attempt QueryAttempt) *Iter {
+		iter, err = q.interceptor.Intercept(_ctx, attempt, func(_ctx context.Context, attempt QueryAttempt) *Iter {
 			ctx = _ctx
 			return attempt.Query.execute(ctx, attempt.Conn)
 		})
+		if err != nil {
+			iter = &Iter{err: err}
+		}
 	} else {
 		iter = qry.execute(ctx, conn)
 	}
