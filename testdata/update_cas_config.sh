@@ -16,7 +16,7 @@ update_property() {
   elif [[ $CASS_VERSION == 4.1.* ]]; then
     indent="  "
   else
-    indent="    "
+    indent="  "
   fi
 
   if grep -q "^${property}:" "$CASSANDRA_CONFIG"; then
@@ -42,7 +42,7 @@ update_property() {
             next
           }
           { print $0 }
-          ' "$CASSANDRA_CONFIG" > tmpfile && mv tmpfile "$CASSANDRA_CONFIG"
+          ' "$CASSANDRA_CONFIG" > /tmp/tmpfile && mv /tmp/tmpfile "$CASSANDRA_CONFIG"
         fi
       else
         # Add new root property with nested property
@@ -55,6 +55,7 @@ update_property() {
   fi
 }
 
+# custom script started
 # Function to configure Cassandra based on the version
 configure_cassandra() {
   local keypath="testdata"
@@ -64,11 +65,18 @@ configure_cassandra() {
   )
 
   if [[ $AUTH_TEST == true ]]; then
+      if [[ $CASS_VERSION == 5.*.* ]]; then
+        conf+=(
+          "authenticator.class_name :org.apache.cassandra.auth.PasswordAuthenticator"
+          "authorizer: CassandraAuthorizer"
+        )
+      else
     conf+=(
       "authenticator: PasswordAuthenticator"
       "authorizer: CassandraAuthorizer"
         )
   fi
+fi
 
   if [[ $RUN_SSL_TEST == true ]]; then
     conf+=(
@@ -111,15 +119,14 @@ configure_cassandra() {
     IFS=":" read -r property value <<< "$setting"
     update_property "$property" "$value"
   done
+
+  # Update rpc addresses with the container's IP address
+  IP_ADDRESS=$(hostname -i)
+  sed -i "s/^rpc_address:.*/rpc_address: $IP_ADDRESS/" /etc/cassandra/cassandra.yaml
+  sed -i "s/^# broadcast_rpc_address:.*/broadcast_rpc_address: $IP_ADDRESS/" /etc/cassandra/cassandra.yaml
+
+  echo "Cassandra configuration modified successfully."
 }
 
-# update Cassandra config
+## update Cassandra config
 configure_cassandra
-
-# Update rpc addresses with the container's IP address
-IP_ADDRESS=$(hostname -i)
-sed -i "s/^rpc_address:.*/rpc_address: $IP_ADDRESS/" /etc/cassandra/cassandra.yaml
-sed -i "s/^# broadcast_rpc_address:.*/broadcast_rpc_address: $IP_ADDRESS/" /etc/cassandra/cassandra.yaml
-
-echo "Cassandra configuration modified successfully."
-
