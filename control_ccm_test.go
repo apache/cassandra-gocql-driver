@@ -37,7 +37,7 @@ import (
 
 type TestHostFilter struct {
 	mu           sync.Mutex
-	allowedHosts map[string]TChost
+	allowedHosts map[string]*tcNode
 }
 
 func (f *TestHostFilter) Accept(h *HostInfo) bool {
@@ -47,7 +47,7 @@ func (f *TestHostFilter) Accept(h *HostInfo) bool {
 	return ok
 }
 
-func (f *TestHostFilter) SetAllowedHosts(hosts map[string]TChost) {
+func (f *TestHostFilter) SetAllowedHosts(hosts map[string]*tcNode) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.allowedHosts = hosts
@@ -60,13 +60,13 @@ func TestControlConn_ReconnectRefreshesRing(t *testing.T) {
 		t.Skip("this test requires at least 2 nodes")
 	}
 
-	allAllowedHosts := map[string]TChost{}
+	allAllowedHosts := map[string]*tcNode{}
 	for _, node := range cassNodes {
 		allAllowedHosts[node.Addr] = node
 	}
 
 	firstNode := cassNodes["node1"]
-	allowedHosts := map[string]TChost{
+	allowedHosts := map[string]*tcNode{
 		firstNode.Addr: firstNode,
 	}
 

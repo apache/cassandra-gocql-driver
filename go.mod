@@ -20,6 +20,8 @@ module github.com/gocql/gocql
 go 1.23
 
 require (
+	github.com/bitly/go-hostpool v0.1.0 // indirect
+	github.com/docker/docker v27.1.1+incompatible // indirect
 	github.com/golang/snappy v0.0.4
 	github.com/hailocab/go-hostpool v0.0.0-20160125115350-e80d13ce29ed
 	github.com/testcontainers/testcontainers-go v0.33.0
@@ -71,9 +73,4 @@ require (
 	go.opentelemetry.io/otel/trace v1.24.0 // indirect
 	golang.org/x/crypto v0.22.0 // indirect
 	golang.org/x/sys v0.21.0 // indirect
-)
-
-require (
-	github.com/bitly/go-hostpool v0.1.0 // indirect
-	github.com/docker/docker v27.1.1+incompatible
 )

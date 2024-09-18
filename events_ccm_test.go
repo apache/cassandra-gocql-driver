@@ -39,7 +39,7 @@ func TestEventDiscovery(t *testing.T) {
 
 	// check we discovered all the nodes in the ring
 	for _, node := range cassNodes {
-		host := session.ring.getHost(node.ID)
+		host := session.ring.getHost(node.HostID)
 		if host == nil {
 			t.Errorf("did not discover %q", node.Addr)
 		}
@@ -69,11 +69,11 @@ func TestEventNodeDownControl(t *testing.T) {
 		}
 	}(ctx)
 
-	if _, ok := getPool(session.pool, node.ID); ok {
+	if _, ok := getPool(session.pool, node.HostID); ok {
 		t.Fatal("node not removed after remove event")
 	}
 
-	host := session.ring.getHost(node.ID)
+	host := session.ring.getHost(node.HostID)
 	if host == nil {
 		t.Fatal("node not in metadata ring")
 	} else if host.IsUp() {
@@ -99,11 +99,11 @@ func TestEventNodeDown(t *testing.T) {
 		}
 	}(ctx)
 
-	if _, ok := getPool(session.pool, node.ID); ok {
+	if _, ok := getPool(session.pool, node.HostID); ok {
 		t.Errorf("node not removed after remove event")
 	}
 
-	host := session.ring.getHost(node.ID)
+	host := session.ring.getHost(node.HostID)
 	if host == nil {
 		t.Fatal("node not in metadata ring")
 	} else if host.IsUp() {
@@ -120,7 +120,7 @@ func TestEventNodeUp(t *testing.T) {
 	const targetNode = "node2"
 	node := cassNodes[targetNode]
 
-	if _, ok := getPool(session.pool, node.ID); !ok {
+	if _, ok := getPool(session.pool, node.HostID); !ok {
 		t.Errorf("target pool not in connection pool: addr=%q pools=%v", node.Addr, session.pool.hostConnPools)
 		t.FailNow()
 	}
@@ -129,7 +129,7 @@ func TestEventNodeUp(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, ok := getPool(session.pool, node.ID); ok {
+	if _, ok := getPool(session.pool, node.HostID); ok {
 		t.Fatal("node not removed after remove event")
 	}
 
@@ -140,11 +140,11 @@ func TestEventNodeUp(t *testing.T) {
 	// cassandra < 2.2 needs 10 seconds to start up the binary service
 	time.Sleep(15 * time.Second)
 
-	if _, ok := getPool(session.pool, node.ID); !ok {
+	if _, ok := getPool(session.pool, node.HostID); !ok {
 		t.Fatal("node not added after node added event")
 	}
 
-	host := session.ring.getHost(node.ID)
+	host := session.ring.getHost(node.HostID)
 	if host == nil {
 		t.Fatal("node not in metadata ring")
 	} else if !host.IsUp() {
@@ -164,13 +164,13 @@ func TestEventFilter(t *testing.T) {
 	session := createSessionFromCluster(cluster, t)
 	defer session.Close()
 
-	if _, ok := getPool(session.pool, whiteListedNode.ID); !ok {
+	if _, ok := getPool(session.pool, whiteListedNode.HostID); !ok {
 		t.Errorf("should have %v in pool but dont", whiteListedNodeName)
 	}
 
-	for _, host := range [...]string{"node2", "node3"} {
-		if _, ok := getPool(session.pool, cassNodes[host].ID); ok {
-			t.Errorf("should not have %v in pool", host)
+	for _, node := range [...]string{"node2", "node3"} {
+		if _, ok := getPool(session.pool, cassNodes[node].HostID); ok {
+			t.Errorf("should not have %v in pool", node)
 		}
 	}
 
@@ -188,10 +188,10 @@ func TestEventFilter(t *testing.T) {
 		t.Fatalf("couldn't restore a cluster : %v", err)
 	}
 
-	for _, host := range [...]string{"node2", "node3"} {
-		_, ok := getPool(session.pool, cassNodes[host].ID)
+	for _, node := range [...]string{"node2", "node3"} {
+		_, ok := getPool(session.pool, cassNodes[node].HostID)
 		if ok {
-			t.Errorf("should not have %v in pool", host)
+			t.Errorf("should not have %v in pool", node)
 		}
 	}
 
@@ -211,7 +211,7 @@ func TestEventDownQueryable(t *testing.T) {
 	session := createSessionFromCluster(cluster, t)
 	defer session.Close()
 
-	if pool, ok := getPool(session.pool, targetNode.ID); !ok {
+	if pool, ok := getPool(session.pool, targetNode.HostID); !ok {
 		t.Fatalf("should have %v in pool but dont", targetNode.Addr)
 	} else if !pool.host.IsUp() {
 		t.Fatalf("host is not up %v", pool.host)
@@ -225,7 +225,7 @@ func TestEventDownQueryable(t *testing.T) {
 		t.Fatalf("couldn't preserve a cluster : %v", err)
 	}
 
-	if pool, ok := getPool(session.pool, targetNode.ID); !ok {
+	if pool, ok := getPool(session.pool, targetNode.HostID); !ok {
 		t.Fatalf("should have %v in pool but dont", targetNode.Addr)
 	} else if !pool.host.IsUp() {
 		t.Fatalf("host is not up %v", pool.host)
