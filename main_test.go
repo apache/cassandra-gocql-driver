@@ -87,7 +87,6 @@ func NodeUpTC(ctx context.Context, number int) error {
 
 	jvmOpts := "-Dcassandra.test.fail_writes_ks=test -Dcassandra.custom_query_handler_class=org.apache.cassandra.cql3.CustomPayloadMirroringQueryHandler"
 	if *clusterSize == 1 {
-		// speeds up the creation of a single-node cluster. not for topology tests
 		jvmOpts += " -Dcassandra.skip_wait_for_gossip_to_settle=0"
 	}
 
