@@ -55,7 +55,6 @@ update_property() {
   fi
 }
 
-# custom script started
 # Function to configure Cassandra based on the version
 configure_cassandra() {
   local keypath="testdata"
