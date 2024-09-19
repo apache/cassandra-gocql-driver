@@ -248,6 +248,20 @@ var marshalTests = []struct {
 		nil,
 	},
 	{
+		NativeType{proto: 2, typ: TypeBigInt},
+		[]byte("\xf7\x0c\x6b\x14\x84\x49\x3b\x36\x4a\x36\x1e\x03\x34\x05"),
+		"-78635384813432117863538481343211",
+		MarshalError("can not marshal string to bigint: strconv.ParseInt: parsing \"-78635384813432117863538481343211\": value out of range"),
+		nil,
+	},
+	{
+		NativeType{proto: 2, typ: TypeBigInt},
+		[]byte("\x20\x45\xce\x3b\x05\xef\x2d\xde\x51\xb9\x28\x76\x6d\x6e"),
+		"922337203685477692259749625974294",
+		MarshalError("can not marshal string to bigint: strconv.ParseInt: parsing \"922337203685477692259749625974294\": value out of range"),
+		nil,
+	},
+	{
 		NativeType{proto: 2, typ: TypeBoolean},
 		[]byte("\x00"),
 		false,
