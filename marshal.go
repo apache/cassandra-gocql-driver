@@ -77,7 +77,7 @@ type Unmarshaler interface {
 //	tinyint, smallint, int      | integer types      |
 //	tinyint, smallint, int      | string             | formatted as base 10 number
 //	bigint, counter             | integer types      |
-//	bigint, counter             | big.Int            |
+//	bigint, counter             | big.Int            | according to cassandra bigint specification the big.Int value limited to int64 size(an eight-byte two's complement integer.)
 //	bigint, counter             | string             | formatted as base 10 number
 //	float                       | float32            |
 //	double                      | float64            |
@@ -671,7 +671,10 @@ func marshalBigInt(info TypeInfo, value interface{}) ([]byte, error) {
 	case uint8:
 		return encBigInt(int64(v)), nil
 	case big.Int:
-		return encBigInt2C(&v), nil
+		if !v.IsInt64() {
+			return nil, marshalErrorf("marshal bigint: value %v out of range", &v)
+		}
+		return encBigInt(v.Int64()), nil
 	case string:
 		i, err := strconv.ParseInt(value.(string), 10, 64)
 		if err != nil {
@@ -773,6 +776,8 @@ func marshalVarint(info TypeInfo, value interface{}) ([]byte, error) {
 			retBytes = make([]byte, 8)
 			binary.BigEndian.PutUint64(retBytes, v)
 		}
+	case big.Int:
+		retBytes = encBigInt2C(&v)
 	default:
 		retBytes, err = marshalBigInt(info, value)
 	}
