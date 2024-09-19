@@ -32,6 +32,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Retry policy now takes into account query idempotency (CASSGO-27)
 
 - Don't return error to caller with RetryType Ignore (CASSGO-28)
+- The marshalBigInt return 8 bytes slice in all cases except for big.Int,
+  which returns a variable length slice, but should be 8 bytes slice as well (CASSGO-2)
 
 - Skip metadata only if the prepared result includes metadata (CASSGO-40)
 
