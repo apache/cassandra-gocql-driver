@@ -21,6 +21,23 @@ The following is a check list of requirements that need to be satisfied in order
 * The merge commit passes the regression test suite on GitHub Actions
 * `go fmt` has been applied to the submitted code
 * Notable changes (i.e. new features or changed behavior, bugfixes) are appropriately documented in CHANGELOG.md, functional changes also in godoc
+* Before a Pull Request or a new commit, ensure that all tests pass successfully. You can run all tests locally using the following command (this process takes approximately 15 minutes):
+```
+go test -v -tags "integration cassandra tc gocql_debug" -timeout=20m -race -gocql.timeout=60s -runssl -proto=4 -rf=3 -clusterSize=3 -autowait=2000ms -compressor=snappy -gocql.cversion=4.0.8 ./...  
+```
+and
+```
+go test -v -run=TestAuthentication -tags ""integration" gocql_debug" -timeout=2m -runauth -gocql.timeout=60s -runssl -proto=4 -rf=3 -clusterSize=1 -autowait=2000ms -runauth -compressor=snappy -gocql.cversion=4.0.8
+```
+### ℹ️ **Note:**
+
+> The main_test.go file serves as the entry point for integration tests. It sets up an actual Cassandra cluster, sharing resources before tests are run and cleaning them up afterward, ensuring a consistent and efficient testing environment. The cluster is created locally, so you will need Docker installed.
+>
+>
+> The setup supports both single-node (quick setup in seconds) and multi-node Cassandra clusters (approx. 5 minutes, configurable via the `-clusterSize` flag). If you're curious to try integration tests, feel free to run them yourself. Just ensure that your tests are tagged correctly (e.g., `integration`), since `main_test.go` skips unit tests for performance reasons (no need to start a cluster for unit tests)
+>
+> You can find examples of running integration tests in the "Before a Pull Request" section.
+>
 * A correctly formatted commit message, see below
 
 If there are any requirements that can't be reasonably satisfied, please state this either on the pull request or as part of discussion on the mailing list. Where appropriate, the core team may apply discretion and make an exception to these requirements.

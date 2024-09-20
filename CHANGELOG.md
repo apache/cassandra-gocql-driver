@@ -7,10 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-
+- Integrated testcontainers-go as the new test runner for integration tests.
 ### Changed
-
+- Updated GitHub workflows to use `testcontainers-go` for CCM integration tests, replacing the previous CCM integration test runner.
 ### Fixed
+- Corrected `rpc_address` to `connect_address` in the `TestDiscoverViaProxy` test case.
 
 ## [1.6.0] - 2023-08-28
 
