@@ -41,8 +41,7 @@ jobs:
           go-version: ${{ matrix.go }}
       - name: setup
         run: |
-          # todo: back the -runssl flag, as soon as the certs get updated.
-          args="-gocql.timeout=60s -proto=4 -rf=3 -clusterSize=3 -autowait=2000ms -compressor=${{ matrix.compressor }} -gocql.cversion=${{ matrix.cassandra_version }} ./..."
+          args="-gocql.timeout=60s -runssl -proto=4 -rf=3 -clusterSize=3 -autowait=2000ms -compressor=${{ matrix.compressor }} -gocql.cversion=${{ matrix.cassandra_version }} ./..."
           echo "args=$args" >> $GITHUB_ENV
       - name: run
         run: |      
@@ -64,8 +63,7 @@ jobs:
           go-version: ${{ matrix.go }}
       - name: setup
         run: |
-          # todo: return back the -runssl flag, as soon as the certs get updated.
-          args="-gocql.timeout=60s -proto=4 -rf=3 -clusterSize=1 -autowait=2000ms -runauth -compressor=${{ matrix.compressor }} -gocql.cversion=${{ matrix.cassandra_version }}"
+          args="-gocql.timeout=60s -runssl -proto=4 -rf=3 -clusterSize=1 -autowait=2000ms -runauth -compressor=${{ matrix.compressor }} -gocql.cversion=${{ matrix.cassandra_version }}"
           echo "args=$args" >> $GITHUB_ENV
       - name: run
         run: |      
