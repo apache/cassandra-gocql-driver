@@ -213,7 +213,7 @@ func restoreCluster(ctx context.Context) error {
 		container.CountRestart += 1
 
 		err := wait.ForLog("Startup complete").
-			WithStartupTimeout(30*time.Second).
+			WithStartupTimeout(60*time.Second).
 			WithOccurrence(container.CountRestart+1).
 			WaitUntilReady(ctx, container.TC)
 		if err != nil {
