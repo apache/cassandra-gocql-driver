@@ -13,8 +13,6 @@ update_property() {
   local indent=""
   if [[ $CASS_VERSION == 4.0.* ]]; then
     indent="    "
-  elif [[ $CASS_VERSION == 4.1.* ]]; then
-    indent="  "
   else
     indent="  "
   fi
@@ -22,7 +20,6 @@ update_property() {
   if grep -q "^${property}:" "$CASSANDRA_CONFIG"; then
     # If the property exists, update its value
     sed -i "s|^\(${property}:\).*|\1 ${value}|" "$CASSANDRA_CONFIG"
-#    echo "Updated $property to $value"
   else
     if [[ "$property" == *"."* ]]; then
       # If it's a nested property
