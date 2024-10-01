@@ -259,6 +259,9 @@ type ClusterConfig struct {
 
 	// internal config for testing
 	disableControlConn bool
+
+	// If Session has RateLimiterConfig then queries will be limited using RateLimiter
+	RateLimiterConfig *RateLimiterConfig
 }
 
 type Dialer interface {
