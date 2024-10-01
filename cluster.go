@@ -254,7 +254,7 @@ type ClusterConfig struct {
 	HostDialer HostDialer
 
 	// Logger for this ClusterConfig.
-	// If not specified, defaults to the global gocql.Logger.
+	// If not specified, defaults to the gocql.defaultLogger.
 	Logger StdLogger
 
 	// internal config for testing
@@ -298,7 +298,7 @@ func NewCluster(hosts ...string) *ClusterConfig {
 
 func (cfg *ClusterConfig) logger() StdLogger {
 	if cfg.Logger == nil {
-		return Logger
+		return &defaultLogger{}
 	}
 	return cfg.Logger
 }

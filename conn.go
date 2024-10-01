@@ -159,7 +159,7 @@ type ConnConfig struct {
 
 func (c *ConnConfig) logger() StdLogger {
 	if c.Logger == nil {
-		return Logger
+		return &defaultLogger{}
 	}
 	return c.Logger
 }
