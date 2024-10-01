@@ -36,8 +36,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/hailocab/go-hostpool"
 )
 
 // Tests of the round-robin host selection policy implementation
@@ -138,47 +136,6 @@ func TestHostPolicy_TokenAware_SimpleStrategy(t *testing.T) {
 	// then rest of the hosts
 	expectHosts(t, "rest", iter, "0", "3")
 	expectNoMoreHosts(t, iter)
-}
-
-// Tests of the host pool host selection policy implementation
-func TestHostPolicy_HostPool(t *testing.T) {
-	policy := HostPoolHostPolicy(hostpool.New(nil))
-
-	hosts := []*HostInfo{
-		{hostId: "0", connectAddress: net.IPv4(10, 0, 0, 0)},
-		{hostId: "1", connectAddress: net.IPv4(10, 0, 0, 1)},
-	}
-
-	// Using set host to control the ordering of the hosts as calling "AddHost" iterates the map
-	// which will result in an unpredictable ordering
-	policy.(*hostPoolHostPolicy).SetHosts(hosts)
-
-	// the first host selected is actually at [1], but this is ok for RR
-	// interleaved iteration should always increment the host
-	iter := policy.Pick(nil)
-	actualA := iter()
-	if actualA.Info().HostID() != "0" {
-		t.Errorf("Expected hosts[0] but was hosts[%s]", actualA.Info().HostID())
-	}
-	actualA.Mark(nil)
-
-	actualB := iter()
-	if actualB.Info().HostID() != "1" {
-		t.Errorf("Expected hosts[1] but was hosts[%s]", actualB.Info().HostID())
-	}
-	actualB.Mark(fmt.Errorf("error"))
-
-	actualC := iter()
-	if actualC.Info().HostID() != "0" {
-		t.Errorf("Expected hosts[0] but was hosts[%s]", actualC.Info().HostID())
-	}
-	actualC.Mark(nil)
-
-	actualD := iter()
-	if actualD.Info().HostID() != "0" {
-		t.Errorf("Expected hosts[0] but was hosts[%s]", actualD.Info().HostID())
-	}
-	actualD.Mark(nil)
 }
 
 func TestHostPolicy_RoundRobin_NilHostInfo(t *testing.T) {
