@@ -936,6 +936,10 @@ type Query struct {
 
 	// routingInfo is a pointer because Query can be copied and copyable struct can't hold a mutex.
 	routingInfo *queryRoutingInfo
+
+	// host specifies the host on which the query should be executed.
+	// If it is nil, then the host is picked by HostSelectionPolicy
+	host *HostInfo
 }
 
 type queryRoutingInfo struct {
@@ -1421,6 +1425,17 @@ func (q *Query) borrowForExecution() {
 
 func (q *Query) releaseAfterExecution() {
 	q.decRefCount()
+}
+
+// SetHosts allows to define on which host the query should be executed.
+// If host == nil, then the HostSelectionPolicy will be used to pick a host
+func (q *Query) SetHost(host *HostInfo) *Query {
+	q.host = host
+	return q
+}
+
+func (q *Query) getHost() *HostInfo {
+	return q.host
 }
 
 // Iter represents an iterator that can be used to iterate over all rows that
@@ -2172,6 +2187,15 @@ func (t *traceWriter) Trace(traceId []byte) {
 	if err := iter.Close(); err != nil {
 		fmt.Fprintln(t.w, "Error:", err)
 	}
+}
+
+// GetHosts returns a list of hosts found via queries to system.local and system.peers
+func (s *Session) GetHosts() ([]*HostInfo, error) {
+	hosts, _, err := s.hostSource.GetHosts()
+	if err != nil {
+		return nil, err
+	}
+	return hosts, nil
 }
 
 type ObservedQuery struct {

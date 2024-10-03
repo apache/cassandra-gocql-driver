@@ -83,7 +83,28 @@ func (q *queryExecutor) speculate(ctx context.Context, qry ExecutableQuery, sp S
 }
 
 func (q *queryExecutor) executeQuery(qry ExecutableQuery) (*Iter, error) {
-	hostIter := q.policy.Pick(qry)
+	type hostGetter interface {
+		getHost() *HostInfo
+	}
+
+	var hostIter NextHost
+	// checking if the qry implements hostGetter interface
+	if hostGetter, ok := qry.(hostGetter); ok {
+		// checking if the host is specified for the query,
+		// if it is, the query should be executed at the specified host
+		if host := hostGetter.getHost(); host != nil {
+			hostIter = func() SelectedHost {
+				return (*selectedHost)(host)
+			}
+		}
+	}
+
+	// if host is not specified for the query,
+	// or it doesn't implement hostGetter interface,
+	// then a host will be picked by HostSelectionPolicy
+	if hostIter == nil {
+		hostIter = q.policy.Pick(qry)
+	}
 
 	// check if the query is not marked as idempotent, if
 	// it is, we force the policy to NonSpeculative
