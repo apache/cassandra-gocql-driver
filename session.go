@@ -237,7 +237,7 @@ func (s *Session) init() error {
 			return err
 		}
 
-		if !s.cfg.DisableInitialHostLookup {
+		if !s.cfg.DisableHostLookup {
 			var partitioner string
 			newHosts, partitioner, err := s.hostSource.GetHosts()
 			if err != nil {
@@ -336,11 +336,11 @@ func (s *Session) init() error {
 		go s.reconnectDownedHosts(s.cfg.ReconnectInterval)
 	}
 
-	// If we disable the initial host lookup, we need to still check if the
+	// If we disable the host lookup, we need to still check if the
 	// cluster is using the newer system schema or not... however, if control
 	// connection is disable, we really have no choice, so we just make our
 	// best guess...
-	if !s.cfg.disableControlConn && s.cfg.DisableInitialHostLookup {
+	if !s.cfg.disableControlConn && s.cfg.DisableHostLookup {
 		newer, _ := checkSystemSchema(s.control)
 		s.useSystemSchema = newer
 	} else {
