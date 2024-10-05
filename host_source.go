@@ -771,25 +771,27 @@ const (
 // debounces requests to call a refresh function (currently used for ring refresh). It also supports triggering a refresh immediately.
 type refreshDebouncer struct {
 	mu           sync.Mutex
-	stopped      bool
 	broadcaster  *errorBroadcaster
 	interval     time.Duration
 	timer        *time.Timer
 	refreshNowCh chan struct{}
-	quit         chan struct{}
 	refreshFn    func() error
+	quitCtxFn    context.CancelFunc
+	quitCtx      context.Context
+	stoppedCtxFn context.CancelFunc
+	stoppedCtx   context.Context
 }
 
 func newRefreshDebouncer(interval time.Duration, refreshFn func() error) *refreshDebouncer {
 	d := &refreshDebouncer{
-		stopped:      false,
 		broadcaster:  nil,
 		refreshNowCh: make(chan struct{}, 1),
-		quit:         make(chan struct{}),
 		interval:     interval,
 		timer:        time.NewTimer(interval),
 		refreshFn:    refreshFn,
 	}
+	d.stoppedCtx, d.stoppedCtxFn = context.WithCancel(context.Background())
+	d.quitCtx, d.quitCtxFn = context.WithCancel(context.Background())
 	d.timer.Stop()
 	go d.flusher()
 	return d
@@ -799,7 +801,7 @@ func newRefreshDebouncer(interval time.Duration, refreshFn func() error) *refres
 func (d *refreshDebouncer) debounce() {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	if d.stopped {
+	if d.isStopped() {
 		return
 	}
 	d.timer.Reset(d.interval)
@@ -810,6 +812,11 @@ func (d *refreshDebouncer) refreshNow() <-chan error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	if d.broadcaster == nil {
+		if d.isStopped() {
+			ch := make(chan error)
+			close(ch)
+			return ch
+		}
 		d.broadcaster = newErrorBroadcaster()
 		select {
 		case d.refreshNowCh <- struct{}{}:
@@ -821,14 +828,15 @@ func (d *refreshDebouncer) refreshNow() <-chan error {
 }
 
 func (d *refreshDebouncer) flusher() {
+	defer d.stoppedCtxFn()
 	for {
 		select {
 		case <-d.refreshNowCh:
 		case <-d.timer.C:
-		case <-d.quit:
+		case <-d.quitCtx.Done():
 		}
 		d.mu.Lock()
-		if d.stopped {
+		if d.isStopped() {
 			if d.broadcaster != nil {
 				d.broadcaster.stop()
 				d.broadcaster = nil
@@ -862,15 +870,12 @@ func (d *refreshDebouncer) flusher() {
 }
 
 func (d *refreshDebouncer) stop() {
-	d.mu.Lock()
-	if d.stopped {
-		d.mu.Unlock()
-		return
-	}
-	d.stopped = true
-	d.mu.Unlock()
-	d.quit <- struct{}{} // sync with flusher
-	close(d.quit)
+	d.quitCtxFn()         // wake up flusher
+	<-d.stoppedCtx.Done() // wait for flusher to exit
+}
+
+func (d *refreshDebouncer) isStopped() bool {
+	return d.quitCtx.Err() != nil
 }
 
 // broadcasts an error to multiple channels (listeners)
