@@ -1575,7 +1575,7 @@ func writeCollectionSize(info CollectionType, n int, buf *bytes.Buffer) error {
 func marshalList(info TypeInfo, value interface{}) ([]byte, error) {
 	listInfo, ok := info.(CollectionType)
 	if !ok {
-		return nil, marshalErrorf("marshal: can not marshal non collection type into list")
+		return nil, marshalErrorf("marshal: can not marshal non collection type %s as list", info)
 	}
 
 	if value == nil {
@@ -1603,7 +1603,7 @@ func marshalList(info TypeInfo, value interface{}) ([]byte, error) {
 		for i := 0; i < n; i++ {
 			item, err := Marshal(listInfo.Elem, rv.Index(i).Interface())
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("marshal: can not marshal %T into %s: %v", value, info, err)
 			}
 			itemLen := len(item)
 			// Set the value to null for supported protocols
