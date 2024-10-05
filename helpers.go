@@ -315,7 +315,7 @@ func (r *RowData) rowMap(m map[string]interface{}) {
 	}
 }
 
-// TupeColumnName will return the column name of a tuple value in a column named
+// TupleColumnName will return the column name of a tuple value in a column named
 // c at index n. It should be used if a specific element within a tuple is needed
 // to be extracted from a map returned from SliceMap or MapScan.
 func TupleColumnName(c string, n int) string {
