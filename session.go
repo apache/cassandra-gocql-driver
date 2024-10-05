@@ -1747,18 +1747,6 @@ type Batch struct {
 	routingInfo *queryRoutingInfo
 }
 
-// NewBatch creates a new batch operation without defaults from the cluster
-//
-// Deprecated: use session.NewBatch instead
-func NewBatch(typ BatchType) *Batch {
-	return &Batch{
-		Type:        typ,
-		metrics:     &queryMetrics{m: make(map[string]*hostMetrics)},
-		spec:        &NonSpeculativeExecution{},
-		routingInfo: &queryRoutingInfo{},
-	}
-}
-
 // NewBatch creates a new batch operation using defaults defined in the cluster
 func (s *Session) NewBatch(typ BatchType) *Batch {
 	s.mu.RLock()
