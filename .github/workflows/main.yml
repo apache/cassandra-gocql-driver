@@ -8,7 +8,7 @@ on:
     types: [ opened, synchronize, reopened ]
 
 env:
-  CCM_VERSION: "6e71061146f7ae67b84ccd2b1d90d7319b640e4c"
+  CCM_VERSION: "4621dfee5ad73956b831091a8b863d100d25c610"
 
 jobs:
   build:
@@ -35,7 +35,7 @@ jobs:
       fail-fast: false
       matrix:
         go: [ '1.22', '1.23' ]
-        cassandra_version: [ '4.0.13', '4.1.6' ]
+        cassandra_version: [ '4.1.6', '5.0.3' ]
         auth: [ "false" ]
         compressor: [ "no-compression", "snappy", "lz4" ]
         tags: [ "cassandra", "integration", "ccm" ]

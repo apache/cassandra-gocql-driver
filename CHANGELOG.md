@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Support vector type [CASSGO-11](https://issues.apache.org/jira/browse/CASSGO-11)
+
 - Allow SERIAL and LOCAL_SERIAL on SELECT statements [CASSGO-26](https://issues.apache.org/jira/browse/CASSGO-26)
 
 - Support of sending queries to the specific node with Query.SetHostID() (CASSGO-4)

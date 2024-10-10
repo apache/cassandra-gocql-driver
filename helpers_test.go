@@ -30,7 +30,7 @@ import (
 )
 
 func TestGetCassandraType_Set(t *testing.T) {
-	typ := getCassandraType("set<text>", &defaultLogger{})
+	typ := getCassandraType("set<text>", protoVersion4, &defaultLogger{})
 	set, ok := typ.(CollectionType)
 	if !ok {
 		t.Fatalf("expected CollectionType got %T", typ)
@@ -223,11 +223,68 @@ func TestGetCassandraType(t *testing.T) {
 				Elem:       NativeType{typ: TypeDuration},
 			},
 		},
+		{
+			"vector<float, 3>", VectorType{
+				NativeType: NativeType{
+					typ:    TypeCustom,
+					custom: VECTOR_TYPE,
+				},
+				SubType:    NativeType{typ: TypeFloat},
+				Dimensions: 3,
+			},
+		},
+		{
+			"vector<vector<float, 3>, 5>", VectorType{
+				NativeType: NativeType{
+					typ:    TypeCustom,
+					custom: VECTOR_TYPE,
+				},
+				SubType: VectorType{
+					NativeType: NativeType{
+						typ:    TypeCustom,
+						custom: VECTOR_TYPE,
+					},
+					SubType:    NativeType{typ: TypeFloat},
+					Dimensions: 3,
+				},
+				Dimensions: 5,
+			},
+		},
+		{
+			"vector<map<uuid,timestamp>, 5>", VectorType{
+				NativeType: NativeType{
+					typ:    TypeCustom,
+					custom: VECTOR_TYPE,
+				},
+				SubType: CollectionType{
+					NativeType: NativeType{typ: TypeMap},
+					Key:        NativeType{typ: TypeUUID},
+					Elem:       NativeType{typ: TypeTimestamp},
+				},
+				Dimensions: 5,
+			},
+		},
+		{
+			"vector<frozen<tuple<int, float>>, 100>", VectorType{
+				NativeType: NativeType{
+					typ:    TypeCustom,
+					custom: VECTOR_TYPE,
+				},
+				SubType: TupleTypeInfo{
+					NativeType: NativeType{typ: TypeTuple},
+					Elems: []TypeInfo{
+						NativeType{typ: TypeInt},
+						NativeType{typ: TypeFloat},
+					},
+				},
+				Dimensions: 100,
+			},
+		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.input, func(t *testing.T) {
-			got := getCassandraType(test.input, &defaultLogger{})
+			got := getCassandraType(test.input, 0, &defaultLogger{})
 
 			// TODO(zariel): define an equal method on the types?
 			if !reflect.DeepEqual(got, test.exp) {

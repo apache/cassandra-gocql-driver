@@ -30,6 +30,7 @@ package gocql
 import (
 	"bytes"
 	"encoding/binary"
+	"fmt"
 	"math"
 	"math/big"
 	"net"
@@ -2504,6 +2505,37 @@ func TestReadCollectionSize(t *testing.T) {
 				if size != test.expectedSize {
 					t.Fatalf("Expected size of %d, but got %d", test.expectedSize, size)
 				}
+			}
+		})
+	}
+}
+
+func TestReadUnsignedVInt(t *testing.T) {
+	tests := []struct {
+		decodedInt  uint64
+		encodedVint []byte
+	}{
+		{
+			decodedInt:  0,
+			encodedVint: []byte{0},
+		},
+		{
+			decodedInt:  100,
+			encodedVint: []byte{100},
+		},
+		{
+			decodedInt:  256000,
+			encodedVint: []byte{195, 232, 0},
+		},
+	}
+	for _, test := range tests {
+		t.Run(fmt.Sprintf("%d", test.decodedInt), func(t *testing.T) {
+			actual, _, err := readUnsignedVInt(test.encodedVint)
+			if err != nil {
+				t.Fatalf("Expected no error, got %v", err)
+			}
+			if actual != test.decodedInt {
+				t.Fatalf("Expected %d, but got %d", test.decodedInt, actual)
 			}
 		})
 	}

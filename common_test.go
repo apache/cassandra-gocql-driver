@@ -28,6 +28,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"math/rand"
 	"net"
 	"reflect"
 	"strings"
@@ -53,6 +54,10 @@ var (
 
 	flagCassVersion cassVersion
 )
+
+var seededRand *rand.Rand = rand.New(rand.NewSource(time.Now().UnixNano()))
+
+const randCharset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 
 func init() {
 	flag.Var(&flagCassVersion, "gocql.cversion", "the cassandra version being tested against")
@@ -279,6 +284,14 @@ func assertTrue(t *testing.T, description string, value bool) {
 	if !value {
 		t.Fatalf("expected %s to be true", description)
 	}
+}
+
+func randomText(size int) string {
+	result := make([]byte, size)
+	for i := range result {
+		result[i] = randCharset[rand.Intn(len(randCharset))]
+	}
+	return string(result)
 }
 
 func assertEqual(t *testing.T, description string, expected, actual interface{}) {
