@@ -28,6 +28,7 @@
 package gocql
 
 import (
+	"github.com/stretchr/testify/require"
 	"testing"
 )
 
@@ -39,12 +40,12 @@ func TestVector_Marshaler(t *testing.T) {
 		t.Skip("Vector types have been introduced in Cassandra 5.0")
 	}
 
-	err := createTable(session, `CREATE TABLE gocql_test.vector_fixed(id int primary key, vec vector<float, 3>);`)
+	err := createTable(session, `CREATE TABLE IF NOT EXISTS gocql_test.vector_fixed(id int primary key, vec vector<float, 3>);`)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	err = createTable(session, `CREATE TABLE gocql_test.vector_variable(id int primary key, vec vector<text, 4>);`)
+	err = createTable(session, `CREATE TABLE IF NOT EXISTS gocql_test.vector_variable(id int primary key, vec vector<text, 4>);`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,7 +60,7 @@ func TestVector_Marshaler(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertDeepEqual(t, "fixed-size element size vector", insertFixVec, vf)
+	assertDeepEqual(t, "fixed size element vector", insertFixVec, vf)
 
 	longText := randomText(500)
 	insertVarVec := []string{"apache", "cassandra", longText, "gocql"}
@@ -72,5 +73,63 @@ func TestVector_Marshaler(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertDeepEqual(t, "variable-size element vector", insertVarVec, vv)
+	assertDeepEqual(t, "variable size element vector", insertVarVec, vv)
+}
+
+func TestVector_Empty(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+
+	if flagCassVersion.Before(5, 0, 0) {
+		t.Skip("Vector types have been introduced in Cassandra 5.0")
+	}
+
+	err := createTable(session, `CREATE TABLE IF NOT EXISTS gocql_test.vector_fixed_null(id int primary key, vec vector<float, 3>);`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = createTable(session, `CREATE TABLE IF NOT EXISTS gocql_test.vector_variable_null(id int primary key, vec vector<text, 4>);`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = session.Query("INSERT INTO vector_fixed_null(id) VALUES(?)", 1).Exec()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var vf []float32
+	err = session.Query("SELECT vec FROM vector_fixed_null WHERE id = ?", 1).Scan(&vf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertTrue(t, "fixed size element vector is empty", vf == nil)
+
+	err = session.Query("INSERT INTO vector_variable_null(id) VALUES(?)", 1).Exec()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var vv []string
+	err = session.Query("SELECT vec FROM vector_variable_null WHERE id = ?", 1).Scan(&vv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertTrue(t, "variable size element vector is empty", vv == nil)
+}
+
+func TestVector_MissingDimension(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+
+	if flagCassVersion.Before(5, 0, 0) {
+		t.Skip("Vector types have been introduced in Cassandra 5.0")
+	}
+
+	err := createTable(session, `CREATE TABLE IF NOT EXISTS gocql_test.vector_fixed(id int primary key, vec vector<float, 3>);`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = session.Query("INSERT INTO vector_fixed(id, vec) VALUES(?, ?)", 1, []float32{8, -5.0}).Exec()
+	require.Error(t, err, "expected vector with 3 dimensions, received 2")
 }

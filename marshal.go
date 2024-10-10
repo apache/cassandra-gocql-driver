@@ -1737,6 +1737,9 @@ func marshalVector(info VectorType, value interface{}) ([]byte, error) {
 	case reflect.Slice, reflect.Array:
 		buf := &bytes.Buffer{}
 		n := rv.Len()
+		if n != info.Dimensions {
+			return nil, marshalErrorf("expected vector with %d dimensions, received %d", info.Dimensions, n)
+		}
 
 		for i := 0; i < n; i++ {
 			if isVectorVariableLengthType(info.SubType.Type()) {
