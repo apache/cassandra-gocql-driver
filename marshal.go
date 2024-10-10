@@ -1742,13 +1742,12 @@ func marshalVector(info VectorType, value interface{}) ([]byte, error) {
 		}
 
 		for i := 0; i < n; i++ {
-			if isVectorVariableLengthType(info.SubType.Type()) {
-				elemSize := rv.Index(i).Len()
-				writeUnsignedVInt(buf, uint64(elemSize))
-			}
 			item, err := Marshal(info.SubType, rv.Index(i).Interface())
 			if err != nil {
 				return nil, err
+			}
+			if isVectorVariableLengthType(info.SubType.Type()) {
+				writeUnsignedVInt(buf, uint64(len(item)))
 			}
 			buf.Write(item)
 		}
@@ -1820,13 +1819,12 @@ func isVectorVariableLengthType(elemType Type) bool {
 	switch elemType {
 	case TypeVarchar, TypeAscii, TypeBlob, TypeText:
 		return true
-	// TODO(lantonia): double check list of variable vector types
-	//case TypeCounter:
-	//	return true
-	//case TypeDuration, TypeDate, TypeTime:
-	//	return true
-	//case TypeDecimal, TypeSmallInt, TypeTinyInt:
-	//	return true
+	case TypeCounter:
+		return true
+	case TypeDuration, TypeDate, TypeTime:
+		return true
+	case TypeDecimal, TypeSmallInt, TypeTinyInt, TypeVarint:
+		return true
 	case TypeInet:
 		return true
 	}

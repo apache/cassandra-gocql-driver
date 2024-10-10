@@ -311,6 +311,8 @@ func getApacheCassandraType(class string) Type {
 		return TypeTuple
 	case "DurationType":
 		return TypeDuration
+	case "SimpleDateType":
+		return TypeDate
 	default:
 		return TypeCustom
 	}
