@@ -383,7 +383,7 @@ func compileMetadata(
 		col := &columns[i]
 		// decode the validator for TypeInfo and order
 		if col.ClusteringOrder != "" { // Cassandra 3.x+
-			col.Type = getCassandraType(col.Validator, logger)
+			col.Type = getCassandraType(col.Validator, byte(protoVersion), logger)
 			col.Order = ASC
 			if col.ClusteringOrder == "desc" {
 				col.Order = DESC
@@ -947,11 +947,11 @@ func getColumnMetadata(session *Session, keyspaceName string) ([]ColumnMetadata,
 	return columns, nil
 }
 
-func getTypeInfo(t string, logger StdLogger) TypeInfo {
+func getTypeInfo(t string, protoVer byte, logger StdLogger) TypeInfo {
 	if strings.HasPrefix(t, apacheCassandraTypePrefix) {
 		t = apacheToCassandraType(t)
 	}
-	return getCassandraType(t, logger)
+	return getCassandraType(t, protoVer, logger)
 }
 
 func getViewsMetadata(session *Session, keyspaceName string) ([]ViewMetadata, error) {
@@ -987,7 +987,7 @@ func getViewsMetadata(session *Session, keyspaceName string) ([]ViewMetadata, er
 		}
 		view.FieldTypes = make([]TypeInfo, len(argumentTypes))
 		for i, argumentType := range argumentTypes {
-			view.FieldTypes[i] = getTypeInfo(argumentType, session.logger)
+			view.FieldTypes[i] = getTypeInfo(argumentType, byte(session.cfg.ProtoVersion), session.logger)
 		}
 		views = append(views, view)
 	}
@@ -1108,10 +1108,10 @@ func getFunctionsMetadata(session *Session, keyspaceName string) ([]FunctionMeta
 		if err != nil {
 			return nil, err
 		}
-		function.ReturnType = getTypeInfo(returnType, session.logger)
+		function.ReturnType = getTypeInfo(returnType, byte(session.cfg.ProtoVersion), session.logger)
 		function.ArgumentTypes = make([]TypeInfo, len(argumentTypes))
 		for i, argumentType := range argumentTypes {
-			function.ArgumentTypes[i] = getTypeInfo(argumentType, session.logger)
+			function.ArgumentTypes[i] = getTypeInfo(argumentType, byte(session.cfg.ProtoVersion), session.logger)
 		}
 		functions = append(functions, function)
 	}
@@ -1165,11 +1165,11 @@ func getAggregatesMetadata(session *Session, keyspaceName string) ([]AggregateMe
 		if err != nil {
 			return nil, err
 		}
-		aggregate.ReturnType = getTypeInfo(returnType, session.logger)
-		aggregate.StateType = getTypeInfo(stateType, session.logger)
+		aggregate.ReturnType = getTypeInfo(returnType, byte(session.cfg.ProtoVersion), session.logger)
+		aggregate.StateType = getTypeInfo(stateType, byte(session.cfg.ProtoVersion), session.logger)
 		aggregate.ArgumentTypes = make([]TypeInfo, len(argumentTypes))
 		for i, argumentType := range argumentTypes {
-			aggregate.ArgumentTypes[i] = getTypeInfo(argumentType, session.logger)
+			aggregate.ArgumentTypes[i] = getTypeInfo(argumentType, byte(session.cfg.ProtoVersion), session.logger)
 		}
 		aggregates = append(aggregates, aggregate)
 	}

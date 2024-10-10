@@ -105,32 +105,38 @@ func TestVector_Types(t *testing.T) {
 	duration2 := Duration{1, 1, 1920000000000}
 	duration3 := Duration{31, 0, 60000000000}
 
+	map1 := make(map[string]int)
+	map1["a"] = 1
+	map1["b"] = 2
+	map1["c"] = 3
+	map2 := make(map[string]int)
+	map2["abc"] = 123
+	map3 := make(map[string]int)
+
 	tests := []struct {
 		name       string
-		cqlType    Type
+		cqlType    string
 		value      interface{}
 		comparator func(interface{}, interface{})
 	}{
-		{name: "ascii", cqlType: TypeAscii, value: []string{"a", "1", "Z"}},
-		// TODO(lantonia): Test vector of custom types
-		// TODO(lantonia): Test vector of list, maps, set types
-		{name: "bigint", cqlType: TypeBigInt, value: []int64{1, 2, 3}},
-		{name: "blob", cqlType: TypeBlob, value: [][]byte{[]byte{1, 2, 3}, []byte{4, 5, 6, 7}, []byte{8, 9}}},
-		{name: "boolean", cqlType: TypeBoolean, value: []bool{true, false, true}},
-		{name: "counter", cqlType: TypeCounter, value: []int64{5, 6, 7}},
-		{name: "decimal", cqlType: TypeDecimal, value: []inf.Dec{*inf.NewDec(1, 0), *inf.NewDec(2, 1), *inf.NewDec(-3, 2)}},
-		{name: "double", cqlType: TypeDouble, value: []float64{0.1, -1.2, 3}},
-		{name: "float", cqlType: TypeFloat, value: []float32{0.1, -1.2, 3}},
-		{name: "int", cqlType: TypeInt, value: []int32{1, 2, 3}},
-		{name: "text", cqlType: TypeText, value: []string{"a", "b", "c"}},
-		{name: "timestamp", cqlType: TypeTimestamp, value: []time.Time{timestamp1, timestamp2, timestamp3}},
-		{name: "uuid", cqlType: TypeUUID, value: []UUID{MustRandomUUID(), MustRandomUUID(), MustRandomUUID()}},
-		{name: "varchar", cqlType: TypeVarchar, value: []string{"abc", "def", "ghi"}},
-		{name: "varint", cqlType: TypeVarint, value: []uint64{uint64(1234), uint64(123498765), uint64(18446744073709551615)}},
-		{name: "timeuuid", cqlType: TypeTimeUUID, value: []UUID{TimeUUID(), TimeUUID(), TimeUUID()}},
+		{name: "ascii", cqlType: TypeAscii.String(), value: []string{"a", "1", "Z"}},
+		{name: "bigint", cqlType: TypeBigInt.String(), value: []int64{1, 2, 3}},
+		{name: "blob", cqlType: TypeBlob.String(), value: [][]byte{[]byte{1, 2, 3}, []byte{4, 5, 6, 7}, []byte{8, 9}}},
+		{name: "boolean", cqlType: TypeBoolean.String(), value: []bool{true, false, true}},
+		{name: "counter", cqlType: TypeCounter.String(), value: []int64{5, 6, 7}},
+		{name: "decimal", cqlType: TypeDecimal.String(), value: []inf.Dec{*inf.NewDec(1, 0), *inf.NewDec(2, 1), *inf.NewDec(-3, 2)}},
+		{name: "double", cqlType: TypeDouble.String(), value: []float64{0.1, -1.2, 3}},
+		{name: "float", cqlType: TypeFloat.String(), value: []float32{0.1, -1.2, 3}},
+		{name: "int", cqlType: TypeInt.String(), value: []int32{1, 2, 3}},
+		{name: "text", cqlType: TypeText.String(), value: []string{"a", "b", "c"}},
+		{name: "timestamp", cqlType: TypeTimestamp.String(), value: []time.Time{timestamp1, timestamp2, timestamp3}},
+		{name: "uuid", cqlType: TypeUUID.String(), value: []UUID{MustRandomUUID(), MustRandomUUID(), MustRandomUUID()}},
+		{name: "varchar", cqlType: TypeVarchar.String(), value: []string{"abc", "def", "ghi"}},
+		{name: "varint", cqlType: TypeVarint.String(), value: []uint64{uint64(1234), uint64(123498765), uint64(18446744073709551615)}},
+		{name: "timeuuid", cqlType: TypeTimeUUID.String(), value: []UUID{TimeUUID(), TimeUUID(), TimeUUID()}},
 		{
 			name:    "inet",
-			cqlType: TypeInet,
+			cqlType: TypeInet.String(),
 			value:   []net.IP{net.IPv4(127, 0, 0, 1), net.IPv4(192, 168, 1, 1), net.IPv4(8, 8, 8, 8)},
 			comparator: func(e interface{}, a interface{}) {
 				expected := e.([]net.IP)
@@ -142,11 +148,16 @@ func TestVector_Types(t *testing.T) {
 				}
 			},
 		},
-		{name: "date", cqlType: TypeDate, value: []time.Time{date1, date2, date3}},
-		{name: "time", cqlType: TypeTimestamp, value: []time.Time{time1, time2, time3}},
-		{name: "smallint", cqlType: TypeSmallInt, value: []int16{127, 256, -1234}},
-		{name: "tinyint", cqlType: TypeTinyInt, value: []int8{127, 9, -123}},
-		{name: "duration", cqlType: TypeDuration, value: []Duration{duration1, duration2, duration3}},
+		{name: "date", cqlType: TypeDate.String(), value: []time.Time{date1, date2, date3}},
+		{name: "time", cqlType: TypeTimestamp.String(), value: []time.Time{time1, time2, time3}},
+		{name: "smallint", cqlType: TypeSmallInt.String(), value: []int16{127, 256, -1234}},
+		{name: "tinyint", cqlType: TypeTinyInt.String(), value: []int8{127, 9, -123}},
+		{name: "duration", cqlType: TypeDuration.String(), value: []Duration{duration1, duration2, duration3}},
+		// TODO(lantonia): Test vector of custom types
+		{name: "vector_vector_float", cqlType: "vector<float, 5>", value: [][]float32{{0.1, -1.2, 3, 5, 5}, {10.1, -122222.0002, 35.0, 1, 1}, {0, 0, 0, 0, 0}}},
+		{name: "vector_set_text", cqlType: "set<text>", value: [][]string{{"a", "b"}, {"c", "d"}, {"e", "f"}}},
+		{name: "vector_list_int", cqlType: "list<int>", value: [][]int32{{1, 2, 3}, {-1, -2, -3}, {0, 0, 0}}},
+		{name: "vector_map_text_int", cqlType: "map<text, int>", value: []map[string]int{map1, map2, map3}},
 	}
 
 	for _, test := range tests {

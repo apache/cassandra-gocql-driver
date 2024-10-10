@@ -163,51 +163,53 @@ func getCassandraBaseType(name string) Type {
 	}
 }
 
-func getCassandraType(name string, logger StdLogger) TypeInfo {
+func getCassandraType(name string, protoVer byte, logger StdLogger) TypeInfo {
 	if strings.HasPrefix(name, "frozen<") {
-		return getCassandraType(strings.TrimPrefix(name[:len(name)-1], "frozen<"), logger)
+		return getCassandraType(strings.TrimPrefix(name[:len(name)-1], "frozen<"), protoVer, logger)
 	} else if strings.HasPrefix(name, "set<") {
 		return CollectionType{
-			NativeType: NativeType{typ: TypeSet},
-			Elem:       getCassandraType(strings.TrimPrefix(name[:len(name)-1], "set<"), logger),
+			NativeType: NativeType{typ: TypeSet, proto: protoVer},
+			Elem:       getCassandraType(strings.TrimPrefix(name[:len(name)-1], "set<"), protoVer, logger),
 		}
 	} else if strings.HasPrefix(name, "list<") {
 		return CollectionType{
-			NativeType: NativeType{typ: TypeList},
-			Elem:       getCassandraType(strings.TrimPrefix(name[:len(name)-1], "list<"), logger),
+			NativeType: NativeType{typ: TypeList, proto: protoVer},
+			Elem:       getCassandraType(strings.TrimPrefix(name[:len(name)-1], "list<"), protoVer, logger),
 		}
 	} else if strings.HasPrefix(name, "map<") {
 		names := splitCompositeTypes(strings.TrimPrefix(name[:len(name)-1], "map<"))
 		if len(names) != 2 {
 			logger.Printf("Error parsing map type, it has %d subelements, expecting 2\n", len(names))
 			return NativeType{
-				typ: TypeCustom,
+				proto: protoVer,
+				typ:   TypeCustom,
 			}
 		}
 		return CollectionType{
-			NativeType: NativeType{typ: TypeMap},
-			Key:        getCassandraType(names[0], logger),
-			Elem:       getCassandraType(names[1], logger),
+			NativeType: NativeType{typ: TypeMap, proto: protoVer},
+			Key:        getCassandraType(names[0], protoVer, logger),
+			Elem:       getCassandraType(names[1], protoVer, logger),
 		}
 	} else if strings.HasPrefix(name, "tuple<") {
 		names := splitCompositeTypes(strings.TrimPrefix(name[:len(name)-1], "tuple<"))
 		types := make([]TypeInfo, len(names))
 
 		for i, name := range names {
-			types[i] = getCassandraType(name, logger)
+			types[i] = getCassandraType(name, protoVer, logger)
 		}
 
 		return TupleTypeInfo{
-			NativeType: NativeType{typ: TypeTuple},
+			NativeType: NativeType{typ: TypeTuple, proto: protoVer},
 			Elems:      types,
 		}
 	} else if strings.HasPrefix(name, "vector<") {
 		names := splitCompositeTypes(strings.TrimPrefix(name[:len(name)-1], "vector<"))
-		subType := getCassandraType(names[0], logger)
+		subType := getCassandraType(strings.TrimSpace(names[0]), protoVer, logger)
 		dim, _ := strconv.Atoi(strings.TrimSpace(names[1]))
 
 		return VectorType{
 			NativeType: NativeType{
+				proto:  protoVer,
 				typ:    TypeCustom,
 				custom: VECTOR_TYPE,
 			},
@@ -216,7 +218,8 @@ func getCassandraType(name string, logger StdLogger) TypeInfo {
 		}
 	} else {
 		return NativeType{
-			typ: getCassandraBaseType(name),
+			proto: protoVer,
+			typ:   getCassandraBaseType(name),
 		}
 	}
 }
@@ -250,17 +253,34 @@ func splitCompositeTypes(name string) []string {
 }
 
 func apacheToCassandraType(t string) string {
-	t = strings.Replace(t, apacheCassandraTypePrefix, "", -1)
 	t = strings.Replace(t, "(", "<", -1)
 	t = strings.Replace(t, ")", ">", -1)
 	types := strings.FieldsFunc(t, func(r rune) bool {
 		return r == '<' || r == '>' || r == ','
 	})
-	for _, typ := range types {
-		t = strings.Replace(t, typ, getApacheCassandraType(typ).String(), -1)
+	for _, class := range types {
+		class = strings.TrimSpace(class)
+		if !isDigitsOnly(class) {
+			// vector types include dimension (digits) as second type parameter
+			act := getApacheCassandraType(class)
+			val := act.String()
+			if act == TypeCustom {
+				val = getApacheCassandraCustomSubType(class)
+			}
+			t = strings.Replace(t, class, val, -1)
+		}
 	}
 	// This is done so it exactly matches what Cassandra returns
 	return strings.Replace(t, ",", ", ", -1)
+}
+
+func isDigitsOnly(s string) bool {
+	for _, c := range s {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 func getApacheCassandraType(class string) Type {
@@ -316,6 +336,14 @@ func getApacheCassandraType(class string) Type {
 	default:
 		return TypeCustom
 	}
+}
+
+func getApacheCassandraCustomSubType(class string) string {
+	switch strings.TrimPrefix(class, apacheCassandraTypePrefix) {
+	case "VectorType":
+		return "vector"
+	}
+	return "custom"
 }
 
 func (r *RowData) rowMap(m map[string]interface{}) {
