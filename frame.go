@@ -32,6 +32,7 @@ import (
 	"io/ioutil"
 	"net"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -928,6 +929,24 @@ func (f *framer) readTypeInfo() TypeInfo {
 		collection.Elem = f.readTypeInfo()
 
 		return collection
+	case TypeCustom:
+		if strings.HasPrefix(simple.custom, VECTOR_TYPE) {
+			spec := strings.TrimPrefix(simple.custom, VECTOR_TYPE)
+			spec = spec[1 : len(spec)-1] // remove parenthesis
+			types := strings.Split(spec, ",")
+			// TODO(lantoniak): for now we use only simple subtypes
+			subType := NativeType{
+				proto: f.proto,
+				typ:   getApacheCassandraType(strings.TrimSpace(types[0])),
+			}
+			dim, _ := strconv.Atoi(strings.TrimSpace(types[1]))
+			vector := VectorType{
+				NativeType: simple,
+				SubType:    subType,
+				Dimensions: dim,
+			}
+			return vector
+		}
 	}
 
 	return simple

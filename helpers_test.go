@@ -223,6 +223,16 @@ func TestGetCassandraType(t *testing.T) {
 				Elem:       NativeType{typ: TypeDuration},
 			},
 		},
+		{
+			"vector<float, 3>", VectorType{
+				NativeType: NativeType{
+					typ:    TypeCustom,
+					custom: VECTOR_TYPE,
+				},
+				SubType:    NativeType{typ: TypeFloat},
+				Dimensions: 3,
+			},
+		},
 	}
 
 	for _, test := range tests {

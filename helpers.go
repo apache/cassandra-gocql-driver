@@ -29,6 +29,7 @@ import (
 	"math/big"
 	"net"
 	"reflect"
+	"strconv"
 	"strings"
 	"time"
 
@@ -199,6 +200,19 @@ func getCassandraType(name string, logger StdLogger) TypeInfo {
 		return TupleTypeInfo{
 			NativeType: NativeType{typ: TypeTuple},
 			Elems:      types,
+		}
+	} else if strings.HasPrefix(name, "vector<") {
+		names := splitCompositeTypes(strings.TrimPrefix(name[:len(name)-1], "vector<"))
+		subType := getCassandraType(names[0], logger)
+		dim, _ := strconv.Atoi(strings.TrimSpace(names[1]))
+
+		return VectorType{
+			NativeType: NativeType{
+				typ:    TypeCustom,
+				custom: VECTOR_TYPE,
+			},
+			SubType:    subType,
+			Dimensions: dim,
 		}
 	} else {
 		return NativeType{
