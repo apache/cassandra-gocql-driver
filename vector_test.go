@@ -37,6 +37,16 @@ import (
 	"time"
 )
 
+type person struct {
+	FirstName string `cql:"first_name"`
+	LastName  string `cql:"last_name"`
+	Age       int    `cql:"age"`
+}
+
+func (p person) String() string {
+	return fmt.Sprintf("Person{firstName: %s, lastName: %s, Age: %d}", p.FirstName, p.LastName, p.Age)
+}
+
 func TestVector_Marshaler(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
@@ -185,6 +195,50 @@ func TestVector_Types(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestVector_MarshalerUDT(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+
+	if flagCassVersion.Before(5, 0, 0) {
+		t.Skip("Vector types have been introduced in Cassandra 5.0")
+	}
+
+	err := createTable(session, `CREATE TYPE gocql_test.person(
+		first_name text,
+		last_name text,
+		age int);`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = createTable(session, `CREATE TABLE gocql_test.vector_relatives(
+		id int,
+		couple vector<person, 2>,
+		primary key(id)
+	);`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	p1 := person{"Johny", "Bravo", 25}
+	p2 := person{"Capitan", "Planet", 5}
+	insVec := []person{p1, p2}
+
+	err = session.Query("INSERT INTO vector_relatives(id, couple) VALUES(?, ?)", 1, insVec).Exec()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var selVec []person
+
+	err = session.Query("SELECT couple FROM vector_relatives WHERE id = ?", 1).Scan(&selVec)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	assertDeepEqual(t, "udt", &insVec, &selVec)
 }
 
 func TestVector_Empty(t *testing.T) {

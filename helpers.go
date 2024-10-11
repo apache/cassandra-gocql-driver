@@ -25,6 +25,7 @@
 package gocql
 
 import (
+	"encoding/hex"
 	"fmt"
 	"math/big"
 	"net"
@@ -202,6 +203,26 @@ func getCassandraType(name string, protoVer byte, logger StdLogger) TypeInfo {
 			NativeType: NativeType{typ: TypeTuple, proto: protoVer},
 			Elems:      types,
 		}
+	} else if strings.HasPrefix(name, "udt<") {
+		names := splitCompositeTypes(strings.TrimPrefix(name[:len(name)-1], "udt<"))
+		fields := make([]UDTField, len(names)-2)
+
+		for i := 2; i < len(names); i++ {
+			spec := strings.Split(names[i], ":")
+			fieldName, _ := hex.DecodeString(spec[0])
+			fields[i-2] = UDTField{
+				Name: string(fieldName),
+				Type: getTypeInfo(spec[1], protoVer, logger),
+			}
+		}
+
+		udtName, _ := hex.DecodeString(names[1])
+		return UDTTypeInfo{
+			NativeType: NativeType{typ: TypeUDT, proto: protoVer},
+			KeySpace:   names[0],
+			Name:       string(udtName),
+			Elements:   fields,
+		}
 	} else if strings.HasPrefix(name, "vector<") {
 		names := splitCompositeTypes(strings.TrimPrefix(name[:len(name)-1], "vector<"))
 		subType := getCassandraType(strings.TrimSpace(names[0]), protoVer, logger)
@@ -258,13 +279,25 @@ func apacheToCassandraType(t string) string {
 	types := strings.FieldsFunc(t, func(r rune) bool {
 		return r == '<' || r == '>' || r == ','
 	})
+	skip := 0
 	for _, class := range types {
 		class = strings.TrimSpace(class)
 		if !isDigitsOnly(class) {
 			// vector types include dimension (digits) as second type parameter
+			// UDT fields are represented in format {field id}:{class}, example 66697273745f6e616d65:org.apache.cassandra.db.marshal.UTF8Type
+			if skip > 0 {
+				skip -= 1
+				continue
+			}
+			idx := strings.Index(class, ":")
+			class = class[idx+1:]
 			act := getApacheCassandraType(class)
 			val := act.String()
-			if act == TypeCustom {
+			switch act {
+			case TypeUDT:
+				val = "udt"
+				skip = 2 // skip next two parameters (keyspace and type ID), do not attempt to resolve their type
+			case TypeCustom:
 				val = getApacheCassandraCustomSubType(class)
 			}
 			t = strings.Replace(t, class, val, -1)
@@ -333,6 +366,8 @@ func getApacheCassandraType(class string) Type {
 		return TypeDuration
 	case "SimpleDateType":
 		return TypeDate
+	case "UserType":
+		return TypeUDT
 	default:
 		return TypeCustom
 	}
