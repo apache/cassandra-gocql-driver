@@ -347,3 +347,77 @@ func TestIsUseStatement(t *testing.T) {
 		}
 	}
 }
+
+func TestRetrieveClientConnections(t *testing.T) {
+	testCases := []struct {
+		name           string
+		connectionType connectionType
+		expectedResult []*ClientConnection
+		expectError    bool
+	}{
+		{
+			name:           "Valid ready connections",
+			connectionType: Ready,
+			expectedResult: []*ClientConnection{
+				{
+					Address:         "127.0.0.1",
+					Port:            9042,
+					ConnectionStage: "ready",
+					DriverName:      "gocql",
+					DriverVersion:   "v1.0.0",
+					Hostname:        "localhost",
+					KeyspaceName:    nil,
+					ProtocolVersion: 4,
+					RequestCount:    10,
+					SSLCipherSuite:  nil,
+					SSLEnabled:      true,
+					SSLProtocol:     nil,
+					Username:        "user1",
+				},
+			},
+			expectError: false,
+		},
+		{
+			name:           "No connections found",
+			connectionType: Closed,
+			expectedResult: nil,
+			expectError:    true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			session := &Session{
+				control: &controlConn{},
+			}
+
+			results, err := session.RetrieveClientConnections(tc.connectionType)
+
+			if tc.expectError {
+				if err == nil {
+					t.Fatalf("expected an error but got none")
+				}
+			} else {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				if !compareClientConnections(results, tc.expectedResult) {
+					t.Fatalf("expected result %+v, got %+v", tc.expectedResult, results)
+				}
+			}
+		})
+	}
+}
+
+// Helper function to compare two slices of ClientConnection pointers
+func compareClientConnections(a, b []*ClientConnection) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if *a[i] != *b[i] {
+			return false
+		}
+	}
+	return true
+}
