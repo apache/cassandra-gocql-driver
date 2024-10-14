@@ -37,6 +37,7 @@ func TestNewCluster_Defaults(t *testing.T) {
 	assertEqual(t, "cluster config timeout", 11*time.Second, cfg.Timeout)
 	assertEqual(t, "cluster config port", 9042, cfg.Port)
 	assertEqual(t, "cluster config num-conns", 2, cfg.NumConns)
+	assertEqual(t, "cluster config max requests per conn", 0, cfg.MaxRequestsPerConn)
 	assertEqual(t, "cluster config consistency", Quorum, cfg.Consistency)
 	assertEqual(t, "cluster config max prepared statements", defaultMaxPreparedStmts, cfg.MaxPreparedStmts)
 	assertEqual(t, "cluster config max routing key info", 1000, cfg.MaxRoutingKeyInfo)
