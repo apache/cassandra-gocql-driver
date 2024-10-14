@@ -60,7 +60,15 @@ func Example_batch() {
 		Args:       []interface{}{1, 3, "1.3"},
 		Idempotent: true,
 	})
+
 	err = session.ExecuteBatch(b)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	err = b.Query("INSERT INTO example.batches (pk, ck, description) VALUES (?, ?, ?)", 1, 4, "1.4").
+		Query("INSERT INTO example.batches (pk, ck, description) VALUES (?, ?, ?)", 1, 5, "1.5").
+		Exec()
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -77,4 +85,6 @@ func Example_batch() {
 	}
 	// 1 2 1.2
 	// 1 3 1.3
+	// 1 4 1.4
+	// 1 5 1.5
 }
