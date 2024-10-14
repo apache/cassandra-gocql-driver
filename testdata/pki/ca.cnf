@@ -1,0 +1,12 @@
+[req]
+default_bits = 2048
+prompt = no
+default_md = sha256
+distinguished_name = dn
+
+[req_ext]
+basicConstraints = CA:TRUE
+keyUsage = digitalSignature, keyCertSign
+
+[dn]
+CN = ca
