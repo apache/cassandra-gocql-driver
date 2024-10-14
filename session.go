@@ -731,6 +731,11 @@ func (b *Batch) execute(ctx context.Context, conn *Conn) *Iter {
 	return conn.executeBatch(ctx, b)
 }
 
+func (b *Batch) Exec() error {
+	iter := b.session.executeBatch(b)
+	return iter.Close()
+}
+
 func (s *Session) executeBatch(batch *Batch) *Iter {
 	// fail fast
 	if s.Closed() {
@@ -1860,8 +1865,9 @@ func (b *Batch) SpeculativeExecutionPolicy(sp SpeculativeExecutionPolicy) *Batch
 }
 
 // Query adds the query to the batch operation
-func (b *Batch) Query(stmt string, args ...interface{}) {
+func (b *Batch) Query(stmt string, args ...interface{}) *Batch {
 	b.Entries = append(b.Entries, BatchEntry{Stmt: stmt, Args: args})
+	return b
 }
 
 // Bind adds the query to the batch operation and correlates it with a binding callback
