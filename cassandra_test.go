@@ -32,7 +32,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/stretchr/testify/require"
 	"io"
 	"math"
 	"math/big"
@@ -45,7 +44,9 @@ import (
 	"time"
 	"unicode"
 
-	inf "gopkg.in/inf.v0"
+	"github.com/stretchr/testify/require"
+
+	"gopkg.in/inf.v0"
 )
 
 func TestEmptyHosts(t *testing.T) {
@@ -3435,4 +3436,322 @@ func TestQueryCompressionNotWorthIt(t *testing.T) {
 	}
 
 	require.Equal(t, str, result)
+}
+
+func TestAllTypesListSelect(t *testing.T) {
+	cluster := NewCluster("172.17.0.2:9042")
+	cluster.Keyspace = "example"
+	cluster.Consistency = Quorum
+	cluster.ProtoVersion = 4
+	// connect to the cluster
+	session, err := cluster.CreateSession()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close()
+	//session := createSession(t)
+	//defer session.Close()
+	ctx := context.Background()
+
+	var out string
+	// Select from table_ascii
+	if err := session.Query("SELECT val FROM table_ascii WHERE id = 1").WithContext(ctx).Scan(&out); err != nil {
+		// handle error
+	}
+
+	// Select from table_bigint
+	if err := session.Query("SELECT val FROM table_bigint WHERE id = 1").WithContext(ctx).Scan(&out); err != nil {
+		// handle error
+	}
+
+	// Select from table_blob
+	if err := session.Query("SELECT val FROM table_blob WHERE id = 1").WithContext(ctx).Scan(&out); err != nil {
+		// handle error
+	}
+
+	// Select from table_boolean
+	if err := session.Query("SELECT val FROM table_boolean WHERE id = 1").WithContext(ctx).Scan(&out); err != nil {
+		// handle error
+	}
+
+	// Select from table_counter
+	if err := session.Query("SELECT val FROM table_counter WHERE id = 1").WithContext(ctx).Scan(&out); err != nil {
+		// handle error
+	}
+
+	// Select from table_decimal
+	if err := session.Query("SELECT val FROM table_decimal WHERE id = 1").WithContext(ctx).Scan(&out); err != nil {
+		// handle error
+	}
+
+	// Select from table_double
+	if err := session.Query("SELECT val FROM table_double WHERE id = 1").WithContext(ctx).Scan(&out); err != nil {
+		// handle error
+	}
+
+	// Select from table_float
+	if err := session.Query("SELECT val FROM table_float WHERE id = 1").WithContext(ctx).Scan(&out); err != nil {
+		// handle error
+	}
+
+	// Select from table_int
+	if err := session.Query("SELECT val FROM table_int WHERE id = 1").WithContext(ctx).Scan(&out); err != nil {
+		// handle error
+	}
+
+	// Select from table_text
+	if err := session.Query("SELECT val FROM table_text WHERE id = 1").WithContext(ctx).Scan(&out); err != nil {
+		// handle error
+	}
+
+	// Select from table_timestamp
+	if err := session.Query("SELECT val FROM table_timestamp WHERE id = 1").WithContext(ctx).Scan(&out); err != nil {
+		// handle error
+	}
+
+	// Select from table_uuid
+	if err := session.Query("SELECT val FROM table_uuid WHERE id = 1").WithContext(ctx).Scan(&out); err != nil {
+		// handle error
+	}
+
+	// Select from table_varchar
+	if err := session.Query("SELECT val FROM table_varchar WHERE id = 1").WithContext(ctx).Scan(&out); err != nil {
+		// handle error
+	}
+
+	// Select from table_varint
+	if err := session.Query("SELECT val FROM table_varint WHERE id = 1").WithContext(ctx).Scan(&out); err != nil {
+		// handle error
+	}
+
+	// Select from table_timeuuid
+	if err := session.Query("SELECT val FROM table_timeuuid WHERE id = 1").WithContext(ctx).Scan(&out); err != nil {
+		// handle error
+	}
+
+	// Select from table_inet
+	if err := session.Query("SELECT val FROM table_inet WHERE id = 1").WithContext(ctx).Scan(&out); err != nil {
+		// handle error
+	}
+
+	// Select from table_date
+	if err := session.Query("SELECT val FROM table_date WHERE id = 1").WithContext(ctx).Scan(&out); err != nil {
+		// handle error
+	}
+
+	// Select from table_time
+	if err := session.Query("SELECT val FROM table_time WHERE id = 1").WithContext(ctx).Scan(&out); err != nil {
+		// handle error
+	}
+
+	// Select from table_smallint
+	if err := session.Query("SELECT val FROM table_smallint WHERE id = 1").WithContext(ctx).Scan(&out); err != nil {
+		// handle error
+	}
+
+	// Select from table_tinyint
+	if err := session.Query("SELECT val FROM table_tinyint WHERE id = 1").WithContext(ctx).Scan(&out); err != nil {
+		// handle error
+	}
+
+	// Select from table_duration
+	if err := session.Query("SELECT val FROM table_duration WHERE id = 1").WithContext(ctx).Scan(&out); err != nil {
+		// handle error
+	}
+
+	// Select from table_list (list<frozen<list<int>>>)
+	if err := session.Query("SELECT val FROM table_list WHERE id = 1").WithContext(ctx).Scan(&out); err != nil {
+		// handle error
+	}
+
+	// Select from table_map (list<frozen<map<text, int>>>)
+	if err := session.Query("SELECT val FROM table_map WHERE id = 1").WithContext(ctx).Scan(&out); err != nil {
+		// handle error
+	}
+
+	// Select from table_set (list<frozen<set<int>>>)
+	if err := session.Query("SELECT val FROM table_set WHERE id = 1").WithContext(ctx).Scan(&out); err != nil {
+		// handle error
+	}
+
+	// Select from table_tuple
+	if err := session.Query("SELECT val FROM table_tuple WHERE id = 1").WithContext(ctx).Scan(&out); err != nil {
+		// handle error
+	}
+
+	// Select from table_udt
+	if err := session.Query("SELECT val FROM table_udt WHERE id = 1").WithContext(ctx).Scan(&out); err != nil {
+		// handle error
+	}
+
+}
+
+func TestAllTypesVectorSelect(t *testing.T) {
+	cluster := NewCluster("172.17.0.2:9042")
+	cluster.Keyspace = "example"
+	cluster.Consistency = Quorum
+	cluster.ProtoVersion = 4
+	// connect to the cluster
+	session, err := cluster.CreateSession()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close()
+	ctx := context.Background()
+
+	var outAscii []string
+	//// Select from table_vector_ascii
+	if err := session.Query("SELECT val FROM table_vector_ascii WHERE id = 1").WithContext(ctx).Scan(&outAscii); err != nil {
+		t.Fatal(err)
+	}
+	fmt.Println(outAscii)
+
+	var outBigint []int
+	//// Select from table_vector_bigint
+	if err := session.Query("SELECT val FROM table_vector_bigint WHERE id = 1").WithContext(ctx).Scan(&outBigint); err != nil {
+		t.Fatal(err)
+	}
+	fmt.Println(outBigint)
+
+	var outBlob []string
+	// Select from table_vector_blob
+	if err := session.Query("SELECT val FROM table_vector_blob WHERE id = 1").WithContext(ctx).Scan(&outBlob); err != nil {
+		t.Fatal(err)
+	}
+	fmt.Println(outBlob)
+
+	var outBool []bool
+	// Select from table_vector_boolean
+	if err := session.Query("SELECT val FROM table_vector_boolean WHERE id = 1").WithContext(ctx).Scan(&outBool); err != nil {
+		t.Fatal(err)
+	}
+	fmt.Println(outBool)
+
+	//COUNTER IS NOT SUPPORTED IN COLLECTIONS
+	//Select from table_vector_counter
+	//if err := session.Query("SELECT val FROM table_vector_counter WHERE id = 1").WithContext(ctx).Scan(&out); err != nil {
+	//	t.Fatal(err)
+	//}
+	var outDecimal []inf.Dec
+	// Select from table_vector_decimal
+	if err := session.Query("SELECT val FROM table_vector_decimal WHERE id = 1").WithContext(ctx).Scan(&outDecimal); err != nil {
+		//[0 0 0 3 0 0 0 7 0 0 0 3 1 226 64 0 0 0 7 0 0 0 3 12 10 20 0 0 0 7 0 0 0 3 5 70 78]
+		//[0 0 0 3 0 0 0 7 0 0 0 3 1 226 64 0 0 0 7 0 0 0 3 12 10 20 0 0 0 7 0 0 0 3 5 70 78]
+		t.Fatal(err)
+	}
+	fmt.Println(outDecimal)
+
+	var outDouble []float64
+	// Select from table_vector_double
+	if err := session.Query("SELECT val FROM table_vector_double WHERE id = 1").WithContext(ctx).Scan(&outDouble); err != nil {
+		t.Fatal(err)
+	}
+	fmt.Println(outDouble)
+
+	var outFloat []float32
+	//Select from table_vector_float
+	if err := session.Query("SELECT val FROM table_vector_float WHERE id = 1").WithContext(ctx).Scan(&outFloat); err != nil {
+		t.Fatal(err)
+	}
+	fmt.Println(outFloat)
+
+	var outInt []int
+	// Select from table_vector_int
+	if err := session.Query("SELECT val FROM table_vector_int WHERE id = 1").WithContext(ctx).Scan(&outInt); err != nil {
+		t.Fatal(err)
+	}
+	fmt.Println(outInt)
+
+	var outText []string
+	// Select from table_vector_text
+	if err := session.Query("SELECT val FROM table_vector_text WHERE id = 1").WithContext(ctx).Scan(&outText); err != nil {
+		t.Fatal(err)
+	}
+	fmt.Println(outText)
+
+	var outTimestamp []time.Time
+	// Select from table_vector_timestamp
+	if err := session.Query("SELECT val FROM table_timestamp WHERE id = 1").WithContext(ctx).Scan(&outTimestamp); err != nil {
+		t.Fatal(err)
+	}
+	fmt.Println(outTimestamp)
+
+	var outUUID []UUID
+	// Select from table_vector_uuid
+	if err := session.Query("SELECT val FROM table_vector_uuid WHERE id = 1").WithContext(ctx).Scan(&outUUID); err != nil {
+		t.Fatal(err)
+	}
+	fmt.Println(outUUID)
+
+	var outVarchar []string
+	// Select from table_vector_varchar
+	if err := session.Query("SELECT val FROM table_vector_varchar WHERE id = 1").WithContext(ctx).Scan(&outVarchar); err != nil {
+		t.Fatal(err)
+	}
+	fmt.Println(outVarchar)
+
+	var outVarint []uint64
+	//Select from table_vector_varint
+	if err := session.Query("SELECT val FROM table_vector_varint WHERE id = 1").WithContext(ctx).Scan(&outVarint); err != nil {
+		t.Fatal(err)
+	}
+	fmt.Println(outVarint)
+
+	var outTimeUUID []time.Time
+	// Select from table_vector_timeuuid
+	if err := session.Query("SELECT val FROM table_vector_timeuuid WHERE id = 1").WithContext(ctx).Scan(&outTimeUUID); err != nil {
+		t.Fatal(err)
+	}
+	fmt.Println(outTimeUUID)
+
+	var outInet []string
+	// Select from table_vector_inet
+	if err := session.Query("SELECT val FROM table_vector_inet WHERE id = 1").WithContext(ctx).Scan(&outInet); err != nil {
+		t.Fatal(err)
+	}
+	fmt.Println(outInet)
+
+	var outDate []string
+	// Select from table_vector_date
+	if err := session.Query("SELECT val FROM table_date WHERE id = 1").WithContext(ctx).Scan(&outDate); err != nil {
+		t.Fatal(err)
+	}
+	fmt.Println(outDate)
+
+	var outTime []int64
+	// Select from table_vector_time
+	if err := session.Query("SELECT val FROM table_vector_time WHERE id = 1").WithContext(ctx).Scan(&outTime); err != nil {
+		t.Fatal(err)
+	}
+	fmt.Println(outTime)
+
+	var outSmalInt []int
+	// Select from table_vector_smallint
+	if err := session.Query("SELECT val FROM table_vector_smallint WHERE id = 1").WithContext(ctx).Scan(&outSmalInt); err != nil {
+		t.Fatal(err)
+	}
+	fmt.Println(outSmalInt)
+
+	var outTinyInt []int
+	// Select from table_vector_tinyint
+	if err := session.Query("SELECT val FROM table_vector_tinyint WHERE id = 1").WithContext(ctx).Scan(&outTinyInt); err != nil {
+		t.Fatal(err)
+	}
+	fmt.Println(outTinyInt)
+	//// Select from table_vector_duration
+	var outDuration []Duration
+	if err := session.Query("SELECT val FROM table_vector_duration WHERE id = 1").WithContext(ctx).Scan(&outDuration); err != nil {
+		// handle error
+	}
+	fmt.Println(outDuration)
+	//
+	//// Select from table_vector_tuple
+	var outTuple []struct {
+		Num  int
+		Word string
+	}
+	if err := session.Query("SELECT val FROM table_vector_tuple WHERE id = 1").WithContext(ctx).Scan(&outTuple); err != nil {
+		t.Fatal(err)
+	}
+	fmt.Println(outTuple)
 }

@@ -152,7 +152,8 @@ func Marshal(info TypeInfo, value interface{}) ([]byte, error) {
 		return marshalTime(info, value)
 	case TypeTimestamp:
 		return marshalTimestamp(info, value)
-	case TypeList, TypeSet:
+	case TypeList, TypeSet, TypeVector:
+
 		return marshalList(info, value)
 	case TypeMap:
 		return marshalMap(info, value)
@@ -256,7 +257,7 @@ func Unmarshal(info TypeInfo, data []byte, value interface{}) error {
 		return unmarshalTime(info, data, value)
 	case TypeTimestamp:
 		return unmarshalTimestamp(info, data, value)
-	case TypeList, TypeSet:
+	case TypeList, TypeSet, TypeVector:
 		return unmarshalList(info, data, value)
 	case TypeMap:
 		return unmarshalMap(info, data, value)
@@ -1647,6 +1648,74 @@ func readCollectionSize(info CollectionType, data []byte) (size, read int, err e
 	return
 }
 
+func typedVectorToList(vectorData []byte, elemType Type) []byte {
+	buf := new(bytes.Buffer)
+	switch elemType {
+	case TypeVarchar, TypeAscii, TypeBlob, TypeDecimal, TypeText, TypeVarint, TypeInet, TypeDate, TypeTime, TypeSmallInt, TypeTinyInt, TypeTuple, TypeDuration:
+		return LengtTypeVectorToList(vectorData)
+	case TypeInt, TypeFloat:
+		return vectorToList(vectorData, 4)
+	case TypeBigInt, TypeCounter, TypeDouble, TypeTimestamp:
+		return vectorToList(vectorData, 8)
+	case TypeBoolean:
+		return vectorToList(vectorData, 1)
+	case TypeUUID, TypeTimeUUID:
+		return vectorToList(vectorData, 16)
+	}
+	return buf.Bytes()
+}
+
+func LengtTypeVectorToList(vectorData []byte) []byte {
+	buf := new(bytes.Buffer)
+
+	// First, calculate the number of elements in the vector (each element starts with a 1-byte length prefix).
+	elementCount := 0
+	i := 0
+	for i < len(vectorData) {
+		elemLen := int(vectorData[i]) // 1-byte length prefix
+		i += 1 + elemLen              // move to the next element
+		elementCount++
+	}
+
+	// Write the total element count as a 4-byte integer.
+	binary.Write(buf, binary.BigEndian, int32(elementCount))
+
+	// Reset index to process each element again.
+	i = 0
+	for i < len(vectorData) {
+		elemLen := int(vectorData[i]) // 1-byte length prefix
+		i++
+
+		// Write the element length as a 4-byte integer (list format).
+		binary.Write(buf, binary.BigEndian, int32(elemLen))
+
+		// Write the actual element data.
+		buf.Write(vectorData[i : i+elemLen])
+
+		i += elemLen // move to the next element
+	}
+
+	return buf.Bytes()
+}
+
+func vectorToList(vectorData []byte, elemLen int) []byte {
+	buf := new(bytes.Buffer)
+
+	// Calculate the number of elements
+	elementCount := len(vectorData) / elemLen
+	binary.Write(buf, binary.BigEndian, int32(elementCount)) // 4-byte list length
+
+	// Process each element in the vector
+	for i := 0; i < len(vectorData); i += elemLen {
+		// Write the length prefix (e.g., 4 bytes for list)
+		binary.Write(buf, binary.BigEndian, int32(elemLen))
+		// Write the element itself
+		buf.Write(vectorData[i : i+elemLen])
+	}
+
+	return buf.Bytes()
+}
+
 func unmarshalList(info TypeInfo, data []byte, value interface{}) error {
 	listInfo, ok := info.(CollectionType)
 	if !ok {
@@ -1672,6 +1741,9 @@ func unmarshalList(info TypeInfo, data []byte, value interface{}) error {
 			}
 			rv.Set(reflect.Zero(t))
 			return nil
+		}
+		if listInfo.typ == TypeVector {
+			data = typedVectorToList(data, listInfo.Elem.Type())
 		}
 		n, p, err := readCollectionSize(listInfo, data)
 		if err != nil {
@@ -2543,7 +2615,7 @@ func (c CollectionType) String() string {
 	switch c.typ {
 	case TypeMap:
 		return fmt.Sprintf("%s(%s, %s)", c.typ, c.Key, c.Elem)
-	case TypeList, TypeSet:
+	case TypeList, TypeSet, TypeVector:
 		return fmt.Sprintf("%s(%s)", c.typ, c.Elem)
 	case TypeCustom:
 		return fmt.Sprintf("%s(%s)", c.typ, c.custom)
@@ -2664,6 +2736,7 @@ const (
 	TypeSet       Type = 0x0022
 	TypeUDT       Type = 0x0030
 	TypeTuple     Type = 0x0031
+	TypeVector    Type = 0x0032
 )
 
 // String returns the name of the identifier.
@@ -2721,6 +2794,8 @@ func (t Type) String() string {
 		return "varint"
 	case TypeTuple:
 		return "tuple"
+	case TypeVector:
+		return "vector"
 	default:
 		return fmt.Sprintf("unknown_type_%d", t)
 	}

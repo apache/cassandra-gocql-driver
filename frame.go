@@ -875,6 +875,52 @@ func (w *writePrepareFrame) buildFrame(f *framer, streamID int) error {
 	return f.finish()
 }
 
+func cleanAndSplit(input string) []string {
+	// Remove all spaces from the string.
+	cleaned := strings.ReplaceAll(input, " ", "")
+
+	// Split the cleaned string by "," and "(".
+	parts := strings.FieldsFunc(cleaned, func(r rune) bool {
+		return r == ',' || r == '(' || r == ')'
+	})
+
+	return parts
+}
+
+func ProcessCustomCollectionFrame(fullClassName, typeBytes []byte) []byte {
+	stringFullClassName := string(fullClassName)
+	classes := cleanAndSplit(stringFullClassName)
+
+	for _, class := range classes {
+		typeBytes = append(typeBytes, 0)
+		typeBytes = append(typeBytes, byte(getApacheCassandraType(class)))
+	}
+	return typeBytes
+}
+
+func (f *framer) apacheCassandraTypeForCollection() Type {
+	f.readShort()
+	fullClassName := string(f.buf)
+	subClassIndex := strings.IndexByte(fullClassName, 40)
+
+	if subClassIndex != -1 {
+		typ := getApacheCassandraType(fullClassName[:subClassIndex])
+		f.buf = f.buf[subClassIndex+1:]
+		return typ
+	}
+	return -1
+}
+
+func addLengthForTuple(b []byte) []byte {
+	var tupleBytes []byte
+	tupleBytes = append(tupleBytes, b[0])
+	tupleBytes = append(tupleBytes, b[1])
+	tupleBytes = append(tupleBytes, b[0])
+	tupleBytes = append(tupleBytes, byte((len(b)-2)/2))
+	tupleBytes = append(tupleBytes, b[2:]...)
+	return tupleBytes
+}
+
 func (f *framer) readTypeInfo() TypeInfo {
 	// TODO: factor this out so the same code paths can be used to parse custom
 	// types and other types, as much of the logic will be duplicated.
@@ -886,9 +932,22 @@ func (f *framer) readTypeInfo() TypeInfo {
 	}
 
 	if simple.typ == TypeCustom {
-		simple.custom = f.readString()
-		if cassType := getApacheCassandraType(simple.custom); cassType != TypeCustom {
-			simple.typ = cassType
+		simple.typ = f.apacheCassandraTypeForCollection()
+		var b []byte
+		b = ProcessCustomCollectionFrame(f.buf, b)
+		if simple.typ == TypeVector {
+			b = b[:len(b)-2]
+		}
+		if len(b) < 1 {
+			simple.custom = f.readString()
+			if cassType := getApacheCassandraType(simple.custom); cassType != TypeCustom {
+				simple.typ = cassType
+			}
+		} else {
+			if b[1] == byte(TypeTuple) {
+				b = addLengthForTuple(b)
+			}
+			f.buf = b
 		}
 	}
 
@@ -922,7 +981,7 @@ func (f *framer) readTypeInfo() TypeInfo {
 		}
 
 		return udt
-	case TypeMap, TypeList, TypeSet:
+	case TypeMap, TypeList, TypeSet, TypeVector:
 		collection := CollectionType{
 			NativeType: simple,
 		}

@@ -68,7 +68,7 @@ func goType(t TypeInfo) (reflect.Type, error) {
 		return reflect.TypeOf(*new(*inf.Dec)), nil
 	case TypeUUID, TypeTimeUUID:
 		return reflect.TypeOf(*new(UUID)), nil
-	case TypeList, TypeSet:
+	case TypeList, TypeSet, TypeVector:
 		elemType, err := goType(t.(CollectionType).Elem)
 		if err != nil {
 			return nil, err
@@ -153,6 +153,8 @@ func getCassandraBaseType(name string) Type {
 		return TypeMap
 	case "ListType":
 		return TypeList
+	case "VectorType":
+		return TypeVector
 	case "SetType":
 		return TypeSet
 	case "TupleType":
@@ -174,6 +176,11 @@ func getCassandraType(name string, logger StdLogger) TypeInfo {
 		return CollectionType{
 			NativeType: NativeType{typ: TypeList},
 			Elem:       getCassandraType(strings.TrimPrefix(name[:len(name)-1], "list<"), logger),
+		}
+	} else if strings.HasPrefix(name, "vector<") {
+		return CollectionType{
+			NativeType: NativeType{typ: TypeVector},
+			Elem:       getCassandraType(strings.TrimPrefix(name[:len(name)-1], "vector<"), logger),
 		}
 	} else if strings.HasPrefix(name, "map<") {
 		names := splitCompositeTypes(strings.TrimPrefix(name[:len(name)-1], "map<"))
@@ -291,6 +298,8 @@ func getApacheCassandraType(class string) Type {
 		return TypeMap
 	case "ListType":
 		return TypeList
+	case "VectorType":
+		return TypeVector
 	case "SetType":
 		return TypeSet
 	case "TupleType":
