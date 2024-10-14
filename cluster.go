@@ -102,7 +102,8 @@ type ClusterConfig struct {
 	// Initial keyspace. Optional.
 	Keyspace string
 
-	// Number of connections per host.
+	// The size of connection pool for each host. The Pool will be filled during the first request execution.
+	// Also, it describes maximum number of connections at the same time.
 	// Default: 2
 	NumConns int
 
