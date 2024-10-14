@@ -1,0 +1,16 @@
+[req]
+default_bits = 2048
+prompt = no
+default_md = sha256
+distinguished_name = dn
+
+[dn]
+CN = cassandra
+
+[req_ext]
+basicConstraints = CA:FALSE
+keyUsage = digitalSignature, keyEncipherment
+subjectAltName = @alt_names
+
+[alt_names]
+URI = spiffe://test.cassandra.apache.org/cassandra-gocql-driver/integrationTest/cassandra
