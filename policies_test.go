@@ -160,25 +160,25 @@ func TestHostPolicy_HostPool(t *testing.T) {
 	if actualA.Info().HostID() != "0" {
 		t.Errorf("Expected hosts[0] but was hosts[%s]", actualA.Info().HostID())
 	}
-	actualA.Mark(nil)
+	actualA.Mark(nil, 0)
 
 	actualB := iter()
 	if actualB.Info().HostID() != "1" {
 		t.Errorf("Expected hosts[1] but was hosts[%s]", actualB.Info().HostID())
 	}
-	actualB.Mark(fmt.Errorf("error"))
+	actualB.Mark(fmt.Errorf("error"), 0)
 
 	actualC := iter()
 	if actualC.Info().HostID() != "0" {
 		t.Errorf("Expected hosts[0] but was hosts[%s]", actualC.Info().HostID())
 	}
-	actualC.Mark(nil)
+	actualC.Mark(nil, 0)
 
 	actualD := iter()
 	if actualD.Info().HostID() != "0" {
 		t.Errorf("Expected hosts[0] but was hosts[%s]", actualD.Info().HostID())
 	}
-	actualD.Mark(nil)
+	actualD.Mark(nil, 0)
 }
 
 func TestHostPolicy_RoundRobin_NilHostInfo(t *testing.T) {
@@ -846,4 +846,120 @@ func TestHostPolicy_TokenAware_RackAware(t *testing.T) {
 	// then the 6 hosts from the other DC
 	expectHosts(t, "non-local DC", iter, "0", "1", "4", "5", "8", "9")
 	expectNoMoreHosts(t, iter)
+}
+
+func TestHostPolicy_LatencyAware(t *testing.T) {
+	lap := LatencyAwarePolicy(RoundRobinHostPolicy())
+	if lap == nil {
+		t.Errorf("Expected non error when creating the LatencyAwarePolicy")
+		return
+	}
+
+	hosts := [...]*HostInfo{
+		{hostId: "0", connectAddress: net.ParseIP("10.0.0.1")},
+		{hostId: "1", connectAddress: net.ParseIP("10.0.0.2")},
+		{hostId: "2", connectAddress: net.ParseIP("10.0.0.3")},
+		{hostId: "3", connectAddress: net.ParseIP("10.0.0.4")},
+	}
+
+	for _, host := range hosts {
+		lap.AddHost(host)
+	}
+
+	lap.SetPartitioner("OrderedPartitioner")
+	iterA := lap.Pick(nil)
+	ha := iterA()
+	if ha == nil {
+		t.Errorf("Expected non-nil host when pick from the query plan")
+	}
+
+	targetIP := "10.0.0.2"
+	targetIPLatency := uint64(1000)
+	hostsLatencies := map[string]uint64{"10.0.0.1": 3100, targetIP: targetIPLatency, "10.0.0.3": 3000, "10.0.0.4": 4000}
+	if l, ok := lap.(*latencyAwarePolicy); ok {
+		for h, stat := range l.latencies {
+			stat.mu.Lock()
+			stat.numMeasure = minMeasures + 1
+			stat.timestamp = time.Now().UnixNano() - 10
+			stat.mu.Unlock()
+			l.updateHostLatency(h, hostsLatencies[h])
+			if stat.average <= 0 {
+				t.Errorf("Expected host [%s] average latency to be positve after the 1st update", h)
+			}
+			l.updateHostLatency(h, hostsLatencies[h])
+			if stat.average <= 0 {
+				t.Errorf("Expected host [%s] average latency to be positve after the 2rd update", h)
+			}
+		}
+		l.maMu.Lock()
+		l.minAvg = targetIPLatency
+		l.maMu.Unlock()
+		iterB := lap.Pick(nil)
+		h := iterB()
+		hIP := h.Info().ConnectAddress().String()
+		if hIP != targetIP {
+			t.Errorf("Expected the host with smallest latency but got [%s]", hIP)
+		}
+
+		unstableHost := hosts[0]
+		unstableHostIP := unstableHost.ConnectAddress().String()
+		lap.HostDown(unstableHost)
+		if _, ok := l.latencies[unstableHostIP]; ok {
+			t.Errorf("Expected the host %s to be gone after being down", unstableHostIP)
+		}
+		lap.HostUp(unstableHost)
+		if _, ok := l.latencies[unstableHostIP]; !ok {
+			t.Errorf("Expected the host %s to be there after being up", unstableHostIP)
+		}
+		// wait for the min avg update
+		time.Sleep(updateMinAvgRate * 2)
+		l.stopUpdateMinAvgLatency()
+	} else {
+		t.Errorf("Expected latencyAwarePolicy type")
+	}
+
+	for _, host := range hosts {
+		lap.RemoveHost(host)
+	}
+}
+
+func TestHostPolicy_LatencyAware_Panic(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Errorf("Expected panic when creating the LatencyAwarePolicy without a fallback policy")
+		}
+	}()
+	_ = LatencyAwarePolicy(nil)
+}
+
+func TestHostPolicy_LatencyAware_SelectedLatencyAwareHost(t *testing.T) {
+	hostIP := "10.0.0.1"
+	hostInfo := &HostInfo{hostId: "0", connectAddress: net.ParseIP(hostIP)}
+	hostLatencies := map[string]*hostLatencyStat{hostIP: {host: hostInfo}}
+	lap := &latencyAwarePolicy{latencies: hostLatencies, fallback: RoundRobinHostPolicy(),
+		stopUpdateMinAvgChan: make(chan struct{})}
+	h := selectedLatencyAwareHost{
+		policy: lap,
+		info:   hostInfo}
+	if h.Info() == nil {
+		t.Errorf("Expected the host info to be non-nil")
+	}
+
+	if ok := h.shouldConsiderNewLatency(nil); !ok {
+		t.Errorf("Expected the shouldConsiderNewLatency returns true for no error")
+	}
+	h.Mark(errorFrame{code: ErrCodeServer}, 1000)
+	if lap.latencies[hostIP].timestamp != 0 {
+		t.Errorf("Expected the timestamp is empty for ErrCodeServer")
+	}
+	h.Mark(errorFrame{code: ErrCodeReadTimeout}, 1000)
+	if lap.latencies[hostIP].timestamp == 0 {
+		t.Errorf("Expected the timestamp is not empty for ErrCodeReadTimeout")
+	}
+
+	lap.RemoveHost(hostInfo)
+	h.Mark(errorFrame{code: ErrCodeServer}, 1000)
+	if _, ok := lap.latencies[hostIP]; ok {
+		t.Errorf("Expected the host is gone")
+	}
 }

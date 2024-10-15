@@ -151,17 +151,20 @@ func (q *queryExecutor) do(ctx context.Context, qry ExecutableQuery, hostIter Ne
 			continue
 		}
 
+		start := time.Now()
 		iter = q.attemptQuery(ctx, qry, conn)
+		end := time.Now()
+		latency := uint64(end.Sub(start).Nanoseconds())
 		iter.host = selectedHost.Info()
 		// Update host
 		switch iter.err {
 		case context.Canceled, context.DeadlineExceeded, ErrNotFound:
 			// those errors represents logical errors, they should not count
 			// toward removing a node from the pool
-			selectedHost.Mark(nil)
+			selectedHost.Mark(nil, latency)
 			return iter
 		default:
-			selectedHost.Mark(iter.err)
+			selectedHost.Mark(iter.err, latency)
 		}
 
 		// Exit if the query was successful
