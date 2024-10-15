@@ -389,7 +389,7 @@ func compileMetadata(
 				col.Order = DESC
 			}
 		} else {
-			validatorParsed := parseType(col.Validator, logger)
+			validatorParsed := parseType(col.Validator, byte(protoVersion), logger)
 			col.Type = validatorParsed.types[0]
 			col.Order = ASC
 			if validatorParsed.reversed[0] {
@@ -411,9 +411,9 @@ func compileMetadata(
 	}
 
 	if protoVersion == protoVersion1 {
-		compileV1Metadata(tables, logger)
+		compileV1Metadata(tables, protoVersion, logger)
 	} else {
-		compileV2Metadata(tables, logger)
+		compileV2Metadata(tables, protoVersion, logger)
 	}
 }
 
@@ -422,14 +422,14 @@ func compileMetadata(
 // column metadata as V2+ (because V1 doesn't support the "type" column in the
 // system.schema_columns table) so determining PartitionKey and ClusterColumns
 // is more complex.
-func compileV1Metadata(tables []TableMetadata, logger StdLogger) {
+func compileV1Metadata(tables []TableMetadata, protoVer int, logger StdLogger) {
 	for i := range tables {
 		table := &tables[i]
 
 		// decode the key validator
-		keyValidatorParsed := parseType(table.KeyValidator, logger)
+		keyValidatorParsed := parseType(table.KeyValidator, byte(protoVer), logger)
 		// decode the comparator
-		comparatorParsed := parseType(table.Comparator, logger)
+		comparatorParsed := parseType(table.Comparator, byte(protoVer), logger)
 
 		// the partition key length is the same as the number of types in the
 		// key validator
@@ -515,7 +515,7 @@ func compileV1Metadata(tables []TableMetadata, logger StdLogger) {
 				alias = table.ValueAlias
 			}
 			// decode the default validator
-			defaultValidatorParsed := parseType(table.DefaultValidator, logger)
+			defaultValidatorParsed := parseType(table.DefaultValidator, byte(protoVer), logger)
 			column := &ColumnMetadata{
 				Keyspace: table.Keyspace,
 				Table:    table.Name,
@@ -529,7 +529,7 @@ func compileV1Metadata(tables []TableMetadata, logger StdLogger) {
 }
 
 // The simpler compile case for V2+ protocol
-func compileV2Metadata(tables []TableMetadata, logger StdLogger) {
+func compileV2Metadata(tables []TableMetadata, protoVer int, logger StdLogger) {
 	for i := range tables {
 		table := &tables[i]
 
@@ -537,7 +537,7 @@ func compileV2Metadata(tables []TableMetadata, logger StdLogger) {
 		table.ClusteringColumns = make([]*ColumnMetadata, clusteringColumnCount)
 
 		if table.KeyValidator != "" {
-			keyValidatorParsed := parseType(table.KeyValidator, logger)
+			keyValidatorParsed := parseType(table.KeyValidator, byte(protoVer), logger)
 			table.PartitionKey = make([]*ColumnMetadata, len(keyValidatorParsed.types))
 		} else { // Cassandra 3.x+
 			partitionKeyCount := componentColumnCountOfType(table.Columns, ColumnPartitionKey)
@@ -1186,6 +1186,7 @@ type typeParser struct {
 	input  string
 	index  int
 	logger StdLogger
+	proto  byte
 }
 
 // the type definition parser result
@@ -1197,8 +1198,8 @@ type typeParserResult struct {
 }
 
 // Parse the type definition used for validator and comparator schema data
-func parseType(def string, logger StdLogger) typeParserResult {
-	parser := &typeParser{input: def, logger: logger}
+func parseType(def string, protoVer byte, logger StdLogger) typeParserResult {
+	parser := &typeParser{input: def, proto: protoVer, logger: logger}
 	return parser.parse()
 }
 
@@ -1209,6 +1210,7 @@ const (
 	LIST_TYPE       = "org.apache.cassandra.db.marshal.ListType"
 	SET_TYPE        = "org.apache.cassandra.db.marshal.SetType"
 	MAP_TYPE        = "org.apache.cassandra.db.marshal.MapType"
+	UDT_TYPE        = "org.apache.cassandra.db.marshal.UserType"
 	VECTOR_TYPE     = "org.apache.cassandra.db.marshal.VectorType"
 )
 
@@ -1218,6 +1220,7 @@ type typeParserClassNode struct {
 	params []typeParserParamNode
 	// this is the segment of the input string that defined this node
 	input string
+	proto byte
 }
 
 // represents a class parameter in the type def AST
@@ -1237,6 +1240,7 @@ func (t *typeParser) parse() typeParserResult {
 				NativeType{
 					typ:    TypeCustom,
 					custom: t.input,
+					proto:  t.proto,
 				},
 			},
 			reversed:    []bool{false},
@@ -1292,6 +1296,26 @@ func (t *typeParser) parse() typeParserResult {
 			reversed:    reversed,
 			collections: collections,
 		}
+	} else if strings.HasPrefix(ast.name, VECTOR_TYPE) {
+		count := len(ast.params)
+
+		types := make([]TypeInfo, count)
+		reversed := make([]bool, count)
+
+		for i, param := range ast.params[:count] {
+			class := param.class
+			reversed[i] = strings.HasPrefix(class.name, REVERSED_TYPE)
+			if reversed[i] {
+				class = class.params[0].class
+			}
+			types[i] = class.asTypeInfo()
+		}
+
+		return typeParserResult{
+			isComposite: true,
+			types:       types,
+			reversed:    reversed,
+		}
 	} else {
 		// not composite, so one type
 		class := *ast
@@ -1314,7 +1338,8 @@ func (class *typeParserClassNode) asTypeInfo() TypeInfo {
 		elem := class.params[0].class.asTypeInfo()
 		return CollectionType{
 			NativeType: NativeType{
-				typ: TypeList,
+				typ:   TypeList,
+				proto: class.proto,
 			},
 			Elem: elem,
 		}
@@ -1323,7 +1348,8 @@ func (class *typeParserClassNode) asTypeInfo() TypeInfo {
 		elem := class.params[0].class.asTypeInfo()
 		return CollectionType{
 			NativeType: NativeType{
-				typ: TypeSet,
+				typ:   TypeSet,
+				proto: class.proto,
 			},
 			Elem: elem,
 		}
@@ -1333,15 +1359,47 @@ func (class *typeParserClassNode) asTypeInfo() TypeInfo {
 		elem := class.params[1].class.asTypeInfo()
 		return CollectionType{
 			NativeType: NativeType{
-				typ: TypeMap,
+				typ:   TypeMap,
+				proto: class.proto,
 			},
 			Key:  key,
 			Elem: elem,
 		}
 	}
+	if strings.HasPrefix(class.name, UDT_TYPE) {
+		udtName, _ := hex.DecodeString(class.params[1].class.name)
+		fields := make([]UDTField, len(class.params)-2)
+		for i := 2; i < len(class.params); i++ {
+			fieldName, _ := hex.DecodeString(*class.params[i].name)
+			fields[i-2] = UDTField{
+				Name: string(fieldName),
+				Type: class.params[i].class.asTypeInfo(),
+			}
+		}
+		return UDTTypeInfo{
+			NativeType: NativeType{
+				typ:   TypeUDT,
+				proto: class.proto,
+			},
+			KeySpace: class.params[0].class.name,
+			Name:     string(udtName),
+			Elements: fields,
+		}
+	}
+	if strings.HasPrefix(class.name, VECTOR_TYPE) {
+		dim, _ := strconv.Atoi(class.params[1].class.name)
+		return VectorType{
+			NativeType: NativeType{
+				typ:   TypeCustom,
+				proto: class.proto,
+			},
+			SubType:    class.params[0].class.asTypeInfo(),
+			Dimensions: dim,
+		}
+	}
 
 	// must be a simple type or custom type
-	info := NativeType{typ: getApacheCassandraType(class.name)}
+	info := NativeType{typ: getApacheCassandraType(class.name), proto: class.proto}
 	if info.typ == TypeCustom {
 		// add the entire class definition
 		info.custom = class.input
@@ -1371,6 +1429,7 @@ func (t *typeParser) parseClassNode() (node *typeParserClassNode, ok bool) {
 		name:   name,
 		params: params,
 		input:  t.input[startIndex:endIndex],
+		proto:  t.proto,
 	}
 	return node, true
 }

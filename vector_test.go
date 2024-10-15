@@ -165,6 +165,11 @@ func TestVector_Types(t *testing.T) {
 		{name: "duration", cqlType: TypeDuration.String(), value: []Duration{duration1, duration2, duration3}},
 		// TODO(lantonia): Test vector of custom types
 		{name: "vector_vector_float", cqlType: "vector<float, 5>", value: [][]float32{{0.1, -1.2, 3, 5, 5}, {10.1, -122222.0002, 35.0, 1, 1}, {0, 0, 0, 0, 0}}},
+		{name: "vector_vector_set_float", cqlType: "vector<set<float>, 5>", value: [][][]float32{
+			{{1, 2}, {2, -1}, {3}, {0}, {-1.3}},
+			{{2, 3}, {2, -1}, {3}, {0}, {-1.3}},
+			{{1, 1000.0}, {0}, {}, {12, 14, 15, 16}, {-1.3}},
+		}},
 		{name: "vector_set_text", cqlType: "set<text>", value: [][]string{{"a", "b"}, {"c", "d"}, {"e", "f"}}},
 		{name: "vector_list_int", cqlType: "list<int>", value: [][]int32{{1, 2, 3}, {-1, -2, -3}, {0, 0, 0}}},
 		{name: "vector_map_text_int", cqlType: "map<text, int>", value: []map[string]int{map1, map2, map3}},
@@ -300,4 +305,62 @@ func TestVector_MissingDimension(t *testing.T) {
 
 	err = session.Query("INSERT INTO vector_fixed(id, vec) VALUES(?, ?)", 1, []float32{8, -5.0, 1, 3}).Exec()
 	require.Error(t, err, "expected vector with 3 dimensions, received 4")
+}
+
+func TestVector_SubTypeParsing(t *testing.T) {
+	tests := []struct {
+		name     string
+		custom   string
+		expected TypeInfo
+	}{
+		{name: "text", custom: "org.apache.cassandra.db.marshal.UTF8Type", expected: NativeType{typ: TypeVarchar}},
+		{name: "set_int", custom: "org.apache.cassandra.db.marshal.SetType(org.apache.cassandra.db.marshal.Int32Type)", expected: CollectionType{NativeType{typ: TypeSet}, nil, NativeType{typ: TypeInt}}},
+		{
+			name:   "udt",
+			custom: "org.apache.cassandra.db.marshal.UserType(gocql_test,706572736f6e,66697273745f6e616d65:org.apache.cassandra.db.marshal.UTF8Type,6c6173745f6e616d65:org.apache.cassandra.db.marshal.UTF8Type,616765:org.apache.cassandra.db.marshal.Int32Type)",
+			expected: UDTTypeInfo{
+				NativeType{typ: TypeUDT},
+				"gocql_test",
+				"person",
+				[]UDTField{
+					UDTField{"first_name", NativeType{typ: TypeVarchar}},
+					UDTField{"last_name", NativeType{typ: TypeVarchar}},
+					UDTField{"age", NativeType{typ: TypeInt}},
+				},
+			},
+		},
+		{
+			name:   "vector_vector_inet",
+			custom: "org.apache.cassandra.db.marshal.VectorType(org.apache.cassandra.db.marshal.VectorType(org.apache.cassandra.db.marshal.InetAddressType, 2), 3)",
+			expected: VectorType{
+				NativeType{typ: TypeCustom},
+				VectorType{
+					NativeType{typ: TypeCustom},
+					NativeType{typ: TypeInet},
+					2,
+				},
+				3,
+			},
+		},
+		{
+			name:   "map_int_vector_text",
+			custom: "org.apache.cassandra.db.marshal.MapType(org.apache.cassandra.db.marshal.Int32Type,org.apache.cassandra.db.marshal.VectorType(org.apache.cassandra.db.marshal.UTF8Type, 10))",
+			expected: CollectionType{
+				NativeType{typ: TypeMap},
+				NativeType{typ: TypeInt},
+				VectorType{
+					NativeType{typ: TypeCustom},
+					NativeType{typ: TypeVarchar},
+					10,
+				},
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			subType := parseType(fmt.Sprintf("org.apache.cassandra.db.marshal.VectorType(%s, 2)", test.custom), 0, &defaultLogger{})
+			assertDeepEqual(t, "vector", test.expected, subType.types[0])
+		})
+	}
 }

@@ -1746,7 +1746,7 @@ func marshalVector(info VectorType, value interface{}) ([]byte, error) {
 			if err != nil {
 				return nil, err
 			}
-			if isVectorVariableLengthType(info.SubType.Type()) {
+			if isVectorVariableLengthType(info.SubType) {
 				writeUnsignedVInt(buf, uint64(len(item)))
 			}
 			buf.Write(item)
@@ -1786,7 +1786,7 @@ func unmarshalVector(info VectorType, data []byte, value interface{}) error {
 		elemSize := len(data) / info.Dimensions
 		for i := 0; i < info.Dimensions; i++ {
 			offset := 0
-			if isVectorVariableLengthType(info.SubType.Type()) {
+			if isVectorVariableLengthType(info.SubType) {
 				m, p, err := readUnsignedVint(data, 0)
 				if err != nil {
 					return err
@@ -1815,8 +1815,8 @@ func unmarshalVector(info VectorType, data []byte, value interface{}) error {
 	return unmarshalErrorf("can not unmarshal %s into %T", info, value)
 }
 
-func isVectorVariableLengthType(elemType Type) bool {
-	switch elemType {
+func isVectorVariableLengthType(elemType TypeInfo) bool {
+	switch elemType.Type() {
 	case TypeVarchar, TypeAscii, TypeBlob, TypeText:
 		return true
 	case TypeCounter:
@@ -1828,6 +1828,13 @@ func isVectorVariableLengthType(elemType Type) bool {
 	case TypeInet:
 		return true
 	case TypeList, TypeSet, TypeMap, TypeUDT:
+		return true
+	case TypeCustom:
+		switch elemType.(type) {
+		case VectorType:
+			vecType := elemType.(VectorType)
+			return isVectorVariableLengthType(vecType.SubType)
+		}
 		return true
 	}
 	return false

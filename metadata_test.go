@@ -636,12 +636,14 @@ func TestTypeParser(t *testing.T) {
 		},
 	)
 
-	// custom
+	// udt
 	assertParseNonCompositeType(
 		t,
 		"org.apache.cassandra.db.marshal.UserType(sandbox,61646472657373,737472656574:org.apache.cassandra.db.marshal.UTF8Type,63697479:org.apache.cassandra.db.marshal.UTF8Type,7a6970:org.apache.cassandra.db.marshal.Int32Type)",
 		assertTypeInfo{Type: TypeUDT, Custom: ""},
 	)
+
+	// custom
 	assertParseNonCompositeType(
 		t,
 		"org.apache.cassandra.db.marshal.DynamicCompositeType(u=>org.apache.cassandra.db.marshal.UUIDType,d=>org.apache.cassandra.db.marshal.DateType,t=>org.apache.cassandra.db.marshal.TimeUUIDType,b=>org.apache.cassandra.db.marshal.BytesType,s=>org.apache.cassandra.db.marshal.UTF8Type,B=>org.apache.cassandra.db.marshal.BooleanType,a=>org.apache.cassandra.db.marshal.AsciiType,l=>org.apache.cassandra.db.marshal.LongType,i=>org.apache.cassandra.db.marshal.IntegerType,x=>org.apache.cassandra.db.marshal.LexicalUUIDType)",
@@ -700,7 +702,7 @@ func assertParseNonCompositeType(
 ) {
 
 	log := &defaultLogger{}
-	result := parseType(def, log)
+	result := parseType(def, 4, log)
 	if len(result.reversed) != 1 {
 		t.Errorf("%s expected %d reversed values but there were %d", def, 1, len(result.reversed))
 	}
@@ -731,7 +733,7 @@ func assertParseCompositeType(
 ) {
 
 	log := &defaultLogger{}
-	result := parseType(def, log)
+	result := parseType(def, 4, log)
 	if len(result.reversed) != len(typesExpected) {
 		t.Errorf("%s expected %d reversed values but there were %d", def, len(typesExpected), len(result.reversed))
 	}
