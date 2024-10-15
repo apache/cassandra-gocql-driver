@@ -272,3 +272,28 @@ func TestUDF(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestAllNodesConnected(t *testing.T) {
+	cluster := createCluster()
+	cluster.PoolConfig.HostSelectionPolicy = RoundRobinHostPolicy()
+
+	session := createSessionFromCluster(cluster, t)
+	defer session.Close()
+
+	ids := make(map[string]bool)
+
+	// Loop to query system.local multiple times. If there is a cluster with more than 10 nodes add to the loop more iterations
+	for i := 0; i < 10; i++ {
+		var hostID string
+		err := session.Query("SELECT host_id FROM system.local").Scan(&hostID)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		ids[hostID] = true
+	}
+
+	if *clusterSize != len(ids) {
+		t.Fatalf("Expected to connect to %d unique nodes", *clusterSize)
+	}
+}
