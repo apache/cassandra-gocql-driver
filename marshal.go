@@ -1847,7 +1847,6 @@ func writeUnsignedVInt(buf *bytes.Buffer, v uint64) {
 		return
 	}
 
-	numBytes = computeUnsignedVIntSize(v)
 	extraBytes := numBytes - 1
 	var tmp = make([]byte, numBytes)
 	for i := extraBytes; i >= 0; i-- {
