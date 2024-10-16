@@ -170,6 +170,8 @@ func TestVector_Types(t *testing.T) {
 			{{2, 3}, {2, -1}, {3}, {0}, {-1.3}},
 			{{1, 1000.0}, {0}, {}, {12, 14, 15, 16}, {-1.3}},
 		}},
+		{name: "vector_tuple_text_int_float", cqlType: "tuple<text, int, float>", value: [][]interface{}{{"a", 1, float32(0.5)}, {"b", 2, float32(-1.2)}, {"c", 3, float32(0)}}},
+		{name: "vector_tuple_text_list_text", cqlType: "tuple<text, list<text>>", value: [][]interface{}{{"a", []string{"b", "c"}}, {"d", []string{"e", "f", "g"}}, {"h", []string{"i"}}}},
 		{name: "vector_set_text", cqlType: "set<text>", value: [][]string{{"a", "b"}, {"c", "d"}, {"e", "f"}}},
 		{name: "vector_list_int", cqlType: "list<int>", value: [][]int32{{1, 2, 3}, {-1, -2, -3}, {0, 0, 0}}},
 		{name: "vector_map_text_int", cqlType: "map<text, int>", value: []map[string]int{map1, map2, map3}},
@@ -326,6 +328,18 @@ func TestVector_SubTypeParsing(t *testing.T) {
 					UDTField{"first_name", NativeType{typ: TypeVarchar}},
 					UDTField{"last_name", NativeType{typ: TypeVarchar}},
 					UDTField{"age", NativeType{typ: TypeInt}},
+				},
+			},
+		},
+		{
+			name:   "tuple",
+			custom: "org.apache.cassandra.db.marshal.TupleType(org.apache.cassandra.db.marshal.UTF8Type,org.apache.cassandra.db.marshal.Int32Type,org.apache.cassandra.db.marshal.UTF8Type)",
+			expected: TupleTypeInfo{
+				NativeType{typ: TypeTuple},
+				[]TypeInfo{
+					NativeType{typ: TypeVarchar},
+					NativeType{typ: TypeInt},
+					NativeType{typ: TypeVarchar},
 				},
 			},
 		},

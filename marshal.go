@@ -1827,7 +1827,7 @@ func isVectorVariableLengthType(elemType TypeInfo) bool {
 		return true
 	case TypeInet:
 		return true
-	case TypeList, TypeSet, TypeMap, TypeUDT:
+	case TypeList, TypeSet, TypeMap, TypeUDT, TypeTuple:
 		return true
 	case TypeCustom:
 		switch elemType.(type) {
