@@ -52,7 +52,10 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-go-
       - name: Install CCM
-        run: pip install "git+https://github.com/riptano/ccm.git@${CCM_VERSION}"
+        run: |
+          python3 -m venv ~/venv
+          ~/venv/bin/pip install "git+https://github.com/riptano/ccm.git@${CCM_VERSION}"
+          echo "PATH=~/venv/bin:$PATH" >> $GITHUB_ENV
       - name: Start cassandra nodes
         run: |
           VERSION=${{ matrix.cassandra_version }}
