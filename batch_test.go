@@ -94,7 +94,7 @@ func TestBatch_WithNowInSeconds(t *testing.T) {
 		t.Skip("Batch now in seconds are only available on protocol >= 5")
 	}
 
-	if err := createTable(session, `CREATE TABLE batch_now_in_seconds (id int primary key, val text)`); err != nil {
+	if err := createTable(session, `CREATE TABLE IF NOT EXISTS batch_now_in_seconds (id int primary key, val text)`); err != nil {
 		t.Fatal(err)
 	}
 
