@@ -134,6 +134,7 @@ func TestFrameReadTooLong(t *testing.T) {
 
 func Test_framer_writeExecuteFrame(t *testing.T) {
 	framer := newFramer(nil, protoVersion5)
+	nowInSeconds := 123
 	frame := writeExecuteFrame{
 		preparedID:       []byte{1, 2, 3},
 		resultMetadataID: []byte{4, 5, 6},
@@ -141,9 +142,8 @@ func Test_framer_writeExecuteFrame(t *testing.T) {
 			"key1": []byte("value1"),
 		},
 		params: queryParams{
-			useNowInSeconds:   true,
-			nowInSecondsValue: 123,
-			keyspace:          "test_keyspace",
+			nowInSeconds: &nowInSeconds,
+			keyspace:     "test_keyspace",
 		},
 	}
 
@@ -170,17 +170,17 @@ func Test_framer_writeExecuteFrame(t *testing.T) {
 	}
 
 	assertDeepEqual(t, "keyspace", frame.params.keyspace, framer.readString())
-	assertDeepEqual(t, "useNowInSeconds", frame.params.nowInSecondsValue, framer.readInt())
+	assertDeepEqual(t, "nowInSeconds", nowInSeconds, framer.readInt())
 }
 
 func Test_framer_writeBatchFrame(t *testing.T) {
 	framer := newFramer(nil, protoVersion5)
+	nowInSeconds := 123
 	frame := writeBatchFrame{
 		customPayload: map[string][]byte{
 			"key1": []byte("value1"),
 		},
-		useNowInSeconds:   true,
-		nowInSecondsValue: 123,
+		nowInSeconds: &nowInSeconds,
 	}
 
 	err := framer.writeBatchFrame(123, &frame, frame.customPayload)
@@ -201,7 +201,7 @@ func Test_framer_writeBatchFrame(t *testing.T) {
 		t.Fatal("expected flagNowInSeconds to be set, but it is not")
 	}
 
-	assertDeepEqual(t, "useNowInSeconds", frame.nowInSecondsValue, framer.readInt())
+	assertDeepEqual(t, "nowInSeconds", nowInSeconds, framer.readInt())
 }
 
 type testMockedCompressor struct {
