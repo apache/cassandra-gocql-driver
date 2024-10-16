@@ -68,6 +68,7 @@ jobs:
           sdk default java 11.0.24-zulu
           sdk use java 11.0.24-zulu
           echo "JAVA_HOME=$JAVA_HOME_11_X64" >> $GITHUB_ENV
+          echo "PATH=$PATH" >> $GITHUB_ENV
       - name: Install CCM
         run: |
           python3 -m venv ~/venv
@@ -173,6 +174,7 @@ jobs:
           sdk default java 11.0.24-zulu
           sdk use java 11.0.24-zulu
           echo "JAVA_HOME=$JAVA_HOME_11_X64" >> $GITHUB_ENV
+          echo "PATH=$PATH" >> $GITHUB_ENV
       - name: Install CCM
         run: |
           python3 -m venv ~/venv
