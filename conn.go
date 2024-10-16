@@ -483,11 +483,11 @@ func (s *startupCoordinator) startup(ctx context.Context, supported map[string][
 	case error:
 		return v
 	case *readyFrame:
-		// Connection is successfully set up and ready to use Native Protocol v5
+		// Startup is successfully completed, so we could use Native Protocol 5
 		s.conn.startupCompleted = true
 		return nil
 	case *authenticateFrame:
-		// Connection is successfully set up and ready to use Native Protocol v5
+		// Startup is successfully completed, so we could use Native Protocol 5
 		s.conn.startupCompleted = true
 		return s.authenticateHandshake(ctx, v)
 	default:
