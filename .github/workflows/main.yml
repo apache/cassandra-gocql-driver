@@ -51,6 +51,23 @@ jobs:
           key: ${{ runner.os }}-go-${{ hashFiles('go.mod') }}
           restore-keys: |
             ${{ runner.os }}-go-
+      - name: Install Java
+        run: |
+          curl -s "https://get.sdkman.io" | bash
+          source "$HOME/.sdkman/bin/sdkman-init.sh"
+          echo "sdkman_auto_answer=true" >> ~/.sdkman/etc/config
+          # sdk list java
+
+          sdk install java 11.0.24-zulu
+          echo "JAVA11_HOME=$JAVA_HOME_11_X64" >> $GITHUB_ENV
+
+          sdk install java 17.0.12-zulu
+          echo "JAVA17_HOME=$JAVA_HOME_17_X64" >> $GITHUB_ENV
+
+          # by default use JDK 11
+          sdk default java 11.0.24-zulu
+          sdk use java 11.0.24-zulu
+          echo "JAVA_HOME=$JAVA_HOME_11_X64" >> $GITHUB_ENV
       - name: Install CCM
         run: |
           python3 -m venv ~/venv
@@ -139,8 +156,29 @@ jobs:
       - uses: actions/setup-go@v4
         with:
           go-version: ${{ matrix.go }}
+      - name: Install Java
+        run: |
+          curl -s "https://get.sdkman.io" | bash
+          source "$HOME/.sdkman/bin/sdkman-init.sh"
+          echo "sdkman_auto_answer=true" >> ~/.sdkman/etc/config
+          # sdk list java
+
+          sdk install java 11.0.24-zulu
+          echo "JAVA11_HOME=$JAVA_HOME_11_X64" >> $GITHUB_ENV
+
+          sdk install java 17.0.12-zulu
+          echo "JAVA17_HOME=$JAVA_HOME_17_X64" >> $GITHUB_ENV
+
+          # by default use JDK 11
+          sdk default java 11.0.24-zulu
+          sdk use java 11.0.24-zulu
+          echo "JAVA_HOME=$JAVA_HOME_11_X64" >> $GITHUB_ENV
       - name: Install CCM
-        run: pip install "git+https://github.com/riptano/ccm.git@${CCM_VERSION}"
+        run: |
+          python3 -m venv ~/venv
+          ~/venv/bin/pip install setuptools
+          ~/venv/bin/pip install "git+https://github.com/riptano/ccm.git@${CCM_VERSION}"
+          echo "PATH=~/venv/bin:$PATH" >> $GITHUB_ENV
       - name: Start cassandra nodes
         run: |
           VERSION=${{ matrix.cassandra_version }}
