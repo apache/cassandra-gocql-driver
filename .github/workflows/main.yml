@@ -117,7 +117,7 @@ jobs:
           ccm create test -v $VERSION -n 3 -d --vnodes --jvm_arg="-Xmx256m -XX:NewSize=100m"
           ccm updateconf "${conf[@]}"
 
-          export JVM_EXTRA_OPTS=" -Dcassandra.test.fail_writes_ks=test -Dcassandra.custom_query_handler_class=org.apache.cassandra.cql3.CustomPayloadMirroringQueryHandler"
+          export JVM_EXTRA_OPTS=" -Dcassandra.test.fail_writes_ks=test -Dcassandra.custom_query_handler_class=org.apache.cassandra.cql3.CustomPayloadMirroringQueryHandler -Dcassandra.gossip_settle_min_wait_ms=1000 -Dcassandra.gossip_settle_interval_ms=500 -Dcassandra.gossip_settle_poll_success_required=2"
 
           ccm start --wait-for-binary-proto --verbose
           ccm status
@@ -228,7 +228,7 @@ jobs:
 
           rm -rf $HOME/.ccm/test/node1/data/system_auth
 
-          export JVM_EXTRA_OPTS=" -Dcassandra.test.fail_writes_ks=test -Dcassandra.custom_query_handler_class=org.apache.cassandra.cql3.CustomPayloadMirroringQueryHandler"
+          export JVM_EXTRA_OPTS=" -Dcassandra.test.fail_writes_ks=test -Dcassandra.custom_query_handler_class=org.apache.cassandra.cql3.CustomPayloadMirroringQueryHandler -Dcassandra.gossip_settle_min_wait_ms=1000 -Dcassandra.gossip_settle_interval_ms=500 -Dcassandra.gossip_settle_poll_success_required=2"
 
           ccm start --wait-for-binary-proto --verbose
           ccm status
