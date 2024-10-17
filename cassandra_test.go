@@ -3387,6 +3387,9 @@ func TestQuery_SetKeyspace(t *testing.T) {
 }
 
 func TestLargeSizeQuery(t *testing.T) {
+	// TestLargeSizeQuery runs a query bigger than the max allowed size of the payload of a frame,
+	// so it should be sent as 2 different frames where each contains a self-contained bit set to zero.
+
 	session := createSession(t)
 	defer session.Close()
 
@@ -3413,6 +3416,13 @@ func TestLargeSizeQuery(t *testing.T) {
 }
 
 func TestQueryCompressionNotWorthIt(t *testing.T) {
+	// TestQueryCompressionNotWorthIt runs a query that is not likely to be compressed efficiently
+	// (uncompressed payload size > compressed payload size).
+	// So, it should send a Compressed Frame where:
+	// 	1. Compressed length is set to the length of the uncompressed payload;
+	//	2. Uncompressed length is set to zero;
+	//	3. Payload is the uncompressed payload.
+
 	session := createSession(t)
 	defer session.Close()
 
