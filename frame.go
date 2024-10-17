@@ -1522,15 +1522,18 @@ func (f *framer) writeQueryParams(opts *queryParams) {
 		}
 	}
 
-	// protoV5 specific things
-	if f.proto > protoVersion4 {
-		if opts.keyspace != "" {
-			flags |= flagWithKeyspace
+	if opts.keyspace != "" {
+		if f.proto < protoVersion5 {
+			panic(fmt.Errorf("the keyspace can only be set with protocol 5 or higher"))
 		}
+		flags |= flagWithKeyspace
+	}
 
-		if opts.nowInSeconds != nil {
-			flags |= flagWithNowInSeconds
+	if opts.nowInSeconds != nil {
+		if f.proto < protoVersion5 {
+			panic(fmt.Errorf("now_in_seconds can only be set with protocol 5 or higher"))
 		}
+		flags |= flagWithNowInSeconds
 	}
 
 	if f.proto > protoVersion4 {
@@ -1578,16 +1581,10 @@ func (f *framer) writeQueryParams(opts *queryParams) {
 	}
 
 	if opts.keyspace != "" {
-		if f.proto < protoVersion5 {
-			panic(fmt.Errorf("the keyspace can only be set with protocol 5 or higher"))
-		}
 		f.writeString(opts.keyspace)
 	}
 
 	if opts.nowInSeconds != nil {
-		if f.proto < protoVersion5 {
-			panic(fmt.Errorf("now_in_seconds can only be set with protocol 5 or higher"))
-		}
 		f.writeInt(int32(*opts.nowInSeconds))
 	}
 }
@@ -1763,14 +1760,18 @@ func (f *framer) writeBatchFrame(streamID int, w *writeBatchFrame, customPayload
 		}
 	}
 
-	if f.proto > protoVersion4 {
-		if w.keyspace != "" {
-			flags |= flagWithKeyspace
+	if w.keyspace != "" {
+		if f.proto < protoVersion5 {
+			panic(fmt.Errorf("the keyspace can only be set with protocol 5 or higher"))
 		}
+		flags |= flagWithKeyspace
+	}
 
-		if w.nowInSeconds != nil {
-			flags |= flagWithNowInSeconds
+	if w.nowInSeconds != nil {
+		if f.proto < protoVersion5 {
+			panic(fmt.Errorf("now_in_seconds can only be set with protocol 5 or higher"))
 		}
+		flags |= flagWithNowInSeconds
 	}
 
 	if f.proto > protoVersion4 {
@@ -1794,16 +1795,10 @@ func (f *framer) writeBatchFrame(streamID int, w *writeBatchFrame, customPayload
 	}
 
 	if w.keyspace != "" {
-		if f.proto < protoVersion5 {
-			panic(fmt.Errorf("the keyspace can only be set with protocol 5 or higher"))
-		}
 		f.writeString(w.keyspace)
 	}
 
 	if w.nowInSeconds != nil {
-		if f.proto < protoVersion5 {
-			panic(fmt.Errorf("now_in_seconds can only be set with protocol 5 or higher"))
-		}
 		f.writeInt(int32(*w.nowInSeconds))
 	}
 
