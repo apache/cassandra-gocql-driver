@@ -1530,20 +1530,30 @@ func (c *Conn) executeQuery(ctx context.Context, qry *Query) *Iter {
 		return &Iter{framer: framer}
 	case *resultRowsFrame:
 		if x.meta.newMetadataID != nil {
-			stmtCacheKey := c.session.stmtsLRU.keyFor(c.host.HostID(), c.currentKeyspace, qry.stmt)
-			inflight, ok := c.session.stmtsLRU.get(stmtCacheKey)
-			if !ok {
-				// We didn't find the stmt in the cache, so we just re-prepare it
-				return c.executeQuery(ctx, qry)
-			}
-
 			// Updating the result metadata id in prepared stmt
 			//
 			// If a RESULT/Rows message reports
 			//      changed resultset metadata with the Metadata_changed flag, the reported new
 			//      resultset metadata must be used in subsequent executions
-			inflight.preparedStatment.resultMetadataID = x.meta.newMetadataID
-			inflight.preparedStatment.response = x.meta
+
+			stmtCacheKey := c.session.stmtsLRU.keyFor(c.host.HostID(), c.currentKeyspace, qry.stmt)
+			oldInflight, ok := c.session.stmtsLRU.get(stmtCacheKey)
+			if !ok {
+				// We didn't find the stmt in the cache, so we just re-prepare it
+				return c.executeQuery(ctx, qry)
+			}
+
+			newInflight := &inflightPrepare{
+				done: make(chan struct{}),
+				preparedStatment: &preparedStatment{
+					id:               oldInflight.preparedStatment.id,
+					resultMetadataID: x.meta.newMetadataID,
+					request:          oldInflight.preparedStatment.request,
+					response:         x.meta,
+				},
+			}
+
+			c.session.stmtsLRU.add(stmtCacheKey, newInflight)
 			return c.executeQuery(ctx, qry)
 		}
 
