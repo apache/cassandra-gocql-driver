@@ -713,7 +713,7 @@ func TestStream0(t *testing.T) {
 		logger:  &defaultLogger{},
 	}
 
-	err := conn.recv(context.Background())
+	err := conn.recv(context.Background(), false)
 	if err == nil {
 		t.Fatal("expected to get an error on stream 0")
 	} else if !strings.HasPrefix(err.Error(), expErr) {
@@ -1307,14 +1307,13 @@ func TestConnProcessAllEnvelopesInSingleFrame(t *testing.T) {
 	require.NoError(t, err)
 
 	c := &Conn{
-		conn:             server,
-		r:                bufio.NewReader(server),
-		calls:            make(map[int]*callReq),
-		version:          protoVersion5,
-		addr:             server.RemoteAddr().String(),
-		streams:          streams.New(protoVersion5),
-		isSchemaV2:       true,
-		startupCompleted: true,
+		conn:       server,
+		r:          bufio.NewReader(server),
+		calls:      make(map[int]*callReq),
+		version:    protoVersion5,
+		addr:       server.RemoteAddr().String(),
+		streams:    streams.New(protoVersion5),
+		isSchemaV2: true,
 		w: &deadlineContextWriter{
 			w:         server,
 			timeout:   time.Second * 10,

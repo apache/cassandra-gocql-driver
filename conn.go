@@ -216,14 +216,6 @@ type Conn struct {
 	host            *HostInfo
 	isSchemaV2      bool
 
-	// Only for proto v5+.
-	// Indicates if STARTUP has been completed.
-	// github.com/apache/cassandra/blob/trunk/doc/native_protocol_v5.spec
-	// 2.3.1 Initial Handshake
-	// 	In order to support both v5 and earlier formats, the v5 framing format is not
-	//  applied to message exchanges before an initial handshake is completed.
-	startupCompleted bool
-
 	session *Session
 
 	// true if connection close process for the connection started.
@@ -387,10 +379,19 @@ func (s *startupCoordinator) setupConn(ctx context.Context) error {
 	}
 	defer cancel()
 
+	// Only for proto v5+.
+	// Indicates if STARTUP has been completed.
+	// github.com/apache/cassandra/blob/trunk/doc/native_protocol_v5.spec
+	// 2.3.1 Initial Handshake
+	// 	In order to support both v5 and earlier formats, the v5 framing format is not
+	//  applied to message exchanges before an initial handshake is completed.
+	startupCompleted := &atomic.Bool{}
+	startupCompleted.Store(false)
+
 	startupErr := make(chan error)
 	go func() {
 		for range s.frameTicker {
-			err := s.conn.recv(ctx)
+			err := s.conn.recv(ctx, startupCompleted.Load())
 			if err != nil {
 				select {
 				case startupErr <- err:
@@ -404,7 +405,7 @@ func (s *startupCoordinator) setupConn(ctx context.Context) error {
 
 	go func() {
 		defer close(s.frameTicker)
-		err := s.options(ctx)
+		err := s.options(ctx, startupCompleted)
 		select {
 		case startupErr <- err:
 		case <-ctx.Done():
@@ -423,14 +424,14 @@ func (s *startupCoordinator) setupConn(ctx context.Context) error {
 	return nil
 }
 
-func (s *startupCoordinator) write(ctx context.Context, frame frameBuilder) (frame, error) {
+func (s *startupCoordinator) write(ctx context.Context, frame frameBuilder, startupCompleted *atomic.Bool) (frame, error) {
 	select {
 	case s.frameTicker <- struct{}{}:
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}
 
-	framer, err := s.conn.exec(ctx, frame, nil)
+	framer, err := s.conn.execInternal(ctx, frame, nil, startupCompleted.Load())
 	if err != nil {
 		return nil, err
 	}
@@ -438,8 +439,8 @@ func (s *startupCoordinator) write(ctx context.Context, frame frameBuilder) (fra
 	return framer.parseFrame()
 }
 
-func (s *startupCoordinator) options(ctx context.Context) error {
-	frame, err := s.write(ctx, &writeOptionsFrame{})
+func (s *startupCoordinator) options(ctx context.Context, startupCompleted *atomic.Bool) error {
+	frame, err := s.write(ctx, &writeOptionsFrame{}, startupCompleted)
 	if err != nil {
 		return err
 	}
@@ -449,10 +450,10 @@ func (s *startupCoordinator) options(ctx context.Context) error {
 		return NewErrProtocol("Unknown type of response to startup frame: %T", frame)
 	}
 
-	return s.startup(ctx, supported.supported)
+	return s.startup(ctx, supported.supported, startupCompleted)
 }
 
-func (s *startupCoordinator) startup(ctx context.Context, supported map[string][]string) error {
+func (s *startupCoordinator) startup(ctx context.Context, supported map[string][]string, startupCompleted *atomic.Bool) error {
 	m := map[string]string{
 		"CQL_VERSION":    s.conn.cfg.CQLVersion,
 		"DRIVER_NAME":    driverName,
@@ -474,7 +475,7 @@ func (s *startupCoordinator) startup(ctx context.Context, supported map[string][
 		}
 	}
 
-	frame, err := s.write(ctx, &writeStartupFrame{opts: m})
+	frame, err := s.write(ctx, &writeStartupFrame{opts: m}, startupCompleted)
 	if err != nil {
 		return err
 	}
@@ -484,18 +485,18 @@ func (s *startupCoordinator) startup(ctx context.Context, supported map[string][
 		return v
 	case *readyFrame:
 		// Startup is successfully completed, so we could use Native Protocol 5
-		s.conn.startupCompleted = true
+		startupCompleted.Store(true)
 		return nil
 	case *authenticateFrame:
 		// Startup is successfully completed, so we could use Native Protocol 5
-		s.conn.startupCompleted = true
-		return s.authenticateHandshake(ctx, v)
+		startupCompleted.Store(true)
+		return s.authenticateHandshake(ctx, v, startupCompleted)
 	default:
 		return NewErrProtocol("Unknown type of response to startup frame: %s", v)
 	}
 }
 
-func (s *startupCoordinator) authenticateHandshake(ctx context.Context, authFrame *authenticateFrame) error {
+func (s *startupCoordinator) authenticateHandshake(ctx context.Context, authFrame *authenticateFrame, startupCompleted *atomic.Bool) error {
 	if s.conn.auth == nil {
 		return fmt.Errorf("authentication required (using %q)", authFrame.class)
 	}
@@ -507,7 +508,7 @@ func (s *startupCoordinator) authenticateHandshake(ctx context.Context, authFram
 
 	req := &writeAuthResponseFrame{data: resp}
 	for {
-		frame, err := s.write(ctx, req)
+		frame, err := s.write(ctx, req, startupCompleted)
 		if err != nil {
 			return err
 		}
@@ -600,7 +601,7 @@ func (c *Conn) Close() {
 func (c *Conn) serve(ctx context.Context) {
 	var err error
 	for err == nil {
-		err = c.recv(ctx)
+		err = c.recv(ctx, true)
 	}
 
 	c.closeWithError(err)
@@ -672,10 +673,10 @@ func (c *Conn) heartBeat(ctx context.Context) {
 	}
 }
 
-func (c *Conn) recv(ctx context.Context) error {
+func (c *Conn) recv(ctx context.Context, startupCompleted bool) error {
 	// If startup is completed and native proto 5+ is set up then we should
 	// unwrap payload body from v5 compressed/uncompressed frame
-	if c.startupCompleted && c.version > protoVersion4 {
+	if startupCompleted && c.version > protoVersion4 {
 		return c.recvProtoV5Frame(ctx)
 	}
 
@@ -1091,6 +1092,10 @@ func (c *Conn) addCall(call *callReq) error {
 }
 
 func (c *Conn) exec(ctx context.Context, req frameBuilder, tracer Tracer) (*framer, error) {
+	return c.execInternal(ctx, req, tracer, true)
+}
+
+func (c *Conn) execInternal(ctx context.Context, req frameBuilder, tracer Tracer, startupCompleted bool) (*framer, error) {
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		return nil, ctxErr
 	}
@@ -1152,7 +1157,7 @@ func (c *Conn) exec(ctx context.Context, req frameBuilder, tracer Tracer) (*fram
 
 	var n int
 
-	if c.version > protoVersion4 && c.startupCompleted {
+	if c.version > protoVersion4 && startupCompleted {
 		err = framer.prepareModernLayout()
 		if err != nil {
 			// closeWithError will block waiting for this stream to either receive a response
