@@ -1,0 +1,50 @@
+name: Setup environment
+description: Setup environment for integration tests execution
+runs:
+  using: "composite"
+  steps:
+    - name: Set up cache for SDKMAN
+      uses: actions/cache@v3
+      with:
+        path: ~/.sdkman
+        key: ${{ runner.os }}-sdkman
+
+    - name: Set up cache for PIP
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+
+    - name: Install Java
+      shell: bash
+      run: |
+        echo "Installing SDKMAN..."
+        curl -s "https://get.sdkman.io" | bash
+        source "$HOME/.sdkman/bin/sdkman-init.sh"
+        echo "sdkman_auto_answer=true" >> ~/.sdkman/etc/config
+
+        echo "Installing Java versions..."
+        sdk install java 11.0.24-zulu
+        sdk install java 17.0.12-zulu
+
+        sdk default java 11.0.24-zulu
+        sdk use java 11.0.24-zulu
+
+        echo "JAVA11_HOME=$JAVA_HOME_11_X64" >> $GITHUB_ENV
+        echo "JAVA17_HOME=$JAVA_HOME_17_X64" >> $GITHUB_ENV
+        echo "JAVA_HOME=$JAVA_HOME_11_X64" >> $GITHUB_ENV
+        echo "PATH=$PATH" >> $GITHUB_ENV
+
+    - name: Install CCM
+      shell: bash
+      run: |
+        echo "Creating Python virtual environment..."
+        VENV_DIR="$HOME/venv"
+        python3 -m venv $VENV_DIR
+        source $VENV_DIR/bin/activate
+        pip install --upgrade pip setuptools
+
+        echo "Installing CCM..."
+        pip install "git+https://github.com/riptano/ccm.git@${CCM_VERSION}"
