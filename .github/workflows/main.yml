@@ -51,10 +51,11 @@ jobs:
           key: ${{ runner.os }}-go-${{ hashFiles('go.mod') }}
           restore-keys: |
             ${{ runner.os }}-go-
-      - name: Install CCM
-        run: pip install "git+https://github.com/riptano/ccm.git@${CCM_VERSION}"
+      - name: Setup environment
+        uses: ./.github/actions/setup-environment
       - name: Start cassandra nodes
         run: |
+          source ~/venv/bin/activate
           VERSION=${{ matrix.cassandra_version }}
           keypath="$(pwd)/testdata/pki"
           conf=(
@@ -107,6 +108,7 @@ jobs:
           echo "JVM_EXTRA_OPTS=$JVM_EXTRA_OPTS" >> $GITHUB_ENV
       - name: Integration tests
         run: |
+          source ~/venv/bin/activate
           export JVM_EXTRA_OPTS="${{env.JVM_EXTRA_OPTS}}"
           go test -v -tags "${{ matrix.tags }} gocql_debug" -timeout=5m -race ${{ env.args }}
       - name: 'Save ccm logs'
@@ -135,10 +137,11 @@ jobs:
       - uses: actions/setup-go@v4
         with:
           go-version: ${{ matrix.go }}
-      - name: Install CCM
-        run: pip install "git+https://github.com/riptano/ccm.git@${CCM_VERSION}"
+      - name: Setup environment
+        uses: ./.github/actions/setup-environment
       - name: Start cassandra nodes
         run: |
+          source ~/venv/bin/activate
           VERSION=${{ matrix.cassandra_version }}
           keypath="$(pwd)/testdata/pki"
           conf=(
@@ -197,5 +200,6 @@ jobs:
           sleep 30s
       - name: Integration tests
         run: |
+          source ~/venv/bin/activate
           export JVM_EXTRA_OPTS="${{env.JVM_EXTRA_OPTS}}"
           go test -v -run=TestAuthentication -tags "${{ matrix.tags }} gocql_debug" -timeout=15s -runauth ${{ env.args }}
