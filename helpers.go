@@ -101,6 +101,66 @@ func goType(t TypeInfo) (reflect.Type, error) {
 	}
 }
 
+func nullableGoType(t TypeInfo) (reflect.Type, error) {
+	switch t.Type() {
+	case TypeVarchar, TypeAscii, TypeInet, TypeText:
+		return reflect.TypeOf(new(string)), nil
+	case TypeBigInt, TypeCounter:
+		return reflect.TypeOf(new(int64)), nil
+	case TypeTime:
+		return reflect.TypeOf(new(time.Duration)), nil
+	case TypeTimestamp:
+		return reflect.TypeOf(new(time.Time)), nil
+	case TypeBlob:
+		return reflect.TypeOf(new([]byte)), nil
+	case TypeBoolean:
+		return reflect.TypeOf(new(bool)), nil
+	case TypeFloat:
+		return reflect.TypeOf(new(float32)), nil
+	case TypeDouble:
+		return reflect.TypeOf(new(float64)), nil
+	case TypeInt:
+		return reflect.TypeOf(new(int)), nil
+	case TypeSmallInt:
+		return reflect.TypeOf(new(int16)), nil
+	case TypeTinyInt:
+		return reflect.TypeOf(new(int8)), nil
+	case TypeDecimal:
+		return reflect.TypeOf(*new(*inf.Dec)), nil
+	case TypeUUID, TypeTimeUUID:
+		return reflect.TypeOf(new(UUID)), nil
+	case TypeList, TypeSet:
+		elemType, err := nullableGoType(t.(CollectionType).Elem)
+		if err != nil {
+			return nil, err
+		}
+		return reflect.SliceOf(elemType), nil
+	case TypeMap:
+		keyType, err := nullableGoType(t.(CollectionType).Key)
+		if err != nil {
+			return nil, err
+		}
+		valueType, err := nullableGoType(t.(CollectionType).Elem)
+		if err != nil {
+			return nil, err
+		}
+		return reflect.MapOf(keyType, valueType), nil
+	case TypeVarint:
+		return reflect.TypeOf(*new(*big.Int)), nil
+	case TypeTuple:
+		tuple := t.(TupleTypeInfo)
+		return reflect.TypeOf(make([]interface{}, len(tuple.Elems))), nil
+	case TypeUDT:
+		return reflect.TypeOf(make(map[string]interface{})), nil
+	case TypeDate:
+		return reflect.TypeOf(new(time.Time)), nil
+	case TypeDuration:
+		return reflect.TypeOf(new(Duration)), nil
+	default:
+		return nil, fmt.Errorf("cannot create Go type for unknown CQL type %s", t)
+	}
+}
+
 func dereference(i interface{}) interface{} {
 	return reflect.Indirect(reflect.ValueOf(i)).Interface()
 }
@@ -323,6 +383,8 @@ func TupleColumnName(c string, n int) string {
 }
 
 func (iter *Iter) RowData() (RowData, error) {
+	var err error
+	var val interface{}
 	if iter.err != nil {
 		return RowData{}, iter.err
 	}
@@ -332,7 +394,12 @@ func (iter *Iter) RowData() (RowData, error) {
 
 	for _, column := range iter.Columns() {
 		if c, ok := column.TypeInfo.(TupleTypeInfo); !ok {
-			val, err := column.TypeInfo.NewWithError()
+			if !iter.isNullableScan {
+				val, err = column.TypeInfo.NewWithError()
+			} else {
+				val, err = column.TypeInfo.NewWithNullable()
+			}
+
 			if err != nil {
 				return RowData{}, err
 			}
@@ -342,10 +409,11 @@ func (iter *Iter) RowData() (RowData, error) {
 			for i, elem := range c.Elems {
 				columns = append(columns, TupleColumnName(column.Name, i))
 				val, err := elem.NewWithError()
+
 				if err != nil {
 					return RowData{}, err
 				}
-				values = append(values, val)
+				values = append(values, &val)
 			}
 		}
 	}
@@ -449,6 +517,12 @@ func (iter *Iter) MapScan(m map[string]interface{}) bool {
 		return true
 	}
 	return false
+}
+
+func (iter *Iter) MapScanWithNullableValues(m map[string]interface{}) bool {
+	iter.setNullableScan(true)
+	scan := iter.MapScan(m)
+	return scan
 }
 
 func copyBytes(p []byte) []byte {

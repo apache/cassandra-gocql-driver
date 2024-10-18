@@ -2468,12 +2468,21 @@ type TypeInfo interface {
 	//
 	// If there is no corresponding Go type for the CQL type, NewWithError returns an error.
 	NewWithError() (interface{}, error)
+	NewWithNullable() (interface{}, error)
 }
 
 type NativeType struct {
 	proto  byte
 	typ    Type
 	custom string // only used for TypeCustom
+}
+
+func (t NativeType) NewWithNullable() (interface{}, error) {
+	typ, err := nullableGoType(t)
+	if err != nil {
+		return nil, err
+	}
+	return reflect.New(typ).Interface(), nil
 }
 
 func NewNativeType(proto byte, typ Type, custom string) NativeType {
@@ -2523,6 +2532,14 @@ type CollectionType struct {
 	Elem TypeInfo // only used for TypeMap, TypeList and TypeSet
 }
 
+func (t CollectionType) NewWithNullable() (interface{}, error) {
+	typ, err := nullableGoType(t)
+	if err != nil {
+		return nil, err
+	}
+	return reflect.New(typ).Interface(), nil
+}
+
 func (t CollectionType) NewWithError() (interface{}, error) {
 	typ, err := goType(t)
 	if err != nil {
@@ -2555,6 +2572,14 @@ func (c CollectionType) String() string {
 type TupleTypeInfo struct {
 	NativeType
 	Elems []TypeInfo
+}
+
+func (t TupleTypeInfo) NewWithNullable() (interface{}, error) {
+	typ, err := nullableGoType(t)
+	if err != nil {
+		return nil, err
+	}
+	return reflect.New(typ).Interface(), nil
 }
 
 func (t TupleTypeInfo) String() string {
@@ -2594,6 +2619,14 @@ type UDTTypeInfo struct {
 	KeySpace string
 	Name     string
 	Elements []UDTField
+}
+
+func (u UDTTypeInfo) NewWithNullable() (interface{}, error) {
+	typ, err := nullableGoType(u)
+	if err != nil {
+		return nil, err
+	}
+	return reflect.New(typ).Interface(), nil
 }
 
 func (u UDTTypeInfo) NewWithError() (interface{}, error) {
