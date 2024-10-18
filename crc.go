@@ -27,8 +27,8 @@ var (
 	initialCRC32Bytes = []byte{0xfa, 0x2d, 0x55, 0xca}
 )
 
-// ChecksumIEEE calculates the CRC32 checksum of the given byte slice.
-func ChecksumIEEE(b []byte) uint32 {
+// Crc32 calculates the CRC32 checksum of the given byte slice.
+func Crc32(b []byte) uint32 {
 	crc := crc32.NewIEEE()
 	crc.Write(initialCRC32Bytes) // Include initial CRC32 bytes
 	crc.Write(b)
@@ -40,8 +40,8 @@ const (
 	crc24Poly = 0x1974F0B // Polynomial for CRC24 calculation
 )
 
-// KoopmanChecksum calculates the CRC24 checksum using the Koopman polynomial.
-func KoopmanChecksum(buf []byte) uint32 {
+// Crc24 calculates the CRC24 checksum using the Koopman polynomial.
+func Crc24(buf []byte) uint32 {
 	crc := crc24Init
 	for _, b := range buf {
 		crc ^= int(b) << 16

@@ -28,10 +28,11 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"os"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestFuzzBugs(t *testing.T) {
@@ -309,14 +310,14 @@ func Test_readUncompressedFrame(t *testing.T) {
 			err := req.buildFrame(framer, 128)
 			require.NoError(t, err)
 
-			frame, err := newUncompressedFrame(framer.buf, true)
+			frame, err := newUncompressedSegment(framer.buf, true)
 			require.NoError(t, err)
 
 			if tt.modifyFrame != nil {
 				frame = tt.modifyFrame(frame)
 			}
 
-			readFrame, isSelfContained, err := readUncompressedFrame(bytes.NewReader(frame))
+			readFrame, isSelfContained, err := readUncompressedSegment(bytes.NewReader(frame))
 
 			if tt.expectedErr != "" {
 				require.Error(t, err)
@@ -420,14 +421,14 @@ func Test_readCompressedFrame(t *testing.T) {
 			err := req.buildFrame(framer, 128)
 			require.NoError(t, err)
 
-			frame, err := newCompressedFrame(framer.buf, true, testMockedCompressor{})
+			frame, err := newCompressedSegment(framer.buf, true, testMockedCompressor{})
 			require.NoError(t, err)
 
 			if tt.modifyFrameFn != nil {
 				frame = tt.modifyFrameFn(frame)
 			}
 
-			readFrame, selfContained, err := readCompressedFrame(bytes.NewReader(frame), tt.compressor)
+			readFrame, selfContained, err := readCompressedSegment(bytes.NewReader(frame), tt.compressor)
 
 			switch {
 			case tt.expectedErrorMsg != "":

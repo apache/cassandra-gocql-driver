@@ -46,8 +46,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gocql/gocql/internal/streams"
 	"github.com/stretchr/testify/require"
+
+	"github.com/gocql/gocql/internal/streams"
 )
 
 const (
@@ -1302,7 +1303,7 @@ func (srv *TestServer) readFrame(conn net.Conn) (*framer, error) {
 	return framer, nil
 }
 
-func TestConnProcessAllEnvelopesInSingleFrame(t *testing.T) {
+func TestConnProcessAllFramesInSingleSegment(t *testing.T) {
 	server, client, err := tcpConnPair()
 	require.NoError(t, err)
 
@@ -1360,10 +1361,10 @@ func TestConnProcessAllEnvelopesInSingleFrame(t *testing.T) {
 		buf = append(buf, framer1.buf...)
 		buf = append(buf, framer2.buf...)
 
-		uncompressedFrame, err := newUncompressedFrame(buf, true)
+		uncompressedSegment, err := newUncompressedSegment(buf, true)
 		require.NoError(t, err)
 
-		_, err = client.Write(uncompressedFrame)
+		_, err = client.Write(uncompressedSegment)
 		require.NoError(t, err)
 	}()
 
@@ -1372,14 +1373,14 @@ func TestConnProcessAllEnvelopesInSingleFrame(t *testing.T) {
 
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- c.recvProtoV5Frame(ctx)
+		errCh <- c.recvSegment(ctx)
 	}()
 
 	go func() {
 		resp1 := <-call1.resp
 		close(call1.timeout)
-		// Skipping here the header of the envelope because resp.framer contains already parsed header
-		// and resp.framer.buf contains envelope body
+		// Skipping here the header of the frame because resp.framer contains already parsed header
+		// and resp.framer.buf contains frame body
 		require.Equal(t, framer1.buf[9:], resp1.framer.buf)
 
 		resp2 := <-call2.resp

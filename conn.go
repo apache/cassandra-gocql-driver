@@ -675,9 +675,9 @@ func (c *Conn) heartBeat(ctx context.Context) {
 
 func (c *Conn) recv(ctx context.Context, startupCompleted bool) error {
 	// If startup is completed and native proto 5+ is set up then we should
-	// unwrap payload body from v5 compressed/uncompressed frame
+	// unwrap payload from compressed/uncompressed frame
 	if startupCompleted && c.version > protoVersion4 {
-		return c.recvProtoV5Frame(ctx)
+		return c.recvSegment(ctx)
 	}
 
 	return c.processFrame(ctx, c)
@@ -801,45 +801,80 @@ func (c *Conn) handleTimeout() {
 	}
 }
 
-func (c *Conn) recvProtoV5Frame(ctx context.Context) error {
+func (c *Conn) recvSegment(ctx context.Context) error {
 	var (
-		payload         []byte
+		frame           []byte
 		isSelfContained bool
 		err             error
 	)
 
 	// Read frame based on compression
 	if c.compressor != nil {
-		payload, isSelfContained, err = readCompressedFrame(c.r, c.compressor)
+		frame, isSelfContained, err = readCompressedSegment(c.r, c.compressor)
 	} else {
-		payload, isSelfContained, err = readUncompressedFrame(c.r)
+		frame, isSelfContained, err = readUncompressedSegment(c.r)
 	}
 	if err != nil {
 		return err
 	}
 
 	if isSelfContained {
-		return c.processAllEnvelopesInFrame(ctx, bytes.NewReader(payload))
+		return c.processAllFramesInSegment(ctx, bytes.NewReader(frame))
 	}
 
-	head, err := readHeader(bytes.NewReader(payload), c.headerBuf[:])
+	head, err := readHeader(bytes.NewReader(frame), c.headerBuf[:])
 	if err != nil {
 		return err
 	}
 
-	const envelopeHeaderLength = 9
-	buf := bytes.NewBuffer(make([]byte, 0, head.length+envelopeHeaderLength))
-	buf.Write(payload)
+	const frameHeaderLength = 9
+	buf := bytes.NewBuffer(make([]byte, 0, head.length+frameHeaderLength))
+	buf.Write(frame)
 
 	// Computing how many bytes of message left to read
-	bytesToRead := head.length - len(payload) + envelopeHeaderLength
+	bytesToRead := head.length - len(frame) + frameHeaderLength
 
-	err = c.recvLastsFrames(buf, bytesToRead)
+	err = c.recvPartialFrames(buf, bytesToRead)
 	if err != nil {
 		return err
 	}
 
 	return c.processFrame(ctx, buf)
+}
+
+// recvPartialFrames reads proto v5 segments from Conn.r and writes decoded partial frames to dst.
+// It reads data until the bytesToRead is reached.
+// If Conn.compressor is not nil, it processes Compressed Format segments.
+func (c *Conn) recvPartialFrames(dst *bytes.Buffer, bytesToRead int) error {
+	var read int
+	var frame []byte
+	var err error
+	for read != bytesToRead {
+		// Read frame based on compression
+		if c.compressor != nil {
+			frame, _, err = readCompressedSegment(c.r, c.compressor)
+		} else {
+			frame, _, err = readUncompressedSegment(c.r)
+		}
+		if err != nil {
+			return fmt.Errorf("gocql: failed to read non self-contained frame: %w", err)
+		}
+
+		// Write the frame to the destination writer
+		n, _ := dst.Write(frame)
+		read += n
+	}
+
+	return nil
+}
+
+func (c *Conn) processAllFramesInSegment(ctx context.Context, r *bytes.Reader) error {
+	var err error
+	for r.Len() > 0 && err == nil {
+		err = c.processFrame(ctx, r)
+	}
+
+	return err
 }
 
 type callReq struct {
@@ -1886,41 +1921,6 @@ func (c *Conn) awaitSchemaAgreement(ctx context.Context) (err error) {
 
 	// not exported
 	return fmt.Errorf("gocql: cluster schema versions not consistent: %+v", schemas)
-}
-
-// recvLastsFrames reads proto v5 frames from Conn.r and writes decoded payload to dst.
-// It reads data until the bytesToRead is reached.
-// If Conn.compressor is not nil, it processes Compressed Format frames.
-func (c *Conn) recvLastsFrames(dst *bytes.Buffer, bytesToRead int) error {
-	var read int
-	var segment []byte
-	var err error
-	for read != bytesToRead {
-		// Read frame based on compression
-		if c.compressor != nil {
-			segment, _, err = readCompressedFrame(c.r, c.compressor)
-		} else {
-			segment, _, err = readUncompressedFrame(c.r)
-		}
-		if err != nil {
-			return fmt.Errorf("gocql: failed to read non self-contained frame: %w", err)
-		}
-
-		// Write the segment to the destination writer
-		n, _ := dst.Write(segment)
-		read += n
-	}
-
-	return nil
-}
-
-func (c *Conn) processAllEnvelopesInFrame(ctx context.Context, r *bytes.Reader) error {
-	var err error
-	for r.Len() > 0 && err == nil {
-		err = c.processFrame(ctx, r)
-	}
-
-	return err
 }
 
 var (

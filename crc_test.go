@@ -19,8 +19,9 @@
 package gocql
 
 import (
-	"github.com/stretchr/testify/require"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestChecksumIEEE(t *testing.T) {
@@ -48,7 +49,7 @@ func TestChecksumIEEE(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			require.Equal(t, tt.expected, ChecksumIEEE(tt.buf))
+			require.Equal(t, tt.expected, Crc32(tt.buf))
 		})
 	}
 }
@@ -83,7 +84,7 @@ func TestKoopmanChecksum(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			require.Equal(t, tt.expected, KoopmanChecksum(tt.buf))
+			require.Equal(t, tt.expected, Crc24(tt.buf))
 		})
 	}
 }
