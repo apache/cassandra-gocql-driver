@@ -519,6 +519,10 @@ func (iter *Iter) MapScan(m map[string]interface{}) bool {
 	return false
 }
 
+// MapScanWithNullableValues takes a map[string]interface{} and populates it with a row
+// that is returned from cassandra.
+//
+// Each call to MapScanWithNullableValues() must be called with a new map object.
 func (iter *Iter) MapScanWithNullableValues(m map[string]interface{}) bool {
 	iter.setNullableScan(true)
 	scan := iter.MapScan(m)

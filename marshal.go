@@ -2468,6 +2468,11 @@ type TypeInfo interface {
 	//
 	// If there is no corresponding Go type for the CQL type, NewWithError returns an error.
 	NewWithError() (interface{}, error)
+
+	// NewWithNullable creates a pointer to an empty version of whatever type
+	// is referenced by the TypeInfo receiver.
+	//
+	// Works similarly to NewWithError, but returns nullable values instead of default go type values.
 	NewWithNullable() (interface{}, error)
 }
 
