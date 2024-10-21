@@ -846,18 +846,30 @@ func (c *Conn) recvSegment(ctx context.Context) error {
 // It reads data until the bytesToRead is reached.
 // If Conn.compressor is not nil, it processes Compressed Format segments.
 func (c *Conn) recvPartialFrames(dst *bytes.Buffer, bytesToRead int) error {
-	var read int
-	var frame []byte
-	var err error
+	var (
+		read            int
+		frame           []byte
+		isSelfContained bool
+		err             error
+	)
+
 	for read != bytesToRead {
 		// Read frame based on compression
 		if c.compressor != nil {
-			frame, _, err = readCompressedSegment(c.r, c.compressor)
+			frame, isSelfContained, err = readCompressedSegment(c.r, c.compressor)
 		} else {
-			frame, _, err = readUncompressedSegment(c.r)
+			frame, isSelfContained, err = readUncompressedSegment(c.r)
 		}
 		if err != nil {
 			return fmt.Errorf("gocql: failed to read non self-contained frame: %w", err)
+		}
+
+		if isSelfContained {
+			return fmt.Errorf("gocql: received self-contained segment, but expected not")
+		}
+
+		if totalLength := dst.Len() + len(frame); totalLength > dst.Cap() {
+			return fmt.Errorf("gocql: expected partial frame of length %d, got %d", dst.Cap(), totalLength)
 		}
 
 		// Write the frame to the destination writer
