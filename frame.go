@@ -2237,7 +2237,7 @@ func newUncompressedSegment(payload []byte, isSelfContained bool) ([]byte, error
 
 	payloadLen := len(payload)
 	if payloadLen > maxSegmentPayloadSize {
-		return nil, fmt.Errorf("payload length (%d) exceeds maximum size of %d", payloadLen, maxSegmentPayloadSize)
+		return nil, fmt.Errorf("gocql: payload length (%d) exceeds maximum size of %d", payloadLen, maxSegmentPayloadSize)
 	}
 
 	// Create the segment
@@ -2280,7 +2280,7 @@ func newCompressedSegment(uncompressedPayload []byte, isSelfContained bool, comp
 
 	uncompressedLen := len(uncompressedPayload)
 	if uncompressedLen > maxSegmentPayloadSize {
-		return nil, fmt.Errorf("uncompressed compressed payload length exceedes max size of frame payload %d/%d", uncompressedLen, maxSegmentPayloadSize)
+		return nil, fmt.Errorf("gocql: payload length (%d) exceeds maximum size of %d", uncompressedPayload, maxSegmentPayloadSize)
 	}
 
 	compressedPayload, err := compressor.Encode(uncompressedPayload)
