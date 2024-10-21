@@ -27,7 +27,6 @@ package gocql
 import (
 	"flag"
 	"fmt"
-	"github.com/gocql/gocql/lz4"
 	"log"
 	"net"
 	"reflect"
@@ -112,8 +111,6 @@ func createCluster(opts ...func(*ClusterConfig)) *ClusterConfig {
 	switch *flagCompressTest {
 	case "snappy":
 		cluster.Compressor = &SnappyCompressor{}
-	case "lz4":
-		cluster.Compressor = lz4.LZ4Compressor{}
 	case "":
 	default:
 		panic("invalid compressor: " + *flagCompressTest)
