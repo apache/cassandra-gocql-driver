@@ -1194,25 +1194,10 @@ func (c *Conn) execInternal(ctx context.Context, req frameBuilder, tracer Tracer
 
 	if c.version > protoVersion4 && startupCompleted {
 		err = framer.prepareModernLayout()
-		if err != nil {
-			// closeWithError will block waiting for this stream to either receive a response
-			// or for us to timeout.
-			close(call.timeout)
-			// We failed to serialize the frame into a buffer.
-			// This should not affect the connection as we didn't write anything. We just free the current call.
-			c.mu.Lock()
-			if !c.closed {
-				delete(c.calls, call.streamID)
-			}
-			c.mu.Unlock()
-			// We need to release the stream after we remove the call from c.calls, otherwise the existingCall != nil
-			// check above could fail.
-			c.releaseStream(call)
-			return nil, err
-		}
 	}
-
-	n, err = c.w.writeContext(ctx, framer.buf)
+	if err == nil {
+		n, err = c.w.writeContext(ctx, framer.buf)
+	}
 	if err != nil {
 		// closeWithError will block waiting for this stream to either receive a response
 		// or for us to timeout, close the timeout chan here. Im not entirely sure
