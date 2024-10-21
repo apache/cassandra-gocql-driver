@@ -73,7 +73,7 @@ const (
 
 	maxFrameSize = 256 * 1024 * 1024
 
-	maxPayloadSize = 1<<17 - 1
+	maxSegmentPayloadSize = 0x1FFFF
 )
 
 type protoVersion byte
@@ -2149,18 +2149,18 @@ func (f *framer) prepareModernLayout() error {
 	)
 
 	// Process the buffer in chunks if it exceeds the max payload size
-	for len(f.buf) > maxPayloadSize {
+	for len(f.buf) > maxSegmentPayloadSize {
 		if f.compres != nil {
-			tempBuf, err = newCompressedSegment(f.buf[:maxPayloadSize], false, f.compres)
+			tempBuf, err = newCompressedSegment(f.buf[:maxSegmentPayloadSize], false, f.compres)
 		} else {
-			tempBuf, err = newUncompressedSegment(f.buf[:maxPayloadSize], false)
+			tempBuf, err = newUncompressedSegment(f.buf[:maxSegmentPayloadSize], false)
 		}
 		if err != nil {
 			return err
 		}
 
 		adjustedBuf = append(adjustedBuf, tempBuf...)
-		f.buf = f.buf[maxPayloadSize:]
+		f.buf = f.buf[maxSegmentPayloadSize:]
 		selfContained = false
 	}
 
@@ -2180,25 +2180,33 @@ func (f *framer) prepareModernLayout() error {
 	return nil
 }
 
+const (
+	crc24Size = 3
+	crc32Size = 4
+)
+
 func readUncompressedSegment(r io.Reader) ([]byte, bool, error) {
-	const headerSize = 6
-	header := [headerSize + 1]byte{}
+	const (
+		headerSize = 3
+	)
+
+	header := [headerSize + crc24Size]byte{}
 
 	// Read the frame header
-	if _, err := io.ReadFull(r, header[:headerSize]); err != nil {
+	if _, err := io.ReadFull(r, header[:]); err != nil {
 		return nil, false, fmt.Errorf("gocql: failed to read uncompressed frame, err: %w", err)
 	}
 
 	// Compute and verify the header CRC24
-	computedHeaderCRC24 := Crc24(header[:3])
-	readHeaderCRC24 := binary.LittleEndian.Uint32(header[3:]) & 0xFFFFFF
+	computedHeaderCRC24 := Crc24(header[:headerSize])
+	readHeaderCRC24 := uint32(header[3]) | uint32(header[4])<<8 | uint32(header[5])<<16
 	if computedHeaderCRC24 != readHeaderCRC24 {
 		return nil, false, fmt.Errorf("gocql: crc24 mismatch in frame header, computed: %d, got: %d", computedHeaderCRC24, readHeaderCRC24)
 	}
 
 	// Extract the payload length and self-contained flag
-	headerInt := binary.LittleEndian.Uint32(header[:4])
-	payloadLen := int(headerInt & 0x1FFFF)
+	headerInt := uint32(header[0]) | uint32(header[1])<<8 | uint32(header[2])<<16
+	payloadLen := int(headerInt & maxSegmentPayloadSize)
 	isSelfContained := (headerInt & (1 << 17)) != 0
 
 	// Read the payload
@@ -2208,12 +2216,12 @@ func readUncompressedSegment(r io.Reader) ([]byte, bool, error) {
 	}
 
 	// Read and verify the payload CRC32
-	if _, err := io.ReadFull(r, header[:4]); err != nil {
+	if _, err := io.ReadFull(r, header[:crc32Size]); err != nil {
 		return nil, false, fmt.Errorf("gocql: failed to read payload crc32, err: %w", err)
 	}
 
 	computedPayloadCRC32 := Crc32(payload)
-	readPayloadCRC32 := binary.LittleEndian.Uint32(header[:4])
+	readPayloadCRC32 := binary.LittleEndian.Uint32(header[:crc32Size])
 	if computedPayloadCRC32 != readPayloadCRC32 {
 		return nil, false, fmt.Errorf("gocql: payload crc32 mismatch, computed: %d, got: %d", computedPayloadCRC32, readPayloadCRC32)
 	}
@@ -2228,46 +2236,51 @@ func newUncompressedSegment(payload []byte, isSelfContained bool) ([]byte, error
 	)
 
 	payloadLen := len(payload)
-	if payloadLen > maxPayloadSize {
-		return nil, fmt.Errorf("payload length (%d) exceeds maximum size of 128 KiB", payloadLen)
+	if payloadLen > maxSegmentPayloadSize {
+		return nil, fmt.Errorf("payload length (%d) exceeds maximum size of %d", payloadLen, maxSegmentPayloadSize)
 	}
 
-	// Create the frame
-	frameSize := headerSize + payloadLen + 4 // 4 bytes for CRC32
-	frame := make([]byte, frameSize)
+	// Create the segment
+	segmentSize := headerSize + payloadLen + crc32Size
+	segment := make([]byte, segmentSize)
 
 	// First 3 bytes: payload length and self-contained flag
-	headerInt := uint32(payloadLen) & 0x1FFFF
+	headerInt := uint32(payloadLen)
 	if isSelfContained {
 		headerInt |= selfContainedBit // Set the self-contained flag
 	}
 
 	// Encode the first 3 bytes as a single little-endian integer
-	frame[0] = byte(headerInt)
-	frame[1] = byte(headerInt >> 8)
-	frame[2] = byte(headerInt >> 16)
+	segment[0] = byte(headerInt)
+	segment[1] = byte(headerInt >> 8)
+	segment[2] = byte(headerInt >> 16)
 
 	// Calculate CRC24 for the first 3 bytes of the header
-	crc := Crc24(frame[:3])
+	crc := Crc24(segment[:3])
 
 	// Encode CRC24 into the next 3 bytes of the header
-	frame[3] = byte(crc)
-	frame[4] = byte(crc >> 8)
-	frame[5] = byte(crc >> 16)
+	segment[3] = byte(crc)
+	segment[4] = byte(crc >> 8)
+	segment[5] = byte(crc >> 16)
 
-	copy(frame[headerSize:], payload) // Copy the payload to the frame
+	copy(segment[headerSize:], payload) // Copy the payload to the segment
 
 	// Calculate CRC32 for the payload
 	payloadCRC32 := Crc32(payload)
-	binary.LittleEndian.PutUint32(frame[headerSize+payloadLen:], payloadCRC32)
+	binary.LittleEndian.PutUint32(segment[headerSize+payloadLen:], payloadCRC32)
 
-	return frame, nil
+	return segment, nil
 }
 
 func newCompressedSegment(uncompressedPayload []byte, isSelfContained bool, compressor Compressor) ([]byte, error) {
+	const (
+		headerSize       = 5
+		selfContainedBit = 1 << 34
+	)
+
 	uncompressedLen := len(uncompressedPayload)
-	if uncompressedLen > maxPayloadSize {
-		return nil, fmt.Errorf("uncompressed compressed payload length exceedes max size of frame payload %d/%d", uncompressedLen, maxPayloadSize)
+	if uncompressedLen > maxSegmentPayloadSize {
+		return nil, fmt.Errorf("uncompressed compressed payload length exceedes max size of frame payload %d/%d", uncompressedLen, maxSegmentPayloadSize)
 	}
 
 	compressedPayload, err := compressor.Encode(uncompressedPayload)
@@ -2295,24 +2308,29 @@ func newCompressedSegment(uncompressedPayload []byte, isSelfContained bool, comp
 	// Combine compressed and uncompressed lengths and set the self-contained flag if needed
 	combined := uint64(compressedLen) | uint64(uncompressedLen)<<17
 	if isSelfContained {
-		combined |= 1 << 34
+		combined |= selfContainedBit
 	}
 
-	var headerBuf [8]byte
+	var headerBuf [headerSize + crc24Size]byte
 
 	// Write the combined value into the header buffer
 	binary.LittleEndian.PutUint64(headerBuf[:], combined)
 
 	// Create a buffer with enough capacity to hold the header, compressed payload, and checksums
-	buf := bytes.NewBuffer(make([]byte, 0, 8+compressedLen+4))
+	buf := bytes.NewBuffer(make([]byte, 0, headerSize+crc24Size+compressedLen+crc32Size))
 
 	// Write the first 5 bytes of the header (compressed and uncompressed sizes)
-	buf.Write(headerBuf[:5])
+	buf.Write(headerBuf[:headerSize])
 
 	// Compute and write the CRC24 checksum of the first 5 bytes
-	headerChecksum := Crc24(headerBuf[:5])
-	binary.LittleEndian.PutUint32(headerBuf[:], headerChecksum)
+	headerChecksum := Crc24(headerBuf[:headerSize])
+
+	// LittleEndian 3 bytes
+	headerBuf[0] = byte(headerChecksum)
+	headerBuf[1] = byte(headerChecksum >> 8)
+	headerBuf[2] = byte(headerChecksum >> 16)
 	buf.Write(headerBuf[:3])
+
 	buf.Write(compressedPayload)
 
 	// Compute and write the CRC32 checksum of the payload
@@ -2324,8 +2342,9 @@ func newCompressedSegment(uncompressedPayload []byte, isSelfContained bool, comp
 }
 
 func readCompressedSegment(r io.Reader, compressor Compressor) ([]byte, bool, error) {
+	const headerSize = 5
 	var (
-		headerBuf [8]byte
+		headerBuf [headerSize + crc24Size]byte
 		err       error
 	)
 
@@ -2335,7 +2354,7 @@ func readCompressedSegment(r io.Reader, compressor Compressor) ([]byte, bool, er
 
 	// Reading checksum from frame header
 	readHeaderChecksum := uint32(headerBuf[5]) | uint32(headerBuf[6])<<8 | uint32(headerBuf[7])<<16
-	if computedHeaderChecksum := Crc24(headerBuf[:5]); computedHeaderChecksum != readHeaderChecksum {
+	if computedHeaderChecksum := Crc24(headerBuf[:headerSize]); computedHeaderChecksum != readHeaderChecksum {
 		return nil, false, fmt.Errorf("gocql: crc24 mismatch in frame header, read: %d, computed: %d", readHeaderChecksum, computedHeaderChecksum)
 	}
 
@@ -2353,12 +2372,12 @@ func readCompressedSegment(r io.Reader, compressor Compressor) ([]byte, bool, er
 		return nil, false, fmt.Errorf("gocql: failed to read compressed frame payload, err: %w", err)
 	}
 
-	if _, err = io.ReadFull(r, headerBuf[:4]); err != nil {
+	if _, err = io.ReadFull(r, headerBuf[:crc32Size]); err != nil {
 		return nil, false, fmt.Errorf("gocql: failed to read payload crc32, err: %w", err)
 	}
 
 	// Ensuring if payload checksum matches
-	readPayloadChecksum := binary.LittleEndian.Uint32(headerBuf[:4])
+	readPayloadChecksum := binary.LittleEndian.Uint32(headerBuf[:crc32Size])
 	if computedPayloadChecksum := Crc32(compressedPayload); readPayloadChecksum != computedPayloadChecksum {
 		return nil, false, fmt.Errorf("gocql: crc32 mismatch in payload, read: %d, computed: %d", readPayloadChecksum, computedPayloadChecksum)
 	}
