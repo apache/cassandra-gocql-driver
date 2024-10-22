@@ -222,6 +222,23 @@ func Marshal(info TypeInfo, value interface{}) ([]byte, error) {
 //	date                                    | *time.Time              | time of beginning of the day (in UTC)
 //	date                                    | *string                 | formatted with 2006-01-02 format
 //	duration                                | *gocql.Duration         |
+//
+// Scan into interface{} implemented by unmarshal into default type:
+//
+//	CQL type                                |  Go type
+//	Varchar 								|  string
+//	Varint 									|  bigInt
+//	IntLike 								|  int
+//	Boolean 								|  bool
+//	Float 									|  float32
+//	Double 									|  float64
+//	Decimal 								|  infDec
+//	Time 									|  time.Duration
+//	Timestamp 								|  time.Time
+//	Date 									|  time.Time
+//	Duration 								|  Duration
+//	UUID 									|  string
+//	Inet 									|  net.IP
 func Unmarshal(info TypeInfo, data []byte, value interface{}) error {
 	if v, ok := value.(Unmarshaler); ok {
 		return v.UnmarshalCQL(info, data)
@@ -349,6 +366,9 @@ func unmarshalVarchar(info TypeInfo, data []byte, value interface{}) error {
 		} else {
 			*v = nil
 		}
+		return nil
+	case *interface{}:
+		*v = string(data)
 		return nil
 	}
 
@@ -743,6 +763,8 @@ func unmarshalVarint(info TypeInfo, data []byte, value interface{}) error {
 			*v = bytesToUint64(data[1:])
 			return nil
 		}
+	case *interface{}:
+		return unmarshalBigInt(info, data, value)
 	}
 
 	if len(data) > 8 {
@@ -904,6 +926,12 @@ func unmarshalIntlike(info TypeInfo, int64Val int64, data []byte, value interfac
 	case *string:
 		*v = strconv.FormatInt(int64Val, 10)
 		return nil
+	case *interface{}:
+		if ^uint(0) == math.MaxUint32 && (int64Val < math.MinInt32 || int64Val > math.MaxInt32) {
+			return unmarshalErrorf("unmarshal int: value %d out of range for %s", int64Val, info.Type())
+		}
+		*v = int(int64Val)
+		return nil
 	}
 
 	rv := reflect.ValueOf(value)
@@ -1055,6 +1083,9 @@ func unmarshalBool(info TypeInfo, data []byte, value interface{}) error {
 	case *bool:
 		*v = decBool(data)
 		return nil
+	case *interface{}:
+		*v = decBool(data)
+		return nil
 	}
 	rv := reflect.ValueOf(value)
 	if rv.Kind() != reflect.Ptr {
@@ -1105,6 +1136,9 @@ func unmarshalFloat(info TypeInfo, data []byte, value interface{}) error {
 	case *float32:
 		*v = math.Float32frombits(uint32(decInt(data)))
 		return nil
+	case *interface{}:
+		*v = math.Float32frombits(uint32(decInt(data)))
+		return nil
 	}
 	rv := reflect.ValueOf(value)
 	if rv.Kind() != reflect.Ptr {
@@ -1144,6 +1178,9 @@ func unmarshalDouble(info TypeInfo, data []byte, value interface{}) error {
 	case Unmarshaler:
 		return v.UnmarshalCQL(info, data)
 	case *float64:
+		*v = math.Float64frombits(uint64(decBigInt(data)))
+		return nil
+	case *interface{}:
 		*v = math.Float64frombits(uint64(decBigInt(data)))
 		return nil
 	}
@@ -1189,6 +1226,14 @@ func unmarshalDecimal(info TypeInfo, data []byte, value interface{}) error {
 	case Unmarshaler:
 		return v.UnmarshalCQL(info, data)
 	case *inf.Dec:
+		if len(data) < 4 {
+			return unmarshalErrorf("inf.Dec needs at least 4 bytes, while value has only %d", len(data))
+		}
+		scale := decInt(data[0:4])
+		unscaled := decBigInt2C(data[4:], nil)
+		*v = *inf.NewDecBig(unscaled, inf.Scale(scale))
+		return nil
+	case *interface{}:
 		if len(data) < 4 {
 			return unmarshalErrorf("inf.Dec needs at least 4 bytes, while value has only %d", len(data))
 		}
@@ -1302,6 +1347,9 @@ func unmarshalTime(info TypeInfo, data []byte, value interface{}) error {
 	case *time.Duration:
 		*v = time.Duration(decBigInt(data))
 		return nil
+	case *interface{}:
+		*v = time.Duration(decBigInt(data))
+		return nil
 	}
 
 	rv := reflect.ValueOf(value)
@@ -1325,6 +1373,16 @@ func unmarshalTimestamp(info TypeInfo, data []byte, value interface{}) error {
 		*v = decBigInt(data)
 		return nil
 	case *time.Time:
+		if len(data) == 0 {
+			*v = time.Time{}
+			return nil
+		}
+		x := decBigInt(data)
+		sec := x / 1000
+		nsec := (x - sec*1000) * 1000000
+		*v = time.Unix(sec, nsec).In(time.UTC)
+		return nil
+	case *interface{}:
 		if len(data) == 0 {
 			*v = time.Time{}
 			return nil
@@ -1419,6 +1477,16 @@ func unmarshalDate(info TypeInfo, data []byte, value interface{}) error {
 		timestamp := (int64(current) - int64(origin)) * millisecondsInADay
 		*v = time.UnixMilli(timestamp).In(time.UTC).Format("2006-01-02")
 		return nil
+	case *interface{}:
+		if len(data) == 0 {
+			*v = time.Time{}
+			return nil
+		}
+		var origin uint32 = 1 << 31
+		var current uint32 = binary.BigEndian.Uint32(data)
+		timestamp := (int64(current) - int64(origin)) * millisecondsInADay
+		*v = time.UnixMilli(timestamp).In(time.UTC)
+		return nil
 	}
 	return unmarshalErrorf("can not unmarshal %s into %T", info, value)
 }
@@ -1460,6 +1528,25 @@ func unmarshalDuration(info TypeInfo, data []byte, value interface{}) error {
 	case Unmarshaler:
 		return v.UnmarshalCQL(info, data)
 	case *Duration:
+		if len(data) == 0 {
+			*v = Duration{
+				Months:      0,
+				Days:        0,
+				Nanoseconds: 0,
+			}
+			return nil
+		}
+		months, days, nanos, err := decVints(data)
+		if err != nil {
+			return unmarshalErrorf("failed to unmarshal %s into %T: %s", info, value, err.Error())
+		}
+		*v = Duration{
+			Months:      months,
+			Days:        days,
+			Nanoseconds: nanos,
+		}
+		return nil
+	case *interface{}:
 		if len(data) == 0 {
 			*v = Duration{
 				Months:      0,
@@ -1914,6 +2001,9 @@ func unmarshalUUID(info TypeInfo, data []byte, value interface{}) error {
 	case *[]byte:
 		*v = u[:]
 		return nil
+	case *interface{}:
+		*v = u.String()
+		return nil
 	}
 	return unmarshalErrorf("can not unmarshal X %s into %T", info, value)
 }
@@ -1995,6 +2085,18 @@ func unmarshalInet(info TypeInfo, data []byte, value interface{}) error {
 			return nil
 		}
 		*v = ip.String()
+		return nil
+	case *interface{}:
+		if x := len(data); !(x == 4 || x == 16) {
+			return unmarshalErrorf("cannot unmarshal %s into %T: invalid sized IP: got %d bytes not 4 or 16", info, value, x)
+		}
+		buf := copyBytes(data)
+		ip := net.IP(buf)
+		if v4 := ip.To4(); v4 != nil {
+			*v = v4
+			return nil
+		}
+		*v = ip
 		return nil
 	}
 	return unmarshalErrorf("cannot unmarshal %s into %T", info, value)
