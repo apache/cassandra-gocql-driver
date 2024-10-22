@@ -51,10 +51,32 @@ jobs:
           key: ${{ runner.os }}-go-${{ hashFiles('go.mod') }}
           restore-keys: |
             ${{ runner.os }}-go-
+      - name: Install Java
+        run: |
+          curl -s "https://get.sdkman.io" | bash
+          source "$HOME/.sdkman/bin/sdkman-init.sh"
+          echo "sdkman_auto_answer=true" >> ~/.sdkman/etc/config
+          # sdk list java
+
+          sdk install java 11.0.24-zulu
+          echo "JAVA11_HOME=$JAVA_HOME_11_X64" >> $GITHUB_ENV
+
+          sdk install java 17.0.12-zulu
+          echo "JAVA17_HOME=$JAVA_HOME_17_X64" >> $GITHUB_ENV
+
+          # by default use JDK 11
+          sdk default java 11.0.24-zulu
+          sdk use java 11.0.24-zulu
+          echo "JAVA_HOME=$JAVA_HOME_11_X64" >> $GITHUB_ENV
+          echo "PATH=$PATH" >> $GITHUB_ENV
       - name: Install CCM
-        run: pip install "git+https://github.com/riptano/ccm.git@${CCM_VERSION}"
+        run: |
+          python3 -m venv ~/venv
+          ~/venv/bin/pip install setuptools
+          ~/venv/bin/pip install "git+https://github.com/riptano/ccm.git@${CCM_VERSION}"
       - name: Start cassandra nodes
         run: |
+          source ~/venv/bin/activate
           VERSION=${{ matrix.cassandra_version }}
           keypath="$(pwd)/testdata/pki"
           conf=(
@@ -107,6 +129,7 @@ jobs:
           echo "JVM_EXTRA_OPTS=$JVM_EXTRA_OPTS" >> $GITHUB_ENV
       - name: Integration tests
         run: |
+          source ~/venv/bin/activate
           export JVM_EXTRA_OPTS="${{env.JVM_EXTRA_OPTS}}"
           go test -v -tags "${{ matrix.tags }} gocql_debug" -timeout=5m -race ${{ env.args }}
       - name: 'Save ccm logs'
@@ -135,10 +158,32 @@ jobs:
       - uses: actions/setup-go@v4
         with:
           go-version: ${{ matrix.go }}
+      - name: Install Java
+        run: |
+          curl -s "https://get.sdkman.io" | bash
+          source "$HOME/.sdkman/bin/sdkman-init.sh"
+          echo "sdkman_auto_answer=true" >> ~/.sdkman/etc/config
+          # sdk list java
+
+          sdk install java 11.0.24-zulu
+          echo "JAVA11_HOME=$JAVA_HOME_11_X64" >> $GITHUB_ENV
+
+          sdk install java 17.0.12-zulu
+          echo "JAVA17_HOME=$JAVA_HOME_17_X64" >> $GITHUB_ENV
+
+          # by default use JDK 11
+          sdk default java 11.0.24-zulu
+          sdk use java 11.0.24-zulu
+          echo "JAVA_HOME=$JAVA_HOME_11_X64" >> $GITHUB_ENV
+          echo "PATH=$PATH" >> $GITHUB_ENV
       - name: Install CCM
-        run: pip install "git+https://github.com/riptano/ccm.git@${CCM_VERSION}"
+        run: |
+          python3 -m venv ~/venv
+          ~/venv/bin/pip install setuptools
+          ~/venv/bin/pip install "git+https://github.com/riptano/ccm.git@${CCM_VERSION}"
       - name: Start cassandra nodes
         run: |
+          source ~/venv/bin/activate
           VERSION=${{ matrix.cassandra_version }}
           keypath="$(pwd)/testdata/pki"
           conf=(
@@ -197,5 +242,6 @@ jobs:
           sleep 30s
       - name: Integration tests
         run: |
+          source ~/venv/bin/activate
           export JVM_EXTRA_OPTS="${{env.JVM_EXTRA_OPTS}}"
           go test -v -run=TestAuthentication -tags "${{ matrix.tags }} gocql_debug" -timeout=15s -runauth ${{ env.args }}

@@ -32,6 +32,7 @@ import (
 	"io/ioutil"
 	"net"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -928,6 +929,30 @@ func (f *framer) readTypeInfo() TypeInfo {
 		collection.Elem = f.readTypeInfo()
 
 		return collection
+	case TypeCustom:
+		if strings.HasPrefix(simple.custom, VECTOR_TYPE) {
+			// TODO(lantoniak): There are currently two ways of parsing types in the driver.
+			//   a) using getTypeInfo()
+			//   b) using parseType()
+			//   I think we could agree to use getTypeInfo() when parsing binary type definition
+			//   and parseType() would be responsible for parsing "custom" string definition.
+			//spec := strings.TrimPrefix(simple.custom, VECTOR_TYPE)
+			//spec = spec[1 : len(spec)-1] // remove parenthesis
+			//idx := strings.LastIndex(spec, ",")
+			//typeStr := spec[:idx]
+			//dimStr := spec[idx+1:]
+			//subType := getTypeInfo(strings.TrimSpace(typeStr), f.proto, nopLogger{})
+			//dim, _ := strconv.Atoi(strings.TrimSpace(dimStr))
+			result := parseType(simple.custom, simple.proto, nopLogger{})
+			dim, _ := strconv.Atoi(result.types[1].Custom())
+			vector := VectorType{
+				NativeType: simple,
+				//SubType:    subType,
+				SubType:    result.types[0],
+				Dimensions: dim,
+			}
+			return vector
+		}
 	}
 
 	return simple
