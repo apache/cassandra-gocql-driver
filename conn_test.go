@@ -709,7 +709,9 @@ func TestStream0(t *testing.T) {
 	}
 
 	conn := &Conn{
-		r:       bufio.NewReader(&buf),
+		r: &connReader{
+			r: bufio.NewReader(&buf),
+		},
 		streams: streams.New(protoVersion4),
 		logger:  &defaultLogger{},
 	}
@@ -1308,8 +1310,10 @@ func TestConnProcessAllFramesInSingleSegment(t *testing.T) {
 	require.NoError(t, err)
 
 	c := &Conn{
-		conn:       server,
-		r:          bufio.NewReader(server),
+		r: &connReader{
+			conn: server,
+			r:    bufio.NewReader(server),
+		},
 		calls:      make(map[int]*callReq),
 		version:    protoVersion5,
 		addr:       server.RemoteAddr().String(),
