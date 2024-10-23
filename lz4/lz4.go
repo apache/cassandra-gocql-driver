@@ -73,3 +73,13 @@ func (s LZ4Compressor) Decode(data []byte) ([]byte, error) {
 	n, err := lz4.UncompressBlock(data[4:], buf)
 	return buf[:n], err
 }
+
+func (s LZ4Compressor) DecodeSized(data []byte, size uint32) ([]byte, error) {
+	buf := make([]byte, size)
+	_, err := lz4.UncompressBlock(data, buf)
+	if err != nil {
+		return nil, err
+	}
+
+	return buf, nil
+}
