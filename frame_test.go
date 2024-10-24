@@ -26,7 +26,6 @@ package gocql
 
 import (
 	"bytes"
-	"encoding/binary"
 	"errors"
 	"os"
 	"testing"
@@ -217,34 +216,32 @@ func (m testMockedCompressor) Name() string {
 	return "testMockedCompressor"
 }
 
-func (m testMockedCompressor) Encode(data []byte) ([]byte, error) {
-	encoded := make([]byte, len(data)+4)
-	binary.BigEndian.PutUint32(encoded, uint32(len(data)))
-	copy(encoded[4:], data)
+func (m testMockedCompressor) AppendCompressed(_, src []byte) ([]byte, error) {
 	if m.expectedError != nil {
 		return nil, m.expectedError
 	}
-	return encoded, nil
+	return src, nil
 }
 
-func (m testMockedCompressor) Decode(data []byte) ([]byte, error) {
-	if m.expectedError != nil {
-		return nil, m.expectedError
-	}
-	return data, nil
-}
-
-func (m testMockedCompressor) DecodeSized(data []byte, size uint32) ([]byte, error) {
+func (m testMockedCompressor) AppendDecompressed(_, src []byte, decompressedLength uint32) ([]byte, error) {
 	if m.expectedError != nil {
 		return nil, m.expectedError
 	}
 
 	// simulating invalid size of decoded data
 	if m.invalidateDecodedDataLength {
-		return data[:size-1], nil
+		return src[:decompressedLength-1], nil
 	}
 
-	return data, nil
+	return src, nil
+}
+
+func (m testMockedCompressor) AppendCompressedWithLength(dst, src []byte) ([]byte, error) {
+	panic("testMockedCompressor.AppendCompressedWithLength is not implemented")
+}
+
+func (m testMockedCompressor) AppendDecompressedWithLength(dst, src []byte) ([]byte, error) {
+	panic("testMockedCompressor.AppendDecompressedWithLength is not implemented")
 }
 
 func Test_readUncompressedFrame(t *testing.T) {

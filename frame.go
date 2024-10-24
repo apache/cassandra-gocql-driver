@@ -535,7 +535,7 @@ func (f *framer) readFrame(r io.Reader, head *frameHeader) error {
 			return NewErrProtocol("no compressor available with compressed frame body")
 		}
 
-		f.buf, err = f.compres.Decode(f.buf)
+		f.buf, err = f.compres.AppendDecompressedWithLength(nil, f.buf)
 		if err != nil {
 			return err
 		}
@@ -780,7 +780,7 @@ func (f *framer) finish() error {
 		}
 
 		// TODO: only compress frames which are big enough
-		compressed, err := f.compres.Encode(f.buf[f.headSize:])
+		compressed, err := f.compres.AppendCompressedWithLength(nil, f.buf[f.headSize:])
 		if err != nil {
 			return err
 		}
@@ -2283,14 +2283,10 @@ func newCompressedSegment(uncompressedPayload []byte, isSelfContained bool, comp
 		return nil, fmt.Errorf("gocql: payload length (%d) exceeds maximum size of %d", uncompressedPayload, maxSegmentPayloadSize)
 	}
 
-	compressedPayload, err := compressor.Encode(uncompressedPayload)
+	compressedPayload, err := compressor.AppendCompressed(nil, uncompressedPayload)
 	if err != nil {
 		return nil, err
 	}
-
-	// Skip the first 4 bytes because the size of the uncompressed payload is written in the segment header, not in the
-	// body of the compressed frame
-	compressedPayload = compressedPayload[4:]
 
 	compressedLen := len(compressedPayload)
 
@@ -2384,7 +2380,7 @@ func readCompressedSegment(r io.Reader, compressor Compressor) ([]byte, bool, er
 
 	var uncompressedPayload []byte
 	if uncompressedLen > 0 {
-		if uncompressedPayload, err = compressor.DecodeSized(compressedPayload, uncompressedLen); err != nil {
+		if uncompressedPayload, err = compressor.AppendDecompressed(nil, compressedPayload, uncompressedLen); err != nil {
 			return nil, false, err
 		}
 		if uint32(len(uncompressedPayload)) != uncompressedLen {
