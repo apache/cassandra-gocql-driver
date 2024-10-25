@@ -1631,6 +1631,9 @@ func (c *Conn) executeQuery(ctx context.Context, qry *Query) *Iter {
 					},
 				}
 				c.session.stmtsLRU.add(stmtCacheKey, newInflight)
+				// Closing done here because the stmtsLRU already contains a new inflight
+				// with updated metadata and result metadata id
+				close(newInflight.done)
 			}
 		}
 
