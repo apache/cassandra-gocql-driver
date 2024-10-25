@@ -1618,26 +1618,20 @@ func (c *Conn) executeQuery(ctx context.Context, qry *Query) *Iter {
 			// If a RESULT/Rows message reports
 			//      changed resultset metadata with the Metadata_changed flag, the reported new
 			//      resultset metadata must be used in subsequent executions
-
 			stmtCacheKey := c.session.stmtsLRU.keyFor(c.host.HostID(), c.currentKeyspace, qry.stmt)
 			oldInflight, ok := c.session.stmtsLRU.get(stmtCacheKey)
-			if !ok {
-				// We didn't find the stmt in the cache, so we just re-prepare it
-				return c.executeQuery(ctx, qry)
+			if ok {
+				newInflight := &inflightPrepare{
+					done: make(chan struct{}),
+					preparedStatment: &preparedStatment{
+						id:               oldInflight.preparedStatment.id,
+						resultMetadataID: x.meta.newMetadataID,
+						request:          oldInflight.preparedStatment.request,
+						response:         x.meta,
+					},
+				}
+				c.session.stmtsLRU.add(stmtCacheKey, newInflight)
 			}
-
-			newInflight := &inflightPrepare{
-				done: make(chan struct{}),
-				preparedStatment: &preparedStatment{
-					id:               oldInflight.preparedStatment.id,
-					resultMetadataID: x.meta.newMetadataID,
-					request:          oldInflight.preparedStatment.request,
-					response:         x.meta,
-				},
-			}
-
-			c.session.stmtsLRU.add(stmtCacheKey, newInflight)
-			return c.executeQuery(ctx, qry)
 		}
 
 		iter := &Iter{
