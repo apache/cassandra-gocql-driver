@@ -1068,8 +1068,8 @@ func (f *framer) parseResultMetadata() resultMetadata {
 		meta.pagingState = copyBytes(f.readBytes())
 	}
 
-	if meta.flags&flagMetaDataChanged == flagMetaDataChanged {
-		meta.newMetadataID = copyBytes(f.readBytes())
+	if f.proto > protoVersion4 && meta.flags&flagMetaDataChanged == flagMetaDataChanged {
+		meta.newMetadataID = copyBytes(f.readShortBytes())
 	}
 
 	if meta.flags&flagNoMetaData == flagNoMetaData {
