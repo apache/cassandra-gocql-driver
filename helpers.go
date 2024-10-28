@@ -164,30 +164,30 @@ func getCassandraBaseType(name string) Type {
 	}
 }
 
+// Parses short CQL type representation to internal data structures.
+// Mapping of long Java-style type definition into short format is performed in
+// apacheToCassandraType function.
 func getCassandraType(name string, protoVer byte, logger StdLogger) TypeInfo {
 	if strings.HasPrefix(name, "frozen<") {
 		return getCassandraType(strings.TrimPrefix(name[:len(name)-1], "frozen<"), protoVer, logger)
 	} else if strings.HasPrefix(name, "set<") {
 		return CollectionType{
-			NativeType: NativeType{typ: TypeSet, proto: protoVer},
+			NativeType: NewNativeType(protoVer, TypeSet),
 			Elem:       getCassandraType(strings.TrimPrefix(name[:len(name)-1], "set<"), protoVer, logger),
 		}
 	} else if strings.HasPrefix(name, "list<") {
 		return CollectionType{
-			NativeType: NativeType{typ: TypeList, proto: protoVer},
+			NativeType: NewNativeType(protoVer, TypeList),
 			Elem:       getCassandraType(strings.TrimPrefix(name[:len(name)-1], "list<"), protoVer, logger),
 		}
 	} else if strings.HasPrefix(name, "map<") {
 		names := splitCompositeTypes(strings.TrimPrefix(name[:len(name)-1], "map<"))
 		if len(names) != 2 {
 			logger.Printf("Error parsing map type, it has %d subelements, expecting 2\n", len(names))
-			return NativeType{
-				proto: protoVer,
-				typ:   TypeCustom,
-			}
+			return NewNativeType(protoVer, TypeCustom)
 		}
 		return CollectionType{
-			NativeType: NativeType{typ: TypeMap, proto: protoVer},
+			NativeType: NewNativeType(protoVer, TypeMap),
 			Key:        getCassandraType(names[0], protoVer, logger),
 			Elem:       getCassandraType(names[1], protoVer, logger),
 		}
@@ -200,11 +200,29 @@ func getCassandraType(name string, protoVer byte, logger StdLogger) TypeInfo {
 		}
 
 		return TupleTypeInfo{
-			NativeType: NativeType{typ: TypeTuple, proto: protoVer},
+			NativeType: NewNativeType(protoVer, TypeTuple),
 			Elems:      types,
 		}
-	} else if strings.HasPrefix(name, "udt<") {
-		names := splitCompositeTypes(strings.TrimPrefix(name[:len(name)-1], "udt<"))
+	} else if strings.HasPrefix(name, "vector<") {
+		names := splitCompositeTypes(strings.TrimPrefix(name[:len(name)-1], "vector<"))
+		subType := getCassandraType(strings.TrimSpace(names[0]), protoVer, logger)
+		dim, _ := strconv.Atoi(strings.TrimSpace(names[1]))
+
+		return VectorType{
+			NativeType: NewCustomType(protoVer, TypeCustom, VECTOR_TYPE),
+			SubType:    subType,
+			Dimensions: dim,
+		}
+	} else if strings.Index(name, "<") == -1 {
+		// basic type
+		return NativeType{
+			proto: protoVer,
+			typ:   getCassandraBaseType(name),
+		}
+	} else {
+		// udt
+		idx := strings.Index(name, "<")
+		names := splitCompositeTypes(name[idx+1 : len(name)-1])
 		fields := make([]UDTField, len(names)-2)
 
 		for i := 2; i < len(names); i++ {
@@ -218,29 +236,10 @@ func getCassandraType(name string, protoVer byte, logger StdLogger) TypeInfo {
 
 		udtName, _ := hex.DecodeString(names[1])
 		return UDTTypeInfo{
-			NativeType: NativeType{typ: TypeUDT, proto: protoVer},
+			NativeType: NewNativeType(protoVer, TypeUDT),
 			KeySpace:   names[0],
 			Name:       string(udtName),
 			Elements:   fields,
-		}
-	} else if strings.HasPrefix(name, "vector<") {
-		names := splitCompositeTypes(strings.TrimPrefix(name[:len(name)-1], "vector<"))
-		subType := getCassandraType(strings.TrimSpace(names[0]), protoVer, logger)
-		dim, _ := strconv.Atoi(strings.TrimSpace(names[1]))
-
-		return VectorType{
-			NativeType: NativeType{
-				proto:  protoVer,
-				typ:    TypeCustom,
-				custom: VECTOR_TYPE,
-			},
-			SubType:    subType,
-			Dimensions: dim,
-		}
-	} else {
-		return NativeType{
-			proto: protoVer,
-			typ:   getCassandraBaseType(name),
 		}
 	}
 }
@@ -273,35 +272,34 @@ func splitCompositeTypes(name string) []string {
 	return parts
 }
 
+// Convert long Java style type definition into the short CQL type names.
 func apacheToCassandraType(t string) string {
 	t = strings.Replace(t, "(", "<", -1)
 	t = strings.Replace(t, ")", ">", -1)
 	types := strings.FieldsFunc(t, func(r rune) bool {
 		return r == '<' || r == '>' || r == ','
 	})
-	skip := 0
-	for _, class := range types {
-		class = strings.TrimSpace(class)
-		if !isDigitsOnly(class) {
-			// vector types include dimension (digits) as second type parameter
-			// UDT fields are represented in format {field id}:{class}, example 66697273745f6e616d65:org.apache.cassandra.db.marshal.UTF8Type
-			if skip > 0 {
-				skip -= 1
-				continue
-			}
-			idx := strings.Index(class, ":")
-			class = class[idx+1:]
-			act := getApacheCassandraType(class)
-			val := act.String()
-			switch act {
-			case TypeUDT:
-				val = "udt"
-				skip = 2 // skip next two parameters (keyspace and type ID), do not attempt to resolve their type
-			case TypeCustom:
+	for i := 0; i < len(types); i++ {
+		class := strings.TrimSpace(types[i])
+		// UDT fields are represented in format {field id}:{class}, example 66697273745f6e616d65:org.apache.cassandra.db.marshal.UTF8Type
+		// Do not override hex encoded field names
+		idx := strings.Index(class, ":")
+		class = class[idx+1:]
+		act := getApacheCassandraType(class)
+		val := act.String()
+		switch act {
+		case TypeUDT:
+			i += 2 // skip next two parameters (keyspace and type ID), do not attempt to resolve their type
+		case TypeCustom:
+			if isDigitsOnly(class) {
+				// vector types include dimension (digits) as second type parameter
+				// getApacheCassandraType() returns "custom" by default, but we need to leave digits intact
+				val = class
+			} else {
 				val = getApacheCassandraCustomSubType(class)
 			}
-			t = strings.Replace(t, class, val, -1)
 		}
+		t = strings.Replace(t, class, val, -1)
 	}
 	// This is done so it exactly matches what Cassandra returns
 	return strings.Replace(t, ",", ", ", -1)
@@ -373,6 +371,8 @@ func getApacheCassandraType(class string) Type {
 	}
 }
 
+// Dedicated function parsing known special subtypes of CQL custom type.
+// Currently, only vectors are implemented as special custom subtype.
 func getApacheCassandraCustomSubType(class string) string {
 	switch strings.TrimPrefix(class, apacheCassandraTypePrefix) {
 	case "VectorType":

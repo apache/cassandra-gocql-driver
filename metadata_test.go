@@ -643,6 +643,17 @@ func TestTypeParser(t *testing.T) {
 		assertTypeInfo{Type: TypeUDT, Custom: ""},
 	)
 
+	// vector
+	assertParseCompositeType(
+		t,
+		"org.apache.cassandra.db.marshal.VectorType(org.apache.cassandra.db.marshal.FloatType, 3)",
+		[]assertTypeInfo{
+			{Type: TypeFloat},
+			{Type: TypeCustom, Custom: "3"},
+		},
+		nil,
+	)
+
 	// custom
 	assertParseNonCompositeType(
 		t,
@@ -702,7 +713,7 @@ func assertParseNonCompositeType(
 ) {
 
 	log := &defaultLogger{}
-	result := parseType(def, 4, log)
+	result := parseType(def, protoVersion4, log)
 	if len(result.reversed) != 1 {
 		t.Errorf("%s expected %d reversed values but there were %d", def, 1, len(result.reversed))
 	}
@@ -733,7 +744,7 @@ func assertParseCompositeType(
 ) {
 
 	log := &defaultLogger{}
-	result := parseType(def, 4, log)
+	result := parseType(def, protoVersion4, log)
 	if len(result.reversed) != len(typesExpected) {
 		t.Errorf("%s expected %d reversed values but there were %d", def, len(typesExpected), len(result.reversed))
 	}
@@ -749,7 +760,7 @@ func assertParseCompositeType(
 	if !result.isComposite {
 		t.Errorf("%s: Expected composite", def)
 	}
-	if result.collections == nil {
+	if result.collections == nil && collectionsExpected != nil {
 		t.Errorf("%s: Expected non-nil collections: %v", def, result.collections)
 	}
 

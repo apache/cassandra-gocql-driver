@@ -2649,7 +2649,11 @@ type NativeType struct {
 	custom string // only used for TypeCustom
 }
 
-func NewNativeType(proto byte, typ Type, custom string) NativeType {
+func NewNativeType(proto byte, typ Type) NativeType {
+	return NativeType{proto, typ, ""}
+}
+
+func NewCustomType(proto byte, typ Type, custom string) NativeType {
 	return NativeType{proto, typ, custom}
 }
 

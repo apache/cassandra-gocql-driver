@@ -347,9 +347,9 @@ func TestVector_SubTypeParsing(t *testing.T) {
 			name:   "vector_vector_inet",
 			custom: "org.apache.cassandra.db.marshal.VectorType(org.apache.cassandra.db.marshal.VectorType(org.apache.cassandra.db.marshal.InetAddressType, 2), 3)",
 			expected: VectorType{
-				NativeType{typ: TypeCustom},
+				NativeType{typ: TypeCustom, custom: VECTOR_TYPE},
 				VectorType{
-					NativeType{typ: TypeCustom},
+					NativeType{typ: TypeCustom, custom: VECTOR_TYPE},
 					NativeType{typ: TypeInet},
 					2,
 				},
@@ -363,7 +363,7 @@ func TestVector_SubTypeParsing(t *testing.T) {
 				NativeType{typ: TypeMap},
 				NativeType{typ: TypeInt},
 				VectorType{
-					NativeType{typ: TypeCustom},
+					NativeType{typ: TypeCustom, custom: VECTOR_TYPE},
 					NativeType{typ: TypeVarchar},
 					10,
 				},
@@ -373,8 +373,18 @@ func TestVector_SubTypeParsing(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			subType := parseType(fmt.Sprintf("org.apache.cassandra.db.marshal.VectorType(%s, 2)", test.custom), 0, &defaultLogger{})
-			assertDeepEqual(t, "vector", test.expected, subType.types[0])
+			f := newFramer(nil, 0)
+			f.writeShort(0)
+			f.writeString(fmt.Sprintf("org.apache.cassandra.db.marshal.VectorType(%s, 2)", test.custom))
+			parsedType := f.readTypeInfo()
+			require.IsType(t, parsedType, VectorType{})
+
+			// test first parsing method
+			vectorType := parsedType.(VectorType)
+			assertEqual(t, "dimensions", 2, vectorType.Dimensions)
+			assertDeepEqual(t, "vector", test.expected, vectorType.SubType)
+			//subType := parseType(fmt.Sprintf("org.apache.cassandra.db.marshal.VectorType(%s, 2)", test.custom), 0, &defaultLogger{})
+			//assertDeepEqual(t, "vector", test.expected, subType.types[0])
 		})
 	}
 }
