@@ -144,6 +144,10 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 		return nil, errors.New("Can't use both Authenticator and AuthProvider in cluster config.")
 	}
 
+	if cfg.SerialConsistency > 0 && !cfg.SerialConsistency.isSerial() {
+		return nil, fmt.Errorf("the default SerialConsistency level is not allowed to be anything else but SERIAL or LOCAL_SERIAL. Recived value: %v", cfg.SerialConsistency)
+	}
+
 	// TODO: we should take a context in here at some point
 	ctx, cancel := context.WithCancel(context.TODO())
 
@@ -928,7 +932,7 @@ type Query struct {
 	rt                    RetryPolicy
 	spec                  SpeculativeExecutionPolicy
 	binding               func(q *QueryInfo) ([]interface{}, error)
-	serialCons            SerialConsistency
+	serialCons            Consistency
 	defaultTimestamp      bool
 	defaultTimestampValue int64
 	disableSkipMetadata   bool
@@ -1277,7 +1281,10 @@ func (q *Query) Bind(v ...interface{}) *Query {
 // either SERIAL or LOCAL_SERIAL and if not present, it defaults to
 // SERIAL. This option will be ignored for anything else that a
 // conditional update/insert.
-func (q *Query) SerialConsistency(cons SerialConsistency) *Query {
+func (q *Query) SerialConsistency(cons Consistency) *Query {
+	if !cons.isSerial() {
+		panic("serial consistency can only be SERIAL or LOCAL_SERIAL got " + cons.String())
+	}
 	q.serialCons = cons
 	return q
 }
@@ -1754,7 +1761,7 @@ type Batch struct {
 	trace                 Tracer
 	observer              BatchObserver
 	session               *Session
-	serialCons            SerialConsistency
+	serialCons            Consistency
 	defaultTimestamp      bool
 	defaultTimestampValue int64
 	context               context.Context
@@ -1929,7 +1936,10 @@ func (b *Batch) Size() int {
 // conditional update/insert.
 //
 // Only available for protocol 3 and above
-func (b *Batch) SerialConsistency(cons SerialConsistency) *Batch {
+func (b *Batch) SerialConsistency(cons Consistency) *Batch {
+	if !cons.isSerial() {
+		panic("serial consistency can only be SERIAL or LOCAL_SERIAL got " + cons.String())
+	}
 	b.serialCons = cons
 	return b
 }

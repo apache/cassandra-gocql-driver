@@ -192,6 +192,9 @@ const (
 
 type Consistency uint16
 
+// SerialConsistency is deprecated. Use Consistency instead.
+type SerialConsistency = Consistency
+
 const (
 	Any         Consistency = 0x00
 	One         Consistency = 0x01
@@ -201,6 +204,8 @@ const (
 	All         Consistency = 0x05
 	LocalQuorum Consistency = 0x06
 	EachQuorum  Consistency = 0x07
+	Serial      Consistency = 0x08
+	LocalSerial Consistency = 0x09
 	LocalOne    Consistency = 0x0A
 )
 
@@ -224,6 +229,10 @@ func (c Consistency) String() string {
 		return "EACH_QUORUM"
 	case LocalOne:
 		return "LOCAL_ONE"
+	case Serial:
+		return "SERIAL"
+	case LocalSerial:
+		return "LOCAL_SERIAL"
 	default:
 		return fmt.Sprintf("UNKNOWN_CONS_0x%x", uint16(c))
 	}
@@ -253,6 +262,10 @@ func (c *Consistency) UnmarshalText(text []byte) error {
 		*c = EachQuorum
 	case "LOCAL_ONE":
 		*c = LocalOne
+	case "SERIAL":
+		*c = Serial
+	case "LOCAL_SERIAL":
+		*c = LocalSerial
 	default:
 		return fmt.Errorf("invalid consistency %q", string(text))
 	}
@@ -260,6 +273,10 @@ func (c *Consistency) UnmarshalText(text []byte) error {
 	return nil
 }
 
+func (c Consistency) isSerial() bool {
+	return c == Serial || c == LocalSerial
+
+}
 func ParseConsistency(s string) Consistency {
 	var c Consistency
 	if err := c.UnmarshalText([]byte(strings.ToUpper(s))); err != nil {
@@ -275,39 +292,15 @@ func ParseConsistencyWrapper(s string) (consistency Consistency, err error) {
 	return
 }
 
-type SerialConsistency uint16
-
-const (
-	Serial      SerialConsistency = 0x08
-	LocalSerial SerialConsistency = 0x09
-)
-
-func (s SerialConsistency) String() string {
-	switch s {
-	case Serial:
-		return "SERIAL"
-	case LocalSerial:
-		return "LOCAL_SERIAL"
-	default:
-		return fmt.Sprintf("UNKNOWN_SERIAL_CONS_0x%x", uint16(s))
+// MustParseConsistency is the same as ParseConsistency except it returns
+// an error (never). It is kept here since breaking changes are not good.
+// DEPRECATED: use ParseConsistency if you want a panic on parse error.
+func MustParseConsistency(s string) (Consistency, error) {
+	c, err := ParseConsistencyWrapper(s)
+	if err != nil {
+		panic(err)
 	}
-}
-
-func (s SerialConsistency) MarshalText() (text []byte, err error) {
-	return []byte(s.String()), nil
-}
-
-func (s *SerialConsistency) UnmarshalText(text []byte) error {
-	switch string(text) {
-	case "SERIAL":
-		*s = Serial
-	case "LOCAL_SERIAL":
-		*s = LocalSerial
-	default:
-		return fmt.Errorf("invalid consistency %q", string(text))
-	}
-
-	return nil
+	return c, nil
 }
 
 const (
@@ -1441,7 +1434,7 @@ type queryParams struct {
 	values            []queryValues
 	pageSize          int
 	pagingState       []byte
-	serialConsistency SerialConsistency
+	serialConsistency Consistency
 	// v3+
 	defaultTimestamp      bool
 	defaultTimestampValue int64
@@ -1530,7 +1523,7 @@ func (f *framer) writeQueryParams(opts *queryParams) {
 	}
 
 	if opts.serialConsistency > 0 {
-		f.writeConsistency(Consistency(opts.serialConsistency))
+		f.writeConsistency(opts.serialConsistency)
 	}
 
 	if f.proto > protoVersion2 && opts.defaultTimestamp {
@@ -1642,7 +1635,7 @@ type writeBatchFrame struct {
 	consistency Consistency
 
 	// v3+
-	serialConsistency     SerialConsistency
+	serialConsistency     Consistency
 	defaultTimestamp      bool
 	defaultTimestampValue int64
 
