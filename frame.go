@@ -1031,8 +1031,12 @@ func (r *resultMetadata) morePages() bool {
 	return r.flags&flagHasMorePages == flagHasMorePages
 }
 
+func (r *resultMetadata) noMetaData() bool {
+	return r.flags&flagNoMetaData == flagNoMetaData
+}
+
 func (r resultMetadata) String() string {
-	return fmt.Sprintf("[metadata flags=0x%x paging_state=% X columns=%v]", r.flags, r.pagingState, r.columns)
+	return fmt.Sprintf("[metadata flags=0x%x paging_state=% X columns=%v new_metadata_id=% X]", r.flags, r.pagingState, r.columns, r.newMetadataID)
 }
 
 func (f *framer) readCol(col *ColumnInfo, meta *resultMetadata, globalSpec bool, keyspace, table string) {
@@ -1072,7 +1076,7 @@ func (f *framer) parseResultMetadata() resultMetadata {
 		meta.newMetadataID = copyBytes(f.readShortBytes())
 	}
 
-	if meta.flags&flagNoMetaData == flagNoMetaData {
+	if meta.noMetaData() {
 		return meta
 	}
 

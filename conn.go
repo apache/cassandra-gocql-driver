@@ -1613,8 +1613,6 @@ func (c *Conn) executeQuery(ctx context.Context, qry *Query) *Iter {
 		return &Iter{framer: framer}
 	case *resultRowsFrame:
 		if x.meta.newMetadataID != nil {
-			// Updating the result metadata id in prepared stmt
-			//
 			// If a RESULT/Rows message reports
 			//      changed resultset metadata with the Metadata_changed flag, the reported new
 			//      resultset metadata must be used in subsequent executions
@@ -1631,8 +1629,8 @@ func (c *Conn) executeQuery(ctx context.Context, qry *Query) *Iter {
 					},
 				}
 				c.session.stmtsLRU.add(stmtCacheKey, newInflight)
-				// Closing done here because the stmtsLRU already contains a new inflight
-				// with updated metadata and result metadata id
+				// The driver should close this done to avoid deadlocks of
+				// other subsequent requests
 				close(newInflight.done)
 			}
 		}
@@ -1643,7 +1641,7 @@ func (c *Conn) executeQuery(ctx context.Context, qry *Query) *Iter {
 			numRows: x.numRows,
 		}
 
-		if params.skipMeta {
+		if params.skipMeta && x.meta.noMetaData() {
 			if info != nil {
 				iter.meta = info.response
 				iter.meta.pagingState = copyBytes(x.meta.pagingState)
