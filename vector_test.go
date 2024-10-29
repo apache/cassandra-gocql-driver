@@ -395,13 +395,9 @@ func TestVector_SubTypeParsing(t *testing.T) {
 			f.writeString(fmt.Sprintf("org.apache.cassandra.db.marshal.VectorType(%s, 2)", test.custom))
 			parsedType := f.readTypeInfo()
 			require.IsType(t, parsedType, VectorType{})
-
-			// test first parsing method
 			vectorType := parsedType.(VectorType)
 			assertEqual(t, "dimensions", 2, vectorType.Dimensions)
 			assertDeepEqual(t, "vector", test.expected, vectorType.SubType)
-			//subType := parseType(fmt.Sprintf("org.apache.cassandra.db.marshal.VectorType(%s, 2)", test.custom), 0, &defaultLogger{})
-			//assertDeepEqual(t, "vector", test.expected, subType.types[0])
 		})
 	}
 }

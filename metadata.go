@@ -1297,26 +1297,6 @@ func (t *typeParser) parse() typeParserResult {
 			reversed:    reversed,
 			collections: collections,
 		}
-	} else if strings.HasPrefix(ast.name, VECTOR_TYPE) {
-		count := len(ast.params)
-
-		types := make([]TypeInfo, count)
-		reversed := make([]bool, count)
-
-		for i, param := range ast.params[:count] {
-			class := param.class
-			reversed[i] = strings.HasPrefix(class.name, REVERSED_TYPE)
-			if reversed[i] {
-				class = class.params[0].class
-			}
-			types[i] = class.asTypeInfo()
-		}
-
-		return typeParserResult{
-			isComposite: true,
-			types:       types,
-			reversed:    reversed,
-		}
 	} else {
 		// not composite, so one type
 		class := *ast
@@ -1365,50 +1345,6 @@ func (class *typeParserClassNode) asTypeInfo() TypeInfo {
 			},
 			Key:  key,
 			Elem: elem,
-		}
-	}
-	if strings.HasPrefix(class.name, UDT_TYPE) {
-		udtName, _ := hex.DecodeString(class.params[1].class.name)
-		fields := make([]UDTField, len(class.params)-2)
-		for i := 2; i < len(class.params); i++ {
-			fieldName, _ := hex.DecodeString(*class.params[i].name)
-			fields[i-2] = UDTField{
-				Name: string(fieldName),
-				Type: class.params[i].class.asTypeInfo(),
-			}
-		}
-		return UDTTypeInfo{
-			NativeType: NativeType{
-				typ:   TypeUDT,
-				proto: class.proto,
-			},
-			KeySpace: class.params[0].class.name,
-			Name:     string(udtName),
-			Elements: fields,
-		}
-	}
-	if strings.HasPrefix(class.name, TUPLE_TYPE) {
-		fields := make([]TypeInfo, len(class.params))
-		for i := 0; i < len(class.params); i++ {
-			fields[i] = class.params[i].class.asTypeInfo()
-		}
-		return TupleTypeInfo{
-			NativeType: NativeType{
-				typ:   TypeTuple,
-				proto: class.proto,
-			},
-			Elems: fields,
-		}
-	}
-	if strings.HasPrefix(class.name, VECTOR_TYPE) {
-		dim, _ := strconv.Atoi(class.params[1].class.name)
-		return VectorType{
-			NativeType: NativeType{
-				typ:   TypeCustom,
-				proto: class.proto,
-			},
-			SubType:    class.params[0].class.asTypeInfo(),
-			Dimensions: dim,
 		}
 	}
 

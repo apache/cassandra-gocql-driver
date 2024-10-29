@@ -643,17 +643,6 @@ func TestTypeParser(t *testing.T) {
 		assertTypeInfo{Type: TypeUDT, Custom: ""},
 	)
 
-	// vector
-	assertParseCompositeType(
-		t,
-		"org.apache.cassandra.db.marshal.VectorType(org.apache.cassandra.db.marshal.FloatType, 3)",
-		[]assertTypeInfo{
-			{Type: TypeFloat},
-			{Type: TypeCustom, Custom: "3"},
-		},
-		nil,
-	)
-
 	// custom
 	assertParseNonCompositeType(
 		t,
