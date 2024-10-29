@@ -369,6 +369,23 @@ func TestVector_SubTypeParsing(t *testing.T) {
 				},
 			},
 		},
+		{
+			name:   "set_map_vector_text_text",
+			custom: "org.apache.cassandra.db.marshal.SetType(org.apache.cassandra.db.marshal.MapType(org.apache.cassandra.db.marshal.VectorType(org.apache.cassandra.db.marshal.Int32Type, 10),org.apache.cassandra.db.marshal.UTF8Type))",
+			expected: CollectionType{
+				NativeType{typ: TypeSet},
+				nil,
+				CollectionType{
+					NativeType{typ: TypeMap},
+					VectorType{
+						NativeType{typ: TypeCustom, custom: VECTOR_TYPE},
+						NativeType{typ: TypeInt},
+						10,
+					},
+					NativeType{typ: TypeVarchar},
+				},
+			},
+		},
 	}
 
 	for _, test := range tests {

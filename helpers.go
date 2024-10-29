@@ -285,33 +285,23 @@ func apacheToCassandraType(t string) string {
 		// Do not override hex encoded field names
 		idx := strings.Index(class, ":")
 		class = class[idx+1:]
-		act := getApacheCassandraType(class)
-		val := act.String()
-		switch act {
-		case TypeUDT:
-			i += 2 // skip next two parameters (keyspace and type ID), do not attempt to resolve their type
-		case TypeCustom:
-			if isDigitsOnly(class) {
-				// vector types include dimension (digits) as second type parameter
-				// getApacheCassandraType() returns "custom" by default, but we need to leave digits intact
-				val = class
-			} else {
+		val := ""
+		if strings.HasPrefix(class, apacheCassandraTypePrefix) {
+			act := getApacheCassandraType(class)
+			val = act.String()
+			switch act {
+			case TypeUDT:
+				i += 2 // skip next two parameters (keyspace and type ID), do not attempt to resolve their type
+			case TypeCustom:
 				val = getApacheCassandraCustomSubType(class)
 			}
+		} else {
+			val = class
 		}
 		t = strings.Replace(t, class, val, -1)
 	}
 	// This is done so it exactly matches what Cassandra returns
 	return strings.Replace(t, ",", ", ", -1)
-}
-
-func isDigitsOnly(s string) bool {
-	for _, c := range s {
-		if c < '0' || c > '9' {
-			return false
-		}
-	}
-	return true
 }
 
 func getApacheCassandraType(class string) Type {
