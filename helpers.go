@@ -337,31 +337,14 @@ func splitCompositeTypes(name string, typeOpen int32, typeClose int32) []string 
 
 // Convert long Java style type definition into the short CQL type names.
 func apacheToCassandraType(t string) string {
+	t = strings.Replace(t, apacheCassandraTypePrefix, "", -1)
 	t = strings.Replace(t, "(", "<", -1)
 	t = strings.Replace(t, ")", ">", -1)
 	types := strings.FieldsFunc(t, func(r rune) bool {
 		return r == '<' || r == '>' || r == ','
 	})
-	for i := 0; i < len(types); i++ {
-		class := strings.TrimSpace(types[i])
-		// UDT fields are represented in format {field id}:{class}, example 66697273745f6e616d65:org.apache.cassandra.db.marshal.UTF8Type
-		// Do not override hex encoded field names
-		idx := strings.Index(class, ":")
-		class = class[idx+1:]
-		val := ""
-		if strings.HasPrefix(class, apacheCassandraTypePrefix) {
-			act := getApacheCassandraType(class)
-			val = act.String()
-			switch act {
-			case TypeUDT:
-				i += 2 // skip next two parameters (keyspace and type ID), do not attempt to resolve their type
-			case TypeCustom:
-				val = getApacheCassandraCustomSubType(class)
-			}
-		} else {
-			val = class
-		}
-		t = strings.Replace(t, class, val, -1)
+	for _, typ := range types {
+		t = strings.Replace(t, typ, getApacheCassandraType(typ).String(), -1)
 	}
 	// This is done so it exactly matches what Cassandra returns
 	return strings.Replace(t, ",", ", ", -1)
@@ -422,16 +405,6 @@ func getApacheCassandraType(class string) Type {
 	default:
 		return TypeCustom
 	}
-}
-
-// Dedicated function parsing known special subtypes of CQL custom type.
-// Currently, only vectors are implemented as special custom subtype.
-func getApacheCassandraCustomSubType(class string) string {
-	switch strings.TrimPrefix(class, apacheCassandraTypePrefix) {
-	case "VectorType":
-		return "vector"
-	}
-	return "custom"
 }
 
 func (r *RowData) rowMap(m map[string]interface{}) {

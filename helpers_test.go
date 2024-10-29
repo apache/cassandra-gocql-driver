@@ -30,7 +30,7 @@ import (
 )
 
 func TestGetCassandraType_Set(t *testing.T) {
-	typ := getCassandraType("set<text>", 4, &defaultLogger{})
+	typ := getCassandraType("set<text>", protoVersion4, &defaultLogger{})
 	set, ok := typ.(CollectionType)
 	if !ok {
 		t.Fatalf("expected CollectionType got %T", typ)
