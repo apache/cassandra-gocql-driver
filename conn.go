@@ -1628,10 +1628,13 @@ func (c *Conn) executeQuery(ctx context.Context, qry *Query) *Iter {
 						response:         x.meta,
 					},
 				}
-				c.session.stmtsLRU.add(stmtCacheKey, newInflight)
 				// The driver should close this done to avoid deadlocks of
 				// other subsequent requests
 				close(newInflight.done)
+				c.session.stmtsLRU.add(stmtCacheKey, newInflight)
+				// Updating info to ensure the code is looking at the updated
+				// version of the prepared statement
+				info = newInflight.preparedStatment
 			}
 		}
 
@@ -1641,7 +1644,7 @@ func (c *Conn) executeQuery(ctx context.Context, qry *Query) *Iter {
 			numRows: x.numRows,
 		}
 
-		if params.skipMeta && x.meta.noMetaData() {
+		if x.meta.noMetaData() {
 			if info != nil {
 				iter.meta = info.response
 				iter.meta.pagingState = copyBytes(x.meta.pagingState)
