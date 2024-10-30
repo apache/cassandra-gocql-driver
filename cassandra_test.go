@@ -3467,7 +3467,15 @@ func TestPrepareExecuteMetadataChangedFlag(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err := session.Query("INSERT INTO gocql_test.metadata_changed (id) VALUES (?)", 1).Exec()
+	type record struct {
+		id     int
+		newCol int
+	}
+
+	firstRecord := record{
+		id: 1,
+	}
+	err := session.Query("INSERT INTO gocql_test.metadata_changed (id) VALUES (?)", firstRecord.id).Exec()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -3486,6 +3494,8 @@ func TestPrepareExecuteMetadataChangedFlag(t *testing.T) {
 	}
 
 	require.Len(t, row, 1, "Expected to retrieve a single column")
+	require.Equal(t, 1, row["id"])
+
 	stmtCacheKey := session.stmtsLRU.keyFor(conn.host.HostID(), conn.currentKeyspace, queryBeforeTableAltering.stmt)
 	inflight, _ := session.stmtsLRU.get(stmtCacheKey)
 	preparedStatementBeforeTableAltering := inflight.preparedStatment
@@ -3498,45 +3508,101 @@ func TestPrepareExecuteMetadataChangedFlag(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Expecting C* will return RESULT/ROWS Metadata_changed
-	// and it will be properly handled
-	queryAfterTableAltering := session.Query(selectStmt)
-	queryAfterTableAltering.conn = conn
-	row = make(map[string]interface{})
-	err = queryAfterTableAltering.MapScan(row)
+	secondRecord := record{
+		id:     2,
+		newCol: 10,
+	}
+	err = session.Query("INSERT INTO gocql_test.metadata_changed (id, new_col) VALUES (?, ?)", secondRecord.id, secondRecord.newCol).
+		Exec()
 	if err != nil {
 		t.Fatal(err)
 	}
 
+	// Handles result from iter and ensures integrity of the result,
+	// closes iter and handles error
+	handleRows := func(iter *Iter) {
+		t.Helper()
+
+		var scannedID int
+		var scannedNewCol *int // to perform null values
+
+		// when the driver handling null values during unmarshalling
+		// it sets to dest type its zero value, which is (*int)(nil) for this case
+		var nilIntPtr *int
+
+		// Scanning first row
+		if iter.Scan(&scannedID, &scannedNewCol) {
+			require.Equal(t, firstRecord.id, scannedID)
+			require.Equal(t, nilIntPtr, scannedNewCol)
+		}
+
+		// Scanning second row
+		if iter.Scan(&scannedID, &scannedNewCol) {
+			require.Equal(t, secondRecord.id, scannedID)
+			require.Equal(t, &secondRecord.newCol, scannedNewCol)
+		}
+
+		err := iter.Close()
+		if err != nil {
+			if errors.Is(err, context.DeadlineExceeded) {
+				t.Fatal("It is likely failed due deadlock")
+			}
+			t.Fatal(err)
+		}
+	}
+
+	// Expecting C* will return RESULT/ROWS Metadata_changed
+	// and it will be properly handled
+	queryAfterTableAltering := session.Query(selectStmt)
+	queryAfterTableAltering.conn = conn
+	iter := queryAfterTableAltering.Iter()
+	handleRows(iter)
+
 	// Ensuring if cache contains updated prepared statement
-	require.Len(t, row, 2, "Expected to retrieve both columns")
 	inflight, _ = session.stmtsLRU.get(stmtCacheKey)
 	preparedStatementAfterTableAltering := inflight.preparedStatment
 	require.NotEqual(t, preparedStatementBeforeTableAltering.resultMetadataID, preparedStatementAfterTableAltering.resultMetadataID)
 	require.NotEqual(t, preparedStatementBeforeTableAltering.response, preparedStatementAfterTableAltering.response)
 
-	// Executing prepared stmt and expecting that C* won't return
-	// Metadata_changed because the table is not being changed.
+	// FORCE SEND OLD RESULT METADATA ID (https://issues.apache.org/jira/browse/CASSANDRA-20028)
+	closedCh := make(chan struct{})
+	close(closedCh)
+	session.stmtsLRU.add(stmtCacheKey, &inflightPrepare{
+		done:             closedCh,
+		err:              nil,
+		preparedStatment: preparedStatementBeforeTableAltering,
+	})
+
 	// Running query with timeout to ensure there is no deadlocks.
 	// However, it doesn't 100% proves that there is a deadlock...
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*30000)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*30)
 	defer cancel()
 
 	queryAfterTableAltering2 := session.Query(selectStmt).WithContext(ctx)
 	queryAfterTableAltering2.conn = conn
-	row = make(map[string]interface{})
-	err = queryAfterTableAltering2.MapScan(row)
-	if err != nil {
-		if errors.Is(err, context.DeadlineExceeded) {
-			t.Fatal("It is likely failed due deadlock")
-		}
-		t.Fatal(err)
-	}
+	iter = queryAfterTableAltering2.Iter()
+	handleRows(iter)
+	err = iter.Close()
 
-	// Ensuring metadata of prepared stmt is not changed
-	require.Len(t, row, 2, "Expected to retrieve both columns")
 	inflight, _ = session.stmtsLRU.get(stmtCacheKey)
 	preparedStatementAfterTableAltering2 := inflight.preparedStatment
+	require.NotEqual(t, preparedStatementBeforeTableAltering.resultMetadataID, preparedStatementAfterTableAltering2.resultMetadataID)
+	require.NotEqual(t, preparedStatementBeforeTableAltering.response, preparedStatementAfterTableAltering2.response)
+
 	require.Equal(t, preparedStatementAfterTableAltering.resultMetadataID, preparedStatementAfterTableAltering2.resultMetadataID)
-	require.Equal(t, preparedStatementAfterTableAltering.response, preparedStatementAfterTableAltering2.response)
+	require.NotEqual(t, preparedStatementAfterTableAltering.response, preparedStatementAfterTableAltering2.response) // METADATA_CHANGED flag
+	require.True(t, preparedStatementAfterTableAltering2.response.flags&flagMetaDataChanged != 0)
+
+	// Executing prepared stmt and expecting that C* won't return
+	// Metadata_changed because the table is not being changed.
+	queryAfterTableAltering3 := session.Query(selectStmt).WithContext(ctx)
+	queryAfterTableAltering3.conn = conn
+	iter = queryAfterTableAltering2.Iter()
+	handleRows(iter)
+
+	// Ensuring metadata of prepared stmt is not changed
+	inflight, _ = session.stmtsLRU.get(stmtCacheKey)
+	preparedStatementAfterTableAltering3 := inflight.preparedStatment
+	require.Equal(t, preparedStatementAfterTableAltering2.resultMetadataID, preparedStatementAfterTableAltering3.resultMetadataID)
+	require.Equal(t, preparedStatementAfterTableAltering2.response, preparedStatementAfterTableAltering3.response)
 }
