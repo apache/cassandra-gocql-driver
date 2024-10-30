@@ -591,11 +591,20 @@ func (s *Session) getConn() *Conn {
 	return nil
 }
 
-// returns routing key indexes and type info
-func (s *Session) routingKeyInfo(ctx context.Context, stmt string) (*routingKeyInfo, error) {
+// Returns routing key indexes and type info.
+// If keyspace == "" it uses the keyspace which is specified in Cluster.Keyspace
+func (s *Session) routingKeyInfo(ctx context.Context, stmt string, keyspace string) (*routingKeyInfo, error) {
+	if keyspace == "" {
+		keyspace = s.cfg.Keyspace
+	}
+
+	routingKeyInfoCacheKey := keyspace + stmt
+
 	s.routingKeyInfoCache.mu.Lock()
 
-	entry, cached := s.routingKeyInfoCache.lru.Get(stmt)
+	// Using here keyspace + stmt as a cache key because
+	// the query keyspace could be overridden via SetKeyspace
+	entry, cached := s.routingKeyInfoCache.lru.Get(routingKeyInfoCacheKey)
 	if cached {
 		// done accessing the cache
 		s.routingKeyInfoCache.mu.Unlock()
@@ -619,7 +628,7 @@ func (s *Session) routingKeyInfo(ctx context.Context, stmt string) (*routingKeyI
 	inflight := new(inflightCachedEntry)
 	inflight.wg.Add(1)
 	defer inflight.wg.Done()
-	s.routingKeyInfoCache.lru.Add(stmt, inflight)
+	s.routingKeyInfoCache.lru.Add(routingKeyInfoCacheKey, inflight)
 	s.routingKeyInfoCache.mu.Unlock()
 
 	var (
@@ -635,7 +644,7 @@ func (s *Session) routingKeyInfo(ctx context.Context, stmt string) (*routingKeyI
 	}
 
 	// get the query info for the statement
-	info, inflight.err = conn.prepareStatement(ctx, stmt, nil)
+	info, inflight.err = conn.prepareStatement(ctx, stmt, nil, keyspace)
 	if inflight.err != nil {
 		// don't cache this error
 		s.routingKeyInfoCache.Remove(stmt)
@@ -651,7 +660,9 @@ func (s *Session) routingKeyInfo(ctx context.Context, stmt string) (*routingKeyI
 	}
 
 	table := info.request.table
-	keyspace := info.request.keyspace
+	if info.request.keyspace != "" {
+		keyspace = info.request.keyspace
+	}
 
 	if len(info.request.pkeyColumns) > 0 {
 		// proto v4 dont need to calculate primary key columns
@@ -1146,6 +1157,9 @@ func (q *Query) Keyspace() string {
 	if q.routingInfo.keyspace != "" {
 		return q.routingInfo.keyspace
 	}
+	if q.keyspace != "" {
+		return q.keyspace
+	}
 
 	if q.session == nil {
 		return ""
@@ -1177,7 +1191,7 @@ func (q *Query) GetRoutingKey() ([]byte, error) {
 	}
 
 	// try to determine the routing key
-	routingKeyInfo, err := q.session.routingKeyInfo(q.Context(), q.stmt)
+	routingKeyInfo, err := q.session.routingKeyInfo(q.Context(), q.stmt, q.keyspace)
 	if err != nil {
 		return nil, err
 	}
@@ -2009,7 +2023,7 @@ func (b *Batch) GetRoutingKey() ([]byte, error) {
 		return nil, nil
 	}
 	// try to determine the routing key
-	routingKeyInfo, err := b.session.routingKeyInfo(b.Context(), entry.Stmt)
+	routingKeyInfo, err := b.session.routingKeyInfo(b.Context(), entry.Stmt, b.keyspace)
 	if err != nil {
 		return nil, err
 	}

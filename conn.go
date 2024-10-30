@@ -1410,8 +1410,8 @@ type inflightPrepare struct {
 	preparedStatment *preparedStatment
 }
 
-func (c *Conn) prepareStatementForKeyspace(ctx context.Context, stmt string, tracer Tracer, keyspace string) (*preparedStatment, error) {
-	stmtCacheKey := c.session.stmtsLRU.keyFor(c.host.HostID(), c.currentKeyspace, stmt)
+func (c *Conn) prepareStatement(ctx context.Context, stmt string, tracer Tracer, keyspace string) (*preparedStatment, error) {
+	stmtCacheKey := c.session.stmtsLRU.keyFor(c.host.HostID(), keyspace, stmt)
 	flight, ok := c.session.stmtsLRU.execIfMissing(stmtCacheKey, func(lru *lru.Cache) *inflightPrepare {
 		flight := &inflightPrepare{
 			done: make(chan struct{}),
@@ -1486,10 +1486,6 @@ func (c *Conn) prepareStatementForKeyspace(ctx context.Context, stmt string, tra
 	}
 }
 
-func (c *Conn) prepareStatement(ctx context.Context, stmt string, tracer Tracer) (*preparedStatment, error) {
-	return c.prepareStatementForKeyspace(ctx, stmt, tracer, c.currentKeyspace)
-}
-
 func marshalQueryValue(typ TypeInfo, value interface{}, dst *queryValues) error {
 	if named, ok := value.(*namedValue); ok {
 		dst.name = named.name
@@ -1531,6 +1527,13 @@ func (c *Conn) executeQuery(ctx context.Context, qry *Query) *Iter {
 		params.nowInSeconds = qry.nowInSecondsValue
 	}
 
+	// If a keyspace for the qry is overriden,
+	// then we should use it to create stmt cache key
+	usedKeyspace := c.currentKeyspace
+	if qry.keyspace != "" {
+		usedKeyspace = qry.keyspace
+	}
+
 	var (
 		frame frameBuilder
 		info  *preparedStatment
@@ -1539,7 +1542,7 @@ func (c *Conn) executeQuery(ctx context.Context, qry *Query) *Iter {
 	if !qry.skipPrepare && qry.shouldPrepare() {
 		// Prepare all DML queries. Other queries can not be prepared.
 		var err error
-		info, err = c.prepareStatementForKeyspace(ctx, qry.stmt, qry.trace, qry.keyspace)
+		info, err = c.prepareStatement(ctx, qry.stmt, qry.trace, usedKeyspace)
 		if err != nil {
 			return &Iter{err: err}
 		}
@@ -1584,6 +1587,9 @@ func (c *Conn) executeQuery(ctx context.Context, qry *Query) *Iter {
 		// Set "keyspace" and "table" property in the query if it is present in preparedMetadata
 		qry.routingInfo.mu.Lock()
 		qry.routingInfo.keyspace = info.request.keyspace
+		if info.request.keyspace == "" {
+			qry.routingInfo.keyspace = usedKeyspace
+		}
 		qry.routingInfo.table = info.request.table
 		qry.routingInfo.mu.Unlock()
 	} else {
@@ -1616,7 +1622,7 @@ func (c *Conn) executeQuery(ctx context.Context, qry *Query) *Iter {
 			// If a RESULT/Rows message reports
 			//      changed resultset metadata with the Metadata_changed flag, the reported new
 			//      resultset metadata must be used in subsequent executions
-			stmtCacheKey := c.session.stmtsLRU.keyFor(c.host.HostID(), c.currentKeyspace, qry.stmt)
+			stmtCacheKey := c.session.stmtsLRU.keyFor(c.host.HostID(), usedKeyspace, qry.stmt)
 			oldInflight, ok := c.session.stmtsLRU.get(stmtCacheKey)
 			if ok {
 				newInflight := &inflightPrepare{
@@ -1685,7 +1691,7 @@ func (c *Conn) executeQuery(ctx context.Context, qry *Query) *Iter {
 		// is not consistent with regards to its schema.
 		return iter
 	case *RequestErrUnprepared:
-		stmtCacheKey := c.session.stmtsLRU.keyFor(c.host.HostID(), c.currentKeyspace, qry.stmt)
+		stmtCacheKey := c.session.stmtsLRU.keyFor(c.host.HostID(), usedKeyspace, qry.stmt)
 		c.session.stmtsLRU.evictPreparedID(stmtCacheKey, x.StatementId)
 		return c.executeQuery(ctx, qry)
 	case error:
@@ -1767,6 +1773,11 @@ func (c *Conn) executeBatch(ctx context.Context, batch *Batch) *Iter {
 		req.nowInSeconds = batch.nowInSeconds
 	}
 
+	usedKeyspace := c.currentKeyspace
+	if batch.keyspace != "" {
+		usedKeyspace = batch.keyspace
+	}
+
 	stmts := make(map[string]string, len(batch.Entries))
 
 	for i := 0; i < n; i++ {
@@ -1774,7 +1785,7 @@ func (c *Conn) executeBatch(ctx context.Context, batch *Batch) *Iter {
 		b := &req.statements[i]
 
 		if len(entry.Args) > 0 || entry.binding != nil {
-			info, err := c.prepareStatementForKeyspace(batch.Context(), entry.Stmt, batch.trace, batch.keyspace)
+			info, err := c.prepareStatement(batch.Context(), entry.Stmt, batch.trace, usedKeyspace)
 			if err != nil {
 				return &Iter{err: err}
 			}
@@ -1836,7 +1847,7 @@ func (c *Conn) executeBatch(ctx context.Context, batch *Batch) *Iter {
 	case *RequestErrUnprepared:
 		stmt, found := stmts[string(x.StatementId)]
 		if found {
-			key := c.session.stmtsLRU.keyFor(c.host.HostID(), c.currentKeyspace, stmt)
+			key := c.session.stmtsLRU.keyFor(c.host.HostID(), usedKeyspace, stmt)
 			c.session.stmtsLRU.evictPreparedID(key, x.StatementId)
 		}
 		return c.executeBatch(ctx, batch)

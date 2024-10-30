@@ -1483,7 +1483,7 @@ func TestQueryInfo(t *testing.T) {
 	defer session.Close()
 
 	conn := getRandomConn(t, session)
-	info, err := conn.prepareStatement(context.Background(), "SELECT release_version, host_id FROM system.local WHERE key = ?", nil)
+	info, err := conn.prepareStatement(context.Background(), "SELECT release_version, host_id FROM system.local WHERE key = ?", nil, conn.currentKeyspace)
 
 	if err != nil {
 		t.Fatalf("Failed to execute query for preparing statement: %v", err)
@@ -2602,7 +2602,7 @@ func TestRoutingKey(t *testing.T) {
 		t.Fatalf("failed to create table with error '%v'", err)
 	}
 
-	routingKeyInfo, err := session.routingKeyInfo(context.Background(), "SELECT * FROM test_single_routing_key WHERE second_id=? AND first_id=?")
+	routingKeyInfo, err := session.routingKeyInfo(context.Background(), "SELECT * FROM test_single_routing_key WHERE second_id=? AND first_id=?", "")
 	if err != nil {
 		t.Fatalf("failed to get routing key info due to error: %v", err)
 	}
@@ -2626,7 +2626,7 @@ func TestRoutingKey(t *testing.T) {
 	}
 
 	// verify the cache is working
-	routingKeyInfo, err = session.routingKeyInfo(context.Background(), "SELECT * FROM test_single_routing_key WHERE second_id=? AND first_id=?")
+	routingKeyInfo, err = session.routingKeyInfo(context.Background(), "SELECT * FROM test_single_routing_key WHERE second_id=? AND first_id=?", "")
 	if err != nil {
 		t.Fatalf("failed to get routing key info due to error: %v", err)
 	}
@@ -2660,7 +2660,7 @@ func TestRoutingKey(t *testing.T) {
 		t.Errorf("Expected routing key %v but was %v", expectedRoutingKey, routingKey)
 	}
 
-	routingKeyInfo, err = session.routingKeyInfo(context.Background(), "SELECT * FROM test_composite_routing_key WHERE second_id=? AND first_id=?")
+	routingKeyInfo, err = session.routingKeyInfo(context.Background(), "SELECT * FROM test_composite_routing_key WHERE second_id=? AND first_id=?", "")
 	if err != nil {
 		t.Fatalf("failed to get routing key info due to error: %v", err)
 	}
@@ -3605,4 +3605,136 @@ func TestPrepareExecuteMetadataChangedFlag(t *testing.T) {
 	preparedStatementAfterTableAltering3 := inflight.preparedStatment
 	require.Equal(t, preparedStatementAfterTableAltering2.resultMetadataID, preparedStatementAfterTableAltering3.resultMetadataID)
 	require.Equal(t, preparedStatementAfterTableAltering2.response, preparedStatementAfterTableAltering3.response)
+}
+
+func TestStmtCacheUsesOverriddenKeyspace(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+
+	const createKeyspaceStmt = `CREATE KEYSPACE IF NOT EXISTS %s
+	WITH replication = {
+		'class' : 'SimpleStrategy',
+			'replication_factor' : 1
+	}`
+
+	err := createTable(session, fmt.Sprintf(createKeyspaceStmt, "gocql_test_stmt_cache"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = createTable(session, "CREATE TABLE IF NOT EXISTS gocql_test.stmt_cache_uses_overridden_ks(id int, PRIMARY KEY (id))")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = createTable(session, "CREATE TABLE IF NOT EXISTS gocql_test_stmt_cache.stmt_cache_uses_overridden_ks(id int, PRIMARY KEY (id))")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	const insertQuery = "INSERT INTO stmt_cache_uses_overridden_ks (id) VALUES (?)"
+
+	// Inserting data via Batch to ensure that batches
+	// properly accounts for keyspace overriding
+	b1 := session.NewBatch(LoggedBatch)
+	b1.Query(insertQuery, 1)
+	err = session.ExecuteBatch(b1)
+	require.NoError(t, err)
+
+	b2 := session.NewBatch(LoggedBatch)
+	b2.SetKeyspace("gocql_test_stmt_cache")
+	b2.Query(insertQuery, 2)
+	err = session.ExecuteBatch(b2)
+	require.NoError(t, err)
+
+	var scannedID int
+
+	const selectStmt = "SELECT * FROM stmt_cache_uses_overridden_ks"
+
+	// By default in our test suite session uses gocql_test ks
+	err = session.Query(selectStmt).Scan(&scannedID)
+	require.NoError(t, err)
+	require.Equal(t, 1, scannedID)
+
+	scannedID = 0
+	err = session.Query(selectStmt).SetKeyspace("gocql_test_stmt_cache").Scan(&scannedID)
+	require.NoError(t, err)
+	require.Equal(t, 2, scannedID)
+
+	session.Query("DROP KEYSPACE IF EXISTS gocql_test_stmt_cache").Exec()
+}
+
+func TestRoutingKeyCacheUsesOverriddenKeyspace(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+
+	const createKeyspaceStmt = `CREATE KEYSPACE IF NOT EXISTS %s
+	WITH replication = {
+		'class' : 'SimpleStrategy',
+			'replication_factor' : 1
+	}`
+
+	err := createTable(session, fmt.Sprintf(createKeyspaceStmt, "gocql_test_routing_key_cache"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = createTable(session, "CREATE TABLE IF NOT EXISTS gocql_test.routing_key_cache_uses_overridden_ks(id int, PRIMARY KEY (id))")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = createTable(session, "CREATE TABLE IF NOT EXISTS gocql_test_routing_key_cache.routing_key_cache_uses_overridden_ks(id int, PRIMARY KEY (id))")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	getRoutingKeyInfo := func(key string) *routingKeyInfo {
+		t.Helper()
+		session.routingKeyInfoCache.mu.Lock()
+		value, _ := session.routingKeyInfoCache.lru.Get(key)
+		session.routingKeyInfoCache.mu.Unlock()
+
+		inflight := value.(*inflightCachedEntry)
+		return inflight.value.(*routingKeyInfo)
+	}
+
+	const insertQuery = "INSERT INTO routing_key_cache_uses_overridden_ks (id) VALUES (?)"
+
+	// Running batch in default ks gocql_test
+	b1 := session.NewBatch(LoggedBatch)
+	b1.Query(insertQuery, 1)
+	_, err = b1.GetRoutingKey()
+	require.NoError(t, err)
+
+	// Ensuring that the cache contains the query with default ks
+	routingKeyInfo1 := getRoutingKeyInfo("gocql_test" + b1.Entries[0].Stmt)
+	require.Equal(t, "gocql_test", routingKeyInfo1.keyspace)
+
+	// Running batch in gocql_test_routing_key_cache ks
+	b2 := session.NewBatch(LoggedBatch)
+	b2.SetKeyspace("gocql_test_routing_key_cache")
+	b2.Query(insertQuery, 2)
+	_, err = b2.GetRoutingKey()
+	require.NoError(t, err)
+
+	// Ensuring that the cache contains the query with gocql_test_routing_key_cache ks
+	routingKeyInfo2 := getRoutingKeyInfo("gocql_test_routing_key_cache" + b2.Entries[0].Stmt)
+	require.Equal(t, "gocql_test_routing_key_cache", routingKeyInfo2.keyspace)
+
+	const selectStmt = "SELECT * FROM routing_key_cache_uses_overridden_ks WHERE id=?"
+
+	// Running query in default ks gocql_test
+	q1 := session.Query(selectStmt, 1)
+	_, err = q1.GetRoutingKey()
+	require.NoError(t, err)
+	require.Equal(t, "gocql_test", q1.routingInfo.keyspace)
+
+	// Running query in gocql_test_routing_key_cache ks
+	q2 := session.Query(selectStmt, 1)
+	_, err = q2.SetKeyspace("gocql_test_routing_key_cache").GetRoutingKey()
+	require.NoError(t, err)
+	require.Equal(t, "gocql_test_routing_key_cache", q2.routingInfo.keyspace)
+
+	session.Query("DROP KEYSPACE IF EXISTS gocql_test_routing_key_cache").Exec()
 }
