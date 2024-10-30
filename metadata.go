@@ -949,7 +949,7 @@ func getColumnMetadata(session *Session, keyspaceName string) ([]ColumnMetadata,
 
 func getTypeInfo(t string, protoVer byte, logger StdLogger) TypeInfo {
 	if strings.HasPrefix(t, apacheCassandraTypePrefix) {
-		t = apacheToCassandraType(t)
+		return getCassandraLongType(t, protoVer, logger)
 	}
 	return getCassandraType(t, protoVer, logger)
 }

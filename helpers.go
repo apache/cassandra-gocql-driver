@@ -164,7 +164,7 @@ func getCassandraBaseType(name string) Type {
 	}
 }
 
-// Parse long Java-style type definition to internal data structures.
+// Parses long Java-style type definition to internal data structures.
 func getCassandraLongType(name string, protoVer byte, logger StdLogger) TypeInfo {
 	if strings.HasPrefix(name, SET_TYPE) {
 		return CollectionType{
@@ -179,7 +179,7 @@ func getCassandraLongType(name string, protoVer byte, logger StdLogger) TypeInfo
 	} else if strings.HasPrefix(name, MAP_TYPE) {
 		names := splitJavaCompositeTypes(strings.TrimPrefix(name[:len(name)-1], MAP_TYPE+"("))
 		if len(names) != 2 {
-			logger.Printf("Error parsing map type, it has %d subelements, expecting 2\n", len(names))
+			logger.Printf("gocql: error parsing map type, it has %d subelements, expecting 2\n", len(names))
 			return NewNativeType(protoVer, TypeCustom)
 		}
 		return CollectionType{
@@ -208,7 +208,7 @@ func getCassandraLongType(name string, protoVer byte, logger StdLogger) TypeInfo
 			fieldName, _ := hex.DecodeString(spec[0])
 			fields[i-2] = UDTField{
 				Name: string(fieldName),
-				Type: getTypeInfo(spec[1], protoVer, logger),
+				Type: getCassandraLongType(spec[1], protoVer, logger),
 			}
 		}
 
@@ -222,7 +222,11 @@ func getCassandraLongType(name string, protoVer byte, logger StdLogger) TypeInfo
 	} else if strings.HasPrefix(name, VECTOR_TYPE) {
 		names := splitJavaCompositeTypes(strings.TrimPrefix(name[:len(name)-1], VECTOR_TYPE+"("))
 		subType := getCassandraLongType(strings.TrimSpace(names[0]), protoVer, logger)
-		dim, _ := strconv.Atoi(strings.TrimSpace(names[1]))
+		dim, err := strconv.Atoi(strings.TrimSpace(names[1]))
+		if err != nil {
+			logger.Printf("gocql: error parsing vector dimensions: %v\n", err)
+			return NewNativeType(protoVer, TypeCustom)
+		}
 
 		return VectorType{
 			NativeType: NewCustomType(protoVer, TypeCustom, VECTOR_TYPE),
@@ -238,9 +242,7 @@ func getCassandraLongType(name string, protoVer byte, logger StdLogger) TypeInfo
 	}
 }
 
-// Parses short CQL type representation to internal data structures.
-// Mapping of long Java-style type definition into short format is performed in
-// apacheToCassandraType function.
+// Parses short CQL type representation (e.g. map<text, text>) to internal data structures.
 func getCassandraType(name string, protoVer byte, logger StdLogger) TypeInfo {
 	if strings.HasPrefix(name, "frozen<") {
 		return getCassandraType(strings.TrimPrefix(name[:len(name)-1], "frozen<"), protoVer, logger)
@@ -333,21 +335,6 @@ func splitCompositeTypes(name string, typeOpen int32, typeClose int32) []string 
 		parts = append(parts, strings.TrimSpace(segment))
 	}
 	return parts
-}
-
-// Convert long Java style type definition into the short CQL type names.
-func apacheToCassandraType(t string) string {
-	t = strings.Replace(t, apacheCassandraTypePrefix, "", -1)
-	t = strings.Replace(t, "(", "<", -1)
-	t = strings.Replace(t, ")", ">", -1)
-	types := strings.FieldsFunc(t, func(r rune) bool {
-		return r == '<' || r == '>' || r == ','
-	})
-	for _, typ := range types {
-		t = strings.Replace(t, typ, getApacheCassandraType(typ).String(), -1)
-	}
-	// This is done so it exactly matches what Cassandra returns
-	return strings.Replace(t, ",", ", ", -1)
 }
 
 func getApacheCassandraType(class string) Type {
