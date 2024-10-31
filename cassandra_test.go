@@ -3611,6 +3611,10 @@ func TestStmtCacheUsesOverriddenKeyspace(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 
+	if session.cfg.ProtoVersion < protoVersion5 {
+		t.Skip("This tests only runs on proto > 4 due SetKeyspace availability")
+	}
+
 	const createKeyspaceStmt = `CREATE KEYSPACE IF NOT EXISTS %s
 	WITH replication = {
 		'class' : 'SimpleStrategy',
@@ -3667,6 +3671,10 @@ func TestStmtCacheUsesOverriddenKeyspace(t *testing.T) {
 func TestRoutingKeyCacheUsesOverriddenKeyspace(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
+
+	if session.cfg.ProtoVersion < protoVersion5 {
+		t.Skip("This tests only runs on proto > 4 due SetKeyspace availability")
+	}
 
 	const createKeyspaceStmt = `CREATE KEYSPACE IF NOT EXISTS %s
 	WITH replication = {
