@@ -1778,7 +1778,7 @@ func unmarshalVector(info VectorType, data []byte, value interface{}) error {
 		}
 		if k == reflect.Array {
 			if rv.Len() != info.Dimensions {
-				return unmarshalErrorf("unmarshal vector: array with wrong size")
+				return unmarshalErrorf("unmarshal vector: array of size %d cannot store vector of %d dimensions", rv.Len(), info.Dimensions)
 			}
 		} else {
 			rv.Set(reflect.MakeSlice(t, info.Dimensions, info.Dimensions))

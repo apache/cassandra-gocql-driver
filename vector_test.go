@@ -153,8 +153,7 @@ func TestVector_Types(t *testing.T) {
 				actual := a.([]net.IP)
 				assertEqual(t, "vector size", len(expected), len(actual))
 				for i, _ := range expected {
-					// TODO(lantoniak): Find a better way to compare IP addresses
-					assertEqual(t, "vector", expected[i].String(), actual[i].String())
+					assertTrue(t, "vector", expected[i].Equal(actual[i]))
 				}
 			},
 		},
@@ -163,7 +162,6 @@ func TestVector_Types(t *testing.T) {
 		{name: "smallint", cqlType: TypeSmallInt.String(), value: []int16{127, 256, -1234}},
 		{name: "tinyint", cqlType: TypeTinyInt.String(), value: []int8{127, 9, -123}},
 		{name: "duration", cqlType: TypeDuration.String(), value: []Duration{duration1, duration2, duration3}},
-		// TODO(lantonia): Test vector of custom types
 		{name: "vector_vector_float", cqlType: "vector<float, 5>", value: [][]float32{{0.1, -1.2, 3, 5, 5}, {10.1, -122222.0002, 35.0, 1, 1}, {0, 0, 0, 0, 0}}},
 		{name: "vector_vector_set_float", cqlType: "vector<set<float>, 5>", value: [][][]float32{
 			{{1, 2}, {2, -1}, {3}, {0}, {-1.3}},
