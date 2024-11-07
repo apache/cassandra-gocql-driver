@@ -34,3 +34,4 @@ github:
     projects: false
   autolink_jira:
     - CASSANDRA
+    - CASSGO
