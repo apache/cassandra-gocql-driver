@@ -18,6 +18,7 @@
 module github.com/gocql/gocql
 
 require (
+	github.com/gocql/gocql/lz4 v0.0.0-00010101000000-000000000000
 	github.com/golang/snappy v0.0.3
 	github.com/hailocab/go-hostpool v0.0.0-20160125115350-e80d13ce29ed
 	github.com/stretchr/testify v1.9.0
@@ -29,8 +30,11 @@ require (
 	github.com/bmizerany/assert v0.0.0-20160611221934-b7ed37b82869 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/kr/pretty v0.1.0 // indirect
+	github.com/pierrec/lz4/v4 v4.1.8 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
+
+replace github.com/gocql/gocql/lz4 => ./lz4
 
 go 1.19
