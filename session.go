@@ -377,7 +377,7 @@ func (s *Session) AwaitSchemaAgreement(ctx context.Context) error {
 		return errNoControl
 	}
 	return s.control.withConn(func(conn *Conn) *Iter {
-		return &Iter{err: conn.awaitSchemaAgreement(ctx)}
+		return NewIterErr(nil, conn.awaitSchemaAgreement(ctx))
 	}).err
 }
 
@@ -537,15 +537,15 @@ func (s *Session) initialized() bool {
 	return initialized
 }
 
-func (s *Session) executeQuery(qry *Query) (it *Iter) {
+func (s *Session) executeQuery(qry *Query, it *Iter) *Iter {
 	// fail fast
 	if s.Closed() {
-		return &Iter{err: ErrSessionClosed}
+		return NewIterErr(qry, ErrSessionClosed)
 	}
 
-	iter, err := s.executor.executeQuery(qry)
+	iter, err := s.executor.executeQuery(qry, it)
 	if err != nil {
-		return &Iter{err: err}
+		return NewIterErr(qry, err)
 	}
 	if iter == nil {
 		panic("nil iter")
@@ -727,7 +727,7 @@ func (s *Session) routingKeyInfo(ctx context.Context, stmt string) (*routingKeyI
 	return routingKeyInfo, nil
 }
 
-func (b *Batch) execute(ctx context.Context, conn *Conn) *Iter {
+func (b *Batch) execute(ctx context.Context, conn *Conn, it *Iter) *Iter {
 	return conn.executeBatch(ctx, b)
 }
 
@@ -741,19 +741,19 @@ func (b *Batch) Exec() error {
 func (s *Session) executeBatch(batch *Batch) *Iter {
 	// fail fast
 	if s.Closed() {
-		return &Iter{err: ErrSessionClosed}
+		return NewIterErr(batch, ErrSessionClosed)
 	}
 
 	// Prevent the execution of the batch if greater than the limit
 	// Currently batches have a limit of 65536 queries.
 	// https://datastax-oss.atlassian.net/browse/JAVA-229
 	if batch.Size() > BatchSizeMaximum {
-		return &Iter{err: ErrTooManyStmts}
+		return NewIterErr(batch, ErrTooManyStmts)
 	}
 
-	iter, err := s.executor.executeQuery(batch)
+	iter, err := s.executor.executeQuery(batch, nil)
 	if err != nil {
-		return &Iter{err: err}
+		return NewIterErr(batch, err)
 	}
 
 	return iter
@@ -761,9 +761,9 @@ func (s *Session) executeBatch(batch *Batch) *Iter {
 
 // ExecuteBatch executes a batch operation and returns nil if successful
 // otherwise an error is returned describing the failure.
-func (s *Session) ExecuteBatch(batch *Batch) error {
+func (s *Session) ExecuteBatch(batch *Batch) (*Iter, error) {
 	iter := s.executeBatch(batch)
-	return iter.Close()
+	return iter, iter.Close()
 }
 
 // ExecuteBatchCAS executes a batch operation and returns true if successful and
@@ -816,12 +816,31 @@ type hostMetrics struct {
 	TotalLatency int64
 }
 
+func (h *hostMetrics) merge(o *hostMetrics) {
+	h.TotalLatency += o.TotalLatency
+	h.Attempts += o.Attempts
+}
+
 type queryMetrics struct {
 	l sync.RWMutex
 	m map[string]*hostMetrics
 	// totalAttempts is total number of attempts.
 	// Equal to sum of all hostMetrics' Attempts.
 	totalAttempts int
+}
+
+func (qm *queryMetrics) merge(o *queryMetrics) {
+	o.l.Lock()
+	qm.totalAttempts += o.totalAttempts
+	for h, m := range o.m {
+		_, exists := qm.m[h]
+		if exists {
+			qm.m[h].merge(m)
+		} else {
+			qm.m[h] = m
+		}
+	}
+	o.l.Unlock()
 }
 
 // preFilledQueryMetrics initializes new queryMetrics based on per-host supplied data.
@@ -929,7 +948,6 @@ type Query struct {
 	context               context.Context
 	idempotent            bool
 	customPayload         map[string][]byte
-	metrics               *queryMetrics
 	refCount              uint32
 
 	disableAutoPage bool
@@ -943,6 +961,37 @@ type Query struct {
 
 	// routingInfo is a pointer because Query can be copied and copyable struct can't hold a mutex.
 	routingInfo *queryRoutingInfo
+}
+
+func (q *Query) Clone() ExecutableQuery {
+	return &Query{
+		stmt:                  q.stmt,
+		values:                q.values,
+		cons:                  q.cons,
+		pageSize:              q.pageSize,
+		routingKey:            q.routingKey,
+		pageState:             q.pageState,
+		prefetch:              q.prefetch,
+		trace:                 q.trace,
+		observer:              q.observer,
+		session:               q.session,
+		conn:                  q.conn,
+		rt:                    q.rt,
+		spec:                  q.spec,
+		binding:               q.binding,
+		serialCons:            q.serialCons,
+		defaultTimestamp:      q.defaultTimestamp,
+		defaultTimestampValue: q.defaultTimestampValue,
+		disableSkipMetadata:   q.disableSkipMetadata,
+		context:               q.context,
+		idempotent:            q.idempotent,
+		customPayload:         q.customPayload,
+		refCount:              q.refCount,
+		disableAutoPage:       q.disableAutoPage,
+		getKeyspace:           q.getKeyspace,
+		skipPrepare:           q.skipPrepare,
+		routingInfo:           q.routingInfo,
+	}
 }
 
 type queryRoutingInfo struct {
@@ -967,7 +1016,6 @@ func (q *Query) defaultsFromSession() {
 	q.serialCons = s.cfg.SerialConsistency
 	q.defaultTimestamp = s.cfg.DefaultTimestamp
 	q.idempotent = s.cfg.DefaultIdempotence
-	q.metrics = &queryMetrics{m: make(map[string]*hostMetrics)}
 
 	q.spec = &NonSpeculativeExecution{}
 	s.mu.RUnlock()
@@ -987,24 +1035,6 @@ func (q Query) Values() []interface{} {
 // String implements the stringer interface.
 func (q Query) String() string {
 	return fmt.Sprintf("[query statement=%q values=%+v consistency=%s]", q.stmt, q.values, q.cons)
-}
-
-// Attempts returns the number of times the query was executed.
-func (q *Query) Attempts() int {
-	return q.metrics.attempts()
-}
-
-func (q *Query) AddAttempts(i int, host *HostInfo) {
-	q.metrics.attempt(i, 0, host, false)
-}
-
-// Latency returns the average amount of nanoseconds per attempt of the query.
-func (q *Query) Latency() int64 {
-	return q.metrics.latency()
-}
-
-func (q *Query) AddLatency(l int64, host *HostInfo) {
-	q.metrics.attempt(0, time.Duration(l)*time.Nanosecond, host, false)
 }
 
 // Consistency sets the consistency level for this query. If no consistency
@@ -1114,13 +1144,13 @@ func (q *Query) Cancel() {
 	// TODO: delete
 }
 
-func (q *Query) execute(ctx context.Context, conn *Conn) *Iter {
-	return conn.executeQuery(ctx, q)
+func (q *Query) execute(ctx context.Context, conn *Conn, it *Iter) *Iter {
+	return conn.executeQuery(ctx, q, it)
 }
 
 func (q *Query) attempt(keyspace string, end, start time.Time, iter *Iter, host *HostInfo) {
 	latency := end.Sub(start)
-	attempt, metricsForHost := q.metrics.attempt(1, latency, host, q.observer != nil)
+	attempt, metricsForHost := iter.metrics.attempt(1, latency, host, q.observer != nil)
 
 	if q.observer != nil {
 		q.observer.ObserveQuery(q.Context(), ObservedQuery{
@@ -1315,14 +1345,14 @@ func isUseStatement(stmt string) bool {
 // over all results.
 func (q *Query) Iter() *Iter {
 	if isUseStatement(q.stmt) {
-		return &Iter{err: ErrUseStmt}
+		return NewIterErr(q, ErrUseStmt)
 	}
 	// if the query was specifically run on a connection then re-use that
 	// connection when fetching the next results
 	if q.conn != nil {
-		return q.conn.executeQuery(q.Context(), q)
+		return q.conn.executeQuery(q.Context(), q, nil)
 	}
-	return q.session.executeQuery(q)
+	return q.session.executeQuery(q, nil)
 }
 
 // MapScan executes the query, copies the columns of the first selected
@@ -1434,6 +1464,7 @@ func (q *Query) releaseAfterExecution() {
 // were returned by a query. The iterator might send additional queries to the
 // database during the iteration if paging was enabled.
 type Iter struct {
+	qry     ExecutableQuery
 	err     error
 	pos     int
 	meta    resultMetadata
@@ -1441,8 +1472,70 @@ type Iter struct {
 	next    *nextIter
 	host    *HostInfo
 
+	metrics *queryMetrics
+
 	framer *framer
 	closed int32
+}
+
+func newIter(qry ExecutableQuery) *Iter {
+	return &Iter{
+		qry:     qry,
+		metrics: &queryMetrics{m: make(map[string]*hostMetrics)},
+	}
+}
+
+func newIterFramer(qry ExecutableQuery, f *framer) *Iter {
+	return &Iter{
+		qry:     qry,
+		framer:  f,
+		metrics: &queryMetrics{m: make(map[string]*hostMetrics)},
+	}
+}
+
+func NewIterErr(qry ExecutableQuery, e error) *Iter {
+	return newIterErrFramer(qry, e, nil)
+}
+
+func NewIterErrFromIter(qry ExecutableQuery, e error, iter *Iter) *Iter {
+	i := newIterErrFramer(qry, e, nil)
+	if iter != nil {
+		i.metrics = iter.metrics
+	}
+	return i
+}
+
+func newIterErrFramer(qry ExecutableQuery, e error, f *framer) *Iter {
+	return &Iter{
+		qry:     qry,
+		err:     e,
+		framer:  f,
+		metrics: &queryMetrics{m: make(map[string]*hostMetrics)},
+	}
+}
+
+// merge state of two iterators
+func (iter *Iter) merge(other *Iter) {
+	if other != nil {
+		iter.metrics.merge(other.metrics)
+	}
+}
+
+// GetQuery returns single CQL query or batch associated with this iterator
+func (iter *Iter) GetQuery() ExecutableQuery {
+	return iter.qry
+}
+
+func (iter *Iter) GetConsistency() Consistency {
+	return iter.qry.GetConsistency()
+}
+
+func (iter *Iter) SetConsistency(c Consistency) {
+	iter.qry.SetConsistency(c)
+}
+
+func (iter *Iter) Context() context.Context {
+	return iter.qry.Context()
 }
 
 // Host returns the host which the query was sent to.
@@ -1453,6 +1546,24 @@ func (iter *Iter) Host() *HostInfo {
 // Columns returns the name and type of the selected columns.
 func (iter *Iter) Columns() []ColumnInfo {
 	return iter.meta.columns
+}
+
+// Attempts returns the number of times the query was executed.
+func (iter *Iter) Attempts() int {
+	return iter.metrics.attempts()
+}
+
+func (iter *Iter) AddAttempts(i int, host *HostInfo) {
+	iter.metrics.attempt(i, 0, host, false)
+}
+
+// Latency returns the average amount of nanoseconds per attempt of the query.
+func (iter *Iter) Latency() int64 {
+	return iter.metrics.latency()
+}
+
+func (iter *Iter) AddLatency(l int64, host *HostInfo) {
+	iter.metrics.attempt(0, time.Duration(l)*time.Nanosecond, host, false)
 }
 
 type Scanner interface {
@@ -1705,11 +1816,12 @@ func (iter *Iter) NumRows() int {
 // nextIter holds state for fetching a single page in an iterator.
 // single page might be attempted multiple times due to retries.
 type nextIter struct {
-	qry   *Query
-	pos   int
-	oncea sync.Once
-	once  sync.Once
-	next  *Iter
+	iter      *Iter
+	pageState []byte
+	pos       int
+	oncea     sync.Once
+	once      sync.Once
+	next      *Iter
 }
 
 func (n *nextIter) fetchAsync() {
@@ -1722,10 +1834,11 @@ func (n *nextIter) fetch() *Iter {
 	n.once.Do(func() {
 		// if the query was specifically run on a connection then re-use that
 		// connection when fetching the next results
-		if n.qry.conn != nil {
-			n.next = n.qry.conn.executeQuery(n.qry.Context(), n.qry)
+		qry := n.iter.qry.(*Query)
+		if qry.conn != nil {
+			n.next = qry.conn.executeQuery(qry.Context(), qry, n.iter)
 		} else {
-			n.next = n.qry.session.executeQuery(n.qry)
+			n.next = qry.session.executeQuery(qry, n.iter)
 		}
 	})
 	return n.next
@@ -1748,7 +1861,6 @@ type Batch struct {
 	context               context.Context
 	cancelBatch           func()
 	keyspace              string
-	metrics               *queryMetrics
 
 	// routingInfo is a pointer because Query can be copied and copyable struct can't hold a mutex.
 	routingInfo *queryRoutingInfo
@@ -1774,13 +1886,34 @@ func (s *Session) Batch(typ BatchType) *Batch {
 		Cons:             s.cons,
 		defaultTimestamp: s.cfg.DefaultTimestamp,
 		keyspace:         s.cfg.Keyspace,
-		metrics:          &queryMetrics{m: make(map[string]*hostMetrics)},
 		spec:             &NonSpeculativeExecution{},
 		routingInfo:      &queryRoutingInfo{},
 	}
 
 	s.mu.RUnlock()
 	return batch
+}
+
+func (b *Batch) Clone() ExecutableQuery {
+	return &Batch{
+		Type:                  b.Type,
+		Entries:               b.Entries,
+		Cons:                  b.Cons,
+		routingKey:            b.routingKey,
+		CustomPayload:         b.CustomPayload,
+		rt:                    b.rt,
+		spec:                  b.spec,
+		trace:                 b.trace,
+		observer:              b.observer,
+		session:               b.session,
+		serialCons:            b.serialCons,
+		defaultTimestamp:      b.defaultTimestamp,
+		defaultTimestampValue: b.defaultTimestampValue,
+		context:               b.context,
+		cancelBatch:           b.cancelBatch,
+		keyspace:              b.keyspace,
+		routingInfo:           b.routingInfo,
+	}
 }
 
 // Trace enables tracing of this batch. Look at the documentation of the
@@ -1804,24 +1937,6 @@ func (b *Batch) Keyspace() string {
 // Batch has no reasonable eqivalent of Query.Table().
 func (b *Batch) Table() string {
 	return b.routingInfo.table
-}
-
-// Attempts returns the number of attempts made to execute the batch.
-func (b *Batch) Attempts() int {
-	return b.metrics.attempts()
-}
-
-func (b *Batch) AddAttempts(i int, host *HostInfo) {
-	b.metrics.attempt(i, 0, host, false)
-}
-
-// Latency returns the average number of nanoseconds to execute a single attempt of the batch.
-func (b *Batch) Latency() int64 {
-	return b.metrics.latency()
-}
-
-func (b *Batch) AddLatency(l int64, host *HostInfo) {
-	b.metrics.attempt(0, time.Duration(l)*time.Nanosecond, host, false)
 }
 
 // GetConsistency returns the currently configured consistency level for the batch
@@ -1947,7 +2062,7 @@ func (b *Batch) WithTimestamp(timestamp int64) *Batch {
 
 func (b *Batch) attempt(keyspace string, end, start time.Time, iter *Iter, host *HostInfo) {
 	latency := end.Sub(start)
-	attempt, metricsForHost := b.metrics.attempt(1, latency, host, b.observer != nil)
+	attempt, metricsForHost := iter.metrics.attempt(1, latency, host, b.observer != nil)
 
 	if b.observer == nil {
 		return
