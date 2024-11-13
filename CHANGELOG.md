@@ -12,6 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Don't restrict server authenticator unless PasswordAuthentictor.AllowedAuthenticators is provided (CASSGO-19)
 
+- Remove global NewBatch function (CASSGO-15)
+
 ### Fixed
 
 ## [1.7.0] - 2024-09-23
