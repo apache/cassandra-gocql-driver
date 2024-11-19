@@ -24,7 +24,7 @@
 
 package gocql
 
-//This file will be the future home for more policies
+// This file will be the future home for more policies
 
 import (
 	"context"
@@ -157,7 +157,7 @@ type RetryPolicy interface {
 //	//Assign to a query
 //	query.RetryPolicy(&gocql.SimpleRetryPolicy{NumRetries: 1})
 type SimpleRetryPolicy struct {
-	NumRetries int //Number of times to retry a query
+	NumRetries int // Number of times to retry a query
 }
 
 // Attempt tells gocql to attempt the query again based on query.Attempts being less
@@ -696,8 +696,8 @@ type dcAwareRR struct {
 }
 
 // DCAwareRoundRobinPolicy is a host selection policies which will prioritize and
-// return hosts which are in the local datacentre before returning hosts in all
-// other datercentres
+// return hosts which are in the local datacenter before returning hosts in all
+// other datacenters
 func DCAwareRoundRobinPolicy(localDC string) HostSelectionPolicy {
 	return &dcAwareRR{local: localDC}
 }
@@ -742,7 +742,6 @@ func roundRobbin(shift int, hosts ...[]*HostInfo) NextHost {
 	currentlyObserved := 0
 
 	return func() SelectedHost {
-
 		// iterate over layers
 		for {
 			if currentLayer == len(hosts) {
@@ -778,7 +777,7 @@ func (d *dcAwareRR) Pick(q ExecutableQuery) NextHost {
 
 // RackAwareRoundRobinPolicy is a host selection policies which will prioritize and
 // return hosts which are in the local rack, before hosts in the local datacenter but
-// a different rack, before hosts in all other datercentres
+// a different rack, before hosts in all other datacenters
 
 type rackAwareRR struct {
 	// lastUsedHostIdx keeps the index of the last used host.
@@ -888,14 +887,13 @@ func (s *singleHostReadyPolicy) Ready() bool {
 type ConvictionPolicy interface {
 	// Implementations should return `true` if the host should be convicted, `false` otherwise.
 	AddFailure(error error, host *HostInfo) bool
-	//Implementations should clear out any convictions or state regarding the host.
+	// Implementations should clear out any convictions or state regarding the host.
 	Reset(host *HostInfo)
 }
 
 // SimpleConvictionPolicy implements a ConvictionPolicy which convicts all hosts
 // regardless of error
-type SimpleConvictionPolicy struct {
-}
+type SimpleConvictionPolicy struct{}
 
 func (e *SimpleConvictionPolicy) AddFailure(error error, host *HostInfo) bool {
 	return true

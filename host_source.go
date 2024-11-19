@@ -35,8 +35,10 @@ import (
 	"time"
 )
 
-var ErrCannotFindHost = errors.New("cannot find host")
-var ErrHostAlreadyExists = errors.New("host already exists")
+var (
+	ErrCannotFindHost    = errors.New("cannot find host")
+	ErrHostAlreadyExists = errors.New("host already exists")
+)
 
 type nodeState int32
 
@@ -111,7 +113,6 @@ func (c cassVersion) Before(major, minor, patch int) bool {
 		} else if c.Minor == minor && c.Patch < patch {
 			return true
 		}
-
 	}
 	return false
 }
@@ -439,7 +440,7 @@ func (h *HostInfo) String() string {
 	connectAddr, source := h.connectAddressLocked()
 	return fmt.Sprintf("[HostInfo hostname=%q connectAddress=%q peer=%q rpc_address=%q broadcast_address=%q "+
 		"preferred_ip=%q connect_addr=%q connect_addr_source=%q "+
-		"port=%d data_centre=%q rack=%q host_id=%q version=%q state=%s num_tokens=%d]",
+		"port=%d data_center=%q rack=%q host_id=%q version=%q state=%s num_tokens=%d]",
 		h.hostname, h.connectAddress, h.peer, h.rpcAddress, h.broadcastAddress, h.preferredIP,
 		connectAddr, source,
 		h.port, h.dataCenter, h.rack, h.hostId, h.version, h.state, len(h.tokens))

@@ -95,8 +95,10 @@ func TestFilter_DenyAll(t *testing.T) {
 	}
 }
 
-func TestFilter_DataCentre(t *testing.T) {
-	f := DataCentreHostFilter("dc1")
+func TestFilter_DataCenter(t *testing.T) {
+	f := DataCenterHostFilter("dc1")
+	fDeprecated := DataCentreHostFilter("dc1")
+
 	tests := [...]struct {
 		dc     string
 		accept bool
@@ -112,6 +114,10 @@ func TestFilter_DataCentre(t *testing.T) {
 			}
 		} else if test.accept {
 			t.Errorf("%d: should have been accepted but wasn't", i)
+		}
+
+		if f.Accept(&HostInfo{dataCenter: test.dc}) != fDeprecated.Accept(&HostInfo{dataCenter: test.dc}) {
+			t.Errorf("%d: DataCenterHostFilter and DataCentreHostFilter should be the same", i)
 		}
 	}
 }
