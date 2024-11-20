@@ -27,6 +27,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Keep nil slices in MapScan (CASSGO-44)
 
 - Improve error messages for marshalling (CASSGO-38)
+
+- Remove HostPoolHostPolicy from gocql package (CASSGO-21)
+
 ### Fixed
 
 - Retry policy now takes into account query idempotency (CASSGO-27)
