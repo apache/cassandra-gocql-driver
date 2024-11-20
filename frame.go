@@ -275,17 +275,6 @@ func ParseConsistencyWrapper(s string) (consistency Consistency, err error) {
 	return
 }
 
-// MustParseConsistency is the same as ParseConsistency except it returns
-// an error (never). It is kept here since breaking changes are not good.
-// DEPRECATED: use ParseConsistency if you want a panic on parse error.
-func MustParseConsistency(s string) (Consistency, error) {
-	c, err := ParseConsistencyWrapper(s)
-	if err != nil {
-		panic(err)
-	}
-	return c, nil
-}
-
 type SerialConsistency uint16
 
 const (

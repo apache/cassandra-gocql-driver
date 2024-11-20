@@ -39,15 +39,13 @@ import (
 
 // schema metadata for a keyspace
 type KeyspaceMetadata struct {
-	Name            string
-	DurableWrites   bool
-	StrategyClass   string
-	StrategyOptions map[string]interface{}
-	Tables          map[string]*TableMetadata
-	Functions       map[string]*FunctionMetadata
-	Aggregates      map[string]*AggregateMetadata
-	// Deprecated: use the MaterializedViews field for views and UserTypes field for udts instead.
-	Views             map[string]*ViewMetadata
+	Name              string
+	DurableWrites     bool
+	StrategyClass     string
+	StrategyOptions   map[string]interface{}
+	Tables            map[string]*TableMetadata
+	Functions         map[string]*FunctionMetadata
+	Aggregates        map[string]*AggregateMetadata
 	MaterializedViews map[string]*MaterializedViewMetadata
 	UserTypes         map[string]*UserTypeMetadata
 }
@@ -107,15 +105,6 @@ type AggregateMetadata struct {
 
 	stateFunc string
 	finalFunc string
-}
-
-// ViewMetadata holds the metadata for views.
-// Deprecated: this is kept for backwards compatibility issues. Use MaterializedViewMetadata.
-type ViewMetadata struct {
-	Keyspace   string
-	Name       string
-	FieldNames []string
-	FieldTypes []TypeInfo
 }
 
 // MaterializedViewMetadata holds the metadata for materialized views.
@@ -304,7 +293,7 @@ func (s *schemaDescriber) refreshSchema(keyspaceName string) error {
 	if err != nil {
 		return err
 	}
-	views, err := getViewsMetadata(s.session, keyspaceName)
+	userTypes, err := getUserTypeMetadata(s.session, keyspaceName)
 	if err != nil {
 		return err
 	}
@@ -314,7 +303,7 @@ func (s *schemaDescriber) refreshSchema(keyspaceName string) error {
 	}
 
 	// organize the schema data
-	compileMetadata(s.session.cfg.ProtoVersion, keyspace, tables, columns, functions, aggregates, views,
+	compileMetadata(s.session.cfg.ProtoVersion, keyspace, tables, columns, functions, aggregates, userTypes,
 		materializedViews, s.session.logger)
 
 	// update the cache
@@ -335,7 +324,7 @@ func compileMetadata(
 	columns []ColumnMetadata,
 	functions []FunctionMetadata,
 	aggregates []AggregateMetadata,
-	views []ViewMetadata,
+	uTypes []UserTypeMetadata,
 	materializedViews []MaterializedViewMetadata,
 	logger StdLogger,
 ) {
@@ -355,22 +344,9 @@ func compileMetadata(
 		aggregates[i].StateFunc = *keyspace.Functions[aggregates[i].stateFunc]
 		keyspace.Aggregates[aggregates[i].Name] = &aggregates[i]
 	}
-	keyspace.Views = make(map[string]*ViewMetadata, len(views))
-	for i := range views {
-		keyspace.Views[views[i].Name] = &views[i]
-	}
-	// Views currently holds the types and hasn't been deleted for backward compatibility issues.
-	// That's why it's ok to copy Views into Types in this case. For the real Views use MaterializedViews.
-	types := make([]UserTypeMetadata, len(views))
-	for i := range views {
-		types[i].Keyspace = views[i].Keyspace
-		types[i].Name = views[i].Name
-		types[i].FieldNames = views[i].FieldNames
-		types[i].FieldTypes = views[i].FieldTypes
-	}
-	keyspace.UserTypes = make(map[string]*UserTypeMetadata, len(views))
-	for i := range types {
-		keyspace.UserTypes[types[i].Name] = &types[i]
+	keyspace.UserTypes = make(map[string]*UserTypeMetadata, len(uTypes))
+	for i := range uTypes {
+		keyspace.UserTypes[uTypes[i].Name] = &uTypes[i]
 	}
 	keyspace.MaterializedViews = make(map[string]*MaterializedViewMetadata, len(materializedViews))
 	for i, _ := range materializedViews {
@@ -954,7 +930,7 @@ func getTypeInfo(t string, logger StdLogger) TypeInfo {
 	return getCassandraType(t, logger)
 }
 
-func getViewsMetadata(session *Session, keyspaceName string) ([]ViewMetadata, error) {
+func getUserTypeMetadata(session *Session, keyspaceName string) ([]UserTypeMetadata, error) {
 	if session.cfg.ProtoVersion == protoVersion1 {
 		return nil, nil
 	}
@@ -972,31 +948,31 @@ func getViewsMetadata(session *Session, keyspaceName string) ([]ViewMetadata, er
 		FROM %s
 		WHERE keyspace_name = ?`, tableName)
 
-	var views []ViewMetadata
+	var uTypes []UserTypeMetadata
 
 	rows := session.control.query(stmt, keyspaceName).Scanner()
 	for rows.Next() {
-		view := ViewMetadata{Keyspace: keyspaceName}
+		uType := UserTypeMetadata{Keyspace: keyspaceName}
 		var argumentTypes []string
-		err := rows.Scan(&view.Name,
-			&view.FieldNames,
+		err := rows.Scan(&uType.Name,
+			&uType.FieldNames,
 			&argumentTypes,
 		)
 		if err != nil {
 			return nil, err
 		}
-		view.FieldTypes = make([]TypeInfo, len(argumentTypes))
+		uType.FieldTypes = make([]TypeInfo, len(argumentTypes))
 		for i, argumentType := range argumentTypes {
-			view.FieldTypes[i] = getTypeInfo(argumentType, session.logger)
+			uType.FieldTypes[i] = getTypeInfo(argumentType, session.logger)
 		}
-		views = append(views, view)
+		uTypes = append(uTypes, uType)
 	}
 
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
 
-	return views, nil
+	return uTypes, nil
 }
 
 func getMaterializedViewsMetadata(session *Session, keyspaceName string) ([]MaterializedViewMetadata, error) {
