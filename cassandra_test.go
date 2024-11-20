@@ -44,7 +44,7 @@ import (
 	"time"
 	"unicode"
 
-	inf "gopkg.in/inf.v0"
+	"gopkg.in/inf.v0"
 )
 
 func TestEmptyHosts(t *testing.T) {
@@ -3286,5 +3286,165 @@ func TestQuery_NamedValues(t *testing.T) {
 	var value string
 	if err := session.Query("SELECT VALUE from gocql_test.named_query WHERE id = :id", NamedValue("id", 1)).Scan(&value); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestScanToAny(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+	ctx := context.Background()
+
+	dataTypes := []struct {
+		tableName   string
+		createQuery string
+		insertQuery string
+		expectedVal interface{}
+	}{
+		{
+			"scan_to_any_varchar",
+			"CREATE TABLE IF NOT EXISTS scan_to_any_varchar (id int PRIMARY KEY, val varchar)",
+			"INSERT INTO scan_to_any_varchar (id, val) VALUES (?, ?)",
+			"test",
+		},
+		{
+			"scan_to_any_bool",
+			"CREATE TABLE IF NOT EXISTS scan_to_any_bool (id int PRIMARY KEY, val boolean)",
+			"INSERT INTO scan_to_any_bool (id, val) VALUES (?, ?)",
+			true,
+		},
+		{
+			"scan_to_any_int",
+			"CREATE TABLE IF NOT EXISTS scan_to_any_int (id int PRIMARY KEY, val int)",
+			"INSERT INTO scan_to_any_int (id, val) VALUES (?, ?)",
+			42,
+		},
+		{
+			"scan_to_any_float",
+			"CREATE TABLE IF NOT EXISTS  scan_to_any_float (id int PRIMARY KEY, val float)",
+			"INSERT INTO scan_to_any_float (id, val) VALUES (?, ?)",
+			float32(3.14),
+		},
+		{
+			"scan_to_any_double",
+			"CREATE TABLE IF NOT EXISTS  scan_to_any_double (id int PRIMARY KEY, val double)",
+			"INSERT INTO scan_to_any_double (id, val) VALUES (?, ?)",
+			3.14159,
+		},
+		{
+			"scan_to_any_decimal",
+			"CREATE TABLE IF NOT EXISTS  scan_to_any_decimal (id int PRIMARY KEY, val decimal)",
+			"INSERT INTO scan_to_any_decimal (id, val) VALUES (?, ?)",
+			inf.NewDec(12345, 2), // Example decimal value
+		},
+		{
+			"scan_to_any_time",
+			"CREATE TABLE IF NOT EXISTS  scan_to_any_time (id int PRIMARY KEY, val time)",
+			"INSERT INTO scan_to_any_time (id, val) VALUES (?, ?)",
+			time.Duration(1000),
+		},
+		{
+			"scan_to_any_timestamp",
+			"CREATE TABLE IF NOT EXISTS  scan_to_any_timestamp (id int PRIMARY KEY, val timestamp)",
+			"INSERT INTO scan_to_any_timestamp (id, val) VALUES (?, ?)",
+			time.Now().UTC().Truncate(time.Millisecond),
+		},
+		{
+			"scan_to_any_inet",
+			"CREATE TABLE IF NOT EXISTS  scan_to_any_inet (id int PRIMARY KEY, val inet)",
+			"INSERT INTO scan_to_any_inet (id, val) VALUES (?, ?)",
+			net.ParseIP("192.168.0.1"),
+		},
+		{
+			"scan_to_any_uuid",
+			"CREATE TABLE IF NOT EXISTS  scan_to_any_uuid (id int PRIMARY KEY, val uuid)",
+			"INSERT INTO scan_to_any_uuid (id, val) VALUES (?, ?)",
+			TimeUUID().String(),
+		},
+		{
+			"scan_to_any_date",
+			"CREATE TABLE IF NOT EXISTS  scan_to_any_date (id int PRIMARY KEY, val date)",
+			"INSERT INTO scan_to_any_date (id, val) VALUES (?, ?)",
+			time.Now().UTC().Truncate(time.Hour * 24),
+		},
+		{
+			"scan_to_any_duration",
+			"CREATE TABLE IF NOT EXISTS  scan_to_any_duration (id int PRIMARY KEY, val duration)",
+			"INSERT INTO scan_to_any_duration (id, val) VALUES (?, ?)",
+			Duration{0, 0, 123},
+		},
+	}
+
+	for _, dt := range dataTypes {
+		t.Run(fmt.Sprintf("Test_%s", dt.tableName), func(t *testing.T) {
+			if err := session.Query(dt.createQuery).WithContext(ctx).Exec(); err != nil {
+				t.Fatal(err)
+			}
+
+			if err := session.Query(dt.insertQuery, 1, dt.expectedVal).WithContext(ctx).Exec(); err != nil {
+				t.Fatal(err)
+			}
+
+			var out interface{}
+			if err := session.Query(fmt.Sprintf("SELECT val FROM %s WHERE id = 1", dt.tableName)).WithContext(ctx).Scan(&out); err != nil {
+				t.Fatal(err)
+			}
+
+			if err := session.Query(fmt.Sprintf("DROP TABLE %s", dt.tableName)).WithContext(ctx).Exec(); err != nil {
+				t.Fatal(err)
+			}
+
+			switch dt.tableName {
+			case "scan_to_any_decimal":
+				result, ok := out.(inf.Dec)
+				if !ok {
+					t.Fatal("expected inf.Dec, got", out)
+				}
+				expected := inf.NewDec(12345, 2)
+
+				if result.Cmp(expected) != 0 {
+					t.Fatalf("expected %v, got %v", expected, out)
+				}
+			case "scan_to_any_inet":
+				result, ok := out.(net.IP)
+				if !ok {
+					t.Fatal("expected net.IP, got", out)
+				}
+				expected, ok := dt.expectedVal.(net.IP)
+				if !ok {
+					t.Fatal("expected net.IP, got", dt.expectedVal)
+				}
+				if result.String() != expected.String() {
+					t.Fatalf("expected %v, got %v", expected, out)
+				}
+			case "scan_to_any_date":
+				result, ok := out.(time.Time)
+				if !ok {
+					t.Fatal("expected time.Time, got", out)
+				}
+				expected, ok := dt.expectedVal.(time.Time)
+				if !ok {
+					t.Fatal("expected time.Time, got", dt.expectedVal)
+				}
+				if result.String() != expected.String() {
+					t.Fatalf("expected %v, got %v", expected, out)
+				}
+			case "scan_to_any_duration":
+				result, ok := out.(Duration)
+				if !ok {
+					t.Fatal("expected time.Duration, got", out)
+				}
+				expected, ok := dt.expectedVal.(Duration)
+				if !ok {
+					t.Fatal("expected time.Duration, got", dt.expectedVal)
+				}
+				if result != expected {
+					t.Fatalf("expected %v, got %v", expected, out)
+				}
+			default:
+				if out != dt.expectedVal {
+					t.Fatalf("expected %v, got %v", dt.expectedVal, out)
+				}
+			}
+		})
 	}
 }
