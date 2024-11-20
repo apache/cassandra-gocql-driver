@@ -180,7 +180,7 @@ func TestUDT_Proto2error(t *testing.T) {
 	// TODO(zariel): move this to marshal test?
 	_, err := Marshal(NativeType{custom: "org.apache.cassandra.db.marshal.UserType.Type", proto: 2}, 1)
 	if err != ErrorUDTUnavailable {
-		t.Fatalf("expected %v got %v", ErrUnavailable, err)
+		t.Fatalf("expected %v got %v", ErrorUDTUnavailable, err)
 	}
 }
 

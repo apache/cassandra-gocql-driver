@@ -177,7 +177,7 @@ func newTokenRing(partitioner string, hosts []*HostInfo) (*tokenRing, error) {
 	} else if strings.HasSuffix(partitioner, "RandomPartitioner") {
 		tokenRing.partitioner = randomPartitioner{}
 	} else {
-		return nil, fmt.Errorf("unsupported partitioner '%s'", partitioner)
+		return nil, fmt.Errorf("gocql: unsupported partitioner '%s'", partitioner)
 	}
 
 	for _, host := range hosts {

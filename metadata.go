@@ -221,7 +221,7 @@ func columnKindFromSchema(kind string) (ColumnKind, error) {
 	case "static":
 		return ColumnStatic, nil
 	default:
-		return -1, fmt.Errorf("unknown column kind: %q", kind)
+		return -1, fmt.Errorf("gocql: unknown column kind: %q", kind)
 	}
 }
 
@@ -585,7 +585,7 @@ func getKeyspaceMetadata(session *Session, keyspaceName string) (*KeyspaceMetada
 		iter.Scan(&keyspace.DurableWrites, &replication)
 		err := iter.Close()
 		if err != nil {
-			return nil, fmt.Errorf("error querying keyspace schema: %v", err)
+			return nil, fmt.Errorf("gocql: error querying keyspace schema: %w", err)
 		}
 
 		keyspace.StrategyClass = replication["class"]
@@ -611,7 +611,7 @@ func getKeyspaceMetadata(session *Session, keyspaceName string) (*KeyspaceMetada
 		iter.Scan(&keyspace.DurableWrites, &keyspace.StrategyClass, &strategyOptionsJSON)
 		err := iter.Close()
 		if err != nil {
-			return nil, fmt.Errorf("error querying keyspace schema: %v", err)
+			return nil, fmt.Errorf("gocql: error querying keyspace schema: %w", err)
 		}
 
 		err = json.Unmarshal(strategyOptionsJSON, &keyspace.StrategyOptions)
@@ -754,7 +754,7 @@ func getTableMetadata(session *Session, keyspaceName string) ([]TableMetadata, e
 
 	err := iter.Close()
 	if err != nil && err != ErrNotFound {
-		return nil, fmt.Errorf("error querying table schema: %v", err)
+		return nil, fmt.Errorf("gocql: error querying table schema: %w", err)
 	}
 
 	return tables, nil
@@ -941,7 +941,7 @@ func getColumnMetadata(session *Session, keyspaceName string) ([]ColumnMetadata,
 	}
 
 	if err != nil && err != ErrNotFound {
-		return nil, fmt.Errorf("error querying column schema: %v", err)
+		return nil, fmt.Errorf("gocql: error querying column schema: %w", err)
 	}
 
 	return columns, nil

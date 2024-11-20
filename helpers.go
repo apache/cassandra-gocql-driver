@@ -97,7 +97,7 @@ func goType(t TypeInfo) (reflect.Type, error) {
 	case TypeDuration:
 		return reflect.TypeOf(*new(Duration)), nil
 	default:
-		return nil, fmt.Errorf("cannot create Go type for unknown CQL type %s", t)
+		return nil, fmt.Errorf("gocql: cannot create Go type for unknown CQL type %s", t)
 	}
 }
 
