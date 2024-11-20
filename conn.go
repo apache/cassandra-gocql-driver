@@ -166,14 +166,6 @@ func (fn connErrorHandlerFn) HandleError(conn *Conn, err error, closed bool) {
 	fn(conn, err, closed)
 }
 
-// If not zero, how many timeouts we will allow to occur before the connection is closed
-// and restarted. This is to prevent a single query timeout from killing a connection
-// which may be serving more queries just fine.
-// Default is 0, should not be changed concurrently with queries.
-//
-// Deprecated.
-var TimeoutLimit int64 = 0
-
 // Conn is a single connection to a Cassandra node. It can be used to execute
 // queries, but users are usually advised to use a more reliable, higher
 // level API.
@@ -764,7 +756,7 @@ func (c *Conn) releaseStream(call *callReq) {
 }
 
 func (c *Conn) handleTimeout() {
-	if TimeoutLimit > 0 && atomic.AddInt64(&c.timeouts, 1) > TimeoutLimit {
+	if atomic.AddInt64(&c.timeouts, 1) > 0 {
 		c.closeWithError(ErrTooManyTimeouts)
 	}
 }

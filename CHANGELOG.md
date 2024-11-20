@@ -12,6 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Don't restrict server authenticator unless PasswordAuthentictor.AllowedAuthenticators is provided (CASSGO-19)
 
+- Cleanup of deprecated elements (CASSGO-12)
+
 - Remove global NewBatch function (CASSGO-15)
 
 - Detailed description for NumConns (CASSGO-3)
