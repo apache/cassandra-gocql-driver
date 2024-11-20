@@ -47,9 +47,9 @@ func TestBatch_Errors(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	b := session.NewBatch(LoggedBatch)
-	b.Query("SELECT * FROM batch_errors WHERE id=2 AND val=?", nil)
-	if err := session.ExecuteBatch(b); err == nil {
+	b := session.Batch(LoggedBatch)
+	b = b.Query("SELECT * FROM gocql_test.batch_errors WHERE id=2 AND val=?", nil)
+	if err := b.Exec(); err == nil {
 		t.Fatal("expected to get error for invalid query in batch")
 	}
 }
@@ -68,15 +68,17 @@ func TestBatch_WithTimestamp(t *testing.T) {
 
 	micros := time.Now().UnixNano()/1e3 - 1000
 
-	b := session.NewBatch(LoggedBatch)
+	b := session.Batch(LoggedBatch)
 	b.WithTimestamp(micros)
-	b.Query("INSERT INTO batch_ts (id, val) VALUES (?, ?)", 1, "val")
-	if err := session.ExecuteBatch(b); err != nil {
+	b = b.Query("INSERT INTO gocql_test.batch_ts (id, val) VALUES (?, ?)", 1, "val")
+	b = b.Query("INSERT INTO gocql_test.batch_ts (id, val) VALUES (?, ?)", 2, "val")
+
+	if err := b.Exec(); err != nil {
 		t.Fatal(err)
 	}
 
 	var storedTs int64
-	if err := session.Query(`SELECT writetime(val) FROM batch_ts WHERE id = ?`, 1).Scan(&storedTs); err != nil {
+	if err := session.Query(`SELECT writetime(val) FROM gocql_test.batch_ts WHERE id = ?`, 1).Scan(&storedTs); err != nil {
 		t.Fatal(err)
 	}
 

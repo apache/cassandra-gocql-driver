@@ -310,7 +310,7 @@
 // # Batches
 //
 // The CQL protocol supports sending batches of DML statements (INSERT/UPDATE/DELETE) and so does gocql.
-// Use Session.NewBatch to create a new batch and then fill-in details of individual queries.
+// Use Session.Batch to create a new batch and then fill-in details of individual queries.
 // Then execute the batch with Session.ExecuteBatch.
 //
 // Logged batches ensure atomicity, either all or none of the operations in the batch will succeed, but they have

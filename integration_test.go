@@ -218,7 +218,7 @@ func TestCustomPayloadMessages(t *testing.T) {
 	iter.Close()
 
 	// Batch Message
-	b := session.NewBatch(LoggedBatch)
+	b := session.Batch(LoggedBatch)
 	b.CustomPayload = customPayload
 	b.Query("INSERT INTO testCustomPayloadMessages(id,value) VALUES(1, 1)")
 	if err := session.ExecuteBatch(b); err != nil {
