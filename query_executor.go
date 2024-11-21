@@ -41,6 +41,7 @@ type ExecutableQuery interface {
 	Keyspace() string
 	Table() string
 	IsIdempotent() bool
+	GetHostID() string
 
 	withContext(context.Context) ExecutableQuery
 
@@ -83,12 +84,32 @@ func (q *queryExecutor) speculate(ctx context.Context, qry ExecutableQuery, sp S
 }
 
 func (q *queryExecutor) executeQuery(qry ExecutableQuery) (*Iter, error) {
-	hostIter := q.policy.Pick(qry)
+	var hostIter NextHost
+
+	// check if the host id is specified for the query,
+	// if it is, the query should be executed at the corresponding host.
+	if hostID := qry.GetHostID(); hostID != "" {
+		pool, ok := q.pool.getPoolByHostID(hostID)
+		if !ok || !pool.host.IsUp() {
+			return &Iter{err: ErrNoConnections}, nil
+		}
+		hostIter = func() SelectedHost {
+			// forcing hostIter to always return the same host
+			// it makes any retries and speculative executions run on the specified host
+			return (*selectedHost)(pool.host)
+		}
+	}
+
+	// if host is not specified for the query,
+	// then a host will be picked by HostSelectionPolicy
+	if hostIter == nil {
+		hostIter = q.policy.Pick(qry)
+	}
 
 	// check if the query is not marked as idempotent, if
 	// it is, we force the policy to NonSpeculative
 	sp := qry.speculativeExecutionPolicy()
-	if !qry.IsIdempotent() || sp.Attempts() == 0 {
+	if qry.GetHostID() != "" || !qry.IsIdempotent() || sp.Attempts() == 0 {
 		return q.do(qry.Context(), qry, hostIter), nil
 	}
 
