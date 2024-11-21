@@ -165,27 +165,39 @@ func (q *queryExecutor) do(ctx context.Context, qry ExecutableQuery, hostIter Ne
 		}
 
 		// Exit if the query was successful
-		// or no retry policy defined or retry attempts were reached
-		if iter.err == nil || !qry.IsIdempotent() || rt == nil || !rt.Attempt(qry) {
+		// or query is not idempotent or no retry policy defined
+		if iter.err == nil || !qry.IsIdempotent() || rt == nil {
 			return iter
 		}
-		lastErr = iter.err
+
+		attemptsReached := !rt.Attempt(qry)
+		retryType := rt.GetRetryType(iter.err)
+
+		var stopRetries bool
 
 		// If query is unsuccessful, check the error with RetryPolicy to retry
-		switch rt.GetRetryType(iter.err) {
+		switch retryType {
 		case Retry:
 			// retry on the same host
-			continue
-		case Rethrow, Ignore:
-			return iter
 		case RetryNextHost:
 			// retry on the next host
 			selectedHost = hostIter()
-			continue
+		case Ignore:
+			iter.err = nil
+			stopRetries = true
+		case Rethrow:
+			stopRetries = true
 		default:
 			// Undefined? Return nil and error, this will panic in the requester
 			return &Iter{err: ErrUnknownRetryType}
 		}
+
+		if stopRetries || attemptsReached {
+			return iter
+		}
+
+		lastErr = iter.err
+		continue
 	}
 
 	if lastErr != nil {
