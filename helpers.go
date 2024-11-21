@@ -25,10 +25,12 @@
 package gocql
 
 import (
+	"encoding/hex"
 	"fmt"
 	"math/big"
 	"net"
 	"reflect"
+	"strconv"
 	"strings"
 	"time"
 
@@ -162,54 +164,154 @@ func getCassandraBaseType(name string) Type {
 	}
 }
 
-func getCassandraType(name string, logger StdLogger) TypeInfo {
-	if strings.HasPrefix(name, "frozen<") {
-		return getCassandraType(strings.TrimPrefix(name[:len(name)-1], "frozen<"), logger)
-	} else if strings.HasPrefix(name, "set<") {
+// Parses long Java-style type definition to internal data structures.
+func getCassandraLongType(name string, protoVer byte, logger StdLogger) TypeInfo {
+	if strings.HasPrefix(name, SET_TYPE) {
 		return CollectionType{
-			NativeType: NativeType{typ: TypeSet},
-			Elem:       getCassandraType(strings.TrimPrefix(name[:len(name)-1], "set<"), logger),
+			NativeType: NewNativeType(protoVer, TypeSet),
+			Elem:       getCassandraLongType(strings.TrimPrefix(name[:len(name)-1], SET_TYPE+"("), protoVer, logger),
 		}
-	} else if strings.HasPrefix(name, "list<") {
+	} else if strings.HasPrefix(name, LIST_TYPE) {
 		return CollectionType{
-			NativeType: NativeType{typ: TypeList},
-			Elem:       getCassandraType(strings.TrimPrefix(name[:len(name)-1], "list<"), logger),
+			NativeType: NewNativeType(protoVer, TypeList),
+			Elem:       getCassandraLongType(strings.TrimPrefix(name[:len(name)-1], LIST_TYPE+"("), protoVer, logger),
 		}
-	} else if strings.HasPrefix(name, "map<") {
-		names := splitCompositeTypes(strings.TrimPrefix(name[:len(name)-1], "map<"))
+	} else if strings.HasPrefix(name, MAP_TYPE) {
+		names := splitJavaCompositeTypes(strings.TrimPrefix(name[:len(name)-1], MAP_TYPE+"("))
 		if len(names) != 2 {
-			logger.Printf("Error parsing map type, it has %d subelements, expecting 2\n", len(names))
-			return NativeType{
-				typ: TypeCustom,
-			}
+			logger.Printf("gocql: error parsing map type, it has %d subelements, expecting 2\n", len(names))
+			return NewNativeType(protoVer, TypeCustom)
 		}
 		return CollectionType{
-			NativeType: NativeType{typ: TypeMap},
-			Key:        getCassandraType(names[0], logger),
-			Elem:       getCassandraType(names[1], logger),
+			NativeType: NewNativeType(protoVer, TypeMap),
+			Key:        getCassandraLongType(names[0], protoVer, logger),
+			Elem:       getCassandraLongType(names[1], protoVer, logger),
 		}
-	} else if strings.HasPrefix(name, "tuple<") {
-		names := splitCompositeTypes(strings.TrimPrefix(name[:len(name)-1], "tuple<"))
+	} else if strings.HasPrefix(name, TUPLE_TYPE) {
+		names := splitJavaCompositeTypes(strings.TrimPrefix(name[:len(name)-1], TUPLE_TYPE+"("))
 		types := make([]TypeInfo, len(names))
 
 		for i, name := range names {
-			types[i] = getCassandraType(name, logger)
+			types[i] = getCassandraLongType(name, protoVer, logger)
 		}
 
 		return TupleTypeInfo{
-			NativeType: NativeType{typ: TypeTuple},
+			NativeType: NewNativeType(protoVer, TypeTuple),
 			Elems:      types,
 		}
+	} else if strings.HasPrefix(name, UDT_TYPE) {
+		names := splitJavaCompositeTypes(strings.TrimPrefix(name[:len(name)-1], UDT_TYPE+"("))
+		fields := make([]UDTField, len(names)-2)
+
+		for i := 2; i < len(names); i++ {
+			spec := strings.Split(names[i], ":")
+			fieldName, _ := hex.DecodeString(spec[0])
+			fields[i-2] = UDTField{
+				Name: string(fieldName),
+				Type: getCassandraLongType(spec[1], protoVer, logger),
+			}
+		}
+
+		udtName, _ := hex.DecodeString(names[1])
+		return UDTTypeInfo{
+			NativeType: NewNativeType(protoVer, TypeUDT),
+			KeySpace:   names[0],
+			Name:       string(udtName),
+			Elements:   fields,
+		}
+	} else if strings.HasPrefix(name, VECTOR_TYPE) {
+		names := splitJavaCompositeTypes(strings.TrimPrefix(name[:len(name)-1], VECTOR_TYPE+"("))
+		subType := getCassandraLongType(strings.TrimSpace(names[0]), protoVer, logger)
+		dim, err := strconv.Atoi(strings.TrimSpace(names[1]))
+		if err != nil {
+			logger.Printf("gocql: error parsing vector dimensions: %v\n", err)
+			return NewNativeType(protoVer, TypeCustom)
+		}
+
+		return VectorType{
+			NativeType: NewCustomType(protoVer, TypeCustom, VECTOR_TYPE),
+			SubType:    subType,
+			Dimensions: dim,
+		}
 	} else {
+		// basic type
 		return NativeType{
-			typ: getCassandraBaseType(name),
+			proto: protoVer,
+			typ:   getApacheCassandraType(name),
 		}
 	}
 }
 
-func splitCompositeTypes(name string) []string {
-	if !strings.Contains(name, "<") {
-		return strings.Split(name, ", ")
+// Parses short CQL type representation (e.g. map<text, text>) to internal data structures.
+func getCassandraType(name string, protoVer byte, logger StdLogger) TypeInfo {
+	if strings.HasPrefix(name, "frozen<") {
+		return getCassandraType(strings.TrimPrefix(name[:len(name)-1], "frozen<"), protoVer, logger)
+	} else if strings.HasPrefix(name, "set<") {
+		return CollectionType{
+			NativeType: NewNativeType(protoVer, TypeSet),
+			Elem:       getCassandraType(strings.TrimPrefix(name[:len(name)-1], "set<"), protoVer, logger),
+		}
+	} else if strings.HasPrefix(name, "list<") {
+		return CollectionType{
+			NativeType: NewNativeType(protoVer, TypeList),
+			Elem:       getCassandraType(strings.TrimPrefix(name[:len(name)-1], "list<"), protoVer, logger),
+		}
+	} else if strings.HasPrefix(name, "map<") {
+		names := splitCQLCompositeTypes(strings.TrimPrefix(name[:len(name)-1], "map<"))
+		if len(names) != 2 {
+			logger.Printf("Error parsing map type, it has %d subelements, expecting 2\n", len(names))
+			return NewNativeType(protoVer, TypeCustom)
+		}
+		return CollectionType{
+			NativeType: NewNativeType(protoVer, TypeMap),
+			Key:        getCassandraType(names[0], protoVer, logger),
+			Elem:       getCassandraType(names[1], protoVer, logger),
+		}
+	} else if strings.HasPrefix(name, "tuple<") {
+		names := splitCQLCompositeTypes(strings.TrimPrefix(name[:len(name)-1], "tuple<"))
+		types := make([]TypeInfo, len(names))
+
+		for i, name := range names {
+			types[i] = getCassandraType(name, protoVer, logger)
+		}
+
+		return TupleTypeInfo{
+			NativeType: NewNativeType(protoVer, TypeTuple),
+			Elems:      types,
+		}
+	} else if strings.HasPrefix(name, "vector<") {
+		names := splitCQLCompositeTypes(strings.TrimPrefix(name[:len(name)-1], "vector<"))
+		subType := getCassandraType(strings.TrimSpace(names[0]), protoVer, logger)
+		dim, _ := strconv.Atoi(strings.TrimSpace(names[1]))
+
+		return VectorType{
+			NativeType: NewCustomType(protoVer, TypeCustom, VECTOR_TYPE),
+			SubType:    subType,
+			Dimensions: dim,
+		}
+	} else {
+		return NativeType{
+			proto: protoVer,
+			typ:   getCassandraBaseType(name),
+		}
+	}
+}
+
+func splitCQLCompositeTypes(name string) []string {
+	return splitCompositeTypes(name, '<', '>')
+}
+
+func splitJavaCompositeTypes(name string) []string {
+	return splitCompositeTypes(name, '(', ')')
+}
+
+func splitCompositeTypes(name string, typeOpen int32, typeClose int32) []string {
+	if !strings.Contains(name, string(typeOpen)) {
+		parts := strings.Split(name, ",")
+		for i := range parts {
+			parts[i] = strings.TrimSpace(parts[i])
+		}
+		return parts
 	}
 	var parts []string
 	lessCount := 0
@@ -223,9 +325,9 @@ func splitCompositeTypes(name string) []string {
 			continue
 		}
 		segment += string(char)
-		if char == '<' {
+		if char == typeOpen {
 			lessCount++
-		} else if char == '>' {
+		} else if char == typeClose {
 			lessCount--
 		}
 	}
@@ -233,20 +335,6 @@ func splitCompositeTypes(name string) []string {
 		parts = append(parts, strings.TrimSpace(segment))
 	}
 	return parts
-}
-
-func apacheToCassandraType(t string) string {
-	t = strings.Replace(t, apacheCassandraTypePrefix, "", -1)
-	t = strings.Replace(t, "(", "<", -1)
-	t = strings.Replace(t, ")", ">", -1)
-	types := strings.FieldsFunc(t, func(r rune) bool {
-		return r == '<' || r == '>' || r == ','
-	})
-	for _, typ := range types {
-		t = strings.Replace(t, typ, getApacheCassandraType(typ).String(), -1)
-	}
-	// This is done so it exactly matches what Cassandra returns
-	return strings.Replace(t, ",", ", ", -1)
 }
 
 func getApacheCassandraType(class string) Type {
@@ -297,6 +385,10 @@ func getApacheCassandraType(class string) Type {
 		return TypeTuple
 	case "DurationType":
 		return TypeDuration
+	case "SimpleDateType":
+		return TypeDate
+	case "UserType":
+		return TypeUDT
 	default:
 		return TypeCustom
 	}
