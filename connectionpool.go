@@ -243,6 +243,13 @@ func (p *policyConnPool) getPool(host *HostInfo) (pool *hostConnPool, ok bool) {
 	return
 }
 
+func (p *policyConnPool) getPoolByHostID(hostID string) (pool *hostConnPool, ok bool) {
+	p.mu.RLock()
+	pool, ok = p.hostConnPools[hostID]
+	p.mu.RUnlock()
+	return
+}
+
 func (p *policyConnPool) Close() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
