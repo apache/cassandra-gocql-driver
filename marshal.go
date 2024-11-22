@@ -110,6 +110,8 @@ type Unmarshaler interface {
 //	duration                    | time.Duration      |
 //	duration                    | gocql.Duration     |
 //	duration                    | string             | parsed with time.ParseDuration
+//
+// The marshal/unmarshal error provides a list of supported types when an unsupported type is attempted.
 func Marshal(info TypeInfo, value interface{}) ([]byte, error) {
 	if info.Version() < protoVersion1 {
 		panic("protocol version not set")
@@ -333,7 +335,7 @@ func marshalVarchar(info TypeInfo, value interface{}) ([]byte, error) {
 	case k == reflect.Slice && t.Elem().Kind() == reflect.Uint8:
 		return rv.Bytes(), nil
 	}
-	return nil, marshalErrorf("can not marshal %T into %s", value, info)
+	return nil, marshalErrorf("can not marshal %T into %s. Accepted types: Marshaler, string, []byte, UnsetValue.", value, info)
 }
 
 func unmarshalVarchar(info TypeInfo, data []byte, value interface{}) error {
@@ -372,7 +374,7 @@ func unmarshalVarchar(info TypeInfo, data []byte, value interface{}) error {
 		rv.SetBytes(dataCopy)
 		return nil
 	}
-	return unmarshalErrorf("can not unmarshal %s into %T", info, value)
+	return unmarshalErrorf("can not unmarshal %s into %T. Accepted types: Unmarshaler, *string, *[]byte", info, value)
 }
 
 func marshalSmallInt(info TypeInfo, value interface{}) ([]byte, error) {
@@ -450,7 +452,7 @@ func marshalSmallInt(info TypeInfo, value interface{}) ([]byte, error) {
 		}
 	}
 
-	return nil, marshalErrorf("can not marshal %T into %s", value, info)
+	return nil, marshalErrorf("can not marshal %T into %s. Accepted types: Marshaler, int16, uint16, int8, uint8, int, uint, int32, uint32, int64, uint64, string, UnsetValue.", value, info)
 }
 
 func marshalTinyInt(info TypeInfo, value interface{}) ([]byte, error) {
@@ -534,7 +536,7 @@ func marshalTinyInt(info TypeInfo, value interface{}) ([]byte, error) {
 		}
 	}
 
-	return nil, marshalErrorf("can not marshal %T into %s", value, info)
+	return nil, marshalErrorf("can not marshal %T into %s. Accepted types: Marshaler, int8, uint8, int16, uint16, int, uint, int32, uint32, int64, uint64, string, UnsetValue.", value, info)
 }
 
 func marshalInt(info TypeInfo, value interface{}) ([]byte, error) {
@@ -606,7 +608,7 @@ func marshalInt(info TypeInfo, value interface{}) ([]byte, error) {
 		}
 	}
 
-	return nil, marshalErrorf("can not marshal %T into %s", value, info)
+	return nil, marshalErrorf("can not marshal %T into %s. Accepted types: Marshaler, int8, uint8, int16, uint16, int, uint, int32, uint32, int64, uint64, string, UnsetValue.", value, info)
 }
 
 func encInt(x int32) []byte {
@@ -696,7 +698,7 @@ func marshalBigInt(info TypeInfo, value interface{}) ([]byte, error) {
 		}
 		return encBigInt(int64(v)), nil
 	}
-	return nil, marshalErrorf("can not marshal %T into %s", value, info)
+	return nil, marshalErrorf("can not marshal %T into %s. Accepted types: big.Int, Marshaler, int8, uint8, int16, uint16, int, uint, int32, uint32, int64, uint64, string, UnsetValue.", value, info)
 }
 
 func encBigInt(x int64) []byte {
@@ -1006,7 +1008,7 @@ func unmarshalIntlike(info TypeInfo, int64Val int64, data []byte, value interfac
 		rv.SetUint(uint64(int64Val) & 0xff)
 		return nil
 	}
-	return unmarshalErrorf("can not unmarshal %s into %T", info, value)
+	return unmarshalErrorf("can not unmarshal %s into %T. Accepted types: big.Int, Marshaler, int8, uint8, int16, uint16, int, uint, int32, uint32, int64, uint64, string.", info, value)
 }
 
 func decBigInt(data []byte) int64 {
@@ -1038,7 +1040,7 @@ func marshalBool(info TypeInfo, value interface{}) ([]byte, error) {
 	case reflect.Bool:
 		return encBool(rv.Bool()), nil
 	}
-	return nil, marshalErrorf("can not marshal %T into %s", value, info)
+	return nil, marshalErrorf("can not marshal %T into %s. Accepted types: Marshaler, bool, UnsetValue.", value, info)
 }
 
 func encBool(v bool) []byte {
@@ -1066,7 +1068,7 @@ func unmarshalBool(info TypeInfo, data []byte, value interface{}) error {
 		rv.SetBool(decBool(data))
 		return nil
 	}
-	return unmarshalErrorf("can not unmarshal %s into %T", info, value)
+	return unmarshalErrorf("can not unmarshal %s into %T. Accepted types: Unmarshaler, *bool.", info, value)
 }
 
 func decBool(v []byte) bool {
@@ -1095,7 +1097,7 @@ func marshalFloat(info TypeInfo, value interface{}) ([]byte, error) {
 	case reflect.Float32:
 		return encInt(int32(math.Float32bits(float32(rv.Float())))), nil
 	}
-	return nil, marshalErrorf("can not marshal %T into %s", value, info)
+	return nil, marshalErrorf("can not marshal %T into %s. Accepted types: Marshaler, float32, UnsetValue.", value, info)
 }
 
 func unmarshalFloat(info TypeInfo, data []byte, value interface{}) error {
@@ -1116,7 +1118,7 @@ func unmarshalFloat(info TypeInfo, data []byte, value interface{}) error {
 		rv.SetFloat(float64(math.Float32frombits(uint32(decInt(data)))))
 		return nil
 	}
-	return unmarshalErrorf("can not unmarshal %s into %T", info, value)
+	return unmarshalErrorf("can not unmarshal %s into %T. Accepted types: Unmarshaler, *float32, UnsetValue.", info, value)
 }
 
 func marshalDouble(info TypeInfo, value interface{}) ([]byte, error) {
@@ -1136,7 +1138,7 @@ func marshalDouble(info TypeInfo, value interface{}) ([]byte, error) {
 	case reflect.Float64:
 		return encBigInt(int64(math.Float64bits(rv.Float()))), nil
 	}
-	return nil, marshalErrorf("can not marshal %T into %s", value, info)
+	return nil, marshalErrorf("can not marshal %T into %s. Accepted types: Marshaler, float64, UnsetValue.", value, info)
 }
 
 func unmarshalDouble(info TypeInfo, data []byte, value interface{}) error {
@@ -1157,7 +1159,7 @@ func unmarshalDouble(info TypeInfo, data []byte, value interface{}) error {
 		rv.SetFloat(math.Float64frombits(uint64(decBigInt(data))))
 		return nil
 	}
-	return unmarshalErrorf("can not unmarshal %s into %T", info, value)
+	return unmarshalErrorf("can not unmarshal %s into %T. Accepted types: Unmarshaler, *float64.", info, value)
 }
 
 func marshalDecimal(info TypeInfo, value interface{}) ([]byte, error) {
@@ -1181,7 +1183,7 @@ func marshalDecimal(info TypeInfo, value interface{}) ([]byte, error) {
 		copy(buf[4:], unscaled)
 		return buf, nil
 	}
-	return nil, marshalErrorf("can not marshal %T into %s", value, info)
+	return nil, marshalErrorf("can not marshal %T into %s. Accepted types: Marshaler, inf.Dec, UnsetValue.", value, info)
 }
 
 func unmarshalDecimal(info TypeInfo, data []byte, value interface{}) error {
@@ -1197,7 +1199,7 @@ func unmarshalDecimal(info TypeInfo, data []byte, value interface{}) error {
 		*v = *inf.NewDecBig(unscaled, inf.Scale(scale))
 		return nil
 	}
-	return unmarshalErrorf("can not unmarshal %s into %T", info, value)
+	return unmarshalErrorf("can not unmarshal %s into %T. Accepted types: Unmarshaler, *inf.Dec.", info, value)
 }
 
 // decBigInt2C sets the value of n to the big-endian two's complement
@@ -1261,7 +1263,7 @@ func marshalTime(info TypeInfo, value interface{}) ([]byte, error) {
 	case reflect.Int64:
 		return encBigInt(rv.Int()), nil
 	}
-	return nil, marshalErrorf("can not marshal %T into %s", value, info)
+	return nil, marshalErrorf("can not marshal %T into %s. Accepted types: Marshaler, int64, time.Duration, UnsetValue.", value, info)
 }
 
 func marshalTimestamp(info TypeInfo, value interface{}) ([]byte, error) {
@@ -1289,7 +1291,7 @@ func marshalTimestamp(info TypeInfo, value interface{}) ([]byte, error) {
 	case reflect.Int64:
 		return encBigInt(rv.Int()), nil
 	}
-	return nil, marshalErrorf("can not marshal %T into %s", value, info)
+	return nil, marshalErrorf("can not marshal %T into %s. Accepted types: Marshaler, int64, time.Time, UnsetValue.", value, info)
 }
 
 func unmarshalTime(info TypeInfo, data []byte, value interface{}) error {
@@ -1314,7 +1316,7 @@ func unmarshalTime(info TypeInfo, data []byte, value interface{}) error {
 		rv.SetInt(decBigInt(data))
 		return nil
 	}
-	return unmarshalErrorf("can not unmarshal %s into %T", info, value)
+	return unmarshalErrorf("can not unmarshal %s into %T. Accepted types: Unmarshaler, *int64, *time.Duration.", info, value)
 }
 
 func unmarshalTimestamp(info TypeInfo, data []byte, value interface{}) error {
@@ -1346,7 +1348,7 @@ func unmarshalTimestamp(info TypeInfo, data []byte, value interface{}) error {
 		rv.SetInt(decBigInt(data))
 		return nil
 	}
-	return unmarshalErrorf("can not unmarshal %s into %T", info, value)
+	return unmarshalErrorf("can not unmarshal %s into %T. Accepted types: Unmarshaler, *int64, *time.Time.", info, value)
 }
 
 const millisecondsInADay int64 = 24 * 60 * 60 * 1000
@@ -1392,7 +1394,7 @@ func marshalDate(info TypeInfo, value interface{}) ([]byte, error) {
 	if value == nil {
 		return nil, nil
 	}
-	return nil, marshalErrorf("can not marshal %T into %s", value, info)
+	return nil, marshalErrorf("can not marshal %T into %s. Accepted types: Marshaler, int64, time.Time, *time.Time, string, UnsetValue.", value, info)
 }
 
 func unmarshalDate(info TypeInfo, data []byte, value interface{}) error {
@@ -1420,7 +1422,7 @@ func unmarshalDate(info TypeInfo, data []byte, value interface{}) error {
 		*v = time.UnixMilli(timestamp).In(time.UTC).Format("2006-01-02")
 		return nil
 	}
-	return unmarshalErrorf("can not unmarshal %s into %T", info, value)
+	return unmarshalErrorf("can not unmarshal %s into %T. Accepted types: Unmarshaler, *time.Time, *string.", info, value)
 }
 
 func marshalDuration(info TypeInfo, value interface{}) ([]byte, error) {
@@ -1452,7 +1454,7 @@ func marshalDuration(info TypeInfo, value interface{}) ([]byte, error) {
 	case reflect.Int64:
 		return encBigInt(rv.Int()), nil
 	}
-	return nil, marshalErrorf("can not marshal %T into %s", value, info)
+	return nil, marshalErrorf("can not marshal %T into %s. Accepted types: Marshaler, int64, time.Duration, string, Duration, UnsetValue.", value, info)
 }
 
 func unmarshalDuration(info TypeInfo, data []byte, value interface{}) error {
@@ -1479,7 +1481,7 @@ func unmarshalDuration(info TypeInfo, data []byte, value interface{}) error {
 		}
 		return nil
 	}
-	return unmarshalErrorf("can not unmarshal %s into %T", info, value)
+	return unmarshalErrorf("can not unmarshal %s into %T. Accepted types: Unmarshaler, *Duration.", info, value)
 }
 
 func decVints(data []byte) (int32, int32, int64, error) {
@@ -1627,7 +1629,7 @@ func marshalList(info TypeInfo, value interface{}) ([]byte, error) {
 			return marshalList(listInfo, keys)
 		}
 	}
-	return nil, marshalErrorf("can not marshal %T into %s", value, info)
+	return nil, marshalErrorf("can not marshal %T into %s. Accepted types: slice, array, map[]struct.", value, info)
 }
 
 func readCollectionSize(info CollectionType, data []byte) (size, read int, err error) {
@@ -1706,7 +1708,7 @@ func unmarshalList(info TypeInfo, data []byte, value interface{}) error {
 		}
 		return nil
 	}
-	return unmarshalErrorf("can not unmarshal %s into %T", info, value)
+	return unmarshalErrorf("can not unmarshal %s into %T. Accepted types: *slice, *array.", info, value)
 }
 
 func marshalMap(info TypeInfo, value interface{}) ([]byte, error) {
@@ -1870,7 +1872,7 @@ func marshalUUID(info TypeInfo, value interface{}) ([]byte, error) {
 		return nil, nil
 	}
 
-	return nil, marshalErrorf("can not marshal %T into %s", value, info)
+	return nil, marshalErrorf("can not marshal %T into %s. Accepted types: UUID, [16]byte, string, UnsetValue.", value, info)
 }
 
 func unmarshalUUID(info TypeInfo, data []byte, value interface{}) error {
@@ -1883,7 +1885,7 @@ func unmarshalUUID(info TypeInfo, data []byte, value interface{}) error {
 		case *UUID:
 			*v = UUID{}
 		default:
-			return unmarshalErrorf("can not unmarshal X %s into %T", info, value)
+			return unmarshalErrorf("can not unmarshal X %s into %T. Accepted types: *UUID, *[]byte, *string.", info, value)
 		}
 
 		return nil
@@ -1915,7 +1917,7 @@ func unmarshalUUID(info TypeInfo, data []byte, value interface{}) error {
 		*v = u[:]
 		return nil
 	}
-	return unmarshalErrorf("can not unmarshal X %s into %T", info, value)
+	return unmarshalErrorf("can not unmarshal X %s into %T. Accepted types: *UUID, *[]byte, *string.", info, value)
 }
 
 func unmarshalTimeUUID(info TypeInfo, data []byte, value interface{}) error {
@@ -1965,7 +1967,7 @@ func marshalInet(info TypeInfo, value interface{}) ([]byte, error) {
 		return nil, nil
 	}
 
-	return nil, marshalErrorf("cannot marshal %T into %s", value, info)
+	return nil, marshalErrorf("cannot marshal %T into %s. Accepted types: net.IP, string.", value, info)
 }
 
 func unmarshalInet(info TypeInfo, data []byte, value interface{}) error {
@@ -1997,7 +1999,7 @@ func unmarshalInet(info TypeInfo, data []byte, value interface{}) error {
 		*v = ip.String()
 		return nil
 	}
-	return unmarshalErrorf("cannot unmarshal %s into %T", info, value)
+	return unmarshalErrorf("cannot unmarshal %s into %T. Accepted types: Unmarshaler, *net.IP, *string.", info, value)
 }
 
 func marshalTuple(info TypeInfo, value interface{}) ([]byte, error) {
@@ -2088,7 +2090,7 @@ func marshalTuple(info TypeInfo, value interface{}) ([]byte, error) {
 		return buf, nil
 	}
 
-	return nil, marshalErrorf("cannot marshal %T into %s", value, tuple)
+	return nil, marshalErrorf("cannot marshal %T into %s. Accepted types: struct, []interface{}, array, slice, UnsetValue.", value, tuple)
 }
 
 func readBytes(p []byte) ([]byte, []byte) {
@@ -2208,7 +2210,7 @@ func unmarshalTuple(info TypeInfo, data []byte, value interface{}) error {
 		return nil
 	}
 
-	return unmarshalErrorf("cannot unmarshal %s into %T", info, value)
+	return unmarshalErrorf("cannot unmarshal %s into %T. Accepted types: *struct, []interface{}, *array, *slice, Unmarshaler.", info, value)
 }
 
 // UDTMarshaler is an interface which should be implemented by users wishing to
@@ -2280,7 +2282,7 @@ func marshalUDT(info TypeInfo, value interface{}) ([]byte, error) {
 	}
 
 	if k.Kind() != reflect.Struct || !k.IsValid() {
-		return nil, marshalErrorf("cannot marshal %T into %s", value, info)
+		return nil, marshalErrorf("cannot marshal %T into %s. Accepted types: Marshaler, UDTMarshaler, map[string]interface{}, struct, UnsetValue.", value, info)
 	}
 
 	fields := make(map[string]reflect.Value)
@@ -2349,7 +2351,7 @@ func unmarshalUDT(info TypeInfo, data []byte, value interface{}) error {
 		rv = rv.Elem()
 		t := rv.Type()
 		if t.Kind() != reflect.Map {
-			return unmarshalErrorf("can not unmarshal %s into %T", info, value)
+			return unmarshalErrorf("can not unmarshal %s into %T. Accepted types: Unmarshaler, UDTUnmarshaler, *map[string]interface{}, struct.", info, value)
 		} else if data == nil {
 			rv.Set(reflect.Zero(t))
 			return nil
@@ -2392,7 +2394,7 @@ func unmarshalUDT(info TypeInfo, data []byte, value interface{}) error {
 	}
 	k := rv.Elem()
 	if k.Kind() != reflect.Struct || !k.IsValid() {
-		return unmarshalErrorf("cannot unmarshal %s into %T", info, value)
+		return unmarshalErrorf("cannot unmarshal %s into %T. Accepted types: Unmarshaler, UDTUnmarshaler, *map[string]interface{}, *struct.", info, value)
 	}
 
 	if len(data) == 0 {
