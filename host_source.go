@@ -583,7 +583,7 @@ func (s *Session) hostInfoFromMap(row map[string]interface{}, host *HostInfo) (*
 		// Not sure what the port field will be called until the JIRA issue is complete
 	}
 
-	ip, port := s.cfg.translateAddressPort(host.ConnectAddress(), host.port)
+	ip, port := s.cfg.translateAddressPort(host.ConnectAddress(), host.port, s.logger)
 	host.connectAddress = ip
 	host.port = port
 
@@ -657,8 +657,8 @@ func (r *ringDescriber) getClusterPeerInfo(localHost *HostInfo) ([]*HostInfo, er
 			return nil, err
 		} else if !isValidPeer(host) {
 			// If it's not a valid peer
-			r.session.logger.Printf("Found invalid peer '%s' "+
-				"Likely due to a gossip or snitch issue, this host will be ignored", host)
+			r.session.logger.Warning("found invalid peer '%s' "+
+				"Likely due to a gossip or snitch issue, this host will be ignored", NewLogField("host", host))
 			continue
 		}
 
@@ -730,6 +730,7 @@ func refreshRing(r *ringDescriber) error {
 		}
 
 		if host, ok := r.session.ring.addHostIfMissing(h); !ok {
+			r.session.logger.Info("adding host %v (%v).", NewLogField("host_addr", h.ConnectAddress().String()), NewLogField("host_id", h.HostID()))
 			r.session.startPoolFill(h)
 		} else {
 			// host (by hostID) already exists; determine if IP has changed
@@ -748,6 +749,7 @@ func refreshRing(r *ringDescriber) error {
 				if _, alreadyExists := r.session.ring.addHostIfMissing(h); alreadyExists {
 					return fmt.Errorf("add new host=%s after removal: %w", h, ErrHostAlreadyExists)
 				}
+				r.session.logger.Info("adding host %v (%v).", NewLogField("host_addr", h.ConnectAddress().String()), NewLogField("host_id", h.HostID()))
 				// add new HostInfo (same hostID, new IP)
 				r.session.startPoolFill(h)
 			}
@@ -761,6 +763,7 @@ func refreshRing(r *ringDescriber) error {
 
 	r.session.metadata.setPartitioner(partitioner)
 	r.session.policy.SetPartitioner(partitioner)
+	r.session.logger.Info("refreshed ring: %v.", NewLogField("ring", ringString(r.session.ring.allHosts())))
 	return nil
 }
 

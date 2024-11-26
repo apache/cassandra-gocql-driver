@@ -30,7 +30,7 @@ import (
 )
 
 func TestGetCassandraType_Set(t *testing.T) {
-	typ := getCassandraType("set<text>", &defaultLogger{})
+	typ := getCassandraType("set<text>", newInternalLoggerFromStdLogger(&defaultLogger{}, LogLevelNone))
 	set, ok := typ.(CollectionType)
 	if !ok {
 		t.Fatalf("expected CollectionType got %T", typ)
@@ -227,7 +227,7 @@ func TestGetCassandraType(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.input, func(t *testing.T) {
-			got := getCassandraType(test.input, &defaultLogger{})
+			got := getCassandraType(test.input, newInternalLoggerFromStdLogger(&defaultLogger{}, LogLevelNone))
 
 			// TODO(zariel): define an equal method on the types?
 			if !reflect.DeepEqual(got, test.exp) {

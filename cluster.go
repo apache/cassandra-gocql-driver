@@ -263,6 +263,17 @@ type ClusterConfig struct {
 	// If not specified, defaults to the global gocql.Logger.
 	Logger StdLogger
 
+	// StructuredLogger for this ClusterConfig.
+	// If not specified, Logger will be used instead.
+	StructuredLogger AdvancedLogger
+
+	// LegacyLogLevel for this ClusterConfig, this is only applied for legacy loggers (field Logger).
+	// This log level is not applied to StructuredLogger because the log level is already a part of the interface
+	// so the implementation can decide when not to log something.
+	//
+	// If not specified, LogLevelWarn will be used as the default.
+	LegacyLogLevel LogLevel
+
 	// internal config for testing
 	disableControlConn bool
 }
@@ -298,15 +309,19 @@ func NewCluster(hosts ...string) *ClusterConfig {
 		ConvictionPolicy:       &SimpleConvictionPolicy{},
 		ReconnectionPolicy:     &ConstantReconnectionPolicy{MaxRetries: 3, Interval: 1 * time.Second},
 		WriteCoalesceWaitTime:  200 * time.Microsecond,
+		LegacyLogLevel:         LogLevelWarn,
 	}
 	return cfg
 }
 
-func (cfg *ClusterConfig) logger() StdLogger {
-	if cfg.Logger == nil {
-		return Logger
+func (cfg *ClusterConfig) newLogger() loggerAdapter {
+	if cfg.StructuredLogger != nil {
+		return newInternalLoggerFromAdvancedLogger(cfg.StructuredLogger)
 	}
-	return cfg.Logger
+	if cfg.Logger == nil {
+		return newInternalLoggerFromStdLogger(Logger, cfg.LegacyLogLevel)
+	}
+	return newInternalLoggerFromStdLogger(cfg.Logger, cfg.LegacyLogLevel)
 }
 
 // CreateSession initializes the cluster based on this config and returns a
@@ -319,14 +334,14 @@ func (cfg *ClusterConfig) CreateSession() (*Session, error) {
 // if defined, to translate the given address and port into a possibly new address
 // and port, If no AddressTranslator or if an error occurs, the given address and
 // port will be returned.
-func (cfg *ClusterConfig) translateAddressPort(addr net.IP, port int) (net.IP, int) {
+func (cfg *ClusterConfig) translateAddressPort(addr net.IP, port int, logger internalLogger) (net.IP, int) {
 	if cfg.AddressTranslator == nil || len(addr) == 0 {
 		return addr, port
 	}
 	newAddr, newPort := cfg.AddressTranslator.Translate(addr, port)
-	if gocqlDebug {
-		cfg.logger().Printf("gocql: translating address '%v:%d' to '%v:%d'", addr, port, newAddr, newPort)
-	}
+	logger.Debug("translating address '%v:%d' to '%v:%d'",
+		NewLogField("old_addr", addr), NewLogField("old_port", port),
+		NewLogField("new_addr", newAddr), NewLogField("new_port", newPort))
 	return newAddr, newPort
 }
 

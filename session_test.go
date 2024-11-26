@@ -41,7 +41,7 @@ func TestSessionAPI(t *testing.T) {
 		cfg:    *cfg,
 		cons:   Quorum,
 		policy: RoundRobinHostPolicy(),
-		logger: cfg.logger(),
+		logger: cfg.newLogger(),
 	}
 
 	s.pool = cfg.PoolConfig.buildPool(s)
@@ -212,7 +212,7 @@ func TestBatchBasicAPI(t *testing.T) {
 	s := &Session{
 		cfg:    *cfg,
 		cons:   Quorum,
-		logger: cfg.logger(),
+		logger: cfg.newLogger(),
 	}
 	defer s.Close()
 

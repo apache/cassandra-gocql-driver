@@ -418,7 +418,7 @@ type tokenAwareHostPolicy struct {
 	partitioner string
 	metadata    atomic.Value // *clusterMeta
 
-	logger StdLogger
+	logger internalLogger
 }
 
 func (t *tokenAwareHostPolicy) Init(s *Session) {
@@ -561,7 +561,7 @@ func (t *tokenAwareHostPolicy) getMetadataForUpdate() *clusterMeta {
 
 // resetTokenRing creates a new tokenRing.
 // It must be called with t.mu locked.
-func (m *clusterMeta) resetTokenRing(partitioner string, hosts []*HostInfo, logger StdLogger) {
+func (m *clusterMeta) resetTokenRing(partitioner string, hosts []*HostInfo, logger internalLogger) {
 	if partitioner == "" {
 		// partitioner not yet set
 		return
@@ -570,7 +570,7 @@ func (m *clusterMeta) resetTokenRing(partitioner string, hosts []*HostInfo, logg
 	// create a new token ring
 	tokenRing, err := newTokenRing(partitioner, hosts)
 	if err != nil {
-		logger.Printf("Unable to update the token ring due to error: %s", err)
+		logger.Warning("unable to update the token ring due to error: %s", NewLogField("err", err.Error()))
 		return
 	}
 
