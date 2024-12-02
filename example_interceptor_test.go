@@ -61,13 +61,64 @@ func (q MyQueryAttemptInterceptor) Intercept(
 	}
 
 	// The interceptor *must* invoke the handler to execute the query.
-	return handler(ctx, attempt), nil
+	return handler(ctx, attempt)
 }
 
 // Example_interceptor demonstrates how to implement a QueryAttemptInterceptor.
 func Example_interceptor() {
 	cluster := gocql.NewCluster("localhost:9042")
 	cluster.QueryAttemptInterceptor = MyQueryAttemptInterceptor{injectFault: true}
+
+	session, err := cluster.CreateSession()
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer session.Close()
+
+	ctx := context.Background()
+
+	var stringValue string
+	err = session.Query("select now() from system.local").
+		WithContext(ctx).
+		RetryPolicy(&gocql.SimpleRetryPolicy{NumRetries: 2}).
+		Scan(&stringValue)
+	if err != nil {
+		log.Fatalf("query failed %T", err)
+	}
+}
+
+type QueryAttemptInterceptorChain struct {
+	interceptors []gocql.QueryAttemptInterceptor
+}
+
+func (c QueryAttemptInterceptorChain) Intercept(
+	ctx context.Context,
+	attempt gocql.QueryAttempt,
+	handler gocql.QueryAttemptHandler,
+) (*gocql.Iter, error) {
+	return c.interceptors[0].Intercept(ctx, attempt, c.getNextHandler(0, handler))
+}
+
+func (c QueryAttemptInterceptorChain) getNextHandler(curr int, final gocql.QueryAttemptHandler) gocql.QueryAttemptHandler {
+	if curr == len(c.interceptors)-1 {
+		return final
+	}
+
+	return func(ctx context.Context, attempt gocql.QueryAttempt) (*gocql.Iter, error) {
+		return c.interceptors[curr+1].Intercept(ctx, attempt, c.getNextHandler(curr+1, final))
+	}
+}
+
+// Example_interceptor_chain demonstrates how to chain QueryAttemptInterceptors.
+func Example_interceptor_chain() {
+	cluster := gocql.NewCluster("localhost:9042")
+	cluster.QueryAttemptInterceptor = QueryAttemptInterceptorChain{
+		[]gocql.QueryAttemptInterceptor{
+			MyQueryAttemptInterceptor{},
+			MyQueryAttemptInterceptor{},
+			MyQueryAttemptInterceptor{},
+		},
+	}
 
 	session, err := cluster.CreateSession()
 	if err != nil {
