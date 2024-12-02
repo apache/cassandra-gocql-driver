@@ -86,7 +86,7 @@ type QueryAttempt struct {
 }
 
 // QueryAttemptHandler is a function that attempts query execution.
-type QueryAttemptHandler = func(context.Context, QueryAttempt) *Iter
+type QueryAttemptHandler = func(context.Context, QueryAttempt) (*Iter, error)
 
 // QueryAttemptInterceptor is the interface implemented by query interceptors / middleware.
 //
@@ -115,9 +115,10 @@ func (q *queryExecutor) attemptQuery(ctx context.Context, qry internalRequest, c
 			Host:     conn.host,
 			Attempts: qry.Attempts(),
 		}
-		iter, err = q.interceptor.Intercept(_ctx, attempt, func(_ctx context.Context, attempt QueryAttempt) *Iter {
+		iter, err = q.interceptor.Intercept(_ctx, attempt, func(_ctx context.Context, attempt QueryAttempt) (*Iter, error) {
 			ctx = _ctx
-			return attempt.Query.execute(ctx, attempt.Conn)
+			iter := attempt.Query.execute(ctx, attempt.Conn)
+			return iter, iter.err
 		})
 		if err != nil {
 			iter = &Iter{err: err}
