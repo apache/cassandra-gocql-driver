@@ -242,7 +242,7 @@ func TestObserve(t *testing.T) {
 		t.Fatal("select: unexpected observed stmt", observedStmt)
 	}
 
-	// reports errors when the query is poorly formed
+	// reports internal_errors when the query is poorly formed
 	resetObserved()
 	value = 0
 	if err := session.Query(`SELECT id FROM unknown_table WHERE id = ?`, 42).Observer(observer).Scan(&value); err == nil {
@@ -1451,8 +1451,8 @@ func injectInvalidPreparedStatement(t *testing.T, session *Session, table string
 
 	flight.preparedStatment = &preparedStatment{
 		id: []byte{'f', 'o', 'o', 'b', 'a', 'r'},
-		request: preparedMetadata{
-			resultMetadata: resultMetadata{
+		request: protocol.PreparedMetadata{
+			protocol.ResultMetadata: protocol.ResultMetadata{
 				colCount:       1,
 				actualColCount: 1,
 				columns: []ColumnInfo{

@@ -25,6 +25,7 @@
 package gocql
 
 import (
+	"github.com/gocql/gocql/internal/protocol"
 	"net"
 	"sync"
 	"time"
@@ -106,8 +107,8 @@ func (e *eventDebouncer) debounce(frame frame) {
 	e.mu.Unlock()
 }
 
-func (s *Session) handleEvent(framer *framer) {
-	frame, err := framer.parseFrame()
+func (s *Session) handleEvent(framer *protocol.Framer) {
+	frame, err := framer.ParseFrame()
 	if err != nil {
 		s.logger.Printf("gocql: unable to parse event frame: %v\n", err)
 		return
@@ -118,11 +119,11 @@ func (s *Session) handleEvent(framer *framer) {
 	}
 
 	switch f := frame.(type) {
-	case *schemaChangeKeyspace, *schemaChangeFunction,
-		*schemaChangeTable, *schemaChangeAggregate, *schemaChangeType:
+	case *protocol.SchemaChangeKeyspace, *protocol.SchemaChangeFunction,
+		*protocol.SchemaChangeTable, *protocol.SchemaChangeAggregate, *protocol.SchemaChangeType:
 
 		s.schemaEvents.debounce(frame)
-	case *topologyChangeEventFrame, *statusChangeEventFrame:
+	case *protocol.TopologyChangeEventFrame, *protocol.StatusChangeEventFrame:
 		s.nodeEvents.debounce(frame)
 	default:
 		s.logger.Printf("gocql: invalid event frame (%T): %v\n", f, f)
@@ -133,17 +134,17 @@ func (s *Session) handleSchemaEvent(frames []frame) {
 	// TODO: debounce events
 	for _, frame := range frames {
 		switch f := frame.(type) {
-		case *schemaChangeKeyspace:
-			s.schemaDescriber.clearSchema(f.keyspace)
-			s.handleKeyspaceChange(f.keyspace, f.change)
-		case *schemaChangeTable:
-			s.schemaDescriber.clearSchema(f.keyspace)
-		case *schemaChangeAggregate:
-			s.schemaDescriber.clearSchema(f.keyspace)
-		case *schemaChangeFunction:
-			s.schemaDescriber.clearSchema(f.keyspace)
-		case *schemaChangeType:
-			s.schemaDescriber.clearSchema(f.keyspace)
+		case *protocol.SchemaChangeKeyspace:
+			s.schemaDescriber.clearSchema(f.Keyspace)
+			s.handleKeyspaceChange(f.Keyspace, f.Change)
+		case *protocol.SchemaChangeTable:
+			s.schemaDescriber.clearSchema(f.Keyspace)
+		case *protocol.SchemaChangeAggregate:
+			s.schemaDescriber.clearSchema(f.Keyspace)
+		case *protocol.SchemaChangeFunction:
+			s.schemaDescriber.clearSchema(f.Keyspace)
+		case *protocol.SchemaChangeType:
+			s.schemaDescriber.clearSchema(f.Keyspace)
 		}
 	}
 }
@@ -176,15 +177,15 @@ func (s *Session) handleNodeEvent(frames []frame) {
 
 	for _, frame := range frames {
 		switch f := frame.(type) {
-		case *topologyChangeEventFrame:
+		case *protocol.TopologyChangeEventFrame:
 			topologyEventReceived = true
-		case *statusChangeEventFrame:
-			event, ok := sEvents[f.host.String()]
+		case *protocol.StatusChangeEventFrame:
+			event, ok := sEvents[f.Host.String()]
 			if !ok {
-				event = &nodeEvent{change: f.change, host: f.host, port: f.port}
-				sEvents[f.host.String()] = event
+				event = &nodeEvent{change: f.Change, host: f.Host, port: f.Port}
+				sEvents[f.Host.String()] = event
 			}
-			event.change = f.change
+			event.change = f.Change
 		}
 	}
 

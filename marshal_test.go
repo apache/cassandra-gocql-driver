@@ -1692,7 +1692,7 @@ var typeLookupTest = []struct {
 }
 
 func testType(t *testing.T, cassType string, expectedType Type) {
-	if computedType := getApacheCassandraType(apacheCassandraTypePrefix + cassType); computedType != expectedType {
+	if computedType := protocol.GetApacheCassandraType(protocol.ApacheCassandraTypePrefix + cassType); computedType != expectedType {
 		t.Errorf("Cassandra custom type lookup for %s failed. Expected %s, got %s.", cassType, expectedType.String(), computedType.String())
 	}
 }
@@ -2207,7 +2207,7 @@ func TestMarshalNil(t *testing.T) {
 func TestUnmarshalInetCopyBytes(t *testing.T) {
 	data := []byte{127, 0, 0, 1}
 	var ip net.IP
-	if err := unmarshalInet(NativeType{proto: 2, typ: TypeInet}, data, &ip); err != nil {
+	if err := UnmarshalInet(NativeType{proto: 2, typ: TypeInet}, data, &ip); err != nil {
 		t.Fatal(err)
 	}
 
@@ -2221,7 +2221,7 @@ func TestUnmarshalInetCopyBytes(t *testing.T) {
 func TestUnmarshalDate(t *testing.T) {
 	data := []uint8{0x80, 0x0, 0x43, 0x31}
 	var date time.Time
-	if err := unmarshalDate(NativeType{proto: 2, typ: TypeDate}, data, &date); err != nil {
+	if err := UnmarshalDate(NativeType{proto: 2, typ: TypeDate}, data, &date); err != nil {
 		t.Fatal(err)
 	}
 
@@ -2232,7 +2232,7 @@ func TestUnmarshalDate(t *testing.T) {
 		return
 	}
 	var stringDate string
-	if err2 := unmarshalDate(NativeType{proto: 2, typ: TypeDate}, data, &stringDate); err2 != nil {
+	if err2 := UnmarshalDate(NativeType{proto: 2, typ: TypeDate}, data, &stringDate); err2 != nil {
 		t.Fatal(err2)
 	}
 	if expectedDate != stringDate {
@@ -2345,7 +2345,7 @@ func BenchmarkUnmarshalVarchar(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		if err := unmarshalVarchar(NativeType{}, src, &dst); err != nil {
+		if err := UnmarshalVarchar(NativeType{}, src, &dst); err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -2489,7 +2489,7 @@ func BenchmarkUnmarshalUUID(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		if err := unmarshalUUID(ti, src, &dst); err != nil {
+		if err := UnmarshalUUID(ti, src, &dst); err != nil {
 			b.Fatal(err)
 		}
 	}

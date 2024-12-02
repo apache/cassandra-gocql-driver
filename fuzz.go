@@ -34,18 +34,18 @@ func Fuzz(data []byte) int {
 
 	r := bytes.NewReader(data)
 
-	head, err := readHeader(r, make([]byte, 9))
+	head, err := protocol.ReadHeader(r, make([]byte, 9))
 	if err != nil {
 		return 0
 	}
 
-	framer := newFramer(r, &bw, nil, byte(head.version))
-	err = framer.readFrame(&head)
+	framer := protocol.NewFramer(r, &bw, nil, byte(head.version))
+	err = framer.ReadFrame(&head)
 	if err != nil {
 		return 0
 	}
 
-	frame, err := framer.parseFrame()
+	frame, err := framer.ParseFrame()
 	if err != nil {
 		return 0
 	}

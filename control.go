@@ -29,6 +29,7 @@ import (
 	crand "crypto/rand"
 	"errors"
 	"fmt"
+	"github.com/gocql/gocql/internal/protocol"
 	"math/rand"
 	"net"
 	"os"
@@ -50,7 +51,7 @@ func init() {
 		panic(fmt.Sprintf("unable to seed random number generator: %v", err))
 	}
 
-	randr = rand.New(rand.NewSource(int64(readInt(b))))
+	randr = rand.New(rand.NewSource(int64(protocol.ReadInt(b))))
 }
 
 const (
@@ -103,13 +104,13 @@ func (c *controlConn) heartBeat() {
 		case <-timer.C:
 		}
 
-		resp, err := c.writeFrame(&writeOptionsFrame{})
+		resp, err := c.writeFrame(&protocol.WriteOptionsFrame{})
 		if err != nil {
 			goto reconn
 		}
 
 		switch resp.(type) {
-		case *supportedFrame:
+		case *protocol.SupportedFrame:
 			// Everything ok
 			sleepTime = 5 * time.Second
 			continue
@@ -199,7 +200,7 @@ func parseProtocolFromError(err error) int {
 	matches := protocolSupportRe.FindAllStringSubmatch(err.Error(), -1)
 	if len(matches) != 1 || len(matches[0]) != 2 {
 		if verr, ok := err.(*protocolError); ok {
-			return int(verr.frame.Header().version.version())
+			return int(verr.frame.Header().Version.Version())
 		}
 		return 0
 	}
@@ -345,17 +346,17 @@ func (c *controlConn) registerEvents(conn *Conn) error {
 	}
 
 	framer, err := conn.exec(context.Background(),
-		&writeRegisterFrame{
-			events: events,
+		&protocol.WriteRegisterFrame{
+			Events: events,
 		}, nil)
 	if err != nil {
 		return err
 	}
 
-	frame, err := framer.parseFrame()
+	frame, err := framer.ParseFrame()
 	if err != nil {
 		return err
-	} else if _, ok := frame.(*readyFrame); !ok {
+	} else if _, ok := frame.(*protocol.ReadyFrame); !ok {
 		return fmt.Errorf("unexpected frame in response to register: got %T: %v\n", frame, frame)
 	}
 
@@ -459,7 +460,7 @@ func (c *controlConn) getConn() *connHost {
 	return c.conn.Load().(*connHost)
 }
 
-func (c *controlConn) writeFrame(w frameBuilder) (frame, error) {
+func (c *controlConn) writeFrame(w protocol.FrameBuilder) (frame, error) {
 	ch := c.getConn()
 	if ch == nil {
 		return nil, errNoControl
@@ -470,7 +471,7 @@ func (c *controlConn) writeFrame(w frameBuilder) (frame, error) {
 		return nil, err
 	}
 
-	return framer.parseFrame()
+	return framer.ParseFrame()
 }
 
 func (c *controlConn) withConnHost(fn func(*connHost) *Iter) *Iter {

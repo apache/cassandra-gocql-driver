@@ -43,7 +43,7 @@ func TestEventDebounce(t *testing.T) {
 	defer debouncer.stop()
 
 	for i := 0; i < eventCount; i++ {
-		debouncer.debounce(&statusChangeEventFrame{
+		debouncer.debounce(&protocol.StatusChangeEventFrame{
 			change: "UP",
 			host:   net.IPv4(127, 0, 0, 1),
 			port:   9042,

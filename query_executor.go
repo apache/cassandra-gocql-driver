@@ -156,7 +156,7 @@ func (q *queryExecutor) do(ctx context.Context, qry ExecutableQuery, hostIter Ne
 		// Update host
 		switch iter.err {
 		case context.Canceled, context.DeadlineExceeded, ErrNotFound:
-			// those errors represents logical errors, they should not count
+			// those internal_errors represents logical internal_errors, they should not count
 			// toward removing a node from the pool
 			selectedHost.Mark(nil)
 			return iter

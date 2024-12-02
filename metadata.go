@@ -32,6 +32,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/gocql/gocql/internal/protocol"
 	"strconv"
 	"strings"
 	"sync"
@@ -196,7 +197,7 @@ func (c ColumnKind) String() string {
 
 func (c *ColumnKind) UnmarshalCQL(typ TypeInfo, p []byte) error {
 	if typ.Type() != TypeVarchar {
-		return unmarshalErrorf("unable to marshall %s into ColumnKind, expected Varchar", typ)
+		return protocol.UnmarshalErrorf("unable to marshall %s into ColumnKind, expected Varchar", typ)
 	}
 
 	kind, err := columnKindFromSchema(string(p))
@@ -383,7 +384,7 @@ func compileMetadata(
 		col := &columns[i]
 		// decode the validator for TypeInfo and order
 		if col.ClusteringOrder != "" { // Cassandra 3.x+
-			col.Type = getCassandraType(col.Validator, logger)
+			col.Type = protocol.GetCassandraType(col.Validator, logger)
 			col.Order = ASC
 			if col.ClusteringOrder == "desc" {
 				col.Order = DESC
@@ -948,10 +949,10 @@ func getColumnMetadata(session *Session, keyspaceName string) ([]ColumnMetadata,
 }
 
 func getTypeInfo(t string, logger StdLogger) TypeInfo {
-	if strings.HasPrefix(t, apacheCassandraTypePrefix) {
-		t = apacheToCassandraType(t)
+	if strings.HasPrefix(t, protocol.ApacheCassandraTypePrefix) {
+		t = protocol.ApacheToCassandraType(t)
 	}
-	return getCassandraType(t, logger)
+	return protocol.GetCassandraType(t, logger)
 }
 
 func getViewsMetadata(session *Session, keyspaceName string) ([]ViewMetadata, error) {
@@ -1234,8 +1235,8 @@ func (t *typeParser) parse() typeParserResult {
 			isComposite: false,
 			types: []TypeInfo{
 				NativeType{
-					typ:    TypeCustom,
-					custom: t.input,
+					Typ:  TypeCustom,
+					Cust: t.input,
 				},
 			},
 			reversed:    []bool{false},
@@ -1311,18 +1312,18 @@ func (t *typeParser) parse() typeParserResult {
 func (class *typeParserClassNode) asTypeInfo() TypeInfo {
 	if strings.HasPrefix(class.name, LIST_TYPE) {
 		elem := class.params[0].class.asTypeInfo()
-		return CollectionType{
+		return protocol.CollectionType{
 			NativeType: NativeType{
-				typ: TypeList,
+				Typ: TypeList,
 			},
 			Elem: elem,
 		}
 	}
 	if strings.HasPrefix(class.name, SET_TYPE) {
 		elem := class.params[0].class.asTypeInfo()
-		return CollectionType{
+		return protocol.CollectionType{
 			NativeType: NativeType{
-				typ: TypeSet,
+				Typ: TypeSet,
 			},
 			Elem: elem,
 		}
@@ -1330,9 +1331,9 @@ func (class *typeParserClassNode) asTypeInfo() TypeInfo {
 	if strings.HasPrefix(class.name, MAP_TYPE) {
 		key := class.params[0].class.asTypeInfo()
 		elem := class.params[1].class.asTypeInfo()
-		return CollectionType{
+		return protocol.CollectionType{
 			NativeType: NativeType{
-				typ: TypeMap,
+				Typ: TypeMap,
 			},
 			Key:  key,
 			Elem: elem,
@@ -1340,10 +1341,10 @@ func (class *typeParserClassNode) asTypeInfo() TypeInfo {
 	}
 
 	// must be a simple type or custom type
-	info := NativeType{typ: getApacheCassandraType(class.name)}
-	if info.typ == TypeCustom {
+	info := NativeType{Typ: protocol.GetApacheCassandraType(class.name)}
+	if info.Typ == TypeCustom {
 		// add the entire class definition
-		info.custom = class.input
+		info.Cust = class.input
 	}
 	return info
 }

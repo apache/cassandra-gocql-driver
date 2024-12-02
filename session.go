@@ -30,6 +30,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"github.com/gocql/gocql/internal/protocol"
 	"io"
 	"net"
 	"strings"
@@ -645,23 +646,23 @@ func (s *Session) routingKeyInfo(ctx context.Context, stmt string) (*routingKeyI
 	// TODO: it would be nice to mark hosts here but as we are not using the policies
 	// to fetch hosts we cant
 
-	if info.request.colCount == 0 {
+	if info.request.ColCount == 0 {
 		// no arguments, no routing key, and no error
 		return nil, nil
 	}
 
-	table := info.request.table
-	keyspace := info.request.keyspace
+	table := info.request.Table
+	keyspace := info.request.Keyspace
 
-	if len(info.request.pkeyColumns) > 0 {
+	if len(info.request.PkeyColumns) > 0 {
 		// proto v4 dont need to calculate primary key columns
-		types := make([]TypeInfo, len(info.request.pkeyColumns))
-		for i, col := range info.request.pkeyColumns {
-			types[i] = info.request.columns[col].TypeInfo
+		types := make([]TypeInfo, len(info.request.PkeyColumns))
+		for i, col := range info.request.PkeyColumns {
+			types[i] = info.request.Columns[col].TypeInfo
 		}
 
 		routingKeyInfo := &routingKeyInfo{
-			indexes:  info.request.pkeyColumns,
+			indexes:  info.request.PkeyColumns,
 			types:    types,
 			keyspace: keyspace,
 			table:    table,
@@ -672,7 +673,7 @@ func (s *Session) routingKeyInfo(ctx context.Context, stmt string) (*routingKeyI
 	}
 
 	var keyspaceMetadata *KeyspaceMetadata
-	keyspaceMetadata, inflight.err = s.KeyspaceMetadata(info.request.columns[0].Keyspace)
+	keyspaceMetadata, inflight.err = s.KeyspaceMetadata(info.request.Columns[0].Keyspace)
 	if inflight.err != nil {
 		// don't cache this error
 		s.routingKeyInfoCache.Remove(stmt)
@@ -705,7 +706,7 @@ func (s *Session) routingKeyInfo(ctx context.Context, stmt string) (*routingKeyI
 		routingKeyInfo.indexes[keyIndex] = -1
 
 		// find the column in the query info
-		for argIndex, boundColumn := range info.request.columns {
+		for argIndex, boundColumn := range info.request.Columns {
 			if keyColumn.Name == boundColumn.Name {
 				// there may be many such bound columns, pick the first
 				routingKeyInfo.indexes[keyIndex] = argIndex
@@ -1429,12 +1430,12 @@ func (q *Query) releaseAfterExecution() {
 type Iter struct {
 	err     error
 	pos     int
-	meta    resultMetadata
+	meta    protocol.ResultMetadata
 	numRows int
 	next    *nextIter
 	host    *HostInfo
 
-	framer *framer
+	framer *protocol.Framer
 	closed int32
 }
 
@@ -1445,7 +1446,7 @@ func (iter *Iter) Host() *HostInfo {
 
 // Columns returns the name and type of the selected columns.
 func (iter *Iter) Columns() []ColumnInfo {
-	return iter.meta.columns
+	return iter.meta.Columns
 }
 
 type Scanner interface {
@@ -1533,15 +1534,15 @@ func (is *iterScanner) Scan(dest ...interface{}) error {
 	iter := is.iter
 	// currently only support scanning into an expand tuple, such that its the same
 	// as scanning in more values from a single column
-	if len(dest) != iter.meta.actualColCount {
-		return fmt.Errorf("gocql: not enough columns to scan into: have %d want %d", len(dest), iter.meta.actualColCount)
+	if len(dest) != iter.meta.ActualColCount {
+		return fmt.Errorf("gocql: not enough columns to scan into: have %d want %d", len(dest), iter.meta.ActualColCount)
 	}
 
 	// i is the current position in dest, could posible replace it and just use
 	// slices of dest
 	i := 0
 	var err error
-	for _, col := range iter.meta.columns {
+	for _, col := range iter.meta.Columns {
 		var n int
 		n, err = scanColumn(is.cols[i], col, dest[i:])
 		if err != nil {
@@ -1569,11 +1570,11 @@ func (iter *Iter) Scanner() Scanner {
 		return nil
 	}
 
-	return &iterScanner{iter: iter, cols: make([][]byte, len(iter.meta.columns))}
+	return &iterScanner{iter: iter, cols: make([][]byte, len(iter.meta.Columns))}
 }
 
 func (iter *Iter) readColumn() ([]byte, error) {
-	return iter.framer.readBytesInternal()
+	return iter.framer.ReadBytesInternal()
 }
 
 // Scan consumes the next row of the iterator and copies the columns of the
@@ -1583,7 +1584,7 @@ func (iter *Iter) readColumn() ([]byte, error) {
 //
 // Scan returns true if the row was successfully unmarshaled or false if the
 // end of the result set was reached or if an error occurred. Close should
-// be called afterwards to retrieve any potential errors.
+// be called afterwards to retrieve any potential internal_errors.
 func (iter *Iter) Scan(dest ...interface{}) bool {
 	if iter.err != nil {
 		return false
@@ -1603,15 +1604,15 @@ func (iter *Iter) Scan(dest ...interface{}) bool {
 
 	// currently only support scanning into an expand tuple, such that its the same
 	// as scanning in more values from a single column
-	if len(dest) != iter.meta.actualColCount {
-		iter.err = fmt.Errorf("gocql: not enough columns to scan into: have %d want %d", len(dest), iter.meta.actualColCount)
+	if len(dest) != iter.meta.ActualColCount {
+		iter.err = fmt.Errorf("gocql: not enough columns to scan into: have %d want %d", len(dest), iter.meta.ActualColCount)
 		return false
 	}
 
 	// i is the current position in dest, could posible replace it and just use
 	// slices of dest
 	i := 0
-	for _, col := range iter.meta.columns {
+	for _, col := range iter.meta.Columns {
 		colBytes, err := iter.readColumn()
 		if err != nil {
 			iter.err = err
@@ -1639,7 +1640,7 @@ func (iter *Iter) Scan(dest ...interface{}) bool {
 // See https://datastax.github.io/java-driver/manual/custom_payloads/
 func (iter *Iter) GetCustomPayload() map[string][]byte {
 	if iter.framer != nil {
-		return iter.framer.customPayload
+		return iter.framer.CustomPayload
 	}
 	return nil
 }
@@ -1649,12 +1650,12 @@ func (iter *Iter) GetCustomPayload() map[string][]byte {
 // This is only available starting with CQL Protocol v4.
 func (iter *Iter) Warnings() []string {
 	if iter.framer != nil {
-		return iter.framer.header.warnings
+		return iter.framer.Header.Warnings
 	}
 	return nil
 }
 
-// Close closes the iterator and returns any errors that happened during
+// Close closes the iterator and returns any internal_errors that happened during
 // the query or the iteration.
 func (iter *Iter) Close() error {
 	if atomic.CompareAndSwapInt32(&iter.closed, 0, 1) {
@@ -1685,7 +1686,7 @@ func (iter *Iter) checkErrAndNotFound() error {
 // PageState return the current paging state for a query which can be used for
 // subsequent queries to resume paging this point.
 func (iter *Iter) PageState() []byte {
-	return iter.meta.pagingState
+	return iter.meta.PagingState
 }
 
 // NumRows returns the number of rows in this pagination, it will update when new
@@ -2030,7 +2031,7 @@ func (b *Batch) releaseAfterExecution() {
 	// that would race with speculative executions.
 }
 
-type BatchType byte
+type BatchType = protocol.BatchType
 
 const (
 	LoggedBatch   BatchType = 0
@@ -2045,16 +2046,7 @@ type BatchEntry struct {
 	binding    func(q *QueryInfo) ([]interface{}, error)
 }
 
-type ColumnInfo struct {
-	Keyspace string
-	Table    string
-	Name     string
-	TypeInfo TypeInfo
-}
-
-func (c ColumnInfo) String() string {
-	return fmt.Sprintf("[column keyspace=%s table=%s name=%s type=%v]", c.Keyspace, c.Table, c.Name, c.TypeInfo)
-}
+type ColumnInfo = protocol.ColumnInfo
 
 // routing key indexes LRU cache
 type routingKeyInfoLRU struct {
@@ -2185,7 +2177,7 @@ type ObservedQuery struct {
 	Metrics *hostMetrics
 
 	// Err is the error in the query.
-	// It only tracks network errors or errors of bad cassandra syntax, in particular selects with no match return nil error
+	// It only tracks network internal_errors or internal_errors of bad cassandra syntax, in particular selects with no match return nil error
 	Err error
 
 	// Attempt is the index of attempt at executing this query.
@@ -2199,7 +2191,7 @@ type ObservedQuery struct {
 type QueryObserver interface {
 	// ObserveQuery gets called on every query to cassandra, including all queries in an iterator when paging is enabled.
 	// It doesn't get called if there is no query because the session is closed or there are no connections available.
-	// The error reported only shows query errors, i.e. if a SELECT is valid but finds no matches it will be nil.
+	// The error reported only shows query internal_errors, i.e. if a SELECT is valid but finds no matches it will be nil.
 	ObserveQuery(context.Context, ObservedQuery)
 }
 
@@ -2219,7 +2211,7 @@ type ObservedBatch struct {
 	Host *HostInfo
 
 	// Err is the error in the batch query.
-	// It only tracks network errors or errors of bad cassandra syntax, in particular selects with no match return nil error
+	// It only tracks network internal_errors or internal_errors of bad cassandra syntax, in particular selects with no match return nil error
 	Err error
 
 	// The metrics per this host
@@ -2235,7 +2227,7 @@ type BatchObserver interface {
 	// ObserveBatch gets called on every batch query to cassandra.
 	// It also gets called once for each query in a batch.
 	// It doesn't get called if there is no query because the session is closed or there are no connections available.
-	// The error reported only shows query errors, i.e. if a SELECT is valid but finds no matches it will be nil.
+	// The error reported only shows query internal_errors, i.e. if a SELECT is valid but finds no matches it will be nil.
 	// Unlike QueryObserver.ObserveQuery it does no reporting on rows read.
 	ObserveBatch(context.Context, ObservedBatch)
 }
@@ -2278,12 +2270,6 @@ var (
 	ErrKeyspaceDoesNotExist = errors.New("keyspace does not exist")
 	ErrNoMetadata           = errors.New("no metadata available")
 )
-
-type ErrProtocol struct{ error }
-
-func NewErrProtocol(format string, args ...interface{}) error {
-	return ErrProtocol{fmt.Errorf(format, args...)}
-}
 
 // BatchSizeMaximum is the maximum number of statements a batch operation can have.
 // This limit is set by cassandra and could change in the future.

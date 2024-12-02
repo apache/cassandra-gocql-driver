@@ -24,8 +24,6 @@
 
 package gocql
 
-type Duration struct {
-	Months      int32
-	Days        int32
-	Nanoseconds int64
-}
+import "github.com/gocql/gocql/internal/protocol"
+
+type Duration = protocol.Duration

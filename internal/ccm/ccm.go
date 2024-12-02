@@ -179,7 +179,7 @@ func Status() (map[string]Host, error) {
 			line := strings.Split(strings.TrimSpace(text), "=")
 			k, v := line[0], line[1]
 			if k == "binary" {
-				// could check errors
+				// could check internal_errors
 				// ('127.0.0.1', 9042)
 				v = v[2:] // (''
 				if i := strings.IndexByte(v, '\''); i < 0 {

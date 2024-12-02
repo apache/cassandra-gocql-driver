@@ -64,7 +64,7 @@ func BenchmarkParseRowsFrame(b *testing.B) {
 			buf: data,
 		}
 
-		_, err = framer.parseFrame()
+		_, err = framer.ParseFrame()
 		if err != nil {
 			b.Fatal(err)
 		}

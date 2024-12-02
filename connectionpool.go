@@ -614,7 +614,7 @@ func (pool *hostConnPool) HandleError(conn *Conn, err error, closed bool) {
 		return
 	}
 
-	// TODO: track the number of errors per host and detect when a host is dead,
+	// TODO: track the number of internal_errors per host and detect when a host is dead,
 	// then also have something which can detect when a host comes back.
 	pool.mu.Lock()
 	defer pool.mu.Unlock()
