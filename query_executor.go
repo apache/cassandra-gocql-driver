@@ -26,6 +26,7 @@ package gocql
 
 import (
 	"context"
+	"net"
 	"sync"
 	"time"
 )
@@ -56,10 +57,12 @@ type queryExecutor struct {
 type QueryAttempt struct {
 	// The query to execute, either a *gocql.Query or *gocql.Batch.
 	Query ExecutableQuery
-	// The connection used to execute the query.
-	Conn *Conn
 	// The host that will receive the query.
 	Host *HostInfo
+	// The local address of the connection used to execute the query.
+	LocalAddr net.Addr
+	// The remote address of the connection used to execute the query.
+	RemoteAddr net.Addr
 	// The number of previous query attempts. 0 for the initial attempt, 1 for the first retry, etc.
 	Attempts int
 }
@@ -88,14 +91,15 @@ func (q *queryExecutor) attemptQuery(ctx context.Context, qry ExecutableQuery, c
 		// Propagate interceptor context modifications.
 		_ctx := ctx
 		attempt := QueryAttempt{
-			Query:    qry,
-			Conn:     conn,
-			Host:     conn.host,
-			Attempts: qry.Attempts(),
+			Query:      qry,
+			Host:       conn.host,
+			LocalAddr:  conn.conn.LocalAddr(),
+			RemoteAddr: conn.conn.RemoteAddr(),
+			Attempts:   qry.Attempts(),
 		}
 		iter, err = q.interceptor.Intercept(_ctx, attempt, func(_ctx context.Context, attempt QueryAttempt) (*Iter, error) {
 			ctx = _ctx
-			iter := attempt.Query.execute(ctx, attempt.Conn)
+			iter := attempt.Query.execute(ctx, conn)
 			return iter, iter.err
 		})
 		if err != nil {
