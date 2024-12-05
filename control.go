@@ -386,7 +386,7 @@ func (c *controlConn) HandleError(conn *Conn, err error, closed bool) {
 	}
 
 	oldConn := c.getConn()
-	if oldConn.conn != conn {
+	if oldConn != nil && oldConn.conn != conn {
 		return
 	}
 
