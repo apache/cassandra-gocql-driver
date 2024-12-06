@@ -215,7 +215,6 @@ func (s *Session) init() error {
 	if err != nil {
 		return err
 	}
-	s.hostSource.endpoints = hosts
 
 	if !s.cfg.disableControlConn {
 		s.control = createControlConn(s)

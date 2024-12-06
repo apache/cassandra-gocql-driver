@@ -39,11 +39,6 @@ type ringDescriber struct {
 	prevHosts       []*HostInfo
 	prevPartitioner string
 
-	// endpoints are the set of endpoints which the driver will attempt to connect
-	// to in the case it can not reach any of its hosts. They are also used to boot
-	// strap the initial connection.
-	endpoints []*HostInfo
-
 	mu sync.RWMutex
 	// hosts are the set of all hosts in the cassandra ring that we know of.
 	// key of map is host_id.
