@@ -30,6 +30,8 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"github.com/gocql/gocql/protocol"
+	"github.com/gocql/gocql/session"
 	"io"
 	"net"
 	"strings"
@@ -655,7 +657,7 @@ func (s *Session) routingKeyInfo(ctx context.Context, stmt string) (*routingKeyI
 
 	if len(info.request.pkeyColumns) > 0 {
 		// proto v4 dont need to calculate primary key columns
-		types := make([]TypeInfo, len(info.request.pkeyColumns))
+		types := make([]protocol.TypeInfo, len(info.request.pkeyColumns))
 		for i, col := range info.request.pkeyColumns {
 			types[i] = info.request.columns[col].TypeInfo
 		}
@@ -695,7 +697,7 @@ func (s *Session) routingKeyInfo(ctx context.Context, stmt string) (*routingKeyI
 	size := len(partitionKey)
 	routingKeyInfo := &routingKeyInfo{
 		indexes:  make([]int, size),
-		types:    make([]TypeInfo, size),
+		types:    make([]protocol.TypeInfo, size),
 		keyspace: keyspace,
 		table:    table,
 	}
@@ -1506,9 +1508,9 @@ func scanColumn(p []byte, col ColumnInfo, dest []interface{}) (int, error) {
 		return 1, nil
 	}
 
-	if col.TypeInfo.Type() == TypeTuple {
+	if col.TypeInfo.Type() == protocol.TypeTuple {
 		// this will panic, actually a bug, please report
-		tuple := col.TypeInfo.(TupleTypeInfo)
+		tuple := col.TypeInfo.(protocol.TupleTypeInfo)
 
 		count := len(tuple.Elems)
 		// here we pass in a slice of the struct which has the number number of
@@ -1725,7 +1727,7 @@ func (n *nextIter) fetch() *Iter {
 }
 
 type Batch struct {
-	Type                  BatchType
+	Type                  session.BatchType
 	Entries               []BatchEntry
 	Cons                  Consistency
 	routingKey            []byte
@@ -1748,7 +1750,7 @@ type Batch struct {
 }
 
 // NewBatch creates a new batch operation using defaults defined in the cluster
-func (s *Session) NewBatch(typ BatchType) *Batch {
+func (s *Session) NewBatch(typ session.BatchType) *Batch {
 	s.mu.RLock()
 	batch := &Batch{
 		Type:             typ,
@@ -2030,12 +2032,12 @@ func (b *Batch) releaseAfterExecution() {
 	// that would race with speculative executions.
 }
 
-type BatchType byte
+//type BatchType byte
 
 const (
-	LoggedBatch   BatchType = 0
-	UnloggedBatch BatchType = 1
-	CounterBatch  BatchType = 2
+	LoggedBatch   session.BatchType = 0
+	UnloggedBatch session.BatchType = 1
+	CounterBatch  session.BatchType = 2
 )
 
 type BatchEntry struct {
@@ -2049,7 +2051,7 @@ type ColumnInfo struct {
 	Keyspace string
 	Table    string
 	Name     string
-	TypeInfo TypeInfo
+	TypeInfo protocol.TypeInfo
 }
 
 func (c ColumnInfo) String() string {
@@ -2064,7 +2066,7 @@ type routingKeyInfoLRU struct {
 
 type routingKeyInfo struct {
 	indexes  []int
-	types    []TypeInfo
+	types    []protocol.TypeInfo
 	keyspace string
 	table    string
 }

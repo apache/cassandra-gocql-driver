@@ -32,6 +32,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/gocql/gocql/protocol"
 	"strconv"
 	"strings"
 	"sync"
@@ -1232,8 +1233,8 @@ func (t *typeParser) parse() typeParserResult {
 		// treat this is a custom type
 		return typeParserResult{
 			isComposite: false,
-			types: []TypeInfo{
-				NativeType{
+			types: []protocol.TypeInfo{
+				protocol.NativeType{
 					typ:    TypeCustom,
 					custom: t.input,
 				},
@@ -1312,7 +1313,7 @@ func (class *typeParserClassNode) asTypeInfo() TypeInfo {
 	if strings.HasPrefix(class.name, LIST_TYPE) {
 		elem := class.params[0].class.asTypeInfo()
 		return CollectionType{
-			NativeType: NativeType{
+			NativeType: protocol.NativeType{
 				typ: TypeList,
 			},
 			Elem: elem,
@@ -1321,7 +1322,7 @@ func (class *typeParserClassNode) asTypeInfo() TypeInfo {
 	if strings.HasPrefix(class.name, SET_TYPE) {
 		elem := class.params[0].class.asTypeInfo()
 		return CollectionType{
-			NativeType: NativeType{
+			NativeType: protocol.NativeType{
 				typ: TypeSet,
 			},
 			Elem: elem,
@@ -1331,7 +1332,7 @@ func (class *typeParserClassNode) asTypeInfo() TypeInfo {
 		key := class.params[0].class.asTypeInfo()
 		elem := class.params[1].class.asTypeInfo()
 		return CollectionType{
-			NativeType: NativeType{
+			NativeType: protocol.NativeType{
 				typ: TypeMap,
 			},
 			Key:  key,
@@ -1340,7 +1341,7 @@ func (class *typeParserClassNode) asTypeInfo() TypeInfo {
 	}
 
 	// must be a simple type or custom type
-	info := NativeType{typ: getApacheCassandraType(class.name)}
+	info := protocol.NativeType{typ: getApacheCassandraType(class.name)}
 	if info.typ == TypeCustom {
 		// add the entire class definition
 		info.custom = class.input

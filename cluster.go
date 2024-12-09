@@ -27,6 +27,7 @@ package gocql
 import (
 	"context"
 	"errors"
+	"github.com/gocql/gocql/consistency"
 	"net"
 	"time"
 )
@@ -114,7 +115,7 @@ type ClusterConfig struct {
 
 	// Default consistency level.
 	// Default: Quorum
-	Consistency Consistency
+	Consistency consistency.Consistency
 
 	// Compression algorithm.
 	// Default: nil
@@ -156,7 +157,7 @@ type ClusterConfig struct {
 
 	// Consistency for the serial part of queries, values can be either SERIAL or LOCAL_SERIAL.
 	// Default: unset
-	SerialConsistency SerialConsistency
+	SerialConsistency consistency.SerialConsistency
 
 	// SslOpts configures TLS use when HostDialer is not set.
 	// SslOpts is ignored if HostDialer is set.

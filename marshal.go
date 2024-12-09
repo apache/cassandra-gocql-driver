@@ -29,6 +29,8 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"github.com/gocql/gocql/internal"
+	"github.com/gocql/gocql/protocol"
 	"math"
 	"math/big"
 	"math/bits"
@@ -53,13 +55,13 @@ var (
 // Marshaler is the interface implemented by objects that can marshal
 // themselves into values understood by Cassandra.
 type Marshaler interface {
-	MarshalCQL(info TypeInfo) ([]byte, error)
+	MarshalCQL(info protocol.TypeInfo) ([]byte, error)
 }
 
 // Unmarshaler is the interface implemented by objects that can unmarshal
 // a Cassandra specific description of themselves.
 type Unmarshaler interface {
-	UnmarshalCQL(info TypeInfo, data []byte) error
+	UnmarshalCQL(info protocol.TypeInfo, data []byte) error
 }
 
 // Marshal returns the CQL encoding of the value for the Cassandra
@@ -110,7 +112,7 @@ type Unmarshaler interface {
 //	duration                    | time.Duration      |
 //	duration                    | gocql.Duration     |
 //	duration                    | string             | parsed with time.ParseDuration
-func Marshal(info TypeInfo, value interface{}) ([]byte, error) {
+func Marshal(info protocol.TypeInfo, value interface{}) ([]byte, error) {
 	if info.Version() < protoVersion1 {
 		panic("protocol version not set")
 	}
@@ -222,7 +224,7 @@ func Marshal(info TypeInfo, value interface{}) ([]byte, error) {
 //	date                                    | *time.Time              | time of beginning of the day (in UTC)
 //	date                                    | *string                 | formatted with 2006-01-02 format
 //	duration                                | *gocql.Duration         |
-func Unmarshal(info TypeInfo, data []byte, value interface{}) error {
+func Unmarshal(info protocol.TypeInfo, data []byte, value interface{}) error {
 	if v, ok := value.(Unmarshaler); ok {
 		return v.UnmarshalCQL(info, data)
 	}
@@ -290,11 +292,11 @@ func isNullableValue(value interface{}) bool {
 	return v.Kind() == reflect.Ptr && v.Type().Elem().Kind() == reflect.Ptr
 }
 
-func isNullData(info TypeInfo, data []byte) bool {
+func isNullData(info protocol.TypeInfo, data []byte) bool {
 	return data == nil
 }
 
-func unmarshalNullable(info TypeInfo, data []byte, value interface{}) error {
+func unmarshalNullable(info protocol.TypeInfo, data []byte, value interface{}) error {
 	valueRef := reflect.ValueOf(value)
 
 	if isNullData(info, data) {
@@ -308,7 +310,7 @@ func unmarshalNullable(info TypeInfo, data []byte, value interface{}) error {
 	return Unmarshal(info, data, newValue.Interface())
 }
 
-func marshalVarchar(info TypeInfo, value interface{}) ([]byte, error) {
+func marshalVarchar(info protocol.TypeInfo, value interface{}) ([]byte, error) {
 	switch v := value.(type) {
 	case Marshaler:
 		return v.MarshalCQL(info)
@@ -336,7 +338,7 @@ func marshalVarchar(info TypeInfo, value interface{}) ([]byte, error) {
 	return nil, marshalErrorf("can not marshal %T into %s", value, info)
 }
 
-func unmarshalVarchar(info TypeInfo, data []byte, value interface{}) error {
+func unmarshalVarchar(info protocol.TypeInfo, data []byte, value interface{}) error {
 	switch v := value.(type) {
 	case Unmarshaler:
 		return v.UnmarshalCQL(info, data)
@@ -375,7 +377,7 @@ func unmarshalVarchar(info TypeInfo, data []byte, value interface{}) error {
 	return unmarshalErrorf("can not unmarshal %s into %T", info, value)
 }
 
-func marshalSmallInt(info TypeInfo, value interface{}) ([]byte, error) {
+func marshalSmallInt(info protocol.TypeInfo, value interface{}) ([]byte, error) {
 	switch v := value.(type) {
 	case Marshaler:
 		return v.MarshalCQL(info)
@@ -453,7 +455,7 @@ func marshalSmallInt(info TypeInfo, value interface{}) ([]byte, error) {
 	return nil, marshalErrorf("can not marshal %T into %s", value, info)
 }
 
-func marshalTinyInt(info TypeInfo, value interface{}) ([]byte, error) {
+func marshalTinyInt(info protocol.TypeInfo, value interface{}) ([]byte, error) {
 	switch v := value.(type) {
 	case Marshaler:
 		return v.MarshalCQL(info)
@@ -537,7 +539,7 @@ func marshalTinyInt(info TypeInfo, value interface{}) ([]byte, error) {
 	return nil, marshalErrorf("can not marshal %T into %s", value, info)
 }
 
-func marshalInt(info TypeInfo, value interface{}) ([]byte, error) {
+func marshalInt(info protocol.TypeInfo, value interface{}) ([]byte, error) {
 	switch v := value.(type) {
 	case Marshaler:
 		return v.MarshalCQL(info)
@@ -641,7 +643,7 @@ func decTiny(p []byte) int8 {
 	return int8(p[0])
 }
 
-func marshalBigInt(info TypeInfo, value interface{}) ([]byte, error) {
+func marshalBigInt(info protocol.TypeInfo, value interface{}) ([]byte, error) {
 	switch v := value.(type) {
 	case Marshaler:
 		return v.MarshalCQL(info)
@@ -718,23 +720,23 @@ func bytesToUint64(data []byte) (ret uint64) {
 	return ret
 }
 
-func unmarshalBigInt(info TypeInfo, data []byte, value interface{}) error {
+func unmarshalBigInt(info protocol.TypeInfo, data []byte, value interface{}) error {
 	return unmarshalIntlike(info, decBigInt(data), data, value)
 }
 
-func unmarshalInt(info TypeInfo, data []byte, value interface{}) error {
+func unmarshalInt(info protocol.TypeInfo, data []byte, value interface{}) error {
 	return unmarshalIntlike(info, int64(decInt(data)), data, value)
 }
 
-func unmarshalSmallInt(info TypeInfo, data []byte, value interface{}) error {
+func unmarshalSmallInt(info protocol.TypeInfo, data []byte, value interface{}) error {
 	return unmarshalIntlike(info, int64(decShort(data)), data, value)
 }
 
-func unmarshalTinyInt(info TypeInfo, data []byte, value interface{}) error {
+func unmarshalTinyInt(info protocol.TypeInfo, data []byte, value interface{}) error {
 	return unmarshalIntlike(info, int64(decTiny(data)), data, value)
 }
 
-func unmarshalVarint(info TypeInfo, data []byte, value interface{}) error {
+func unmarshalVarint(info protocol.TypeInfo, data []byte, value interface{}) error {
 	switch v := value.(type) {
 	case *big.Int:
 		return unmarshalIntlike(info, 0, data, value)
@@ -756,7 +758,7 @@ func unmarshalVarint(info TypeInfo, data []byte, value interface{}) error {
 	return unmarshalIntlike(info, int64Val, data, value)
 }
 
-func marshalVarint(info TypeInfo, value interface{}) ([]byte, error) {
+func marshalVarint(info protocol.TypeInfo, value interface{}) ([]byte, error) {
 	var (
 		retBytes []byte
 		err      error
@@ -807,7 +809,7 @@ func marshalVarint(info TypeInfo, value interface{}) ([]byte, error) {
 	return retBytes, err
 }
 
-func unmarshalIntlike(info TypeInfo, int64Val int64, data []byte, value interface{}) error {
+func unmarshalIntlike(info protocol.TypeInfo, int64Val int64, data []byte, value interface{}) error {
 	switch v := value.(type) {
 	case *int:
 		if ^uint(0) == math.MaxUint32 && (int64Val < math.MinInt32 || int64Val > math.MaxInt32) {
@@ -1019,7 +1021,7 @@ func decBigInt(data []byte) int64 {
 		int64(data[6])<<8 | int64(data[7])
 }
 
-func marshalBool(info TypeInfo, value interface{}) ([]byte, error) {
+func marshalBool(info protocol.TypeInfo, value interface{}) ([]byte, error) {
 	switch v := value.(type) {
 	case Marshaler:
 		return v.MarshalCQL(info)
@@ -1048,7 +1050,7 @@ func encBool(v bool) []byte {
 	return []byte{0}
 }
 
-func unmarshalBool(info TypeInfo, data []byte, value interface{}) error {
+func unmarshalBool(info protocol.TypeInfo, data []byte, value interface{}) error {
 	switch v := value.(type) {
 	case Unmarshaler:
 		return v.UnmarshalCQL(info, data)
@@ -1076,7 +1078,7 @@ func decBool(v []byte) bool {
 	return v[0] != 0
 }
 
-func marshalFloat(info TypeInfo, value interface{}) ([]byte, error) {
+func marshalFloat(info protocol.TypeInfo, value interface{}) ([]byte, error) {
 	switch v := value.(type) {
 	case Marshaler:
 		return v.MarshalCQL(info)
@@ -1098,7 +1100,7 @@ func marshalFloat(info TypeInfo, value interface{}) ([]byte, error) {
 	return nil, marshalErrorf("can not marshal %T into %s", value, info)
 }
 
-func unmarshalFloat(info TypeInfo, data []byte, value interface{}) error {
+func unmarshalFloat(info protocol.TypeInfo, data []byte, value interface{}) error {
 	switch v := value.(type) {
 	case Unmarshaler:
 		return v.UnmarshalCQL(info, data)
@@ -1119,7 +1121,7 @@ func unmarshalFloat(info TypeInfo, data []byte, value interface{}) error {
 	return unmarshalErrorf("can not unmarshal %s into %T", info, value)
 }
 
-func marshalDouble(info TypeInfo, value interface{}) ([]byte, error) {
+func marshalDouble(info protocol.TypeInfo, value interface{}) ([]byte, error) {
 	switch v := value.(type) {
 	case Marshaler:
 		return v.MarshalCQL(info)
@@ -1139,7 +1141,7 @@ func marshalDouble(info TypeInfo, value interface{}) ([]byte, error) {
 	return nil, marshalErrorf("can not marshal %T into %s", value, info)
 }
 
-func unmarshalDouble(info TypeInfo, data []byte, value interface{}) error {
+func unmarshalDouble(info protocol.TypeInfo, data []byte, value interface{}) error {
 	switch v := value.(type) {
 	case Unmarshaler:
 		return v.UnmarshalCQL(info, data)
@@ -1160,7 +1162,7 @@ func unmarshalDouble(info TypeInfo, data []byte, value interface{}) error {
 	return unmarshalErrorf("can not unmarshal %s into %T", info, value)
 }
 
-func marshalDecimal(info TypeInfo, value interface{}) ([]byte, error) {
+func marshalDecimal(info protocol.TypeInfo, value interface{}) ([]byte, error) {
 	if value == nil {
 		return nil, nil
 	}
@@ -1184,7 +1186,7 @@ func marshalDecimal(info TypeInfo, value interface{}) ([]byte, error) {
 	return nil, marshalErrorf("can not marshal %T into %s", value, info)
 }
 
-func unmarshalDecimal(info TypeInfo, data []byte, value interface{}) error {
+func unmarshalDecimal(info protocol.TypeInfo, data []byte, value interface{}) error {
 	switch v := value.(type) {
 	case Unmarshaler:
 		return v.UnmarshalCQL(info, data)
@@ -1240,7 +1242,7 @@ func encBigInt2C(n *big.Int) []byte {
 	return nil
 }
 
-func marshalTime(info TypeInfo, value interface{}) ([]byte, error) {
+func marshalTime(info protocol.TypeInfo, value interface{}) ([]byte, error) {
 	switch v := value.(type) {
 	case Marshaler:
 		return v.MarshalCQL(info)
@@ -1264,7 +1266,7 @@ func marshalTime(info TypeInfo, value interface{}) ([]byte, error) {
 	return nil, marshalErrorf("can not marshal %T into %s", value, info)
 }
 
-func marshalTimestamp(info TypeInfo, value interface{}) ([]byte, error) {
+func marshalTimestamp(info protocol.TypeInfo, value interface{}) ([]byte, error) {
 	switch v := value.(type) {
 	case Marshaler:
 		return v.MarshalCQL(info)
@@ -1292,7 +1294,7 @@ func marshalTimestamp(info TypeInfo, value interface{}) ([]byte, error) {
 	return nil, marshalErrorf("can not marshal %T into %s", value, info)
 }
 
-func unmarshalTime(info TypeInfo, data []byte, value interface{}) error {
+func unmarshalTime(info protocol.TypeInfo, data []byte, value interface{}) error {
 	switch v := value.(type) {
 	case Unmarshaler:
 		return v.UnmarshalCQL(info, data)
@@ -1317,7 +1319,7 @@ func unmarshalTime(info TypeInfo, data []byte, value interface{}) error {
 	return unmarshalErrorf("can not unmarshal %s into %T", info, value)
 }
 
-func unmarshalTimestamp(info TypeInfo, data []byte, value interface{}) error {
+func unmarshalTimestamp(info protocol.TypeInfo, data []byte, value interface{}) error {
 	switch v := value.(type) {
 	case Unmarshaler:
 		return v.UnmarshalCQL(info, data)
@@ -1351,7 +1353,7 @@ func unmarshalTimestamp(info TypeInfo, data []byte, value interface{}) error {
 
 const millisecondsInADay int64 = 24 * 60 * 60 * 1000
 
-func marshalDate(info TypeInfo, value interface{}) ([]byte, error) {
+func marshalDate(info protocol.TypeInfo, value interface{}) ([]byte, error) {
 	var timestamp int64
 	switch v := value.(type) {
 	case Marshaler:
@@ -1395,7 +1397,7 @@ func marshalDate(info TypeInfo, value interface{}) ([]byte, error) {
 	return nil, marshalErrorf("can not marshal %T into %s", value, info)
 }
 
-func unmarshalDate(info TypeInfo, data []byte, value interface{}) error {
+func unmarshalDate(info protocol.TypeInfo, data []byte, value interface{}) error {
 	switch v := value.(type) {
 	case Unmarshaler:
 		return v.UnmarshalCQL(info, data)
@@ -1423,7 +1425,7 @@ func unmarshalDate(info TypeInfo, data []byte, value interface{}) error {
 	return unmarshalErrorf("can not unmarshal %s into %T", info, value)
 }
 
-func marshalDuration(info TypeInfo, value interface{}) ([]byte, error) {
+func marshalDuration(info protocol.TypeInfo, value interface{}) ([]byte, error) {
 	switch v := value.(type) {
 	case Marshaler:
 		return v.MarshalCQL(info)
@@ -1439,7 +1441,7 @@ func marshalDuration(info TypeInfo, value interface{}) ([]byte, error) {
 			return nil, err
 		}
 		return encVints(0, 0, d.Nanoseconds()), nil
-	case Duration:
+	case protocol.Duration:
 		return encVints(v.Months, v.Days, v.Nanoseconds), nil
 	}
 
@@ -1455,13 +1457,13 @@ func marshalDuration(info TypeInfo, value interface{}) ([]byte, error) {
 	return nil, marshalErrorf("can not marshal %T into %s", value, info)
 }
 
-func unmarshalDuration(info TypeInfo, data []byte, value interface{}) error {
+func unmarshalDuration(info protocol.TypeInfo, data []byte, value interface{}) error {
 	switch v := value.(type) {
 	case Unmarshaler:
 		return v.UnmarshalCQL(info, data)
-	case *Duration:
+	case *protocol.Duration:
 		if len(data) == 0 {
-			*v = Duration{
+			*v = protocol.Duration{
 				Months:      0,
 				Days:        0,
 				Nanoseconds: 0,
@@ -1472,7 +1474,7 @@ func unmarshalDuration(info TypeInfo, data []byte, value interface{}) error {
 		if err != nil {
 			return unmarshalErrorf("failed to unmarshal %s into %T: %s", info, value, err.Error())
 		}
-		*v = Duration{
+		*v = protocol.Duration{
 			Months:      months,
 			Days:        days,
 			Nanoseconds: nanos,
@@ -1572,7 +1574,7 @@ func writeCollectionSize(info CollectionType, n int, buf *bytes.Buffer) error {
 	return nil
 }
 
-func marshalList(info TypeInfo, value interface{}) ([]byte, error) {
+func marshalList(info protocol.TypeInfo, value interface{}) ([]byte, error) {
 	listInfo, ok := info.(CollectionType)
 	if !ok {
 		return nil, marshalErrorf("marshal: can not marshal non collection type into list")
@@ -1647,7 +1649,7 @@ func readCollectionSize(info CollectionType, data []byte) (size, read int, err e
 	return
 }
 
-func unmarshalList(info TypeInfo, data []byte, value interface{}) error {
+func unmarshalList(info protocol.TypeInfo, data []byte, value interface{}) error {
 	listInfo, ok := info.(CollectionType)
 	if !ok {
 		return unmarshalErrorf("unmarshal: can not unmarshal none collection type into list")
@@ -1709,7 +1711,7 @@ func unmarshalList(info TypeInfo, data []byte, value interface{}) error {
 	return unmarshalErrorf("can not unmarshal %s into %T", info, value)
 }
 
-func marshalMap(info TypeInfo, value interface{}) ([]byte, error) {
+func marshalMap(info protocol.TypeInfo, value interface{}) ([]byte, error) {
 	mapInfo, ok := info.(CollectionType)
 	if !ok {
 		return nil, marshalErrorf("marshal: can not marshal none collection type into map")
@@ -1772,7 +1774,7 @@ func marshalMap(info TypeInfo, value interface{}) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-func unmarshalMap(info TypeInfo, data []byte, value interface{}) error {
+func unmarshalMap(info protocol.TypeInfo, data []byte, value interface{}) error {
 	mapInfo, ok := info.(CollectionType)
 	if !ok {
 		return unmarshalErrorf("unmarshal: can not unmarshal none collection type into map")
@@ -1845,7 +1847,7 @@ func unmarshalMap(info TypeInfo, data []byte, value interface{}) error {
 	return nil
 }
 
-func marshalUUID(info TypeInfo, value interface{}) ([]byte, error) {
+func marshalUUID(info protocol.TypeInfo, value interface{}) ([]byte, error) {
 	switch val := value.(type) {
 	case unsetColumn:
 		return nil, nil
@@ -1873,7 +1875,7 @@ func marshalUUID(info TypeInfo, value interface{}) ([]byte, error) {
 	return nil, marshalErrorf("can not marshal %T into %s", value, info)
 }
 
-func unmarshalUUID(info TypeInfo, data []byte, value interface{}) error {
+func unmarshalUUID(info protocol.TypeInfo, data []byte, value interface{}) error {
 	if len(data) == 0 {
 		switch v := value.(type) {
 		case *string:
@@ -1918,7 +1920,7 @@ func unmarshalUUID(info TypeInfo, data []byte, value interface{}) error {
 	return unmarshalErrorf("can not unmarshal X %s into %T", info, value)
 }
 
-func unmarshalTimeUUID(info TypeInfo, data []byte, value interface{}) error {
+func unmarshalTimeUUID(info protocol.TypeInfo, data []byte, value interface{}) error {
 	switch v := value.(type) {
 	case Unmarshaler:
 		return v.UnmarshalCQL(info, data)
@@ -1936,7 +1938,7 @@ func unmarshalTimeUUID(info TypeInfo, data []byte, value interface{}) error {
 	}
 }
 
-func marshalInet(info TypeInfo, value interface{}) ([]byte, error) {
+func marshalInet(info protocol.TypeInfo, value interface{}) ([]byte, error) {
 	// we return either the 4 or 16 byte representation of an
 	// ip address here otherwise the db value will be prefixed
 	// with the remaining byte values e.g. ::ffff:127.0.0.1 and not 127.0.0.1
@@ -1968,7 +1970,7 @@ func marshalInet(info TypeInfo, value interface{}) ([]byte, error) {
 	return nil, marshalErrorf("cannot marshal %T into %s", value, info)
 }
 
-func unmarshalInet(info TypeInfo, data []byte, value interface{}) error {
+func unmarshalInet(info protocol.TypeInfo, data []byte, value interface{}) error {
 	switch v := value.(type) {
 	case Unmarshaler:
 		return v.UnmarshalCQL(info, data)
@@ -1976,7 +1978,7 @@ func unmarshalInet(info TypeInfo, data []byte, value interface{}) error {
 		if x := len(data); !(x == 4 || x == 16) {
 			return unmarshalErrorf("cannot unmarshal %s into %T: invalid sized IP: got %d bytes not 4 or 16", info, value, x)
 		}
-		buf := copyBytes(data)
+		buf := internal.CopyBytes(data)
 		ip := net.IP(buf)
 		if v4 := ip.To4(); v4 != nil {
 			*v = v4
@@ -2000,7 +2002,7 @@ func unmarshalInet(info TypeInfo, data []byte, value interface{}) error {
 	return unmarshalErrorf("cannot unmarshal %s into %T", info, value)
 }
 
-func marshalTuple(info TypeInfo, value interface{}) ([]byte, error) {
+func marshalTuple(info protocol.TypeInfo, value interface{}) ([]byte, error) {
 	tuple := info.(TupleTypeInfo)
 	switch v := value.(type) {
 	case unsetColumn:
@@ -2104,7 +2106,7 @@ func readBytes(p []byte) ([]byte, []byte) {
 // currently only support unmarshal into a list of values, this makes it possible
 // to support tuples without changing the query API. In the future this can be extend
 // to allow unmarshalling into custom tuple types.
-func unmarshalTuple(info TypeInfo, data []byte, value interface{}) error {
+func unmarshalTuple(info protocol.TypeInfo, data []byte, value interface{}) error {
 	if v, ok := value.(Unmarshaler); ok {
 		return v.UnmarshalCQL(info, data)
 	}
@@ -2218,7 +2220,7 @@ type UDTMarshaler interface {
 	// MarshalUDT will be called for each field in the the UDT returned by Cassandra,
 	// the implementor should marshal the type to return by for example calling
 	// Marshal.
-	MarshalUDT(name string, info TypeInfo) ([]byte, error)
+	MarshalUDT(name string, info protocol.TypeInfo) ([]byte, error)
 }
 
 // UDTUnmarshaler should be implemented by users wanting to implement custom
@@ -2227,10 +2229,10 @@ type UDTUnmarshaler interface {
 	// UnmarshalUDT will be called for each field in the UDT return by Cassandra,
 	// the implementor should unmarshal the data into the value of their chosing,
 	// for example by calling Unmarshal.
-	UnmarshalUDT(name string, info TypeInfo, data []byte) error
+	UnmarshalUDT(name string, info protocol.TypeInfo, data []byte) error
 }
 
-func marshalUDT(info TypeInfo, value interface{}) ([]byte, error) {
+func marshalUDT(info protocol.TypeInfo, value interface{}) ([]byte, error) {
 	udt := info.(UDTTypeInfo)
 
 	switch v := value.(type) {
@@ -2315,12 +2317,12 @@ func marshalUDT(info TypeInfo, value interface{}) ([]byte, error) {
 	return buf, nil
 }
 
-func unmarshalUDT(info TypeInfo, data []byte, value interface{}) error {
+func unmarshalUDT(info protocol.TypeInfo, data []byte, value interface{}) error {
 	switch v := value.(type) {
 	case Unmarshaler:
 		return v.UnmarshalCQL(info, data)
 	case UDTUnmarshaler:
-		udt := info.(UDTTypeInfo)
+		udt := info.(protocol.UDTTypeInfo)
 
 		for id, e := range udt.Elements {
 			if len(data) == 0 {
@@ -2339,7 +2341,7 @@ func unmarshalUDT(info TypeInfo, data []byte, value interface{}) error {
 
 		return nil
 	case *map[string]interface{}:
-		udt := info.(UDTTypeInfo)
+		udt := info.(protocol.UDTTypeInfo)
 
 		rv := reflect.ValueOf(value)
 		if rv.Kind() != reflect.Ptr {
@@ -2449,282 +2451,282 @@ func unmarshalUDT(info TypeInfo, data []byte, value interface{}) error {
 	return nil
 }
 
-// TypeInfo describes a Cassandra specific data type.
-type TypeInfo interface {
-	Type() Type
-	Version() byte
-	Custom() string
+//// TypeInfo describes a Cassandra specific data type.
+//type TypeInfo interface {
+//	Type() Type
+//	Version() byte
+//	Custom() string
+//
+//	// New creates a pointer to an empty version of whatever type
+//	// is referenced by the TypeInfo receiver.
+//	//
+//	// If there is no corresponding Go type for the CQL type, New panics.
+//	//
+//	// Deprecated: Use NewWithError instead.
+//	New() interface{}
+//
+//	// NewWithError creates a pointer to an empty version of whatever type
+//	// is referenced by the TypeInfo receiver.
+//	//
+//	// If there is no corresponding Go type for the CQL type, NewWithError returns an error.
+//	NewWithError() (interface{}, error)
+//}
 
-	// New creates a pointer to an empty version of whatever type
-	// is referenced by the TypeInfo receiver.
-	//
-	// If there is no corresponding Go type for the CQL type, New panics.
-	//
-	// Deprecated: Use NewWithError instead.
-	New() interface{}
+//type NativeType struct {
+//	proto  byte
+//	typ    Type
+//	custom string // only used for TypeCustom
+//}
+//
+//func NewNativeType(proto byte, typ Type, custom string) NativeType {
+//	return NativeType{proto, typ, custom}
+//}
+//
+//func (t NativeType) NewWithError() (interface{}, error) {
+//	typ, err := goType(t)
+//	if err != nil {
+//		return nil, err
+//	}
+//	return reflect.New(typ).Interface(), nil
+//}
+//
+//func (t NativeType) New() interface{} {
+//	val, err := t.NewWithError()
+//	if err != nil {
+//		panic(err.Error())
+//	}
+//	return val
+//}
+//
+//func (s NativeType) Type() Type {
+//	return s.typ
+//}
+//
+//func (s NativeType) Version() byte {
+//	return s.proto
+//}
+//
+//func (s NativeType) Custom() string {
+//	return s.custom
+//}
+//
+//func (s NativeType) String() string {
+//	switch s.typ {
+//	case TypeCustom:
+//		return fmt.Sprintf("%s(%s)", s.typ, s.custom)
+//	default:
+//		return s.typ.String()
+//	}
+//}
 
-	// NewWithError creates a pointer to an empty version of whatever type
-	// is referenced by the TypeInfo receiver.
-	//
-	// If there is no corresponding Go type for the CQL type, NewWithError returns an error.
-	NewWithError() (interface{}, error)
-}
+//type CollectionType struct {
+//	NativeType
+//	Key  protocol.TypeInfo // only used for TypeMap
+//	Elem protocol.TypeInfo // only used for TypeMap, TypeList and TypeSet
+//}
+//
+//func (t CollectionType) NewWithError() (interface{}, error) {
+//	typ, err := goType(t)
+//	if err != nil {
+//		return nil, err
+//	}
+//	return reflect.New(typ).Interface(), nil
+//}
+//
+//func (t CollectionType) New() interface{} {
+//	val, err := t.NewWithError()
+//	if err != nil {
+//		panic(err.Error())
+//	}
+//	return val
+//}
+//
+//func (c CollectionType) String() string {
+//	switch c.typ {
+//	case TypeMap:
+//		return fmt.Sprintf("%s(%s, %s)", c.typ, c.Key, c.Elem)
+//	case TypeList, TypeSet:
+//		return fmt.Sprintf("%s(%s)", c.typ, c.Elem)
+//	case TypeCustom:
+//		return fmt.Sprintf("%s(%s)", c.typ, c.custom)
+//	default:
+//		return c.typ.String()
+//	}
+//}
+//
+//type TupleTypeInfo struct {
+//	NativeType
+//	Elems []protocol.TypeInfo
+//}
+//
+//func (t TupleTypeInfo) String() string {
+//	var buf bytes.Buffer
+//	buf.WriteString(fmt.Sprintf("%s(", t.typ))
+//	for _, elem := range t.Elems {
+//		buf.WriteString(fmt.Sprintf("%s, ", elem))
+//	}
+//	buf.Truncate(buf.Len() - 2)
+//	buf.WriteByte(')')
+//	return buf.String()
+//}
+//
+//func (t TupleTypeInfo) NewWithError() (interface{}, error) {
+//	typ, err := goType(t)
+//	if err != nil {
+//		return nil, err
+//	}
+//	return reflect.New(typ).Interface(), nil
+//}
+//
+//func (t TupleTypeInfo) New() interface{} {
+//	val, err := t.NewWithError()
+//	if err != nil {
+//		panic(err.Error())
+//	}
+//	return val
+//}
 
-type NativeType struct {
-	proto  byte
-	typ    Type
-	custom string // only used for TypeCustom
-}
+//type UDTField struct {
+//	Name string
+//	Type protocol.TypeInfo
+//}
 
-func NewNativeType(proto byte, typ Type, custom string) NativeType {
-	return NativeType{proto, typ, custom}
-}
+//type UDTTypeInfo struct {
+//	protocol.NativeType
+//	KeySpace string
+//	Name     string
+//	Elements []UDTField
+//}
+//
+//func (u UDTTypeInfo) NewWithError() (interface{}, error) {
+//	typ, err := goType(u)
+//	if err != nil {
+//		return nil, err
+//	}
+//	return reflect.New(typ).Interface(), nil
+//}
+//
+//func (u UDTTypeInfo) New() interface{} {
+//	val, err := u.NewWithError()
+//	if err != nil {
+//		panic(err.Error())
+//	}
+//	return val
+//}
+//
+//func (u UDTTypeInfo) String() string {
+//	buf := &bytes.Buffer{}
+//
+//	fmt.Fprintf(buf, "%s.%s{", u.KeySpace, u.Name)
+//	first := true
+//	for _, e := range u.Elements {
+//		if !first {
+//			fmt.Fprint(buf, ",")
+//		} else {
+//			first = false
+//		}
+//
+//		fmt.Fprintf(buf, "%s=%v", e.Name, e.Type)
+//	}
+//	fmt.Fprint(buf, "}")
+//
+//	return buf.String()
+//}
 
-func (t NativeType) NewWithError() (interface{}, error) {
-	typ, err := goType(t)
-	if err != nil {
-		return nil, err
-	}
-	return reflect.New(typ).Interface(), nil
-}
-
-func (t NativeType) New() interface{} {
-	val, err := t.NewWithError()
-	if err != nil {
-		panic(err.Error())
-	}
-	return val
-}
-
-func (s NativeType) Type() Type {
-	return s.typ
-}
-
-func (s NativeType) Version() byte {
-	return s.proto
-}
-
-func (s NativeType) Custom() string {
-	return s.custom
-}
-
-func (s NativeType) String() string {
-	switch s.typ {
-	case TypeCustom:
-		return fmt.Sprintf("%s(%s)", s.typ, s.custom)
-	default:
-		return s.typ.String()
-	}
-}
-
-type CollectionType struct {
-	NativeType
-	Key  TypeInfo // only used for TypeMap
-	Elem TypeInfo // only used for TypeMap, TypeList and TypeSet
-}
-
-func (t CollectionType) NewWithError() (interface{}, error) {
-	typ, err := goType(t)
-	if err != nil {
-		return nil, err
-	}
-	return reflect.New(typ).Interface(), nil
-}
-
-func (t CollectionType) New() interface{} {
-	val, err := t.NewWithError()
-	if err != nil {
-		panic(err.Error())
-	}
-	return val
-}
-
-func (c CollectionType) String() string {
-	switch c.typ {
-	case TypeMap:
-		return fmt.Sprintf("%s(%s, %s)", c.typ, c.Key, c.Elem)
-	case TypeList, TypeSet:
-		return fmt.Sprintf("%s(%s)", c.typ, c.Elem)
-	case TypeCustom:
-		return fmt.Sprintf("%s(%s)", c.typ, c.custom)
-	default:
-		return c.typ.String()
-	}
-}
-
-type TupleTypeInfo struct {
-	NativeType
-	Elems []TypeInfo
-}
-
-func (t TupleTypeInfo) String() string {
-	var buf bytes.Buffer
-	buf.WriteString(fmt.Sprintf("%s(", t.typ))
-	for _, elem := range t.Elems {
-		buf.WriteString(fmt.Sprintf("%s, ", elem))
-	}
-	buf.Truncate(buf.Len() - 2)
-	buf.WriteByte(')')
-	return buf.String()
-}
-
-func (t TupleTypeInfo) NewWithError() (interface{}, error) {
-	typ, err := goType(t)
-	if err != nil {
-		return nil, err
-	}
-	return reflect.New(typ).Interface(), nil
-}
-
-func (t TupleTypeInfo) New() interface{} {
-	val, err := t.NewWithError()
-	if err != nil {
-		panic(err.Error())
-	}
-	return val
-}
-
-type UDTField struct {
-	Name string
-	Type TypeInfo
-}
-
-type UDTTypeInfo struct {
-	NativeType
-	KeySpace string
-	Name     string
-	Elements []UDTField
-}
-
-func (u UDTTypeInfo) NewWithError() (interface{}, error) {
-	typ, err := goType(u)
-	if err != nil {
-		return nil, err
-	}
-	return reflect.New(typ).Interface(), nil
-}
-
-func (u UDTTypeInfo) New() interface{} {
-	val, err := u.NewWithError()
-	if err != nil {
-		panic(err.Error())
-	}
-	return val
-}
-
-func (u UDTTypeInfo) String() string {
-	buf := &bytes.Buffer{}
-
-	fmt.Fprintf(buf, "%s.%s{", u.KeySpace, u.Name)
-	first := true
-	for _, e := range u.Elements {
-		if !first {
-			fmt.Fprint(buf, ",")
-		} else {
-			first = false
-		}
-
-		fmt.Fprintf(buf, "%s=%v", e.Name, e.Type)
-	}
-	fmt.Fprint(buf, "}")
-
-	return buf.String()
-}
-
-// String returns a human readable name for the Cassandra datatype
-// described by t.
-// Type is the identifier of a Cassandra internal datatype.
-type Type int
-
-const (
-	TypeCustom    Type = 0x0000
-	TypeAscii     Type = 0x0001
-	TypeBigInt    Type = 0x0002
-	TypeBlob      Type = 0x0003
-	TypeBoolean   Type = 0x0004
-	TypeCounter   Type = 0x0005
-	TypeDecimal   Type = 0x0006
-	TypeDouble    Type = 0x0007
-	TypeFloat     Type = 0x0008
-	TypeInt       Type = 0x0009
-	TypeText      Type = 0x000A
-	TypeTimestamp Type = 0x000B
-	TypeUUID      Type = 0x000C
-	TypeVarchar   Type = 0x000D
-	TypeVarint    Type = 0x000E
-	TypeTimeUUID  Type = 0x000F
-	TypeInet      Type = 0x0010
-	TypeDate      Type = 0x0011
-	TypeTime      Type = 0x0012
-	TypeSmallInt  Type = 0x0013
-	TypeTinyInt   Type = 0x0014
-	TypeDuration  Type = 0x0015
-	TypeList      Type = 0x0020
-	TypeMap       Type = 0x0021
-	TypeSet       Type = 0x0022
-	TypeUDT       Type = 0x0030
-	TypeTuple     Type = 0x0031
-)
-
-// String returns the name of the identifier.
-func (t Type) String() string {
-	switch t {
-	case TypeCustom:
-		return "custom"
-	case TypeAscii:
-		return "ascii"
-	case TypeBigInt:
-		return "bigint"
-	case TypeBlob:
-		return "blob"
-	case TypeBoolean:
-		return "boolean"
-	case TypeCounter:
-		return "counter"
-	case TypeDecimal:
-		return "decimal"
-	case TypeDouble:
-		return "double"
-	case TypeFloat:
-		return "float"
-	case TypeInt:
-		return "int"
-	case TypeText:
-		return "text"
-	case TypeTimestamp:
-		return "timestamp"
-	case TypeUUID:
-		return "uuid"
-	case TypeVarchar:
-		return "varchar"
-	case TypeTimeUUID:
-		return "timeuuid"
-	case TypeInet:
-		return "inet"
-	case TypeDate:
-		return "date"
-	case TypeDuration:
-		return "duration"
-	case TypeTime:
-		return "time"
-	case TypeSmallInt:
-		return "smallint"
-	case TypeTinyInt:
-		return "tinyint"
-	case TypeList:
-		return "list"
-	case TypeMap:
-		return "map"
-	case TypeSet:
-		return "set"
-	case TypeVarint:
-		return "varint"
-	case TypeTuple:
-		return "tuple"
-	default:
-		return fmt.Sprintf("unknown_type_%d", t)
-	}
-}
+//// String returns a human readable name for the Cassandra datatype
+//// described by t.
+//// Type is the identifier of a Cassandra internal datatype.
+//type Type int
+//
+//const (
+//	TypeCustom    Type = 0x0000
+//	TypeAscii     Type = 0x0001
+//	TypeBigInt    Type = 0x0002
+//	TypeBlob      Type = 0x0003
+//	TypeBoolean   Type = 0x0004
+//	TypeCounter   Type = 0x0005
+//	TypeDecimal   Type = 0x0006
+//	TypeDouble    Type = 0x0007
+//	TypeFloat     Type = 0x0008
+//	TypeInt       Type = 0x0009
+//	TypeText      Type = 0x000A
+//	TypeTimestamp Type = 0x000B
+//	TypeUUID      Type = 0x000C
+//	TypeVarchar   Type = 0x000D
+//	TypeVarint    Type = 0x000E
+//	TypeTimeUUID  Type = 0x000F
+//	TypeInet      Type = 0x0010
+//	TypeDate      Type = 0x0011
+//	TypeTime      Type = 0x0012
+//	TypeSmallInt  Type = 0x0013
+//	TypeTinyInt   Type = 0x0014
+//	TypeDuration  Type = 0x0015
+//	TypeList      Type = 0x0020
+//	TypeMap       Type = 0x0021
+//	TypeSet       Type = 0x0022
+//	TypeUDT       Type = 0x0030
+//	TypeTuple     Type = 0x0031
+//)
+//
+//// String returns the name of the identifier.
+//func (t Type) String() string {
+//	switch t {
+//	case TypeCustom:
+//		return "custom"
+//	case TypeAscii:
+//		return "ascii"
+//	case TypeBigInt:
+//		return "bigint"
+//	case TypeBlob:
+//		return "blob"
+//	case TypeBoolean:
+//		return "boolean"
+//	case TypeCounter:
+//		return "counter"
+//	case TypeDecimal:
+//		return "decimal"
+//	case TypeDouble:
+//		return "double"
+//	case TypeFloat:
+//		return "float"
+//	case TypeInt:
+//		return "int"
+//	case TypeText:
+//		return "text"
+//	case TypeTimestamp:
+//		return "timestamp"
+//	case TypeUUID:
+//		return "uuid"
+//	case TypeVarchar:
+//		return "varchar"
+//	case TypeTimeUUID:
+//		return "timeuuid"
+//	case TypeInet:
+//		return "inet"
+//	case TypeDate:
+//		return "date"
+//	case TypeDuration:
+//		return "duration"
+//	case TypeTime:
+//		return "time"
+//	case TypeSmallInt:
+//		return "smallint"
+//	case TypeTinyInt:
+//		return "tinyint"
+//	case TypeList:
+//		return "list"
+//	case TypeMap:
+//		return "map"
+//	case TypeSet:
+//		return "set"
+//	case TypeVarint:
+//		return "varint"
+//	case TypeTuple:
+//		return "tuple"
+//	default:
+//		return fmt.Sprintf("unknown_type_%d", t)
+//	}
+//}
 
 type MarshalError string
 

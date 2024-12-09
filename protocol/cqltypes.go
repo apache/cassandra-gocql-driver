@@ -22,7 +22,7 @@
  * See the NOTICE file distributed with this work for additional information.
  */
 
-package gocql
+package protocol
 
 type Duration struct {
 	Months      int32

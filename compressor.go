@@ -28,6 +28,7 @@ import (
 	"github.com/golang/snappy"
 )
 
+// Deprecated: use compressor.Compressor instead
 type Compressor interface {
 	Name() string
 	Encode(data []byte) ([]byte, error)

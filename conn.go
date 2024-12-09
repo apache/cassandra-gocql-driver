@@ -30,6 +30,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"github.com/gocql/gocql/internal"
 	"io"
 	"io/ioutil"
 	"net"
@@ -1276,7 +1277,7 @@ func (c *Conn) prepareStatement(ctx context.Context, stmt string, tracer Tracer)
 				flight.preparedStatment = &preparedStatment{
 					// defensively copy as we will recycle the underlying buffer after we
 					// return.
-					id: copyBytes(x.preparedID),
+					id: internal.CopyBytes(x.preparedID),
 					// the type info's should _not_ have a reference to the framers read buffer,
 					// therefore we can just copy them directly.
 					request:  x.reqMeta,
@@ -1431,7 +1432,7 @@ func (c *Conn) executeQuery(ctx context.Context, qry *Query) *Iter {
 		if params.skipMeta {
 			if info != nil {
 				iter.meta = info.response
-				iter.meta.pagingState = copyBytes(x.meta.pagingState)
+				iter.meta.pagingState = internal.CopyBytes(x.meta.pagingState)
 			} else {
 				return &Iter{framer: framer, err: errors.New("gocql: did not receive metadata but prepared info is nil")}
 			}
@@ -1442,7 +1443,7 @@ func (c *Conn) executeQuery(ctx context.Context, qry *Query) *Iter {
 		if x.meta.morePages() && !qry.disableAutoPage {
 			newQry := new(Query)
 			*newQry = *qry
-			newQry.pageState = copyBytes(x.meta.pagingState)
+			newQry.pageState = internal.CopyBytes(x.meta.pagingState)
 			newQry.metrics = &queryMetrics{m: make(map[string]*hostMetrics)}
 
 			iter.next = &nextIter{
@@ -1659,7 +1660,7 @@ func (c *Conn) querySystemPeers(ctx context.Context, version cassVersion) *Iter 
 
 		err := iter.checkErrAndNotFound()
 		if err != nil {
-			if errFrame, ok := err.(errorFrame); ok && errFrame.code == ErrCodeInvalid { // system.peers_v2 not found, try system.peers
+			if errFrame, ok := err.(errorFrame); ok && errFrame.code == gocql_errors.ErrCodeInvalid { // system.peers_v2 not found, try system.peers
 				c.mu.Lock()
 				c.isSchemaV2 = false
 				c.mu.Unlock()

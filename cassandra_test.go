@@ -32,6 +32,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/gocql/gocql/protocol"
 	"github.com/stretchr/testify/require"
 	"io"
 	"math"
@@ -519,23 +520,23 @@ func TestDurationType(t *testing.T) {
 		t.Fatal("create:", err)
 	}
 
-	durations := []Duration{
-		Duration{
+	durations := []protocol.Duration{
+		protocol.Duration{
 			Months:      250,
 			Days:        500,
 			Nanoseconds: 300010001,
 		},
-		Duration{
+		protocol.Duration{
 			Months:      -250,
 			Days:        -500,
 			Nanoseconds: -300010001,
 		},
-		Duration{
+		protocol.Duration{
 			Months:      0,
 			Days:        128,
 			Nanoseconds: 127,
 		},
-		Duration{
+		protocol.Duration{
 			Months:      0x7FFFFFFF,
 			Days:        0x7FFFFFFF,
 			Nanoseconds: 0x7FFFFFFFFFFFFFFF,
@@ -547,7 +548,7 @@ func TestDurationType(t *testing.T) {
 		}
 
 		var id int
-		var duration Duration
+		var duration protocol.Duration
 		if err := session.Query(`SELECT k, v FROM gocql_test.duration_table`).Scan(&id, &duration); err != nil {
 			t.Fatal(err)
 		}
