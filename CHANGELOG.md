@@ -21,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Change Batch API to be consistent with Query() (CASSGO-7)
 
+- Added Cassandra 4.0 table options support(CASSGO-13)
+
 - Remove deprecated global logger (CASSGO-24)
 
 - Bumped actions/upload-artifact and actions/cache versions to v4 in CI workflow (CASSGO-48)
