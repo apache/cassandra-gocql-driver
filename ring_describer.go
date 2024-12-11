@@ -28,7 +28,6 @@ import (
 	"context"
 	"fmt"
 	"sync"
-	"sync/atomic"
 )
 
 // Polls system.peers at a specific interval to find new hosts
@@ -45,11 +44,6 @@ type ringDescriber struct {
 	hosts map[string]*HostInfo
 	// hostIPToUUID maps host native address to host_id.
 	hostIPToUUID map[string]string
-
-	hostList []*HostInfo
-	pos      uint32
-
-	// TODO: we should store the ring metadata here also.
 }
 
 func (r *ringDescriber) setControlConn(c *controlConn) {
@@ -152,6 +146,56 @@ func (r *ringDescriber) GetHosts() ([]*HostInfo, string, error) {
 	return hosts, partitioner, nil
 }
 
+// Given an ip/port return HostInfo for the specified ip/port
+func (r *ringDescriber) getHostInfo(hostID UUID) (*HostInfo, error) {
+	var host *HostInfo
+	for _, table := range []string{"system.peers", "system.local"} {
+		ch := r.control.getConn()
+		var iter *Iter
+		if ch.host.HostID() == hostID.String() {
+			host = ch.host
+			iter = nil
+		}
+
+		if table == "system.peers" {
+			if ch.conn.getIsSchemaV2() {
+				iter = ch.conn.querySystem(context.TODO(), qrySystemPeersV2)
+			} else {
+				iter = ch.conn.querySystem(context.TODO(), qrySystemPeers)
+			}
+		} else {
+			iter = ch.conn.query(context.TODO(), fmt.Sprintf("SELECT * FROM %s", table))
+		}
+
+		if iter != nil {
+			rows, err := iter.SliceMap()
+			if err != nil {
+				return nil, err
+			}
+
+			for _, row := range rows {
+				h, err := hostInfoFromMap(row, &HostInfo{port: r.cfg.Port}, r.cfg.translateAddressPort)
+				if err != nil {
+					return nil, err
+				}
+
+				if h.HostID() == hostID.String() {
+					host = h
+					break
+				}
+			}
+		}
+	}
+
+	if host == nil {
+		return nil, errors.New("unable to fetch host info: invalid control connection")
+	} else if host.invalidConnectAddr() {
+		return nil, fmt.Errorf("host ConnectAddress invalid ip=%v: %v", host.connectAddress, host)
+	}
+
+	return host, nil
+}
+
 func (r *ringDescriber) rrHost() *HostInfo {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -224,7 +268,6 @@ func (r *ringDescriber) addHostIfMissing(host *HostInfo) (*HostInfo, bool) {
 		r.hosts[hostID] = host
 		r.hostIPToUUID[host.nodeToNodeAddress().String()] = hostID
 		existing = host
-		r.hostList = append(r.hostList, host)
 	}
 	r.mu.Unlock()
 	return existing, ok
@@ -241,12 +284,6 @@ func (r *ringDescriber) removeHost(hostID string) bool {
 
 	h, ok := r.hosts[hostID]
 	if ok {
-		for i, host := range r.hostList {
-			if host.HostID() == hostID {
-				r.hostList = append(r.hostList[:i], r.hostList[i+1:]...)
-				break
-			}
-		}
 		delete(r.hostIPToUUID, h.nodeToNodeAddress().String())
 	}
 	delete(r.hosts, hostID)

@@ -344,7 +344,7 @@ func (s *Session) init() error {
 		newer, _ := checkSystemSchema(s.control)
 		s.useSystemSchema = newer
 	} else {
-		version := s.hostSource.rrHost().Version()
+		version := s.hostSource.allHosts()[0].Version()
 		s.useSystemSchema = version.AtLeast(3, 0, 0)
 		s.hasAggregatesAndFunctions = version.AtLeast(2, 2, 0)
 	}
