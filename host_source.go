@@ -656,8 +656,6 @@ func refreshRing(s *Session) error {
 	for _, host := range prevHosts {
 		s.removeHost(host)
 	}
-
-	s.metadata.setPartitioner(partitioner)
 	s.policy.SetPartitioner(partitioner)
 	return nil
 }

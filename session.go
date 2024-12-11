@@ -72,8 +72,6 @@ type Session struct {
 	pool     *policyConnPool
 	policy   HostSelectionPolicy
 
-	metadata clusterMetadata
-
 	mu sync.RWMutex
 
 	control *controlConn
