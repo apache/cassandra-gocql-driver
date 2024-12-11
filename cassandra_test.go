@@ -2328,7 +2328,7 @@ func TestGetColumnMetadata(t *testing.T) {
 
 func TestMaterializedViewMetadata(t *testing.T) {
 	if flagCassVersion.Before(3, 0, 0) {
-		return
+		t.Skip("The Cassandra version is too old")
 	}
 	session := createSession(t)
 	defer session.Close()
@@ -2347,14 +2347,19 @@ func TestMaterializedViewMetadata(t *testing.T) {
 	expectedChunkLengthInKB := "16"
 	expectedDCLocalReadRepairChance := float64(0)
 	expectedSpeculativeRetry := "99p"
+	expectedAdditionalWritePolicy := "99p"
+	expectedReadRepair := "BLOCKING"
 	if flagCassVersion.Before(4, 0, 0) {
 		expectedChunkLengthInKB = "64"
 		expectedDCLocalReadRepairChance = 0.1
 		expectedSpeculativeRetry = "99PERCENTILE"
+		expectedReadRepair = ""
+		expectedAdditionalWritePolicy = ""
 	}
 	expectedView1 := MaterializedViewMetadata{
 		Keyspace:                "gocql_test",
 		Name:                    "view_view",
+		AdditionalWritePolicy:   expectedAdditionalWritePolicy,
 		baseTableName:           "view_table",
 		BloomFilterFpChance:     0.01,
 		Caching:                 map[string]string{"keys": "ALL", "rows_per_partition": "NONE"},
@@ -2366,12 +2371,17 @@ func TestMaterializedViewMetadata(t *testing.T) {
 		DefaultTimeToLive:       0,
 		Extensions:              map[string]string{},
 		GcGraceSeconds:          864000,
-		IncludeAllColumns:       false, MaxIndexInterval: 2048, MemtableFlushPeriodInMs: 0, MinIndexInterval: 128, ReadRepairChance: 0,
-		SpeculativeRetry: expectedSpeculativeRetry,
+		IncludeAllColumns:       false, MaxIndexInterval: 2048,
+		MemtableFlushPeriodInMs: 0,
+		MinIndexInterval:        128,
+		ReadRepair:              expectedReadRepair,
+		ReadRepairChance:        0,
+		SpeculativeRetry:        expectedSpeculativeRetry,
 	}
 	expectedView2 := MaterializedViewMetadata{
 		Keyspace:                "gocql_test",
 		Name:                    "view_view2",
+		AdditionalWritePolicy:   expectedAdditionalWritePolicy,
 		baseTableName:           "view_table2",
 		BloomFilterFpChance:     0.01,
 		Caching:                 map[string]string{"keys": "ALL", "rows_per_partition": "NONE"},
@@ -2383,8 +2393,13 @@ func TestMaterializedViewMetadata(t *testing.T) {
 		DefaultTimeToLive:       0,
 		Extensions:              map[string]string{},
 		GcGraceSeconds:          864000,
-		IncludeAllColumns:       false, MaxIndexInterval: 2048, MemtableFlushPeriodInMs: 0, MinIndexInterval: 128, ReadRepairChance: 0,
-		SpeculativeRetry: expectedSpeculativeRetry,
+		IncludeAllColumns:       false,
+		MaxIndexInterval:        2048,
+		MemtableFlushPeriodInMs: 0,
+		MinIndexInterval:        128,
+		ReadRepair:              expectedReadRepair,
+		ReadRepairChance:        0,
+		SpeculativeRetry:        expectedSpeculativeRetry,
 	}
 
 	expectedView1.BaseTableId = materializedViews[0].BaseTableId
