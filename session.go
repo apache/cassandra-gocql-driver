@@ -166,8 +166,8 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 
 	s.routingKeyInfoCache.lru = lru.New(cfg.MaxRoutingKeyInfo)
 
-	s.hostSource = &ringDescriber{session: s}
-	s.ringRefresher = newRefreshDebouncer(ringRefreshDebounceTime, func() error { return refreshRing(s.hostSource) })
+	s.hostSource = &ringDescriber{cfg: &s.cfg, logger: s.logger}
+	s.ringRefresher = newRefreshDebouncer(ringRefreshDebounceTime, func() error { return refreshRing(s) })
 
 	if cfg.PoolConfig.HostSelectionPolicy == nil {
 		cfg.PoolConfig.HostSelectionPolicy = RoundRobinHostPolicy()
@@ -254,6 +254,8 @@ func (s *Session) init() error {
 			hosts = filteredHosts
 		}
 	}
+
+	s.hostSource.setControlConn(s.control)
 
 	for _, host := range hosts {
 		// In case when host lookup is disabled and when we are in unit tests,

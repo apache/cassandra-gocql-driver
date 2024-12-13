@@ -1697,7 +1697,7 @@ func (c *Conn) awaitSchemaAgreement(ctx context.Context) (err error) {
 		}
 
 		for _, row := range rows {
-			host, err := c.session.hostInfoFromMap(row, &HostInfo{connectAddress: c.host.ConnectAddress(), port: c.session.cfg.Port})
+			host, err := hostInfoFromMap(row, &HostInfo{connectAddress: c.host.ConnectAddress(), port: c.session.cfg.Port}, c.session.cfg.translateAddressPort)
 			if err != nil {
 				goto cont
 			}
