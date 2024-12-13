@@ -235,7 +235,7 @@ func (s *Session) init() error {
 
 		if !s.cfg.DisableInitialHostLookup {
 			var partitioner string
-			newHosts, partitioner, err := s.hostSource.GetHosts()
+			newHosts, partitioner, err := s.hostSource.GetHostsFromSystem()
 			if err != nil {
 				return err
 			}
@@ -342,7 +342,7 @@ func (s *Session) init() error {
 		newer, _ := checkSystemSchema(s.control)
 		s.useSystemSchema = newer
 	} else {
-		version := s.hostSource.allHosts()[0].Version()
+		version := s.hostSource.getHostsList()[0].Version()
 		s.useSystemSchema = version.AtLeast(3, 0, 0)
 		s.hasAggregatesAndFunctions = version.AtLeast(2, 2, 0)
 	}
@@ -386,7 +386,7 @@ func (s *Session) reconnectDownedHosts(intv time.Duration) {
 	for {
 		select {
 		case <-reconnectTicker.C:
-			hosts := s.hostSource.allHosts()
+			hosts := s.hostSource.getHostsList()
 
 			// Print session.hostSource for debug.
 			if gocqlDebug {
@@ -572,7 +572,7 @@ func (s *Session) KeyspaceMetadata(keyspace string) (*KeyspaceMetadata, error) {
 }
 
 func (s *Session) getConn() *Conn {
-	hosts := s.hostSource.allHosts()
+	hosts := s.hostSource.getHostsList()
 	for _, host := range hosts {
 		if !host.IsUp() {
 			continue

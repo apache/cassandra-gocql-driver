@@ -62,12 +62,12 @@ func TestAuthentication(t *testing.T) {
 	session.Close()
 }
 
-func TestGetHosts(t *testing.T) {
+func TestGetHostsFromSystem(t *testing.T) {
 	clusterHosts := getClusterHosts()
 	cluster := createCluster()
 	session := createSessionFromCluster(cluster, t)
 
-	hosts, partitioner, err := session.hostSource.GetHosts()
+	hosts, partitioner, err := session.hostSource.GetHostsFromSystem()
 
 	assertTrue(t, "err == nil", err == nil)
 	assertEqual(t, "len(hosts)", len(clusterHosts), len(hosts))

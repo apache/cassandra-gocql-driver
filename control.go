@@ -385,7 +385,7 @@ func (c *controlConn) reconnect() {
 }
 
 func (c *controlConn) attemptReconnect() (*Conn, error) {
-	hosts := c.session.hostSource.allHosts()
+	hosts := c.session.hostSource.getHostsList()
 	hosts = shuffleHosts(hosts)
 
 	// keep the old behavior of connecting to the old host first by moving it to

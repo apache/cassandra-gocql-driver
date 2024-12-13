@@ -122,8 +122,8 @@ func isValidPeer(host *HostInfo) bool {
 		len(host.tokens) == 0)
 }
 
-// GetHosts returns a list of hosts found via queries to system.local and system.peers
-func (r *ringDescriber) GetHosts() ([]*HostInfo, string, error) {
+// GetHostsFromSystem returns a list of hosts found via queries to system.local and system.peers
+func (r *ringDescriber) GetHostsFromSystem() ([]*HostInfo, string, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -224,7 +224,7 @@ func (r *ringDescriber) getHost(hostID string) *HostInfo {
 	return host
 }
 
-func (r *ringDescriber) allHosts() []*HostInfo {
+func (r *ringDescriber) getHostsList() []*HostInfo {
 	r.mu.RLock()
 	hosts := make([]*HostInfo, 0, len(r.hosts))
 	for _, host := range r.hosts {
@@ -234,7 +234,7 @@ func (r *ringDescriber) allHosts() []*HostInfo {
 	return hosts
 }
 
-func (r *ringDescriber) currentHosts() map[string]*HostInfo {
+func (r *ringDescriber) getHostsMap() map[string]*HostInfo {
 	r.mu.RLock()
 	hosts := make(map[string]*HostInfo, len(r.hosts))
 	for k, v := range r.hosts {
