@@ -620,14 +620,14 @@ func refreshRing(s *Session) error {
 		return err
 	}
 
-	prevHosts := s.ring.currentHosts()
+	prevHosts := s.hostSource.currentHosts()
 
 	for _, h := range hosts {
 		if s.cfg.filterHost(h) {
 			continue
 		}
 
-		if host, ok := s.ring.addHostIfMissing(h); !ok {
+		if host, ok := s.hostSource.addHostIfMissing(h); !ok {
 			s.startPoolFill(h)
 		} else {
 			// host (by hostID) already exists; determine if IP has changed
@@ -643,7 +643,7 @@ func refreshRing(s *Session) error {
 				// host IP has changed
 				// remove old HostInfo (w/old IP)
 				s.removeHost(existing)
-				if _, alreadyExists := s.ring.addHostIfMissing(h); alreadyExists {
+				if _, alreadyExists := s.hostSource.addHostIfMissing(h); alreadyExists {
 					return fmt.Errorf("add new host=%s after removal: %w", h, ErrHostAlreadyExists)
 				}
 				// add new HostInfo (same hostID, new IP)

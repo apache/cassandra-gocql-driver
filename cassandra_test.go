@@ -32,7 +32,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/stretchr/testify/require"
 	"io"
 	"math"
 	"math/big"
@@ -44,6 +43,8 @@ import (
 	"testing"
 	"time"
 	"unicode"
+
+	"github.com/stretchr/testify/require"
 
 	"gopkg.in/inf.v0"
 )
@@ -808,7 +809,7 @@ func TestReconnection(t *testing.T) {
 	session := createSessionFromCluster(cluster, t)
 	defer session.Close()
 
-	h := session.ring.allHosts()[0]
+	h := session.hostSource.allHosts()[0]
 	session.handleNodeDown(h.ConnectAddress(), h.Port())
 
 	if h.State() != NodeDown {
@@ -1613,7 +1614,7 @@ func TestPrepare_PreparedCacheEviction(t *testing.T) {
 	}
 
 	// Walk through all the configured hosts and test cache retention and eviction
-	for _, host := range session.ring.hosts {
+	for _, host := range session.hostSource.hosts {
 		_, ok := session.stmtsLRU.lru.Get(session.stmtsLRU.keyFor(host.HostID(), session.cfg.Keyspace, "SELECT id,mod FROM prepcachetest WHERE id = 0"))
 		if ok {
 			t.Errorf("expected first select to be purged but was in cache for host=%q", host)
@@ -2769,7 +2770,7 @@ func TestTokenAwareConnPool(t *testing.T) {
 	session := createSessionFromCluster(cluster, t)
 	defer session.Close()
 
-	expectedPoolSize := cluster.NumConns * len(session.ring.allHosts())
+	expectedPoolSize := cluster.NumConns * len(session.hostSource.allHosts())
 
 	// wait for pool to fill
 	for i := 0; i < 10; i++ {

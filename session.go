@@ -72,7 +72,6 @@ type Session struct {
 	pool     *policyConnPool
 	policy   HostSelectionPolicy
 
-	ring     ring
 	metadata clusterMetadata
 
 	mu sync.RWMutex
@@ -216,7 +215,7 @@ func (s *Session) init() error {
 	if err != nil {
 		return err
 	}
-	s.ring.endpoints = hosts
+	s.hostSource.endpoints = hosts
 
 	if !s.cfg.disableControlConn {
 		s.control = createControlConn(s)
@@ -284,7 +283,7 @@ func (s *Session) init() error {
 	// again
 	atomic.AddInt64(&left, 1)
 	for _, host := range hostMap {
-		host := s.ring.addOrUpdate(host)
+		host := s.hostSource.addOrUpdate(host)
 		if s.cfg.filterHost(host) {
 			continue
 		}
@@ -346,7 +345,7 @@ func (s *Session) init() error {
 		newer, _ := checkSystemSchema(s.control)
 		s.useSystemSchema = newer
 	} else {
-		version := s.ring.rrHost().Version()
+		version := s.hostSource.rrHost().Version()
 		s.useSystemSchema = version.AtLeast(3, 0, 0)
 		s.hasAggregatesAndFunctions = version.AtLeast(2, 2, 0)
 	}
@@ -390,11 +389,11 @@ func (s *Session) reconnectDownedHosts(intv time.Duration) {
 	for {
 		select {
 		case <-reconnectTicker.C:
-			hosts := s.ring.allHosts()
+			hosts := s.hostSource.allHosts()
 
-			// Print session.ring for debug.
+			// Print session.hostSource for debug.
 			if gocqlDebug {
-				buf := bytes.NewBufferString("Session.ring:")
+				buf := bytes.NewBufferString("Session.hostSource:")
 				for _, h := range hosts {
 					buf.WriteString("[" + h.ConnectAddress().String() + ":" + h.State().String() + "]")
 				}
@@ -560,7 +559,7 @@ func (s *Session) removeHost(h *HostInfo) {
 	s.policy.RemoveHost(h)
 	hostID := h.HostID()
 	s.pool.removeHost(hostID)
-	s.ring.removeHost(hostID)
+	s.hostSource.removeHost(hostID)
 }
 
 // KeyspaceMetadata returns the schema metadata for the keyspace specified. Returns an error if the keyspace does not exist.
@@ -576,7 +575,7 @@ func (s *Session) KeyspaceMetadata(keyspace string) (*KeyspaceMetadata, error) {
 }
 
 func (s *Session) getConn() *Conn {
-	hosts := s.ring.allHosts()
+	hosts := s.hostSource.allHosts()
 	for _, host := range hosts {
 		if !host.IsUp() {
 			continue

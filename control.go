@@ -299,7 +299,7 @@ func (c *controlConn) setupConn(conn *Conn) error {
 		return err
 	}
 
-	host = c.session.ring.addOrUpdate(host)
+	host = c.session.hostSource.addOrUpdate(host)
 
 	if c.session.cfg.filterHost(host) {
 		return fmt.Errorf("host was filtered: %v", host.ConnectAddress())
@@ -385,7 +385,7 @@ func (c *controlConn) reconnect() {
 }
 
 func (c *controlConn) attemptReconnect() (*Conn, error) {
-	hosts := c.session.ring.allHosts()
+	hosts := c.session.hostSource.allHosts()
 	hosts = shuffleHosts(hosts)
 
 	// keep the old behavior of connecting to the old host first by moving it to
