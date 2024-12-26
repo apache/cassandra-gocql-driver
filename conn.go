@@ -1375,7 +1375,8 @@ func (c *Conn) executeQuery(ctx context.Context, qry *Query) *Iter {
 			}
 		}
 
-		params.skipMeta = !(c.session.cfg.DisableSkipMetadata || qry.disableSkipMetadata)
+		// if the metadata was not present in the response then we should not skip it
+		params.skipMeta = !(c.session.cfg.DisableSkipMetadata || qry.disableSkipMetadata) && info != nil && info.response.flags&flagNoMetaData == 0
 
 		frame = &writeExecuteFrame{
 			preparedID:    info.id,

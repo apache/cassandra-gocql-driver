@@ -33,6 +33,7 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
@@ -952,6 +953,28 @@ func TestWriteCoalescing_WriteAfterClose(t *testing.T) {
 	}
 }
 
+func TestSkipMetadata(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	srv := NewTestServer(t, protoVersion4, ctx)
+	defer srv.Stop()
+
+	db, err := newTestSession(protoVersion4, srv.Address)
+	if err != nil {
+		t.Fatalf("NewCluster: %v", err)
+	}
+	defer db.Close()
+
+	if err := db.Query("select nometadata").Exec(); err != nil {
+		t.Fatalf("expected no error got: %v", err)
+	}
+
+	if err := db.Query("select metadata").Exec(); err != nil {
+		t.Fatalf("expected no error got: %v", err)
+	}
+}
+
 type recordingFrameHeaderObserver struct {
 	t      *testing.T
 	mu     sync.Mutex
@@ -1264,6 +1287,99 @@ func (srv *TestServer) process(conn net.Conn, reqFrame *framer) {
 	case opError:
 		respFrame.writeHeader(0, opError, head.stream)
 		respFrame.buf = append(respFrame.buf, reqFrame.buf...)
+	case opPrepare:
+		query := reqFrame.readLongString()
+		name := strings.TrimPrefix(query, "select ")
+		if n := strings.Index(name, " "); n > 0 {
+			name = name[:n]
+		}
+		switch strings.ToLower(name) {
+		case "nometadata":
+			respFrame.writeHeader(0, opResult, head.stream)
+			respFrame.writeInt(resultKindPrepared)
+			// <id>
+			respFrame.writeShortBytes(binary.BigEndian.AppendUint64(nil, 1))
+			// <metadata>
+			respFrame.writeInt(0) // <flags>
+			respFrame.writeInt(0) // <columns_count>
+			if srv.protocol >= protoVersion4 {
+				respFrame.writeInt(0) // <pk_count>
+			}
+			// <result_metadata>
+			respFrame.writeInt(int32(flagNoMetaData)) // <flags>
+			respFrame.writeInt(0)
+		case "metadata":
+			respFrame.writeHeader(0, opResult, head.stream)
+			respFrame.writeInt(resultKindPrepared)
+			// <id>
+			respFrame.writeShortBytes(binary.BigEndian.AppendUint64(nil, 2))
+			// <metadata>
+			respFrame.writeInt(0) // <flags>
+			respFrame.writeInt(0) // <columns_count>
+			if srv.protocol >= protoVersion4 {
+				respFrame.writeInt(0) // <pk_count>
+			}
+			// <result_metadata>
+			respFrame.writeInt(int32(flagGlobalTableSpec)) // <flags>
+			respFrame.writeInt(1)                          // <columns_count>
+			// <global_table_spec>
+			respFrame.writeString("keyspace")
+			respFrame.writeString("table")
+			// <col_spec_0>
+			respFrame.writeString("col0")             // <name>
+			respFrame.writeShort(uint16(TypeBoolean)) // <type>
+		default:
+			respFrame.writeHeader(0, opError, head.stream)
+			respFrame.writeInt(0)
+			respFrame.writeString("unsupported query: " + name)
+		}
+	case opExecute:
+		b := reqFrame.readShortBytes()
+		id := binary.BigEndian.Uint64(b)
+		// <query_parameters>
+		reqFrame.readConsistency() // <consistency>
+		var flags byte
+		if srv.protocol > protoVersion4 {
+			ui := reqFrame.readInt()
+			flags = byte(ui)
+		} else {
+			flags = reqFrame.readByte()
+		}
+		switch id {
+		case 1:
+			if flags&flagSkipMetaData != 0 {
+				respFrame.writeHeader(0, opError, head.stream)
+				respFrame.writeInt(0)
+				respFrame.writeString("skip metadata unexpected")
+			} else {
+				respFrame.writeHeader(0, opResult, head.stream)
+				respFrame.writeInt(resultKindRows)
+				// <metadata>
+				respFrame.writeInt(0) // <flags>
+				respFrame.writeInt(0) // <columns_count>
+				// <rows_count>
+				respFrame.writeInt(0)
+			}
+		case 2:
+			if flags&flagSkipMetaData != 0 {
+				respFrame.writeHeader(0, opResult, head.stream)
+				respFrame.writeInt(resultKindRows)
+				// <metadata>
+				respFrame.writeInt(0) // <flags>
+				respFrame.writeInt(0) // <columns_count>
+				// <rows_count>
+				respFrame.writeInt(0)
+			} else {
+				respFrame.writeHeader(0, opError, head.stream)
+				respFrame.writeInt(0)
+				respFrame.writeString("skip metadata expected")
+			}
+		default:
+			respFrame.writeHeader(0, opError, head.stream)
+			respFrame.writeInt(ErrCodeUnprepared)
+			respFrame.writeString("unprepared")
+			respFrame.writeShortBytes(binary.BigEndian.AppendUint64(nil, id))
+		}
 	default:
 		respFrame.writeHeader(0, opError, head.stream)
 		respFrame.writeInt(0)

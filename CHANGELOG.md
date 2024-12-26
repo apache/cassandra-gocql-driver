@@ -32,6 +32,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Don't return error to caller with RetryType Ignore (CASSGO-28)
 
+- Skip metadata only if the prepared result includes metadata (CASSGO-40)
+
 - Don't panic in MapExecuteBatchCAS if no `[applied]` column is returned (CASSGO-42)
 
 ## [1.7.0] - 2024-09-23
