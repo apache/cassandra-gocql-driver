@@ -322,6 +322,7 @@ func TupleColumnName(c string, n int) string {
 	return fmt.Sprintf("%s[%d]", c, n)
 }
 
+// RowData returns the RowData for the iterator.
 func (iter *Iter) RowData() (RowData, error) {
 	if iter.err != nil {
 		return RowData{}, iter.err
@@ -334,6 +335,7 @@ func (iter *Iter) RowData() (RowData, error) {
 		if c, ok := column.TypeInfo.(TupleTypeInfo); !ok {
 			val, err := column.TypeInfo.NewWithError()
 			if err != nil {
+				iter.err = err
 				return RowData{}, err
 			}
 			columns = append(columns, column.Name)
@@ -343,6 +345,7 @@ func (iter *Iter) RowData() (RowData, error) {
 				columns = append(columns, TupleColumnName(column.Name, i))
 				val, err := elem.NewWithError()
 				if err != nil {
+					iter.err = err
 					return RowData{}, err
 				}
 				values = append(values, val)
@@ -364,7 +367,10 @@ func (iter *Iter) rowMap() (map[string]interface{}, error) {
 		return nil, iter.err
 	}
 
-	rowData, _ := iter.RowData()
+	rowData, err := iter.RowData()
+	if err != nil {
+		return nil, err
+	}
 	iter.Scan(rowData.Values...)
 	m := make(map[string]interface{}, len(rowData.Columns))
 	rowData.rowMap(m)
@@ -379,7 +385,10 @@ func (iter *Iter) SliceMap() ([]map[string]interface{}, error) {
 	}
 
 	// Not checking for the error because we just did
-	rowData, _ := iter.RowData()
+	rowData, err := iter.RowData()
+	if err != nil {
+		return nil, err
+	}
 	dataToReturn := make([]map[string]interface{}, 0)
 	for iter.Scan(rowData.Values...) {
 		m := make(map[string]interface{}, len(rowData.Columns))
@@ -435,8 +444,10 @@ func (iter *Iter) MapScan(m map[string]interface{}) bool {
 		return false
 	}
 
-	// Not checking for the error because we just did
-	rowData, _ := iter.RowData()
+	rowData, err := iter.RowData()
+	if err != nil {
+		return false
+	}
 
 	for i, col := range rowData.Columns {
 		if dest, ok := m[col]; ok {

@@ -477,7 +477,7 @@ func TestCAS(t *testing.T) {
 	if applied, _, err := session.ExecuteBatchCAS(successBatch, &titleCAS, &revidCAS, &modifiedCAS); err != nil {
 		t.Fatal("insert:", err)
 	} else if applied {
-		t.Fatalf("insert should have been applied: title=%v revID=%v modified=%v", titleCAS, revidCAS, modifiedCAS)
+		t.Fatalf("insert should have not been applied: title=%v revID=%v modified=%v", titleCAS, revidCAS, modifiedCAS)
 	}
 
 	insertBatch := session.Batch(LoggedBatch)
@@ -493,7 +493,7 @@ func TestCAS(t *testing.T) {
 	if applied, iter, err := session.ExecuteBatchCAS(failBatch, &titleCAS, &revidCAS, &modifiedCAS); err != nil {
 		t.Fatal("insert:", err)
 	} else if applied {
-		t.Fatalf("insert should have been applied: title=%v revID=%v modified=%v", titleCAS, revidCAS, modifiedCAS)
+		t.Fatalf("insert should have not been applied: title=%v revID=%v modified=%v", titleCAS, revidCAS, modifiedCAS)
 	} else {
 		if scan := iter.Scan(&applied, &titleCAS, &revidCAS, &modifiedCAS); scan && applied {
 			t.Fatalf("insert should have been applied: title=%v revID=%v modified=%v", titleCAS, revidCAS, modifiedCAS)
@@ -503,6 +503,55 @@ func TestCAS(t *testing.T) {
 		if err := iter.Close(); err != nil {
 			t.Fatal("scan:", err)
 		}
+	}
+
+	casMap = make(map[string]interface{})
+	if applied, err := session.Query(`SELECT revid FROM cas_table WHERE title = ?`,
+		title+"_foo").MapScanCAS(casMap); err != nil {
+		t.Fatal("select:", err)
+	} else if applied {
+		t.Fatal("select shouldn't have returned applied")
+	}
+
+	if _, err := session.Query(`SELECT revid FROM cas_table WHERE title = ?`,
+		title+"_foo").ScanCAS(&revidCAS); err == nil {
+		t.Fatal("select: should have returned an error")
+	}
+
+	notCASBatch := session.Batch(LoggedBatch)
+	notCASBatch.Query("INSERT INTO cas_table (title, revid, last_modified) VALUES (?, ?, ?)", title+"_baz", revid, modified)
+	casMap = make(map[string]interface{})
+	if _, _, err := session.MapExecuteBatchCAS(notCASBatch, casMap); err != ErrNotFound {
+		t.Fatal("insert should have returned not found:", err)
+	}
+
+	notCASBatch = session.Batch(LoggedBatch)
+	notCASBatch.Query("INSERT INTO cas_table (title, revid, last_modified) VALUES (?, ?, ?)", title+"_baz", revid, modified)
+	casMap = make(map[string]interface{})
+	if _, _, err := session.ExecuteBatchCAS(notCASBatch, &revidCAS); err != ErrNotFound {
+		t.Fatal("insert should have returned not found:", err)
+	}
+
+	failBatch = session.Batch(LoggedBatch)
+	failBatch.Query("UPDATE cas_table SET last_modified = DATEOF(NOW()) WHERE title='_foo' AND revid=3e4ad2f1-73a4-11e5-9381-29463d90c3f0 IF last_modified = ?", modified)
+	if _, _, err := session.ExecuteBatchCAS(failBatch, new(bool)); err == nil {
+		t.Fatal("update should have errored")
+	}
+	// make sure MapScanCAS does not panic when MapScan fails
+	casMap = make(map[string]interface{})
+	casMap["last_modified"] = false
+	if _, err := session.Query(`UPDATE cas_table SET last_modified = DATEOF(NOW()) WHERE title='_foo' AND revid=3e4ad2f1-73a4-11e5-9381-29463d90c3f0 IF last_modified = ?`,
+		modified).MapScanCAS(casMap); err == nil {
+		t.Fatal("update should hvae errored", err)
+	}
+
+	// make sure MapExecuteBatchCAS does not panic when MapScan fails
+	failBatch = session.Batch(LoggedBatch)
+	failBatch.Query("UPDATE cas_table SET last_modified = DATEOF(NOW()) WHERE title='_foo' AND revid=3e4ad2f1-73a4-11e5-9381-29463d90c3f0 IF last_modified = ?", modified)
+	casMap = make(map[string]interface{})
+	casMap["last_modified"] = false
+	if _, _, err := session.MapExecuteBatchCAS(failBatch, casMap); err == nil {
+		t.Fatal("update should have errored")
 	}
 }
 
