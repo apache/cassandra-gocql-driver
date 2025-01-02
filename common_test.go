@@ -245,7 +245,7 @@ func createFunctions(t *testing.T, session *Session) {
 		CALLED ON NULL INPUT
 		RETURNS double
 		LANGUAGE java AS
-		$$double r = 0; if (state.getInt(0) == 0) return null; r = state.getLong(1); r/= state.getInt(0); return Double.valueOf(r);$$ 
+		$$double r = 0; if (state.getInt(0) == 0) return null; r = state.getLong(1); r/= state.getInt(0); return Double.valueOf(r);$$
 	`).Exec(); err != nil {
 		t.Fatalf("failed to create function with err: %v", err)
 	}
@@ -297,20 +297,20 @@ func randomText(size int) string {
 func assertEqual(t *testing.T, description string, expected, actual interface{}) {
 	t.Helper()
 	if expected != actual {
-		t.Fatalf("expected %s to be (%+v) but was (%+v) instead", description, expected, actual)
+		t.Fatalf("expected %s to be (%#v) but was (%#v) instead", description, expected, actual)
 	}
 }
 
 func assertDeepEqual(t *testing.T, description string, expected, actual interface{}) {
 	t.Helper()
 	if !reflect.DeepEqual(expected, actual) {
-		t.Fatalf("expected %s to be (%+v) but was (%+v) instead", description, expected, actual)
+		t.Fatalf("expected %s to be (%#v) but was (%#v) instead", description, expected, actual)
 	}
 }
 
 func assertNil(t *testing.T, description string, actual interface{}) {
 	t.Helper()
 	if actual != nil {
-		t.Fatalf("expected %s to be (nil) but was (%+v) instead", description, actual)
+		t.Fatalf("expected %s to be (nil) but was (%#v) instead", description, actual)
 	}
 }

@@ -29,7 +29,6 @@ package gocql
 
 import (
 	"errors"
-	"fmt"
 	"net"
 	"sync"
 	"sync/atomic"
@@ -58,7 +57,6 @@ func TestUnmarshalCassVersion(t *testing.T) {
 		} else if *v != test.version {
 			t.Errorf("%d: expected %#+v got %#+v", i, test.version, *v)
 		}
-		fmt.Println(v.String())
 	}
 }
 

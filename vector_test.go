@@ -29,12 +29,13 @@ package gocql
 
 import (
 	"fmt"
-	"github.com/stretchr/testify/require"
-	"gopkg.in/inf.v0"
 	"net"
 	"reflect"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
+	"gopkg.in/inf.v0"
 )
 
 type person struct {
@@ -107,9 +108,9 @@ func TestVector_Types(t *testing.T) {
 	date2, _ := time.Parse("2006-01-02", "2022-03-14")
 	date3, _ := time.Parse("2006-01-02", "2024-12-31")
 
-	time1, _ := time.Parse("15:04:05", "01:00:00")
-	time2, _ := time.Parse("15:04:05", "15:23:59")
-	time3, _ := time.Parse("15:04:05.000", "10:31:45.987")
+	time1 := time.Duration(time.Hour)
+	time2 := time.Duration(15*time.Hour + 23*time.Minute + 59*time.Second)
+	time3 := time.Duration(10*time.Hour + 31*time.Minute + 45*time.Second + 987*time.Millisecond)
 
 	duration1 := Duration{0, 1, 1920000000000}
 	duration2 := Duration{1, 1, 1920000000000}
@@ -129,24 +130,24 @@ func TestVector_Types(t *testing.T) {
 		value      interface{}
 		comparator func(interface{}, interface{})
 	}{
-		{name: "ascii", cqlType: TypeAscii.String(), value: []string{"a", "1", "Z"}},
-		{name: "bigint", cqlType: TypeBigInt.String(), value: []int64{1, 2, 3}},
-		{name: "blob", cqlType: TypeBlob.String(), value: [][]byte{[]byte{1, 2, 3}, []byte{4, 5, 6, 7}, []byte{8, 9}}},
-		{name: "boolean", cqlType: TypeBoolean.String(), value: []bool{true, false, true}},
-		{name: "counter", cqlType: TypeCounter.String(), value: []int64{5, 6, 7}},
-		{name: "decimal", cqlType: TypeDecimal.String(), value: []inf.Dec{*inf.NewDec(1, 0), *inf.NewDec(2, 1), *inf.NewDec(-3, 2)}},
-		{name: "double", cqlType: TypeDouble.String(), value: []float64{0.1, -1.2, 3}},
-		{name: "float", cqlType: TypeFloat.String(), value: []float32{0.1, -1.2, 3}},
-		{name: "int", cqlType: TypeInt.String(), value: []int32{1, 2, 3}},
-		{name: "text", cqlType: TypeText.String(), value: []string{"a", "b", "c"}},
-		{name: "timestamp", cqlType: TypeTimestamp.String(), value: []time.Time{timestamp1, timestamp2, timestamp3}},
-		{name: "uuid", cqlType: TypeUUID.String(), value: []UUID{MustRandomUUID(), MustRandomUUID(), MustRandomUUID()}},
-		{name: "varchar", cqlType: TypeVarchar.String(), value: []string{"abc", "def", "ghi"}},
-		{name: "varint", cqlType: TypeVarint.String(), value: []uint64{uint64(1234), uint64(123498765), uint64(18446744073709551615)}},
-		{name: "timeuuid", cqlType: TypeTimeUUID.String(), value: []UUID{TimeUUID(), TimeUUID(), TimeUUID()}},
+		{name: "ascii", cqlType: "ascii", value: []string{"a", "1", "Z"}},
+		{name: "bigint", cqlType: "bigint", value: []int64{1, 2, 3}},
+		{name: "blob", cqlType: "blob", value: [][]byte{[]byte{1, 2, 3}, []byte{4, 5, 6, 7}, []byte{8, 9}}},
+		{name: "boolean", cqlType: "boolean", value: []bool{true, false, true}},
+		{name: "counter", cqlType: "counter", value: []int64{5, 6, 7}},
+		{name: "decimal", cqlType: "decimal", value: []inf.Dec{*inf.NewDec(1, 0), *inf.NewDec(2, 1), *inf.NewDec(-3, 2)}},
+		{name: "double", cqlType: "double", value: []float64{0.1, -1.2, 3}},
+		{name: "float", cqlType: "float", value: []float32{0.1, -1.2, 3}},
+		{name: "int", cqlType: "int", value: []int32{1, 2, 3}},
+		{name: "text", cqlType: "text", value: []string{"a", "b", "c"}},
+		{name: "timestamp", cqlType: "timestamp", value: []time.Time{timestamp1, timestamp2, timestamp3}},
+		{name: "uuid", cqlType: "uuid", value: []UUID{MustRandomUUID(), MustRandomUUID(), MustRandomUUID()}},
+		{name: "varchar", cqlType: "varchar", value: []string{"abc", "def", "ghi"}},
+		{name: "varint", cqlType: "varint", value: []uint64{uint64(1234), uint64(123498765), uint64(18446744073709551615)}},
+		{name: "timeuuid", cqlType: "timeuuid", value: []UUID{TimeUUID(), TimeUUID(), TimeUUID()}},
 		{
 			name:    "inet",
-			cqlType: TypeInet.String(),
+			cqlType: "inet",
 			value:   []net.IP{net.IPv4(127, 0, 0, 1), net.IPv4(192, 168, 1, 1), net.IPv4(8, 8, 8, 8)},
 			comparator: func(e interface{}, a interface{}) {
 				expected := e.([]net.IP)
@@ -157,11 +158,11 @@ func TestVector_Types(t *testing.T) {
 				}
 			},
 		},
-		{name: "date", cqlType: TypeDate.String(), value: []time.Time{date1, date2, date3}},
-		{name: "time", cqlType: TypeTimestamp.String(), value: []time.Time{time1, time2, time3}},
-		{name: "smallint", cqlType: TypeSmallInt.String(), value: []int16{127, 256, -1234}},
-		{name: "tinyint", cqlType: TypeTinyInt.String(), value: []int8{127, 9, -123}},
-		{name: "duration", cqlType: TypeDuration.String(), value: []Duration{duration1, duration2, duration3}},
+		{name: "date", cqlType: "date", value: []time.Time{date1, date2, date3}},
+		{name: "time", cqlType: "time", value: []time.Duration{time1, time2, time3}},
+		{name: "smallint", cqlType: "smallint", value: []int16{127, 256, -1234}},
+		{name: "tinyint", cqlType: "tinyint", value: []int8{127, 9, -123}},
+		{name: "duration", cqlType: "duration", value: []Duration{duration1, duration2, duration3}},
 		{name: "vector_vector_float", cqlType: "vector<float, 5>", value: [][]float32{{0.1, -1.2, 3, 5, 5}, {10.1, -122222.0002, 35.0, 1, 1}, {0, 0, 0, 0, 0}}},
 		{name: "vector_vector_set_float", cqlType: "vector<set<float>, 5>", value: [][][]float32{
 			{{1, 2}, {2, -1}, {3}, {0}, {-1.3}},
@@ -307,95 +308,33 @@ func TestVector_MissingDimension(t *testing.T) {
 	require.Error(t, err, "expected vector with 3 dimensions, received 4")
 }
 
-func TestVector_SubTypeParsing(t *testing.T) {
+func TestReadUnsignedVInt(t *testing.T) {
 	tests := []struct {
-		name     string
-		custom   string
-		expected TypeInfo
+		decodedInt  uint64
+		encodedVint []byte
 	}{
-		{name: "text", custom: "org.apache.cassandra.db.marshal.UTF8Type", expected: NativeType{typ: TypeVarchar}},
-		{name: "set_int", custom: "org.apache.cassandra.db.marshal.SetType(org.apache.cassandra.db.marshal.Int32Type)", expected: CollectionType{NativeType{typ: TypeSet}, nil, NativeType{typ: TypeInt}}},
 		{
-			name:   "udt",
-			custom: "org.apache.cassandra.db.marshal.UserType(gocql_test,706572736f6e,66697273745f6e616d65:org.apache.cassandra.db.marshal.UTF8Type,6c6173745f6e616d65:org.apache.cassandra.db.marshal.UTF8Type,616765:org.apache.cassandra.db.marshal.Int32Type)",
-			expected: UDTTypeInfo{
-				NativeType{typ: TypeUDT},
-				"gocql_test",
-				"person",
-				[]UDTField{
-					UDTField{"first_name", NativeType{typ: TypeVarchar}},
-					UDTField{"last_name", NativeType{typ: TypeVarchar}},
-					UDTField{"age", NativeType{typ: TypeInt}},
-				},
-			},
+			decodedInt:  0,
+			encodedVint: []byte{0},
 		},
 		{
-			name:   "tuple",
-			custom: "org.apache.cassandra.db.marshal.TupleType(org.apache.cassandra.db.marshal.UTF8Type,org.apache.cassandra.db.marshal.Int32Type,org.apache.cassandra.db.marshal.UTF8Type)",
-			expected: TupleTypeInfo{
-				NativeType{typ: TypeTuple},
-				[]TypeInfo{
-					NativeType{typ: TypeVarchar},
-					NativeType{typ: TypeInt},
-					NativeType{typ: TypeVarchar},
-				},
-			},
+			decodedInt:  100,
+			encodedVint: []byte{100},
 		},
 		{
-			name:   "vector_vector_inet",
-			custom: "org.apache.cassandra.db.marshal.VectorType(org.apache.cassandra.db.marshal.VectorType(org.apache.cassandra.db.marshal.InetAddressType, 2), 3)",
-			expected: VectorType{
-				NativeType{typ: TypeCustom, custom: VECTOR_TYPE},
-				VectorType{
-					NativeType{typ: TypeCustom, custom: VECTOR_TYPE},
-					NativeType{typ: TypeInet},
-					2,
-				},
-				3,
-			},
-		},
-		{
-			name:   "map_int_vector_text",
-			custom: "org.apache.cassandra.db.marshal.MapType(org.apache.cassandra.db.marshal.Int32Type,org.apache.cassandra.db.marshal.VectorType(org.apache.cassandra.db.marshal.UTF8Type, 10))",
-			expected: CollectionType{
-				NativeType{typ: TypeMap},
-				NativeType{typ: TypeInt},
-				VectorType{
-					NativeType{typ: TypeCustom, custom: VECTOR_TYPE},
-					NativeType{typ: TypeVarchar},
-					10,
-				},
-			},
-		},
-		{
-			name:   "set_map_vector_text_text",
-			custom: "org.apache.cassandra.db.marshal.SetType(org.apache.cassandra.db.marshal.MapType(org.apache.cassandra.db.marshal.VectorType(org.apache.cassandra.db.marshal.Int32Type, 10),org.apache.cassandra.db.marshal.UTF8Type))",
-			expected: CollectionType{
-				NativeType{typ: TypeSet},
-				nil,
-				CollectionType{
-					NativeType{typ: TypeMap},
-					VectorType{
-						NativeType{typ: TypeCustom, custom: VECTOR_TYPE},
-						NativeType{typ: TypeInt},
-						10,
-					},
-					NativeType{typ: TypeVarchar},
-				},
-			},
+			decodedInt:  256000,
+			encodedVint: []byte{195, 232, 0},
 		},
 	}
-
 	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			f := newFramer(nil, 0)
-			f.writeShort(0)
-			f.writeString(fmt.Sprintf("org.apache.cassandra.db.marshal.VectorType(%s, 2)", test.custom))
-			parsedType := f.readTypeInfo()
-			require.IsType(t, parsedType, VectorType{})
-			vectorType := parsedType.(VectorType)
-			assertEqual(t, "dimensions", 2, vectorType.Dimensions)
-			assertDeepEqual(t, "vector", test.expected, vectorType.SubType)
+		t.Run(fmt.Sprintf("%d", test.decodedInt), func(t *testing.T) {
+			actual, _, err := readUnsignedVInt(test.encodedVint)
+			if err != nil {
+				t.Fatalf("Expected no error, got %v", err)
+			}
+			if actual != test.decodedInt {
+				t.Fatalf("Expected %d, but got %d", test.decodedInt, actual)
+			}
 		})
 	}
 }

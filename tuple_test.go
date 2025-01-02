@@ -138,10 +138,10 @@ func TestTuple_TupleNotSet(t *testing.T) {
 	if err := iter.Scan(x, y); err != nil {
 		t.Fatal(err)
 	}
-	if x == nil || *x != 1 {
+	if *x != 1 {
 		t.Fatalf("x should be %d got %+#v, value=%d", 1, x, *x)
 	}
-	if y == nil || *y != 2 {
+	if *y != 2 {
 		t.Fatalf("y should be %d got %+#v, value=%d", 2, y, *y)
 	}
 
@@ -150,10 +150,10 @@ func TestTuple_TupleNotSet(t *testing.T) {
 	if err := iter.Scan(x, y); err != nil {
 		t.Fatal(err)
 	}
-	if x == nil || *x != 0 {
+	if *x != 0 {
 		t.Fatalf("x should be %d got %+#v, value=%d", 0, x, *x)
 	}
-	if y == nil || *y != 0 {
+	if *y != 0 {
 		t.Fatalf("y should be %d got %+#v, value=%d", 0, y, *y)
 	}
 }

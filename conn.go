@@ -249,6 +249,14 @@ func (s *Session) dialWithoutObserver(ctx context.Context, host *HostInfo, cfg *
 		writeTimeout = cfg.WriteTimeout
 	}
 
+	logger := cfg.Logger
+	if logger == nil {
+		logger = s.logger
+		if logger == nil {
+			logger = &defaultLogger{}
+		}
+	}
+
 	ctx, cancel := context.WithCancel(ctx)
 	c := &Conn{
 		r: &connReader{
@@ -274,7 +282,7 @@ func (s *Session) dialWithoutObserver(ctx context.Context, host *HostInfo, cfg *
 		},
 		ctx:            ctx,
 		cancel:         cancel,
-		logger:         cfg.logger(),
+		logger:         logger,
 		streamObserver: s.streamObserver,
 		writeTimeout:   writeTimeout,
 	}
@@ -674,7 +682,7 @@ func (c *Conn) processFrame(ctx context.Context, r io.Reader) error {
 		return fmt.Errorf("gocql: frame header stream is beyond call expected bounds: %d", head.stream)
 	} else if head.stream == -1 {
 		// TODO: handle cassandra event frames, we shouldnt get any currently
-		framer := newFramer(c.compressor, c.version)
+		framer := newFramer(c.compressor, c.version, c.session.types)
 		if err := framer.readFrame(r, &head); err != nil {
 			return err
 		}
@@ -683,7 +691,7 @@ func (c *Conn) processFrame(ctx context.Context, r io.Reader) error {
 	} else if head.stream <= 0 {
 		// reserved stream that we dont use, probably due to a protocol error
 		// or a bug in Cassandra, this should be an error, parse it and return.
-		framer := newFramer(c.compressor, c.version)
+		framer := newFramer(c.compressor, c.version, c.session.types)
 		if err := framer.readFrame(r, &head); err != nil {
 			return err
 		}
@@ -713,7 +721,7 @@ func (c *Conn) processFrame(ctx context.Context, r io.Reader) error {
 		panic(fmt.Sprintf("call has incorrect streamID: got %d expected %d", call.streamID, head.stream))
 	}
 
-	framer := newFramer(c.compressor, c.version)
+	framer := newFramer(c.compressor, c.version, c.session.types)
 
 	err = framer.readFrame(r, &head)
 	if err != nil {
@@ -1188,7 +1196,7 @@ func (c *Conn) execInternal(ctx context.Context, req frameBuilder, tracer Tracer
 	}
 
 	// resp is basically a waiting semaphore protecting the framer
-	framer := newFramer(c.compressor, c.version)
+	framer := newFramer(c.compressor, c.version, c.session.types)
 
 	call := &callReq{
 		timeout:  make(chan struct{}),

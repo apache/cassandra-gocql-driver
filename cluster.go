@@ -274,6 +274,10 @@ type ClusterConfig struct {
 	// default: 0.25.
 	NextPagePrefetch float64
 
+	// RegisteredTypes will be copied for all sessions created from this Cluster.
+	// If not provided, a copy of GlobalTypes will be used.
+	RegisteredTypes *RegisteredTypes
+
 	// internal config for testing
 	disableControlConn bool
 }

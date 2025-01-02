@@ -645,7 +645,7 @@ func TestDurationType(t *testing.T) {
 	defer session.Close()
 
 	if session.cfg.ProtoVersion < 5 {
-		t.Skip("Duration type is not supported. Please use protocol version >= 4 and cassandra version >= 3.11")
+		t.Skip("Duration type is not supported. Please use protocol version > 4")
 	}
 
 	if err := createTable(session, `CREATE TABLE gocql_test.duration_table (
@@ -1068,7 +1068,7 @@ func TestMapScan(t *testing.T) {
 	}
 	assertEqual(t, "fullname", "Ada Lovelace", row["fullname"])
 	assertEqual(t, "age", 30, row["age"])
-	assertEqual(t, "address", "10.0.0.2", row["address"])
+	assertDeepEqual(t, "address", net.ParseIP("10.0.0.2").To4(), row["address"])
 	assertDeepEqual(t, "data", []byte(`{"foo": "bar"}`), row["data"])
 
 	// Second iteration using a new map
@@ -1078,7 +1078,7 @@ func TestMapScan(t *testing.T) {
 	}
 	assertEqual(t, "fullname", "Grace Hopper", row["fullname"])
 	assertEqual(t, "age", 31, row["age"])
-	assertEqual(t, "address", "10.0.0.1", row["address"])
+	assertDeepEqual(t, "address", net.ParseIP("10.0.0.1").To4(), row["address"])
 	assertDeepEqual(t, "data", []byte(nil), row["data"])
 }
 
@@ -1125,7 +1125,7 @@ func TestSliceMap(t *testing.T) {
 	m["testset"] = []int{1, 2, 3, 4, 5, 6, 7, 8, 9}
 	m["testmap"] = map[string]string{"field1": "val1", "field2": "val2", "field3": "val3"}
 	m["testvarint"] = bigInt
-	m["testinet"] = "213.212.2.19"
+	m["testinet"] = net.ParseIP("213.212.2.19").To4()
 	sliceMap := []map[string]interface{}{m}
 	if err := session.Query(`INSERT INTO slice_map_table (testuuid, testtimestamp, testvarchar, testbigint, testblob, testbool, testfloat, testdouble, testint, testdecimal, testlist, testset, testmap, testvarint, testinet) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		m["testuuid"], m["testtimestamp"], m["testvarchar"], m["testbigint"], m["testblob"], m["testbool"], m["testfloat"], m["testdouble"], m["testint"], m["testdecimal"], m["testlist"], m["testset"], m["testmap"], m["testvarint"], m["testinet"]).Exec(); err != nil {
@@ -1157,51 +1157,105 @@ func TestSliceMap(t *testing.T) {
 }
 func matchSliceMap(t *testing.T, sliceMap []map[string]interface{}, testMap map[string]interface{}) {
 	if sliceMap[0]["testuuid"] != testMap["testuuid"] {
-		t.Fatal("returned testuuid did not match")
+		t.Fatalf("returned testuuid %#v did not match %#v", sliceMap[0]["testuuid"], testMap["testuuid"])
 	}
 	if sliceMap[0]["testtimestamp"] != testMap["testtimestamp"] {
-		t.Fatal("returned testtimestamp did not match")
+		t.Fatalf("returned testtimestamp %#v did not match %#v", sliceMap[0]["testtimestamp"], testMap["testtimestamp"])
 	}
 	if sliceMap[0]["testvarchar"] != testMap["testvarchar"] {
-		t.Fatal("returned testvarchar did not match")
+		t.Fatalf("returned testvarchar %#v did not match %#v", sliceMap[0]["testvarchar"], testMap["testvarchar"])
 	}
 	if sliceMap[0]["testbigint"] != testMap["testbigint"] {
-		t.Fatal("returned testbigint did not match")
+		t.Fatalf("returned testbigint %#v did not match %#v", sliceMap[0]["testbigint"], testMap["testbigint"])
 	}
 	if !reflect.DeepEqual(sliceMap[0]["testblob"], testMap["testblob"]) {
-		t.Fatal("returned testblob did not match")
+		t.Fatalf("returned testblob %#v did not match %#v", sliceMap[0]["testblob"], testMap["testblob"])
 	}
 	if sliceMap[0]["testbool"] != testMap["testbool"] {
-		t.Fatal("returned testbool did not match")
+		t.Fatalf("returned testbool %#v did not match %#v", sliceMap[0]["testbool"], testMap["testbool"])
 	}
 	if sliceMap[0]["testfloat"] != testMap["testfloat"] {
-		t.Fatal("returned testfloat did not match")
+		t.Fatalf("returned testfloat %#v did not match %#v", sliceMap[0]["testfloat"], testMap["testfloat"])
 	}
 	if sliceMap[0]["testdouble"] != testMap["testdouble"] {
-		t.Fatal("returned testdouble did not match")
+		t.Fatalf("returned testdouble %#v did not match %#v", sliceMap[0]["testdouble"], testMap["testdouble"])
 	}
-	if sliceMap[0]["testinet"] != testMap["testinet"] {
-		t.Fatal("returned testinet did not match")
+	if !reflect.DeepEqual(sliceMap[0]["testinet"], testMap["testinet"]) {
+		t.Fatalf("returned testinet %#v did not match %#v", sliceMap[0]["testinet"], testMap["testinet"])
 	}
 
 	expectedDecimal := sliceMap[0]["testdecimal"].(*inf.Dec)
 	returnedDecimal := testMap["testdecimal"].(*inf.Dec)
 
 	if expectedDecimal.Cmp(returnedDecimal) != 0 {
-		t.Fatal("returned testdecimal did not match")
+		t.Fatalf("returned testdecimal %#v did not match %#v", sliceMap[0]["testdecimal"], testMap["testdecimal"])
 	}
 
 	if !reflect.DeepEqual(sliceMap[0]["testlist"], testMap["testlist"]) {
-		t.Fatal("returned testlist did not match")
+		t.Fatalf("returned testlist %#v did not match %#v", sliceMap[0]["testlist"], testMap["testlist"])
 	}
 	if !reflect.DeepEqual(sliceMap[0]["testset"], testMap["testset"]) {
-		t.Fatal("returned testset did not match")
+		t.Fatalf("returned testset %#v did not match %#v", sliceMap[0]["testset"], testMap["testset"])
 	}
 	if !reflect.DeepEqual(sliceMap[0]["testmap"], testMap["testmap"]) {
-		t.Fatal("returned testmap did not match")
+		t.Fatalf("returned testmap %#v did not match %#v", sliceMap[0]["testmap"], testMap["testmap"])
 	}
 	if sliceMap[0]["testint"] != testMap["testint"] {
-		t.Fatal("returned testint did not match")
+		t.Fatalf("returned testint %#v did not match %#v", sliceMap[0]["testint"], testMap["testint"])
+	}
+}
+
+func TestSliceMap_CopySlices(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+	if err := createTable(session, `CREATE TABLE gocql_test.slice_map_copy_table (
+			t text,
+			u timeuuid,
+			l list<text>,
+			PRIMARY KEY (t, u)
+		)`); err != nil {
+		t.Fatal("create table:", err)
+	}
+
+	err := session.Query(
+		`INSERT INTO slice_map_copy_table (t, u, l) VALUES ('test', ?, ?)`,
+		TimeUUID(), []string{"1", "2"},
+	).Exec()
+	if err != nil {
+		t.Fatal("insert:", err)
+	}
+
+	err = session.Query(
+		`INSERT INTO slice_map_copy_table (t, u, l) VALUES ('test', ?, ?)`,
+		TimeUUID(), []string{"3", "4"},
+	).Exec()
+	if err != nil {
+		t.Fatal("insert:", err)
+	}
+
+	err = session.Query(
+		`INSERT INTO slice_map_copy_table (t, u, l) VALUES ('test', ?, ?)`,
+		TimeUUID(), []string{"5", "6"},
+	).Exec()
+	if err != nil {
+		t.Fatal("insert:", err)
+	}
+
+	if returned, retErr := session.Query(`SELECT * FROM slice_map_copy_table WHERE t = 'test'`).Iter().SliceMap(); retErr != nil {
+		t.Fatal("select:", retErr)
+	} else {
+		if len(returned) != 3 {
+			t.Fatal("expected 3 rows, got", len(returned))
+		}
+		if !reflect.DeepEqual(returned[0]["l"], []string{"1", "2"}) {
+			t.Fatal("expected [1, 2], got", returned[0]["l"])
+		}
+		if !reflect.DeepEqual(returned[1]["l"], []string{"3", "4"}) {
+			t.Fatal("expected [3, 4], got", returned[1]["l"])
+		}
+		if !reflect.DeepEqual(returned[2]["l"], []string{"5", "6"}) {
+			t.Fatal("expected [5, 6], got", returned[2]["l"])
+		}
 	}
 }
 
@@ -1278,7 +1332,7 @@ func TestSmallInt(t *testing.T) {
 		t.Fatal("select:", retErr)
 	} else {
 		if sliceMap[0]["testsmallint"] != returned[0]["testsmallint"] {
-			t.Fatal("returned testsmallint did not match")
+			t.Fatalf("returned testsmallint %#v did not match %#v", returned[0]["testsmallint"], sliceMap[0]["testsmallint"])
 		}
 	}
 }
@@ -1598,7 +1652,7 @@ func injectInvalidPreparedStatement(t *testing.T, session *Session, table string
 						Keyspace: "gocql_test",
 						Table:    table,
 						Name:     "foo",
-						TypeInfo: NativeType{
+						TypeInfo: varcharLikeTypeInfo{
 							typ: TypeVarchar,
 						},
 					},
@@ -2497,19 +2551,18 @@ func TestAggregateMetadata(t *testing.T) {
 		t.Fatal("expected two aggregates")
 	}
 
-	protoVer := byte(session.cfg.ProtoVersion)
 	expectedAggregrate := AggregateMetadata{
 		Keyspace:      "gocql_test",
 		Name:          "average",
-		ArgumentTypes: []TypeInfo{NativeType{typ: TypeInt, proto: protoVer}},
+		ArgumentTypes: []TypeInfo{intTypeInfo{}},
 		InitCond:      "(0, 0)",
-		ReturnType:    NativeType{typ: TypeDouble, proto: protoVer},
+		ReturnType:    doubleTypeInfo{},
 		StateType: TupleTypeInfo{
-			NativeType: NativeType{typ: TypeTuple, proto: protoVer},
-
 			Elems: []TypeInfo{
-				NativeType{typ: TypeInt, proto: protoVer},
-				NativeType{typ: TypeBigInt, proto: protoVer},
+				intTypeInfo{},
+				bigIntLikeTypeInfo{
+					typ: TypeBigInt,
+				},
 			},
 		},
 		stateFunc: "avgstate",
@@ -2522,11 +2575,11 @@ func TestAggregateMetadata(t *testing.T) {
 	}
 
 	if !reflect.DeepEqual(aggregates[0], expectedAggregrate) {
-		t.Fatalf("aggregate 'average' is %+v, but expected %+v", aggregates[0], expectedAggregrate)
+		t.Fatalf("aggregate 'average' is %#v, but expected %#v", aggregates[0], expectedAggregrate)
 	}
 	expectedAggregrate.Name = "average2"
 	if !reflect.DeepEqual(aggregates[1], expectedAggregrate) {
-		t.Fatalf("aggregate 'average2' is %+v, but expected %+v", aggregates[1], expectedAggregrate)
+		t.Fatalf("aggregate 'average2' is %#v, but expected %#v", aggregates[1], expectedAggregrate)
 	}
 }
 
@@ -2548,29 +2601,28 @@ func TestFunctionMetadata(t *testing.T) {
 	avgState := functions[1]
 	avgFinal := functions[0]
 
-	protoVer := byte(session.cfg.ProtoVersion)
 	avgStateBody := "if (val !=null) {state.setInt(0, state.getInt(0)+1); state.setLong(1, state.getLong(1)+val.intValue());}return state;"
 	expectedAvgState := FunctionMetadata{
 		Keyspace: "gocql_test",
 		Name:     "avgstate",
 		ArgumentTypes: []TypeInfo{
 			TupleTypeInfo{
-				NativeType: NativeType{typ: TypeTuple, proto: protoVer},
-
 				Elems: []TypeInfo{
-					NativeType{typ: TypeInt, proto: protoVer},
-					NativeType{typ: TypeBigInt, proto: protoVer},
+					intTypeInfo{},
+					bigIntLikeTypeInfo{
+						typ: TypeBigInt,
+					},
 				},
 			},
-			NativeType{typ: TypeInt, proto: protoVer},
+			intTypeInfo{},
 		},
 		ArgumentNames: []string{"state", "val"},
 		ReturnType: TupleTypeInfo{
-			NativeType: NativeType{typ: TypeTuple, proto: protoVer},
-
 			Elems: []TypeInfo{
-				NativeType{typ: TypeInt, proto: protoVer},
-				NativeType{typ: TypeBigInt, proto: protoVer},
+				intTypeInfo{},
+				bigIntLikeTypeInfo{
+					typ: TypeBigInt,
+				},
 			},
 		},
 		CalledOnNullInput: true,
@@ -2587,22 +2639,22 @@ func TestFunctionMetadata(t *testing.T) {
 		Name:     "avgfinal",
 		ArgumentTypes: []TypeInfo{
 			TupleTypeInfo{
-				NativeType: NativeType{typ: TypeTuple, proto: protoVer},
-
 				Elems: []TypeInfo{
-					NativeType{typ: TypeInt, proto: protoVer},
-					NativeType{typ: TypeBigInt, proto: protoVer},
+					intTypeInfo{},
+					bigIntLikeTypeInfo{
+						typ: TypeBigInt,
+					},
 				},
 			},
 		},
 		ArgumentNames:     []string{"state"},
-		ReturnType:        NativeType{typ: TypeDouble, proto: protoVer},
+		ReturnType:        doubleTypeInfo{},
 		CalledOnNullInput: true,
 		Language:          "java",
 		Body:              finalStateBody,
 	}
 	if !reflect.DeepEqual(avgFinal, expectedAvgFinal) {
-		t.Fatalf("function is %+v, but expected %+v", avgFinal, expectedAvgFinal)
+		t.Fatalf("function is %#v, but expected %#v", avgFinal, expectedAvgFinal)
 	}
 }
 
@@ -2700,20 +2752,25 @@ func TestKeyspaceMetadata(t *testing.T) {
 	if flagCassVersion.Before(3, 0, 0) {
 		textType = TypeVarchar
 	}
-	protoVer := byte(session.cfg.ProtoVersion)
 	expectedType := UserTypeMetadata{
 		Keyspace:   "gocql_test",
 		Name:       "basicview",
 		FieldNames: []string{"birthday", "nationality", "weight", "height"},
 		FieldTypes: []TypeInfo{
-			NativeType{typ: TypeTimestamp, proto: protoVer},
-			NativeType{typ: textType, proto: protoVer},
-			NativeType{typ: textType, proto: protoVer},
-			NativeType{typ: textType, proto: protoVer},
+			timestampTypeInfo{},
+			varcharLikeTypeInfo{
+				typ: textType,
+			},
+			varcharLikeTypeInfo{
+				typ: textType,
+			},
+			varcharLikeTypeInfo{
+				typ: textType,
+			},
 		},
 	}
 	if !reflect.DeepEqual(*keyspaceMetadata.UserTypes["basicview"], expectedType) {
-		t.Fatalf("type is %+v, but expected %+v", keyspaceMetadata.UserTypes["basicview"], expectedType)
+		t.Fatalf("type is %#v, but expected %#v", keyspaceMetadata.UserTypes["basicview"], expectedType)
 	}
 	if flagCassVersion.Major >= 3 {
 		materializedView, found := keyspaceMetadata.MaterializedViews["view_view"]
@@ -3520,9 +3577,9 @@ func TestQuery_SetKeyspace(t *testing.T) {
 	}
 
 	const keyspaceStmt = `
-		CREATE KEYSPACE IF NOT EXISTS gocql_query_keyspace_override_test 
+		CREATE KEYSPACE IF NOT EXISTS gocql_query_keyspace_override_test
 		WITH replication = {
-			'class': 'SimpleStrategy', 
+			'class': 'SimpleStrategy',
 			'replication_factor': '1'
 		};
 `

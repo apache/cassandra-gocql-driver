@@ -701,7 +701,7 @@ func TestStream0(t *testing.T) {
 	const expErr = "gocql: received unexpected frame on stream 0"
 
 	var buf bytes.Buffer
-	f := newFramer(nil, protoVersion4)
+	f := newFramer(nil, protoVersion4, GlobalTypes)
 	f.writeHeader(0, opResult, 0)
 	f.writeInt(resultKindVoid)
 	f.buf[0] |= 0x80
@@ -717,7 +717,10 @@ func TestStream0(t *testing.T) {
 			r: bufio.NewReader(&buf),
 		},
 		streams: streams.New(protoVersion4),
-		logger:  &defaultLogger{},
+		session: &Session{
+			types: GlobalTypes,
+		},
+		logger: &defaultLogger{},
 	}
 
 	err := conn.recv(context.Background(), false)
@@ -1210,7 +1213,7 @@ func (srv *TestServer) process(conn net.Conn, reqFrame *framer) {
 		srv.errorLocked("process frame with a nil header")
 		return
 	}
-	respFrame := newFramer(nil, reqFrame.proto)
+	respFrame := newFramer(nil, reqFrame.proto, GlobalTypes)
 
 	switch head.op {
 	case opStartup:
@@ -1227,7 +1230,11 @@ func (srv *TestServer) process(conn net.Conn, reqFrame *framer) {
 		respFrame.writeHeader(0, opSupported, head.stream)
 		respFrame.writeShort(0)
 	case opQuery:
-		query := reqFrame.readLongString()
+		query, err := reqFrame.readLongString()
+		if err != nil {
+			srv.errorLocked(err)
+			return
+		}
 		first := query
 		if n := strings.Index(query, " "); n > 0 {
 			first = first[:n]
@@ -1282,7 +1289,11 @@ func (srv *TestServer) process(conn net.Conn, reqFrame *framer) {
 		respFrame.writeHeader(0, opError, head.stream)
 		respFrame.buf = append(respFrame.buf, reqFrame.buf...)
 	case opPrepare:
-		query := reqFrame.readLongString()
+		query, err := reqFrame.readLongString()
+		if err != nil {
+			srv.errorLocked(err)
+			return
+		}
 		name := strings.TrimPrefix(query, "select ")
 		if n := strings.Index(name, " "); n > 0 {
 			name = name[:n]
@@ -1328,16 +1339,29 @@ func (srv *TestServer) process(conn net.Conn, reqFrame *framer) {
 			respFrame.writeString("unsupported query: " + name)
 		}
 	case opExecute:
-		b := reqFrame.readShortBytes()
+		b, err := reqFrame.readShortBytes()
+		if err != nil {
+			srv.errorLocked(err)
+			return
+		}
 		id := binary.BigEndian.Uint64(b)
 		// <query_parameters>
 		reqFrame.readConsistency() // <consistency>
 		var flags uint32
 		if srv.protocol > protoVersion4 {
-			ui := reqFrame.readInt()
+			ui, err := reqFrame.readInt()
+			if err != nil {
+				srv.errorLocked(err)
+				return
+			}
 			flags = uint32(ui)
 		} else {
-			flags = uint32(reqFrame.readByte())
+			b, err := reqFrame.readByte()
+			if err != nil {
+				srv.errorLocked(err)
+				return
+			}
+			flags = uint32(b)
 		}
 		switch id {
 		case 1:
@@ -1397,7 +1421,7 @@ func (srv *TestServer) readFrame(conn net.Conn) (*framer, error) {
 	if err != nil {
 		return nil, err
 	}
-	framer := newFramer(nil, srv.protocol)
+	framer := newFramer(nil, srv.protocol, GlobalTypes)
 
 	err = framer.readFrame(conn, &head)
 	if err != nil {
@@ -1435,6 +1459,8 @@ func TestConnProcessAllFramesInSingleSegment(t *testing.T) {
 			quit:      make(chan struct{}),
 		},
 		writeTimeout: time.Second * 10,
+		session:      &Session{types: GlobalTypes},
+		logger:       &defaultLogger{},
 	}
 
 	call1 := &callReq{
@@ -1460,11 +1486,11 @@ func TestConnProcessAllFramesInSingleSegment(t *testing.T) {
 		},
 	}
 
-	framer1 := newFramer(nil, protoVersion5)
+	framer1 := newFramer(nil, protoVersion5, GlobalTypes)
 	err = req.buildFrame(framer1, 1)
 	require.NoError(t, err)
 
-	framer2 := newFramer(nil, protoVersion5)
+	framer2 := newFramer(nil, protoVersion5, GlobalTypes)
 	err = req.buildFrame(framer2, 2)
 	require.NoError(t, err)
 

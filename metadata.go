@@ -304,8 +304,8 @@ func (s *schemaDescriber) refreshSchema(keyspaceName string) error {
 	}
 
 	// organize the schema data
-	compileMetadata(s.session.cfg.ProtoVersion, keyspace, tables, columns, functions, aggregates, userTypes,
-		materializedViews, s.session.logger)
+	compileMetadata(s.session, keyspace, tables, columns, functions, aggregates, userTypes,
+		materializedViews)
 
 	// update the cache
 	s.cache[keyspaceName] = keyspace
@@ -319,7 +319,7 @@ func (s *schemaDescriber) refreshSchema(keyspaceName string) error {
 // Links the metadata objects together and derives the column composition of
 // the partition key and clustering key for a table.
 func compileMetadata(
-	protoVersion int,
+	session *Session,
 	keyspace *KeyspaceMetadata,
 	tables []TableMetadata,
 	columns []ColumnMetadata,
@@ -327,8 +327,7 @@ func compileMetadata(
 	aggregates []AggregateMetadata,
 	uTypes []UserTypeMetadata,
 	materializedViews []MaterializedViewMetadata,
-	logger StdLogger,
-) {
+) error {
 	keyspace.Tables = make(map[string]*TableMetadata)
 	for i := range tables {
 		tables[i].Columns = make(map[string]*ColumnMetadata)
@@ -356,17 +355,26 @@ func compileMetadata(
 	}
 
 	// add columns from the schema data
+	var err error
 	for i := range columns {
 		col := &columns[i]
 		// decode the validator for TypeInfo and order
 		if col.ClusteringOrder != "" { // Cassandra 3.x+
-			col.Type = getCassandraType(col.Validator, byte(protoVersion), logger)
+			col.Type, err = session.types.typeInfoFromString(session.cfg.ProtoVersion, col.Validator)
+			if err != nil {
+				// we don't error out completely for unknown types because we didn't before
+				// and the caller might not care about this type
+				col.Type = unknownTypeInfo(col.Validator)
+			}
 			col.Order = ASC
 			if col.ClusteringOrder == "desc" {
 				col.Order = DESC
 			}
 		} else {
-			validatorParsed := parseType(col.Validator, byte(protoVersion), logger)
+			validatorParsed, err := parseType(session, col.Validator)
+			if err != nil {
+				return err
+			}
 			col.Type = validatorParsed.types[0]
 			col.Order = ASC
 			if validatorParsed.reversed[0] {
@@ -387,11 +395,11 @@ func compileMetadata(
 		table.OrderedColumns = append(table.OrderedColumns, col.Name)
 	}
 
-	compileV2Metadata(tables, protoVersion, logger)
+	return compileV2Metadata(tables, session)
 }
 
 // The simpler compile case for V2+ protocol
-func compileV2Metadata(tables []TableMetadata, protoVer int, logger StdLogger) {
+func compileV2Metadata(tables []TableMetadata, session *Session) error {
 	for i := range tables {
 		table := &tables[i]
 
@@ -399,7 +407,10 @@ func compileV2Metadata(tables []TableMetadata, protoVer int, logger StdLogger) {
 		table.ClusteringColumns = make([]*ColumnMetadata, clusteringColumnCount)
 
 		if table.KeyValidator != "" {
-			keyValidatorParsed := parseType(table.KeyValidator, byte(protoVer), logger)
+			keyValidatorParsed, err := parseType(session, table.KeyValidator)
+			if err != nil {
+				return err
+			}
 			table.PartitionKey = make([]*ColumnMetadata, len(keyValidatorParsed.types))
 		} else { // Cassandra 3.x+
 			partitionKeyCount := componentColumnCountOfType(table.Columns, ColumnPartitionKey)
@@ -415,6 +426,7 @@ func compileV2Metadata(tables []TableMetadata, protoVer int, logger StdLogger) {
 			}
 		}
 	}
+	return nil
 }
 
 // returns the count of coluns with the given "kind" value.
@@ -753,13 +765,6 @@ func getColumnMetadata(session *Session, keyspaceName string) ([]ColumnMetadata,
 	return columns, nil
 }
 
-func getTypeInfo(t string, protoVer byte, logger StdLogger) TypeInfo {
-	if strings.HasPrefix(t, apacheCassandraTypePrefix) {
-		return getCassandraLongType(t, protoVer, logger)
-	}
-	return getCassandraType(t, protoVer, logger)
-}
-
 func getUserTypeMetadata(session *Session, keyspaceName string) ([]UserTypeMetadata, error) {
 	var tableName string
 	if session.useSystemSchema {
@@ -790,10 +795,16 @@ func getUserTypeMetadata(session *Session, keyspaceName string) ([]UserTypeMetad
 		}
 		uType.FieldTypes = make([]TypeInfo, len(argumentTypes))
 		for i, argumentType := range argumentTypes {
-			uType.FieldTypes[i] = getTypeInfo(argumentType, byte(session.cfg.ProtoVersion), session.logger)
+			uType.FieldTypes[i], err = session.types.typeInfoFromString(session.cfg.ProtoVersion, argumentType)
+			if err != nil {
+				// we don't error out completely for unknown types because we didn't before
+				// and the caller might not care about this type
+				uType.FieldTypes[i] = unknownTypeInfo(argumentType)
+			}
 		}
 		uTypes = append(uTypes, uType)
 	}
+	// TODO: if a UDT refers to another UDT, should we resolve it?
 
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -1043,10 +1054,20 @@ func getFunctionsMetadata(session *Session, keyspaceName string) ([]FunctionMeta
 		if err != nil {
 			return nil, err
 		}
-		function.ReturnType = getTypeInfo(returnType, byte(session.cfg.ProtoVersion), session.logger)
+		function.ReturnType, err = session.types.typeInfoFromString(session.cfg.ProtoVersion, returnType)
+		if err != nil {
+			// we don't error out completely for unknown types because we didn't before
+			// and the caller might not care about this type
+			function.ReturnType = unknownTypeInfo(returnType)
+		}
 		function.ArgumentTypes = make([]TypeInfo, len(argumentTypes))
 		for i, argumentType := range argumentTypes {
-			function.ArgumentTypes[i] = getTypeInfo(argumentType, byte(session.cfg.ProtoVersion), session.logger)
+			function.ArgumentTypes[i], err = session.types.typeInfoFromString(session.cfg.ProtoVersion, argumentType)
+			if err != nil {
+				// we don't error out completely for unknown types because we didn't before
+				// and the caller might not care about this type
+				function.ArgumentTypes[i] = unknownTypeInfo(argumentType)
+			}
 		}
 		functions = append(functions, function)
 	}
@@ -1100,11 +1121,26 @@ func getAggregatesMetadata(session *Session, keyspaceName string) ([]AggregateMe
 		if err != nil {
 			return nil, err
 		}
-		aggregate.ReturnType = getTypeInfo(returnType, byte(session.cfg.ProtoVersion), session.logger)
-		aggregate.StateType = getTypeInfo(stateType, byte(session.cfg.ProtoVersion), session.logger)
+		aggregate.ReturnType, err = session.types.typeInfoFromString(session.cfg.ProtoVersion, returnType)
+		if err != nil {
+			// we don't error out completely for unknown types because we didn't before
+			// and the caller might not care about this type
+			aggregate.ReturnType = unknownTypeInfo(returnType)
+		}
+		aggregate.StateType, err = session.types.typeInfoFromString(session.cfg.ProtoVersion, stateType)
+		if err != nil {
+			// we don't error out completely for unknown types because we didn't before
+			// and the caller might not care about this type
+			aggregate.StateType = unknownTypeInfo(stateType)
+		}
 		aggregate.ArgumentTypes = make([]TypeInfo, len(argumentTypes))
 		for i, argumentType := range argumentTypes {
-			aggregate.ArgumentTypes[i] = getTypeInfo(argumentType, byte(session.cfg.ProtoVersion), session.logger)
+			aggregate.ArgumentTypes[i], err = session.types.typeInfoFromString(session.cfg.ProtoVersion, argumentType)
+			if err != nil {
+				// we don't error out completely for unknown types because we didn't before
+				// and the caller might not care about this type
+				aggregate.ArgumentTypes[i] = unknownTypeInfo(argumentType)
+			}
 		}
 		aggregates = append(aggregates, aggregate)
 	}
@@ -1118,10 +1154,9 @@ func getAggregatesMetadata(session *Session, keyspaceName string) ([]AggregateMe
 
 // type definition parser state
 type typeParser struct {
-	input  string
-	index  int
-	logger StdLogger
-	proto  byte
+	input   string
+	index   int
+	session *Session
 }
 
 // the type definition parser result
@@ -1133,20 +1168,37 @@ type typeParserResult struct {
 }
 
 // Parse the type definition used for validator and comparator schema data
-func parseType(def string, protoVer byte, logger StdLogger) typeParserResult {
-	parser := &typeParser{input: def, proto: protoVer, logger: logger}
-	return parser.parse()
+func parseType(session *Session, def string) (typeParserResult, error) {
+	parser := &typeParser{
+		input:   def,
+		session: session,
+	}
+	res, ok, err := parser.parse()
+	if err != nil {
+		return typeParserResult{}, err
+	}
+	if !ok {
+		t, err := session.types.typeInfoFromString(session.cfg.ProtoVersion, def)
+		if err != nil {
+			// we don't error out completely for unknown types because we didn't before
+			// and the caller might not care about this type
+			t = unknownTypeInfo(def)
+		}
+		// treat this is a custom type
+		return typeParserResult{
+			isComposite: false,
+			types:       []TypeInfo{t},
+			reversed:    []bool{false},
+			collections: nil,
+		}, nil
+	}
+	return res, err
 }
 
 const (
 	REVERSED_TYPE   = "org.apache.cassandra.db.marshal.ReversedType"
 	COMPOSITE_TYPE  = "org.apache.cassandra.db.marshal.CompositeType"
 	COLLECTION_TYPE = "org.apache.cassandra.db.marshal.ColumnToCollectionType"
-	LIST_TYPE       = "org.apache.cassandra.db.marshal.ListType"
-	SET_TYPE        = "org.apache.cassandra.db.marshal.SetType"
-	MAP_TYPE        = "org.apache.cassandra.db.marshal.MapType"
-	UDT_TYPE        = "org.apache.cassandra.db.marshal.UserType"
-	TUPLE_TYPE      = "org.apache.cassandra.db.marshal.TupleType"
 	VECTOR_TYPE     = "org.apache.cassandra.db.marshal.VectorType"
 )
 
@@ -1155,8 +1207,8 @@ type typeParserClassNode struct {
 	name   string
 	params []typeParserParamNode
 	// this is the segment of the input string that defined this node
-	input string
-	proto byte
+	input   string
+	session *Session
 }
 
 // represents a class parameter in the type def AST
@@ -1165,25 +1217,14 @@ type typeParserParamNode struct {
 	class typeParserClassNode
 }
 
-func (t *typeParser) parse() typeParserResult {
+func (t *typeParser) parse() (typeParserResult, bool, error) {
 	// parse the AST
 	ast, ok := t.parseClassNode()
 	if !ok {
-		// treat this is a custom type
-		return typeParserResult{
-			isComposite: false,
-			types: []TypeInfo{
-				NativeType{
-					typ:    TypeCustom,
-					custom: t.input,
-					proto:  t.proto,
-				},
-			},
-			reversed:    []bool{false},
-			collections: nil,
-		}
+		return typeParserResult{}, false, nil
 	}
 
+	var err error
 	// interpret the AST
 	if strings.HasPrefix(ast.name, COMPOSITE_TYPE) {
 		count := len(ast.params)
@@ -1195,22 +1236,14 @@ func (t *typeParser) parse() typeParserResult {
 			count--
 
 			for _, param := range last.class.params {
-				// decode the name
-				var name string
 				decoded, err := hex.DecodeString(*param.name)
 				if err != nil {
-					t.logger.Printf(
-						"Error parsing type '%s', contains collection name '%s' with an invalid format: %v",
-						t.input,
-						*param.name,
-						err,
-					)
-					// just use the provided name
-					name = *param.name
-				} else {
-					name = string(decoded)
+					return typeParserResult{}, false, fmt.Errorf("type '%s' contains collection name '%s' with an invalid format: %w", t.input, *param.name, err)
 				}
-				collections[name] = param.class.asTypeInfo()
+				collections[string(decoded)], err = param.class.asTypeInfo()
+				if err != nil {
+					return typeParserResult{}, false, err
+				}
 			}
 		}
 
@@ -1223,7 +1256,10 @@ func (t *typeParser) parse() typeParserResult {
 			if reversed[i] {
 				class = class.params[0].class
 			}
-			types[i] = class.asTypeInfo()
+			types[i], err = class.asTypeInfo()
+			if err != nil {
+				return typeParserResult{}, false, err
+			}
 		}
 
 		return typeParserResult{
@@ -1231,7 +1267,7 @@ func (t *typeParser) parse() typeParserResult {
 			types:       types,
 			reversed:    reversed,
 			collections: collections,
-		}
+		}, true, nil
 	} else {
 		// not composite, so one type
 		class := *ast
@@ -1239,57 +1275,43 @@ func (t *typeParser) parse() typeParserResult {
 		if reversed {
 			class = class.params[0].class
 		}
-		typeInfo := class.asTypeInfo()
+		typeInfo, err := class.asTypeInfo()
+		if err != nil {
+			return typeParserResult{}, false, err
+		}
 
 		return typeParserResult{
 			isComposite: false,
 			types:       []TypeInfo{typeInfo},
 			reversed:    []bool{reversed},
-		}
+		}, true, nil
 	}
 }
 
-func (class *typeParserClassNode) asTypeInfo() TypeInfo {
-	if strings.HasPrefix(class.name, LIST_TYPE) {
-		elem := class.params[0].class.asTypeInfo()
-		return CollectionType{
-			NativeType: NativeType{
-				typ:   TypeList,
-				proto: class.proto,
-			},
-			Elem: elem,
+func (class *typeParserClassNode) asTypeInfo() (TypeInfo, error) {
+	// TODO: should we just use types.typeInfoFromString(class.input) but then it
+	// wouldn't be reversed
+	t, ok := class.session.types.getType(class.name)
+	if !ok {
+		return unknownTypeInfo(class.input), nil
+	}
+	var params string
+	if len(class.params) > 0 {
+		// compile the params just like they are in 3.x
+		for i, param := range class.params {
+			if i > 0 {
+				params += ", "
+			}
+			if param.name != nil {
+				params += (*param.name) + ":"
+			}
+			params += param.class.name
 		}
 	}
-	if strings.HasPrefix(class.name, SET_TYPE) {
-		elem := class.params[0].class.asTypeInfo()
-		return CollectionType{
-			NativeType: NativeType{
-				typ:   TypeSet,
-				proto: class.proto,
-			},
-			Elem: elem,
-		}
-	}
-	if strings.HasPrefix(class.name, MAP_TYPE) {
-		key := class.params[0].class.asTypeInfo()
-		elem := class.params[1].class.asTypeInfo()
-		return CollectionType{
-			NativeType: NativeType{
-				typ:   TypeMap,
-				proto: class.proto,
-			},
-			Key:  key,
-			Elem: elem,
-		}
-	}
-
-	// must be a simple type or custom type
-	info := NativeType{typ: getApacheCassandraType(class.name), proto: class.proto}
-	if info.typ == TypeCustom {
-		// add the entire class definition
-		info.custom = class.input
-	}
-	return info
+	// we are returning the error here because we're failing to parse it, but if
+	// this ends up unnecessarily breaking things we could do the same thing as
+	// above and return unknownTypeInfo
+	return t.TypeInfoFromString(class.session.cfg.ProtoVersion, params)
 }
 
 // CLASS := ID [ PARAMS ]
@@ -1311,10 +1333,10 @@ func (t *typeParser) parseClassNode() (node *typeParserClassNode, ok bool) {
 	endIndex := t.index
 
 	node = &typeParserClassNode{
-		name:   name,
-		params: params,
-		input:  t.input[startIndex:endIndex],
-		proto:  t.proto,
+		name:    name,
+		params:  params,
+		input:   t.input[startIndex:endIndex],
+		session: t.session,
 	}
 	return node, true
 }

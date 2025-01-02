@@ -65,6 +65,7 @@ type Session struct {
 	hostSource          *ringDescriber
 	ringRefresher       *refreshDebouncer
 	stmtsLRU            *preparedLRU
+	types               *RegisteredTypes
 
 	connCfg *ConnConfig
 
@@ -160,6 +161,11 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 		cancel:          cancel,
 		logger:          cfg.logger(),
 		trace:           cfg.Tracer,
+	}
+	if cfg.RegisteredTypes == nil {
+		s.types = GlobalTypes.Copy()
+	} else {
+		s.types = cfg.RegisteredTypes.Copy()
 	}
 
 	s.schemaDescriber = newSchemaDescriber(s)
@@ -1634,7 +1640,7 @@ func (iter *Iter) Scanner() Scanner {
 }
 
 func (iter *Iter) readColumn() ([]byte, error) {
-	return iter.framer.readBytesInternal()
+	return iter.framer.readBytes()
 }
 
 // Scan consumes the next row of the iterator and copies the columns of the

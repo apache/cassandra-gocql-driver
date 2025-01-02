@@ -499,7 +499,7 @@ func (s *Session) newHostInfoFromMap(addr net.IP, port int, row map[string]inter
 // Given a map that represents a row from either system.local or system.peers
 // return as much information as we can in *HostInfo
 func (s *Session) hostInfoFromMap(row map[string]interface{}, host *HostInfo) (*HostInfo, error) {
-	const assertErrorMsg = "Assertion failed for %s"
+	const assertErrorMsg = "Assertion failed for %s, type was %T"
 	var ok bool
 
 	// Default to our connected port if the cluster doesn't have port information
@@ -508,101 +508,101 @@ func (s *Session) hostInfoFromMap(row map[string]interface{}, host *HostInfo) (*
 		case "data_center":
 			host.dataCenter, ok = value.(string)
 			if !ok {
-				return nil, fmt.Errorf(assertErrorMsg, "data_center")
+				return nil, fmt.Errorf(assertErrorMsg, "data_center", value)
 			}
 		case "rack":
 			host.rack, ok = value.(string)
 			if !ok {
-				return nil, fmt.Errorf(assertErrorMsg, "rack")
+				return nil, fmt.Errorf(assertErrorMsg, "rack", value)
 			}
 		case "host_id":
 			hostId, ok := value.(UUID)
 			if !ok {
-				return nil, fmt.Errorf(assertErrorMsg, "host_id")
+				return nil, fmt.Errorf(assertErrorMsg, "host_id", value)
 			}
 			host.hostId = hostId.String()
 		case "release_version":
 			version, ok := value.(string)
 			if !ok {
-				return nil, fmt.Errorf(assertErrorMsg, "release_version")
+				return nil, fmt.Errorf(assertErrorMsg, "release_version", value)
 			}
 			host.version.Set(version)
 		case "peer":
-			ip, ok := value.(string)
+			ip, ok := value.(net.IP)
 			if !ok {
-				return nil, fmt.Errorf(assertErrorMsg, "peer")
+				return nil, fmt.Errorf(assertErrorMsg, "peer", value)
 			}
-			host.peer = net.ParseIP(ip)
+			host.peer = ip
 		case "cluster_name":
 			host.clusterName, ok = value.(string)
 			if !ok {
-				return nil, fmt.Errorf(assertErrorMsg, "cluster_name")
+				return nil, fmt.Errorf(assertErrorMsg, "cluster_name", value)
 			}
 		case "partitioner":
 			host.partitioner, ok = value.(string)
 			if !ok {
-				return nil, fmt.Errorf(assertErrorMsg, "partitioner")
+				return nil, fmt.Errorf(assertErrorMsg, "partitioner", value)
 			}
 		case "broadcast_address":
-			ip, ok := value.(string)
+			ip, ok := value.(net.IP)
 			if !ok {
-				return nil, fmt.Errorf(assertErrorMsg, "broadcast_address")
+				return nil, fmt.Errorf(assertErrorMsg, "broadcast_address", value)
 			}
-			host.broadcastAddress = net.ParseIP(ip)
+			host.broadcastAddress = ip
 		case "preferred_ip":
-			ip, ok := value.(string)
+			ip, ok := value.(net.IP)
 			if !ok {
-				return nil, fmt.Errorf(assertErrorMsg, "preferred_ip")
+				return nil, fmt.Errorf(assertErrorMsg, "preferred_ip", value)
 			}
-			host.preferredIP = net.ParseIP(ip)
+			host.preferredIP = ip
 		case "rpc_address":
-			ip, ok := value.(string)
+			ip, ok := value.(net.IP)
 			if !ok {
-				return nil, fmt.Errorf(assertErrorMsg, "rpc_address")
+				return nil, fmt.Errorf(assertErrorMsg, "rpc_address", value)
 			}
-			host.rpcAddress = net.ParseIP(ip)
+			host.rpcAddress = ip
 		case "native_address":
-			ip, ok := value.(string)
+			ip, ok := value.(net.IP)
 			if !ok {
-				return nil, fmt.Errorf(assertErrorMsg, "native_address")
+				return nil, fmt.Errorf(assertErrorMsg, "native_address", value)
 			}
-			host.rpcAddress = net.ParseIP(ip)
+			host.rpcAddress = ip
 		case "listen_address":
-			ip, ok := value.(string)
+			ip, ok := value.(net.IP)
 			if !ok {
-				return nil, fmt.Errorf(assertErrorMsg, "listen_address")
+				return nil, fmt.Errorf(assertErrorMsg, "listen_address", value)
 			}
-			host.listenAddress = net.ParseIP(ip)
+			host.listenAddress = ip
 		case "native_port":
 			native_port, ok := value.(int)
 			if !ok {
-				return nil, fmt.Errorf(assertErrorMsg, "native_port")
+				return nil, fmt.Errorf(assertErrorMsg, "native_port", value)
 			}
 			host.port = native_port
 		case "workload":
 			host.workload, ok = value.(string)
 			if !ok {
-				return nil, fmt.Errorf(assertErrorMsg, "workload")
+				return nil, fmt.Errorf(assertErrorMsg, "workload", value)
 			}
 		case "graph":
 			host.graph, ok = value.(bool)
 			if !ok {
-				return nil, fmt.Errorf(assertErrorMsg, "graph")
+				return nil, fmt.Errorf(assertErrorMsg, "graph", value)
 			}
 		case "tokens":
 			host.tokens, ok = value.([]string)
 			if !ok {
-				return nil, fmt.Errorf(assertErrorMsg, "tokens")
+				return nil, fmt.Errorf(assertErrorMsg, "tokens", value)
 			}
 		case "dse_version":
 			host.dseVersion, ok = value.(string)
 			if !ok {
-				return nil, fmt.Errorf(assertErrorMsg, "dse_version")
+				return nil, fmt.Errorf(assertErrorMsg, "dse_version", value)
 			}
 		case "schema_version":
 			schemaVersion, ok := value.(UUID)
 			if !ok {
-				return nil, fmt.Errorf(assertErrorMsg, "schema_version")
+				return nil, fmt.Errorf(assertErrorMsg, "schema_version", value)
 			}
 			host.schemaVersion = schemaVersion.String()
 		}

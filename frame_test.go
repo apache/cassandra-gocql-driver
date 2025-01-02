@@ -28,6 +28,7 @@ import (
 	"bytes"
 	"errors"
 	"os"
+	"reflect"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -61,15 +62,13 @@ func TestFuzzBugs(t *testing.T) {
 	}
 
 	for i, test := range tests {
-		t.Logf("test %d input: %q", i, test)
-
 		r := bytes.NewReader(test)
 		head, err := readHeader(r, make([]byte, 9))
 		if err != nil {
 			continue
 		}
 
-		framer := newFramer(nil, byte(head.version))
+		framer := newFramer(nil, byte(head.version), GlobalTypes)
 		err = framer.readFrame(r, &head)
 		if err != nil {
 			continue
@@ -90,7 +89,7 @@ func TestFrameWriteTooLong(t *testing.T) {
 		t.Skip("skipping test in travis due to memory pressure with the race detecor")
 	}
 
-	framer := newFramer(nil, 2)
+	framer := newFramer(nil, 2, GlobalTypes)
 
 	framer.writeHeader(0, opStartup, 1)
 	framer.writeBytes(make([]byte, maxFrameSize+1))
@@ -110,7 +109,7 @@ func TestFrameReadTooLong(t *testing.T) {
 	// write a new header right after this frame to verify that we can read it
 	r.Write([]byte{protoVersionMask & protoVersion3, 0x00, 0x00, 0x00, byte(opReady), 0x00, 0x00, 0x00, 0x00})
 
-	framer := newFramer(nil, 3)
+	framer := newFramer(nil, 3, GlobalTypes)
 
 	head := frameHeader{
 		version: protoVersion3,
@@ -133,7 +132,7 @@ func TestFrameReadTooLong(t *testing.T) {
 }
 
 func Test_framer_writeExecuteFrame(t *testing.T) {
-	framer := newFramer(nil, protoVersion5)
+	framer := newFramer(nil, protoVersion5, GlobalTypes)
 	nowInSeconds := 123
 	frame := writeExecuteFrame{
 		preparedID:       []byte{1, 2, 3},
@@ -155,12 +154,31 @@ func Test_framer_writeExecuteFrame(t *testing.T) {
 	// skipping header
 	framer.buf = framer.buf[9:]
 
-	assertDeepEqual(t, "customPayload", frame.customPayload, framer.readBytesMap())
-	assertDeepEqual(t, "preparedID", frame.preparedID, framer.readShortBytes())
-	assertDeepEqual(t, "resultMetadataID", frame.resultMetadataID, framer.readShortBytes())
-	assertDeepEqual(t, "constistency", frame.params.consistency, Consistency(framer.readShort()))
+	bm, err := framer.readBytesMap()
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertDeepEqual(t, "customPayload", frame.customPayload, bm)
+	b, err := framer.readShortBytes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertDeepEqual(t, "preparedID", frame.preparedID, b)
+	b, err = framer.readShortBytes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertDeepEqual(t, "resultMetadataID", frame.resultMetadataID, b)
+	c, err := framer.readConsistency()
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertDeepEqual(t, "constistency", frame.params.consistency, c)
 
-	flags := framer.readInt()
+	flags, err := framer.readInt()
+	if err != nil {
+		t.Fatal(err)
+	}
 	if flags&int(flagWithNowInSeconds) != int(flagWithNowInSeconds) {
 		t.Fatal("expected flagNowInSeconds to be set, but it is not")
 	}
@@ -169,12 +187,20 @@ func Test_framer_writeExecuteFrame(t *testing.T) {
 		t.Fatal("expected flagWithKeyspace to be set, but it is not")
 	}
 
-	assertDeepEqual(t, "keyspace", frame.params.keyspace, framer.readString())
-	assertDeepEqual(t, "nowInSeconds", nowInSeconds, framer.readInt())
+	k, err := framer.readString()
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertDeepEqual(t, "keyspace", frame.params.keyspace, k)
+	secs, err := framer.readInt()
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertDeepEqual(t, "nowInSeconds", nowInSeconds, secs)
 }
 
 func Test_framer_writeBatchFrame(t *testing.T) {
-	framer := newFramer(nil, protoVersion5)
+	framer := newFramer(nil, protoVersion5, GlobalTypes)
 	nowInSeconds := 123
 	frame := writeBatchFrame{
 		customPayload: map[string][]byte{
@@ -191,17 +217,40 @@ func Test_framer_writeBatchFrame(t *testing.T) {
 	// skipping header
 	framer.buf = framer.buf[9:]
 
-	assertDeepEqual(t, "customPayload", frame.customPayload, framer.readBytesMap())
-	assertDeepEqual(t, "typ", frame.typ, BatchType(framer.readByte()))
-	assertDeepEqual(t, "len(statements)", len(frame.statements), int(framer.readShort()))
-	assertDeepEqual(t, "consistency", frame.consistency, Consistency(framer.readShort()))
+	bm, err := framer.readBytesMap()
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertDeepEqual(t, "customPayload", frame.customPayload, bm)
+	b, err := framer.readByte()
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertDeepEqual(t, "typ", frame.typ, BatchType(b))
+	l, err := framer.readShort()
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertDeepEqual(t, "len(statements)", len(frame.statements), int(l))
+	c, err := framer.readConsistency()
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertDeepEqual(t, "consistency", frame.consistency, c)
 
-	flags := framer.readInt()
+	flags, err := framer.readInt()
+	if err != nil {
+		t.Fatal(err)
+	}
 	if flags&int(flagWithNowInSeconds) != int(flagWithNowInSeconds) {
 		t.Fatal("expected flagNowInSeconds to be set, but it is not")
 	}
 
-	assertDeepEqual(t, "nowInSeconds", nowInSeconds, framer.readInt())
+	secs, err := framer.readInt()
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertDeepEqual(t, "nowInSeconds", nowInSeconds, secs)
 }
 
 type testMockedCompressor struct {
@@ -295,7 +344,7 @@ func Test_readUncompressedFrame(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			framer := newFramer(nil, protoVersion5)
+			framer := newFramer(nil, protoVersion5, GlobalTypes)
 			req := writeQueryFrame{
 				statement: "SELECT * FROM system.local",
 				params: queryParams{
@@ -406,7 +455,7 @@ func Test_readCompressedFrame(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			framer := newFramer(nil, protoVersion5)
+			framer := newFramer(nil, protoVersion5, GlobalTypes)
 			req := writeQueryFrame{
 				statement: "SELECT * FROM system.local",
 				params: queryParams{
@@ -439,5 +488,348 @@ func Test_readCompressedFrame(t *testing.T) {
 				assert.Equal(t, framer.buf, readFrame)
 			}
 		})
+	}
+}
+
+func TestFrameReadParam(t *testing.T) {
+	testCases := []struct {
+		Write func(*framer)
+		Param interface{}
+		Exp   interface{}
+	}{
+		{
+			Write: func(f *framer) {
+				f.writeString("foo")
+			},
+			Param: "",
+			Exp:   "foo",
+		},
+		{
+			Write: func(f *framer) {
+				f.writeShort(2)
+				f.writeString("foo")
+				f.writeString("bar")
+			},
+			Param: []interface{}{"", ""},
+			Exp:   []interface{}{"foo", "bar"},
+		},
+		{
+			Write: func(f *framer) {
+				f.writeShort(uint16(TypeBoolean))
+			},
+			Param: (*TypeInfo)(nil),
+			Exp:   booleanTypeInfo{},
+		},
+		{
+			Write: func(f *framer) {
+				f.writeInt(5)
+			},
+			Param: int(0),
+			Exp:   int(5),
+		},
+		{
+			Write: func(f *framer) {
+				f.writeInt(5)
+			},
+			Param: new(int),
+			Exp:   int(5),
+		},
+		{
+			Write: func(f *framer) {
+				f.writeShort(5)
+			},
+			Param: uint16(0),
+			Exp:   uint16(5),
+		},
+		{
+			Write: func(f *framer) {
+				f.writeByte(10)
+			},
+			Param: byte(0),
+			Exp:   byte(10),
+		},
+		{
+			Write: func(f *framer) {
+				f.writeShort(uint16(TypeBoolean))
+			},
+			Param: Type(0),
+			Exp:   TypeBoolean,
+		},
+		{
+			Write: func(f *framer) {
+				f.writeShort(2)
+				f.writeShort(uint16(TypeBoolean))
+				f.writeShort(uint16(TypeBoolean))
+			},
+			Param: []TypeInfo{},
+			Exp:   []TypeInfo{booleanTypeInfo{}, booleanTypeInfo{}},
+		},
+		{
+			Write: func(f *framer) {
+				f.writeShort(2)
+				f.writeShort(uint16(TypeBoolean))
+				f.writeShort(uint16(TypeBoolean))
+			},
+			Param: []TypeInfo{nil, nil},
+			Exp:   []TypeInfo{booleanTypeInfo{}, booleanTypeInfo{}},
+		},
+		{
+			Write: func(f *framer) {
+				f.writeInt(5)
+			},
+			Param: func() *interface{} {
+				var i interface{}
+				i = int(0)
+				return &i
+			}(),
+			Exp: int(5),
+		},
+	}
+	for i := range testCases {
+		framer := newFramer(nil, 4, GlobalTypes)
+		testCases[i].Write(framer)
+		res, err := framer.readParam(testCases[i].Param)
+		if err != nil {
+			t.Errorf("[%d] unexpected error: %v", i, err)
+		} else if !reflect.DeepEqual(res, testCases[i].Exp) {
+			t.Errorf("[%d] expected %+v, got %+v", i, testCases[i].Exp, res)
+		}
+	}
+}
+
+func TestFrameReadTypeInfo(t *testing.T) {
+	tests := []struct {
+		name     string
+		typ      Type
+		more     func(f *framer)
+		custom   string
+		expected TypeInfo
+	}{
+		{
+			name: "text",
+			typ:  TypeVarchar,
+			expected: varcharLikeTypeInfo{
+				typ: TypeVarchar,
+			},
+		},
+		{
+			name:     "boolean",
+			typ:      TypeBoolean,
+			expected: booleanTypeInfo{},
+		},
+		{
+			name: "set_int",
+			typ:  TypeSet,
+			more: func(f *framer) {
+				f.writeShort(uint16(TypeInt))
+			},
+			expected: CollectionType{
+				typ:  TypeSet,
+				Elem: intTypeInfo{},
+			},
+		},
+		{
+			name: "list_int",
+			typ:  TypeList,
+			more: func(f *framer) {
+				f.writeShort(uint16(TypeInt))
+			},
+			expected: CollectionType{
+				typ:  TypeList,
+				Elem: intTypeInfo{},
+			},
+		},
+		{
+			name: "list_list_int",
+			typ:  TypeList,
+			more: func(f *framer) {
+				f.writeShort(uint16(TypeList))
+				f.writeShort(uint16(TypeInt))
+			},
+			expected: CollectionType{
+				typ: TypeList,
+				Elem: CollectionType{
+					typ:  TypeList,
+					Elem: intTypeInfo{},
+				},
+			},
+		},
+		{
+			name: "map_int_int",
+			typ:  TypeMap,
+			more: func(f *framer) {
+				f.writeShort(uint16(TypeInt))
+				f.writeShort(uint16(TypeInt))
+			},
+			expected: CollectionType{
+				typ:  TypeMap,
+				Key:  intTypeInfo{},
+				Elem: intTypeInfo{},
+			},
+		},
+		{
+			name: "list_list_int",
+			typ:  TypeUDT,
+			more: func(f *framer) {
+				f.writeString("gocql_test")
+				f.writeString("person")
+				f.writeShort(3)
+				f.writeString("first_name")
+				f.writeShort(uint16(TypeVarchar))
+				f.writeString("last_name")
+				f.writeShort(uint16(TypeVarchar))
+				f.writeString("age")
+				f.writeShort(uint16(TypeInt))
+			},
+			expected: UDTTypeInfo{
+				Keyspace: "gocql_test",
+				Name:     "person",
+				Elements: []UDTField{
+					{Name: "first_name", Type: varcharLikeTypeInfo{typ: TypeVarchar}},
+					{Name: "last_name", Type: varcharLikeTypeInfo{typ: TypeVarchar}},
+					{Name: "age", Type: intTypeInfo{}},
+				},
+			},
+		},
+		{
+			name: "tuple_int_int",
+			typ:  TypeTuple,
+			more: func(f *framer) {
+				f.writeShort(2)
+				f.writeShort(uint16(TypeInt))
+				f.writeShort(uint16(TypeInt))
+			},
+			expected: TupleTypeInfo{
+				Elems: []TypeInfo{
+					intTypeInfo{},
+					intTypeInfo{},
+				},
+			},
+		},
+
+		// these abuse the custom type to test some cases of typeInfoFromString
+		{
+			name:   "vector_text",
+			typ:    TypeCustom,
+			custom: "org.apache.cassandra.db.marshal.VectorType(org.apache.cassandra.db.marshal.UTF8Type, 3)",
+			expected: VectorType{
+				SubType: varcharLikeTypeInfo{
+					typ: TypeVarchar,
+				},
+				Dimensions: 3,
+			},
+		},
+		{
+			name:   "vector_set_int",
+			typ:    TypeCustom,
+			custom: "org.apache.cassandra.db.marshal.VectorType(org.apache.cassandra.db.marshal.SetType(org.apache.cassandra.db.marshal.Int32Type), 2)",
+			expected: VectorType{
+				SubType: CollectionType{
+					typ:  TypeSet,
+					Elem: intTypeInfo{},
+				},
+				Dimensions: 2,
+			},
+		},
+		{
+			name:   "vector_udt",
+			typ:    TypeCustom,
+			custom: "org.apache.cassandra.db.marshal.VectorType(org.apache.cassandra.db.marshal.UserType(gocql_test,706572736f6e,66697273745f6e616d65:org.apache.cassandra.db.marshal.UTF8Type,6c6173745f6e616d65:org.apache.cassandra.db.marshal.UTF8Type,616765:org.apache.cassandra.db.marshal.Int32Type), 2)",
+			expected: VectorType{
+				SubType: UDTTypeInfo{
+					Keyspace: "gocql_test",
+					Name:     "person",
+					Elements: []UDTField{
+						{Name: "first_name", Type: varcharLikeTypeInfo{typ: TypeVarchar}},
+						{Name: "last_name", Type: varcharLikeTypeInfo{typ: TypeVarchar}},
+						{Name: "age", Type: intTypeInfo{}},
+					},
+				},
+				Dimensions: 2,
+			},
+		},
+		{
+			name:   "vector_tuple",
+			typ:    TypeCustom,
+			custom: "org.apache.cassandra.db.marshal.VectorType(org.apache.cassandra.db.marshal.TupleType(org.apache.cassandra.db.marshal.UTF8Type,org.apache.cassandra.db.marshal.Int32Type,org.apache.cassandra.db.marshal.UTF8Type), 2)",
+			expected: VectorType{
+				SubType: TupleTypeInfo{
+					Elems: []TypeInfo{
+						varcharLikeTypeInfo{typ: TypeVarchar},
+						intTypeInfo{},
+						varcharLikeTypeInfo{typ: TypeVarchar},
+					},
+				},
+				Dimensions: 2,
+			},
+		},
+		{
+			name:   "vector_vector_inet",
+			typ:    TypeCustom,
+			custom: "org.apache.cassandra.db.marshal.VectorType(org.apache.cassandra.db.marshal.VectorType(org.apache.cassandra.db.marshal.InetAddressType, 2), 3)",
+			expected: VectorType{
+				SubType: VectorType{
+					SubType:    inetType{},
+					Dimensions: 2,
+				},
+				Dimensions: 3,
+			},
+		},
+	}
+
+	// org.apache.cassandra.db.marshal.VectorType(%s, 2)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			f := newFramer(nil, 4, GlobalTypes)
+			f.writeShort(uint16(test.typ))
+			if test.typ == TypeCustom {
+				f.writeString(test.custom)
+			} else if test.more != nil {
+				test.more(f)
+			}
+			parsedType, err := f.readTypeInfo()
+			require.NoError(t, err)
+			if len(f.buf) != 0 {
+				t.Errorf("frame's buffer was not empty after readTypeInfo: %d left", len(f.buf))
+			}
+			if !reflect.DeepEqual(test.expected, parsedType) {
+				t.Errorf("expected (%#v) but was (%#v) instead", test.expected, parsedType)
+			}
+		})
+	}
+}
+
+func BenchmarkFramerReadCol_Tuple(b *testing.B) {
+	b.ReportAllocs()
+	framer := newFramer(nil, 4, GlobalTypes)
+	framer.writeString("foo")
+	framer.writeShort(uint16(TypeTuple))
+	framer.writeShort(uint16(2))
+	framer.writeShort(uint16(TypeVarchar))
+	framer.writeShort(uint16(TypeVarchar))
+	buf := framer.buf
+	var col ColumnInfo
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		framer.buf = buf
+		_ = framer.readCol(&col, nil, true, "", "")
+	}
+}
+
+func BenchmarkFramerReadCol_Set(b *testing.B) {
+	b.ReportAllocs()
+
+	framer := newFramer(nil, 4, GlobalTypes)
+	framer.writeString("foo")
+	framer.writeShort(uint16(TypeSet))
+	framer.writeShort(uint16(TypeInt))
+	buf := framer.buf
+	var col ColumnInfo
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		framer.buf = buf
+		_ = framer.readCol(&col, nil, true, "", "")
 	}
 }

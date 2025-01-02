@@ -33,8 +33,7 @@ import (
 	"io"
 	"io/ioutil"
 	"net"
-	"runtime"
-	"strconv"
+	"reflect"
 	"strings"
 	"time"
 )
@@ -379,13 +378,16 @@ type framer struct {
 	buf []byte
 
 	customPayload map[string][]byte
+
+	types *RegisteredTypes
 }
 
-func newFramer(compressor Compressor, version byte) *framer {
+func newFramer(compressor Compressor, version byte, r *RegisteredTypes) *framer {
 	buf := make([]byte, defaultBufSize)
 	f := &framer{
 		buf:        buf[:0],
 		readBuffer: buf,
+		types:      r,
 	}
 	var flags byte
 	if compressor != nil {
@@ -494,16 +496,7 @@ func (f *framer) readFrame(r io.Reader, head *frameHeader) error {
 	return nil
 }
 
-func (f *framer) parseFrame() (frame frame, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			if _, ok := r.(runtime.Error); ok {
-				panic(r)
-			}
-			err = r.(error)
-		}
-	}()
-
+func (f *framer) parseFrame() (frame, error) {
 	if f.header.version.request() {
 		return nil, NewErrProtocol("got a request frame from server: %v", f.header.version)
 	}
@@ -512,42 +505,53 @@ func (f *framer) parseFrame() (frame frame, err error) {
 		f.readTrace()
 	}
 
+	var err error
 	if f.header.flags&flagWarning == flagWarning {
-		f.header.warnings = f.readStringList()
+		f.header.warnings, err = f.readStringList()
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	if f.header.flags&flagCustomPayload == flagCustomPayload {
-		f.customPayload = f.readBytesMap()
+		f.customPayload, err = f.readBytesMap()
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// assumes that the frame body has been read into rbuf
 	switch f.header.op {
 	case opError:
-		frame = f.parseErrorFrame()
+		return f.parseErrorFrame()
 	case opReady:
-		frame = f.parseReadyFrame()
+		return f.parseReadyFrame()
 	case opResult:
-		frame, err = f.parseResultFrame()
+		return f.parseResultFrame()
 	case opSupported:
-		frame = f.parseSupportedFrame()
+		return f.parseSupportedFrame()
 	case opAuthenticate:
-		frame = f.parseAuthenticateFrame()
+		return f.parseAuthenticateFrame()
 	case opAuthChallenge:
-		frame = f.parseAuthChallengeFrame()
+		return f.parseAuthChallengeFrame()
 	case opAuthSuccess:
-		frame = f.parseAuthSuccessFrame()
+		return f.parseAuthSuccessFrame()
 	case opEvent:
-		frame = f.parseEventFrame()
+		return f.parseEventFrame()
 	default:
 		return nil, NewErrProtocol("unknown op in frame header: %s", f.header.op)
 	}
-
-	return
 }
 
-func (f *framer) parseErrorFrame() frame {
-	code := f.readInt()
-	msg := f.readString()
+func (f *framer) parseErrorFrame() (frame, error) {
+	code, err := f.readInt()
+	if err != nil {
+		return nil, err
+	}
+	msg, err := f.readString()
+	if err != nil {
+		return nil, err
+	}
 
 	errD := errorFrame{
 		frameHeader: *f.header,
@@ -557,123 +561,228 @@ func (f *framer) parseErrorFrame() frame {
 
 	switch code {
 	case ErrCodeUnavailable:
-		cl := f.readConsistency()
-		required := f.readInt()
-		alive := f.readInt()
+		cl, err := f.readConsistency()
+		if err != nil {
+			return nil, err
+		}
+		required, err := f.readInt()
+		if err != nil {
+			return nil, err
+		}
+		alive, err := f.readInt()
+		if err != nil {
+			return nil, err
+		}
 		return &RequestErrUnavailable{
 			errorFrame:  errD,
 			Consistency: cl,
 			Required:    required,
 			Alive:       alive,
-		}
+		}, nil
 	case ErrCodeWriteTimeout:
-		cl := f.readConsistency()
-		received := f.readInt()
-		blockfor := f.readInt()
-		writeType := f.readString()
+		cl, err := f.readConsistency()
+		if err != nil {
+			return nil, err
+		}
+		received, err := f.readInt()
+		if err != nil {
+			return nil, err
+		}
+		blockfor, err := f.readInt()
+		if err != nil {
+			return nil, err
+		}
+		writeType, err := f.readString()
+		if err != nil {
+			return nil, err
+		}
 		return &RequestErrWriteTimeout{
 			errorFrame:  errD,
 			Consistency: cl,
 			Received:    received,
 			BlockFor:    blockfor,
 			WriteType:   writeType,
-		}
+		}, nil
 	case ErrCodeReadTimeout:
-		cl := f.readConsistency()
-		received := f.readInt()
-		blockfor := f.readInt()
-		dataPresent := f.readByte()
+		cl, err := f.readConsistency()
+		if err != nil {
+			return nil, err
+		}
+		received, err := f.readInt()
+		if err != nil {
+			return nil, err
+		}
+		blockfor, err := f.readInt()
+		if err != nil {
+			return nil, err
+		}
+		dataPresent, err := f.readByte()
+		if err != nil {
+			return nil, err
+		}
 		return &RequestErrReadTimeout{
 			errorFrame:  errD,
 			Consistency: cl,
 			Received:    received,
 			BlockFor:    blockfor,
 			DataPresent: dataPresent,
-		}
+		}, nil
 	case ErrCodeAlreadyExists:
-		ks := f.readString()
-		table := f.readString()
+		ks, err := f.readString()
+		if err != nil {
+			return nil, err
+		}
+		table, err := f.readString()
+		if err != nil {
+			return nil, err
+		}
 		return &RequestErrAlreadyExists{
 			errorFrame: errD,
 			Keyspace:   ks,
 			Table:      table,
-		}
+		}, nil
 	case ErrCodeUnprepared:
-		stmtId := f.readShortBytes()
+		stmtId, err := f.readShortBytes()
+		if err != nil {
+			return nil, err
+		}
 		return &RequestErrUnprepared{
 			errorFrame:  errD,
 			StatementId: copyBytes(stmtId), // defensively copy
-		}
+		}, nil
 	case ErrCodeReadFailure:
 		res := &RequestErrReadFailure{
 			errorFrame: errD,
 		}
-		res.Consistency = f.readConsistency()
-		res.Received = f.readInt()
-		res.BlockFor = f.readInt()
+		res.Consistency, err = f.readConsistency()
+		if err != nil {
+			return nil, err
+		}
+		res.Received, err = f.readInt()
+		if err != nil {
+			return nil, err
+		}
+		res.BlockFor, err = f.readInt()
+		if err != nil {
+			return nil, err
+		}
 		if f.proto > protoVersion4 {
-			res.ErrorMap = f.readErrorMap()
+			res.ErrorMap, err = f.readErrorMap()
+			if err != nil {
+				return nil, err
+			}
 			res.NumFailures = len(res.ErrorMap)
 		} else {
-			res.NumFailures = f.readInt()
+			res.NumFailures, err = f.readInt()
+			if err != nil {
+				return nil, err
+			}
 		}
-		res.DataPresent = f.readByte() != 0
+		b, err := f.readByte()
+		if err != nil {
+			return nil, err
+		}
+		res.DataPresent = b != 0
 
-		return res
+		return res, nil
 	case ErrCodeWriteFailure:
 		res := &RequestErrWriteFailure{
 			errorFrame: errD,
 		}
-		res.Consistency = f.readConsistency()
-		res.Received = f.readInt()
-		res.BlockFor = f.readInt()
+		res.Consistency, err = f.readConsistency()
+		if err != nil {
+			return nil, err
+		}
+		res.Received, err = f.readInt()
+		if err != nil {
+			return nil, err
+		}
+		res.BlockFor, err = f.readInt()
+		if err != nil {
+			return nil, err
+		}
 		if f.proto > protoVersion4 {
-			res.ErrorMap = f.readErrorMap()
+			res.ErrorMap, err = f.readErrorMap()
+			if err != nil {
+				return nil, err
+			}
 			res.NumFailures = len(res.ErrorMap)
 		} else {
-			res.NumFailures = f.readInt()
+			res.NumFailures, err = f.readInt()
+			if err != nil {
+				return nil, err
+			}
 		}
-		res.WriteType = f.readString()
-		return res
+		res.WriteType, err = f.readString()
+		if err != nil {
+			return nil, err
+		}
+		return res, nil
 	case ErrCodeFunctionFailure:
 		res := &RequestErrFunctionFailure{
 			errorFrame: errD,
 		}
-		res.Keyspace = f.readString()
-		res.Function = f.readString()
-		res.ArgTypes = f.readStringList()
-		return res
+		res.Keyspace, err = f.readString()
+		if err != nil {
+			return nil, err
+		}
+		res.Function, err = f.readString()
+		if err != nil {
+			return nil, err
+		}
+		res.ArgTypes, err = f.readStringList()
+		if err != nil {
+			return nil, err
+		}
+		return res, nil
 
 	case ErrCodeCDCWriteFailure:
-		res := &RequestErrCDCWriteFailure{
+		return &RequestErrCDCWriteFailure{
 			errorFrame: errD,
-		}
-		return res
+		}, nil
 	case ErrCodeCASWriteUnknown:
 		res := &RequestErrCASWriteUnknown{
 			errorFrame: errD,
 		}
-		res.Consistency = f.readConsistency()
-		res.Received = f.readInt()
-		res.BlockFor = f.readInt()
-		return res
+		res.Consistency, err = f.readConsistency()
+		if err != nil {
+			return nil, err
+		}
+		res.Received, err = f.readInt()
+		if err != nil {
+			return nil, err
+		}
+		res.BlockFor, err = f.readInt()
+		if err != nil {
+			return nil, err
+		}
+		return res, nil
 	case ErrCodeInvalid, ErrCodeBootstrapping, ErrCodeConfig, ErrCodeCredentials, ErrCodeOverloaded,
 		ErrCodeProtocol, ErrCodeServer, ErrCodeSyntax, ErrCodeTruncate, ErrCodeUnauthorized:
 		// TODO(zariel): we should have some distinct types for these errors
-		return errD
+		return errD, nil
 	default:
-		panic(fmt.Errorf("unknown error code: 0x%x", errD.code))
+		return nil, fmt.Errorf("unknown error code: 0x%x", errD.code)
 	}
 }
 
-func (f *framer) readErrorMap() (errMap ErrorMap) {
-	errMap = make(ErrorMap)
-	numErrs := f.readInt()
-	for i := 0; i < numErrs; i++ {
-		ip := f.readInetAdressOnly().String()
-		errMap[ip] = f.readShort()
+func (f *framer) readErrorMap() (ErrorMap, error) {
+	numErrs, err := f.readInt()
+	if err != nil {
+		return nil, err
 	}
-	return
+	errMap := make(ErrorMap, numErrs)
+	for i := 0; i < numErrs; i++ {
+		ip, err := f.readInetAdressOnly()
+		if err != nil {
+			return nil, err
+		}
+		errMap[ip.String()], err = f.readShort()
+		if err != nil {
+			return nil, err
+		}
+	}
+	return errMap, nil
 }
 
 func (f *framer) writeHeader(flags byte, op frameOp, stream int) {
@@ -737,10 +846,10 @@ type readyFrame struct {
 	frameHeader
 }
 
-func (f *framer) parseReadyFrame() frame {
+func (f *framer) parseReadyFrame() (frame, error) {
 	return &readyFrame{
 		frameHeader: *f.header,
-	}
+	}, nil
 }
 
 type supportedFrame struct {
@@ -751,12 +860,15 @@ type supportedFrame struct {
 
 // TODO: if we move the body buffer onto the frameHeader then we only need a single
 // framer, and can move the methods onto the header.
-func (f *framer) parseSupportedFrame() frame {
+func (f *framer) parseSupportedFrame() (frame, error) {
+	s, err := f.readStringMultiMap()
+	if err != nil {
+		return nil, err
+	}
 	return &supportedFrame{
 		frameHeader: *f.header,
-
-		supported: f.readStringMultiMap(),
-	}
+		supported:   s,
+	}, nil
 }
 
 type writeStartupFrame struct {
@@ -806,84 +918,128 @@ func (w *writePrepareFrame) buildFrame(f *framer, streamID int) error {
 	return f.finish()
 }
 
-func (f *framer) readTypeInfo() TypeInfo {
-	// TODO: factor this out so the same code paths can be used to parse custom
-	// types and other types, as much of the logic will be duplicated.
-	id := f.readShort()
-
-	simple := NativeType{
-		proto: f.proto,
-		typ:   Type(id),
-	}
-
-	if simple.typ == TypeCustom {
-		simple.custom = f.readString()
-		if cassType := getApacheCassandraType(simple.custom); cassType != TypeCustom {
-			simple.typ = cassType
+func (f *framer) readParam(param interface{}) (interface{}, error) {
+	switch p := param.(type) {
+	case string:
+		return f.readString()
+	case uint16:
+		return f.readShort()
+	case byte:
+		return f.readByte()
+	case []byte:
+		return f.readShortBytes()
+	case int:
+		return f.readInt()
+	case []string:
+		return f.readStringList()
+	case []UDTField:
+		n, err := f.readShort()
+		if err != nil {
+			return nil, err
 		}
-	}
-
-	switch simple.typ {
-	case TypeTuple:
-		n := f.readShort()
-		tuple := TupleTypeInfo{
-			NativeType: simple,
-			Elems:      make([]TypeInfo, n),
+		if len(p) < int(n) {
+			p = make([]UDTField, n)
+		} else {
+			p = p[:n]
 		}
-
 		for i := 0; i < int(n); i++ {
-			tuple.Elems[i] = f.readTypeInfo()
-		}
-
-		return tuple
-
-	case TypeUDT:
-		udt := UDTTypeInfo{
-			NativeType: simple,
-		}
-		udt.KeySpace = f.readString()
-		udt.Name = f.readString()
-
-		n := f.readShort()
-		udt.Elements = make([]UDTField, n)
-		for i := 0; i < int(n); i++ {
-			field := &udt.Elements[i]
-			field.Name = f.readString()
-			field.Type = f.readTypeInfo()
-		}
-
-		return udt
-	case TypeMap, TypeList, TypeSet:
-		collection := CollectionType{
-			NativeType: simple,
-		}
-
-		if simple.typ == TypeMap {
-			collection.Key = f.readTypeInfo()
-		}
-
-		collection.Elem = f.readTypeInfo()
-
-		return collection
-	case TypeCustom:
-		if strings.HasPrefix(simple.custom, VECTOR_TYPE) {
-			spec := strings.TrimPrefix(simple.custom, VECTOR_TYPE)
-			spec = spec[1 : len(spec)-1] // remove parenthesis
-			idx := strings.LastIndex(spec, ",")
-			typeStr := spec[:idx]
-			dimStr := spec[idx+1:]
-			subType := getCassandraLongType(strings.TrimSpace(typeStr), f.proto, nopLogger{})
-			dim, _ := strconv.Atoi(strings.TrimSpace(dimStr))
-			vector := VectorType{
-				NativeType: simple,
-				SubType:    subType,
-				Dimensions: dim,
+			p[i].Name, err = f.readString()
+			if err != nil {
+				return nil, err
 			}
-			return vector
+			p[i].Type, err = f.readTypeInfo()
+			if err != nil {
+				return nil, err
+			}
 		}
+		return p, nil
+	case TypeInfo:
+		return f.readTypeInfo()
+	case *TypeInfo:
+		return f.readTypeInfo()
+	case []TypeInfo:
+		n, err := f.readShort()
+		if err != nil {
+			return nil, err
+		}
+		if len(p) < int(n) {
+			p = make([]TypeInfo, n)
+		} else {
+			p = p[:n]
+		}
+		for i := 0; i < int(n); i++ {
+			p[i], err = f.readTypeInfo()
+			if err != nil {
+				return nil, err
+			}
+		}
+		return p, nil
+	case Type:
+		// Type is actually an int but it's encoded as short
+		s, err := f.readShort()
+		if err != nil {
+			return nil, err
+		}
+		return Type(s), nil
+	case []interface{}:
+		n, err := f.readShort()
+		if err != nil {
+			return nil, err
+		}
+		if len(p) != int(n) {
+			return nil, fmt.Errorf("wrong length for reading []interface{} from frame %d vs %d", len(p), n)
+		}
+		for i := 0; i < int(n); i++ {
+			p[i], err = f.readParam(p[i])
+			if err != nil {
+				return nil, err
+			}
+		}
+		return p, nil
 	}
 
-	return simple
+	// check if its a pointer
+	// we used to do some conversions in here for some types but that was risky
+	// since Type is an int but it is read with readShort so we stopped doing that
+	// out of caution and instead are just going to error
+	valueRef := reflect.ValueOf(param)
+	if valueRef.Kind() == reflect.Ptr && !valueRef.IsNil() {
+		return f.readParam(valueRef.Elem().Interface())
+	}
+	return nil, fmt.Errorf("unsupported type for reading from frame: %T", param)
+}
+
+func (f *framer) readTypeInfo() (TypeInfo, error) {
+	i, err := f.readShort()
+	if err != nil {
+		return nil, err
+	}
+	typ := Type(i)
+	if typ == TypeCustom {
+		name, err := f.readString()
+		if err != nil {
+			return nil, err
+		}
+		return f.types.typeInfoFromString(int(f.proto), name)
+	}
+
+	if ti := f.types.fastTypeInfoLookup(typ); ti != nil {
+		return ti, nil
+	}
+
+	cqlt := f.types.fastRegisteredTypeLookup(typ)
+	if cqlt == nil {
+		return nil, unknownTypeError(fmt.Sprintf("%d", typ))
+	}
+
+	params := cqlt.Params(int(f.proto))
+	for i := range params {
+		params[i], err = f.readParam(params[i])
+		if err != nil {
+			return nil, err
+		}
+	}
+	return cqlt.TypeInfoFromParams(int(f.proto), params)
 }
 
 type preparedMetadata struct {
@@ -901,38 +1057,62 @@ func (r preparedMetadata) String() string {
 	return fmt.Sprintf("[prepared flags=0x%x pkey=%v paging_state=% X columns=%v col_count=%d actual_col_count=%d]", r.flags, r.pkeyColumns, r.pagingState, r.columns, r.colCount, r.actualColCount)
 }
 
-func (f *framer) parsePreparedMetadata() preparedMetadata {
+func (f *framer) parsePreparedMetadata() (preparedMetadata, error) {
 	// TODO: deduplicate this from parseMetadata
 	meta := preparedMetadata{}
 
-	meta.flags = f.readInt()
-	meta.colCount = f.readInt()
+	var err error
+	meta.flags, err = f.readInt()
+	if err != nil {
+		return preparedMetadata{}, err
+	}
+	meta.colCount, err = f.readInt()
+	if err != nil {
+		return preparedMetadata{}, err
+	}
 	if meta.colCount < 0 {
-		panic(fmt.Errorf("received negative column count: %d", meta.colCount))
+		return preparedMetadata{}, fmt.Errorf("received negative column count: %d", meta.colCount)
 	}
 	meta.actualColCount = meta.colCount
 
 	if f.proto >= protoVersion4 {
-		pkeyCount := f.readInt()
+		pkeyCount, err := f.readInt()
+		if err != nil {
+			return preparedMetadata{}, err
+		}
 		pkeys := make([]int, pkeyCount)
 		for i := 0; i < pkeyCount; i++ {
-			pkeys[i] = int(f.readShort())
+			c, err := f.readShort()
+			if err != nil {
+				return preparedMetadata{}, err
+			}
+			pkeys[i] = int(c)
 		}
 		meta.pkeyColumns = pkeys
 	}
 
 	if meta.flags&flagHasMorePages == flagHasMorePages {
-		meta.pagingState = copyBytes(f.readBytes())
+		b, err := f.readBytes()
+		if err != nil {
+			return preparedMetadata{}, err
+		}
+		meta.pagingState = copyBytes(b)
 	}
 
 	if meta.flags&flagNoMetaData == flagNoMetaData {
-		return meta
+		return meta, nil
 	}
 
 	globalSpec := meta.flags&flagGlobalTableSpec == flagGlobalTableSpec
 	if globalSpec {
-		meta.keyspace = f.readString()
-		meta.table = f.readString()
+		meta.keyspace, err = f.readString()
+		if err != nil {
+			return preparedMetadata{}, err
+		}
+		meta.table, err = f.readString()
+		if err != nil {
+			return preparedMetadata{}, err
+		}
 	}
 
 	var cols []ColumnInfo
@@ -940,21 +1120,27 @@ func (f *framer) parsePreparedMetadata() preparedMetadata {
 		// preallocate columninfo to avoid excess copying
 		cols = make([]ColumnInfo, meta.colCount)
 		for i := 0; i < meta.colCount; i++ {
-			f.readCol(&cols[i], &meta.resultMetadata, globalSpec, meta.keyspace, meta.table)
+			err = f.readCol(&cols[i], &meta.resultMetadata, globalSpec, meta.keyspace, meta.table)
+			if err != nil {
+				return preparedMetadata{}, err
+			}
 		}
 	} else {
 		// use append, huge number of columns usually indicates a corrupt frame or
 		// just a huge row.
 		for i := 0; i < meta.colCount; i++ {
 			var col ColumnInfo
-			f.readCol(&col, &meta.resultMetadata, globalSpec, meta.keyspace, meta.table)
+			err = f.readCol(&col, &meta.resultMetadata, globalSpec, meta.keyspace, meta.table)
+			if err != nil {
+				return preparedMetadata{}, err
+			}
 			cols = append(cols, col)
 		}
 	}
 
 	meta.columns = cols
 
-	return meta
+	return meta, nil
 }
 
 type resultMetadata struct {
@@ -986,52 +1172,86 @@ func (r resultMetadata) String() string {
 	return fmt.Sprintf("[metadata flags=0x%x paging_state=% X columns=%v new_metadata_id=% X]", r.flags, r.pagingState, r.columns, r.newMetadataID)
 }
 
-func (f *framer) readCol(col *ColumnInfo, meta *resultMetadata, globalSpec bool, keyspace, table string) {
+func (f *framer) readCol(col *ColumnInfo, meta *resultMetadata, globalSpec bool, keyspace, table string) error {
+	var err error
 	if !globalSpec {
-		col.Keyspace = f.readString()
-		col.Table = f.readString()
+		col.Keyspace, err = f.readString()
+		if err != nil {
+			return err
+		}
+		col.Table, err = f.readString()
+		if err != nil {
+			return err
+		}
 	} else {
 		col.Keyspace = keyspace
 		col.Table = table
 	}
 
-	col.Name = f.readString()
-	col.TypeInfo = f.readTypeInfo()
-	switch v := col.TypeInfo.(type) {
-	// maybe also UDT
-	case TupleTypeInfo:
-		// -1 because we already included the tuple column
-		meta.actualColCount += len(v.Elems) - 1
+	col.Name, err = f.readString()
+	if err != nil {
+		return err
 	}
+	col.TypeInfo, err = f.readTypeInfo()
+	if err != nil {
+		return err
+	}
+	// maybe also UDT
+	if t, ok := col.TypeInfo.(TupleTypeInfo); ok {
+		// -1 because we already included the tuple column
+		meta.actualColCount += len(t.Elems) - 1
+	}
+	return nil
 }
 
-func (f *framer) parseResultMetadata() resultMetadata {
+func (f *framer) parseResultMetadata() (resultMetadata, error) {
 	var meta resultMetadata
 
-	meta.flags = f.readInt()
-	meta.colCount = f.readInt()
+	var err error
+	meta.flags, err = f.readInt()
+	if err != nil {
+		return resultMetadata{}, err
+	}
+	meta.colCount, err = f.readInt()
+	if err != nil {
+		return resultMetadata{}, err
+	}
 	if meta.colCount < 0 {
-		panic(fmt.Errorf("received negative column count: %d", meta.colCount))
+		return resultMetadata{}, fmt.Errorf("received negative column count: %d", meta.colCount)
 	}
 	meta.actualColCount = meta.colCount
 
 	if meta.flags&flagHasMorePages == flagHasMorePages {
-		meta.pagingState = copyBytes(f.readBytes())
+		b, err := f.readBytes()
+		if err != nil {
+			return resultMetadata{}, err
+		}
+		meta.pagingState = copyBytes(b)
 	}
 
 	if f.proto > protoVersion4 && meta.flags&flagMetaDataChanged == flagMetaDataChanged {
-		meta.newMetadataID = copyBytes(f.readShortBytes())
+		b, err := f.readShortBytes()
+		if err != nil {
+			return resultMetadata{}, err
+		}
+		meta.newMetadataID = copyBytes(b)
 	}
 
 	if meta.noMetaData() {
-		return meta
+		return meta, nil
 	}
 
 	var keyspace, table string
 	globalSpec := meta.flags&flagGlobalTableSpec == flagGlobalTableSpec
 	if globalSpec {
-		keyspace = f.readString()
-		table = f.readString()
+		keyspace, err = f.readString()
+		if err != nil {
+			return resultMetadata{}, err
+		}
+		table, err = f.readString()
+		if err != nil {
+			return resultMetadata{}, err
+		}
 	}
 
 	var cols []ColumnInfo
@@ -1039,7 +1259,10 @@ func (f *framer) parseResultMetadata() resultMetadata {
 		// preallocate columninfo to avoid excess copying
 		cols = make([]ColumnInfo, meta.colCount)
 		for i := 0; i < meta.colCount; i++ {
-			f.readCol(&cols[i], &meta, globalSpec, keyspace, table)
+			err = f.readCol(&cols[i], &meta, globalSpec, keyspace, table)
+			if err != nil {
+				return resultMetadata{}, err
+			}
 		}
 
 	} else {
@@ -1047,14 +1270,17 @@ func (f *framer) parseResultMetadata() resultMetadata {
 		// just a huge row.
 		for i := 0; i < meta.colCount; i++ {
 			var col ColumnInfo
-			f.readCol(&col, &meta, globalSpec, keyspace, table)
+			err = f.readCol(&col, &meta, globalSpec, keyspace, table)
+			if err != nil {
+				return resultMetadata{}, err
+			}
 			cols = append(cols, col)
 		}
 	}
 
 	meta.columns = cols
 
-	return meta
+	return meta, nil
 }
 
 type resultVoidFrame struct {
@@ -1066,19 +1292,22 @@ func (f *resultVoidFrame) String() string {
 }
 
 func (f *framer) parseResultFrame() (frame, error) {
-	kind := f.readInt()
+	kind, err := f.readInt()
+	if err != nil {
+		return nil, err
+	}
 
 	switch kind {
 	case resultKindVoid:
 		return &resultVoidFrame{frameHeader: *f.header}, nil
 	case resultKindRows:
-		return f.parseResultRows(), nil
+		return f.parseResultRows()
 	case resultKindKeyspace:
-		return f.parseResultSetKeyspace(), nil
+		return f.parseResultSetKeyspace()
 	case resultKindPrepared:
-		return f.parseResultPrepared(), nil
+		return f.parseResultPrepared()
 	case resultKindSchemaChanged:
-		return f.parseResultSchemaChange(), nil
+		return f.parseResultSchemaChange()
 	}
 
 	return nil, NewErrProtocol("unknown result kind: %x", kind)
@@ -1096,16 +1325,23 @@ func (f *resultRowsFrame) String() string {
 	return fmt.Sprintf("[result_rows meta=%v]", f.meta)
 }
 
-func (f *framer) parseResultRows() frame {
+func (f *framer) parseResultRows() (frame, error) {
 	result := &resultRowsFrame{}
-	result.meta = f.parseResultMetadata()
-
-	result.numRows = f.readInt()
-	if result.numRows < 0 {
-		panic(fmt.Errorf("invalid row_count in result frame: %d", result.numRows))
+	var err error
+	result.meta, err = f.parseResultMetadata()
+	if err != nil {
+		return nil, err
 	}
 
-	return result
+	result.numRows, err = f.readInt()
+	if err != nil {
+		return nil, err
+	}
+	if result.numRows < 0 {
+		return nil, fmt.Errorf("invalid row_count in result frame: %d", result.numRows)
+	}
+
+	return result, nil
 }
 
 type resultKeyspaceFrame struct {
@@ -1117,11 +1353,15 @@ func (r *resultKeyspaceFrame) String() string {
 	return fmt.Sprintf("[result_keyspace keyspace=%s]", r.keyspace)
 }
 
-func (f *framer) parseResultSetKeyspace() frame {
+func (f *framer) parseResultSetKeyspace() (frame, error) {
+	k, err := f.readString()
+	if err != nil {
+		return nil, err
+	}
 	return &resultKeyspaceFrame{
 		frameHeader: *f.header,
-		keyspace:    f.readString(),
-	}
+		keyspace:    k,
+	}, nil
 }
 
 type resultPreparedFrame struct {
@@ -1133,20 +1373,34 @@ type resultPreparedFrame struct {
 	respMeta         resultMetadata
 }
 
-func (f *framer) parseResultPrepared() frame {
+func (f *framer) parseResultPrepared() (frame, error) {
+	b, err := f.readShortBytes()
+	if err != nil {
+		return nil, err
+	}
 	frame := &resultPreparedFrame{
 		frameHeader: *f.header,
-		preparedID:  f.readShortBytes(),
+		preparedID:  b,
 	}
 
 	if f.proto > protoVersion4 {
-		frame.resultMetadataID = copyBytes(f.readShortBytes())
+		b, err = f.readShortBytes()
+		if err != nil {
+			return nil, err
+		}
+		frame.resultMetadataID = copyBytes(b)
 	}
 
-	frame.reqMeta = f.parsePreparedMetadata()
-	frame.respMeta = f.parseResultMetadata()
+	frame.reqMeta, err = f.parsePreparedMetadata()
+	if err != nil {
+		return nil, err
+	}
+	frame.respMeta, err = f.parseResultMetadata()
+	if err != nil {
+		return nil, err
+	}
 
-	return frame
+	return frame, nil
 }
 
 type schemaChangeKeyspace struct {
@@ -1198,9 +1452,15 @@ type schemaChangeAggregate struct {
 	args     []string
 }
 
-func (f *framer) parseResultSchemaChange() frame {
-	change := f.readString()
-	target := f.readString()
+func (f *framer) parseResultSchemaChange() (frame, error) {
+	change, err := f.readString()
+	if err != nil {
+		return nil, err
+	}
+	target, err := f.readString()
+	if err != nil {
+		return nil, err
+	}
 
 	// TODO: could just use a separate type for each target
 	switch target {
@@ -1210,53 +1470,86 @@ func (f *framer) parseResultSchemaChange() frame {
 			change:      change,
 		}
 
-		frame.keyspace = f.readString()
+		frame.keyspace, err = f.readString()
+		if err != nil {
+			return nil, err
+		}
 
-		return frame
+		return frame, err
 	case "TABLE":
 		frame := &schemaChangeTable{
 			frameHeader: *f.header,
 			change:      change,
 		}
 
-		frame.keyspace = f.readString()
-		frame.object = f.readString()
+		frame.keyspace, err = f.readString()
+		if err != nil {
+			return nil, err
+		}
+		frame.object, err = f.readString()
+		if err != nil {
+			return nil, err
+		}
 
-		return frame
+		return frame, err
 	case "TYPE":
 		frame := &schemaChangeType{
 			frameHeader: *f.header,
 			change:      change,
 		}
 
-		frame.keyspace = f.readString()
-		frame.object = f.readString()
+		frame.keyspace, err = f.readString()
+		if err != nil {
+			return nil, err
+		}
+		frame.object, err = f.readString()
+		if err != nil {
+			return nil, err
+		}
 
-		return frame
+		return frame, nil
 	case "FUNCTION":
 		frame := &schemaChangeFunction{
 			frameHeader: *f.header,
 			change:      change,
 		}
 
-		frame.keyspace = f.readString()
-		frame.name = f.readString()
-		frame.args = f.readStringList()
+		frame.keyspace, err = f.readString()
+		if err != nil {
+			return nil, err
+		}
+		frame.name, err = f.readString()
+		if err != nil {
+			return nil, err
+		}
+		frame.args, err = f.readStringList()
+		if err != nil {
+			return nil, err
+		}
 
-		return frame
+		return frame, nil
 	case "AGGREGATE":
 		frame := &schemaChangeAggregate{
 			frameHeader: *f.header,
 			change:      change,
 		}
 
-		frame.keyspace = f.readString()
-		frame.name = f.readString()
-		frame.args = f.readStringList()
+		frame.keyspace, err = f.readString()
+		if err != nil {
+			return nil, err
+		}
+		frame.name, err = f.readString()
+		if err != nil {
+			return nil, err
+		}
+		frame.args, err = f.readStringList()
+		if err != nil {
+			return nil, err
+		}
 
-		return frame
+		return frame, nil
 	default:
-		panic(fmt.Errorf("gocql: unknown SCHEMA_CHANGE target: %q change: %q", target, change))
+		return nil, fmt.Errorf("gocql: unknown SCHEMA_CHANGE target: %q change: %q", target, change)
 	}
 }
 
@@ -1270,11 +1563,15 @@ func (a *authenticateFrame) String() string {
 	return fmt.Sprintf("[authenticate class=%q]", a.class)
 }
 
-func (f *framer) parseAuthenticateFrame() frame {
+func (f *framer) parseAuthenticateFrame() (frame, error) {
+	cls, err := f.readString()
+	if err != nil {
+		return nil, err
+	}
 	return &authenticateFrame{
 		frameHeader: *f.header,
-		class:       f.readString(),
-	}
+		class:       cls,
+	}, nil
 }
 
 type authSuccessFrame struct {
@@ -1287,11 +1584,15 @@ func (a *authSuccessFrame) String() string {
 	return fmt.Sprintf("[auth_success data=%q]", a.data)
 }
 
-func (f *framer) parseAuthSuccessFrame() frame {
+func (f *framer) parseAuthSuccessFrame() (frame, error) {
+	b, err := f.readBytes()
+	if err != nil {
+		return nil, err
+	}
 	return &authSuccessFrame{
 		frameHeader: *f.header,
-		data:        f.readBytes(),
-	}
+		data:        b,
+	}, nil
 }
 
 type authChallengeFrame struct {
@@ -1304,11 +1605,15 @@ func (a *authChallengeFrame) String() string {
 	return fmt.Sprintf("[auth_challenge data=%q]", a.data)
 }
 
-func (f *framer) parseAuthChallengeFrame() frame {
+func (f *framer) parseAuthChallengeFrame() (frame, error) {
+	b, err := f.readBytes()
+	if err != nil {
+		return nil, err
+	}
 	return &authChallengeFrame{
 		frameHeader: *f.header,
-		data:        f.readBytes(),
-	}
+		data:        b,
+	}, nil
 }
 
 type statusChangeEventFrame struct {
@@ -1336,22 +1641,37 @@ func (t topologyChangeEventFrame) String() string {
 	return fmt.Sprintf("[topology_change change=%s host=%v port=%v]", t.change, t.host, t.port)
 }
 
-func (f *framer) parseEventFrame() frame {
-	eventType := f.readString()
+func (f *framer) parseEventFrame() (frame, error) {
+	eventType, err := f.readString()
+	if err != nil {
+		return nil, err
+	}
 
 	switch eventType {
 	case "TOPOLOGY_CHANGE":
 		frame := &topologyChangeEventFrame{frameHeader: *f.header}
-		frame.change = f.readString()
-		frame.host, frame.port = f.readInet()
+		frame.change, err = f.readString()
+		if err != nil {
+			return nil, err
+		}
+		frame.host, frame.port, err = f.readInet()
+		if err != nil {
+			return nil, err
+		}
 
-		return frame
+		return frame, nil
 	case "STATUS_CHANGE":
 		frame := &statusChangeEventFrame{frameHeader: *f.header}
-		frame.change = f.readString()
-		frame.host, frame.port = f.readInet()
+		frame.change, err = f.readString()
+		if err != nil {
+			return nil, err
+		}
+		frame.host, frame.port, err = f.readInet()
+		if err != nil {
+			return nil, err
+		}
 
-		return frame
+		return frame, nil
 	case "SCHEMA_CHANGE":
 		// this should work for all versions
 		return f.parseResultSchemaChange()
@@ -1734,72 +2054,87 @@ func (f *framer) writeRegisterFrame(streamID int, w *writeRegisterFrame) error {
 	return f.finish()
 }
 
-func (f *framer) readByte() byte {
+func (f *framer) readByte() (byte, error) {
 	if len(f.buf) < 1 {
-		panic(fmt.Errorf("not enough bytes in buffer to read byte require 1 got: %d", len(f.buf)))
+		return 0, fmt.Errorf("not enough bytes in buffer to read byte require 1 got: %d", len(f.buf))
 	}
 
 	b := f.buf[0]
 	f.buf = f.buf[1:]
-	return b
+	return b, nil
 }
 
-func (f *framer) readInt() (n int) {
+func (f *framer) readInt() (int, error) {
 	if len(f.buf) < 4 {
-		panic(fmt.Errorf("not enough bytes in buffer to read int require 4 got: %d", len(f.buf)))
+		return 0, fmt.Errorf("not enough bytes in buffer to read int require 4 got: %d", len(f.buf))
 	}
 
-	n = int(int32(f.buf[0])<<24 | int32(f.buf[1])<<16 | int32(f.buf[2])<<8 | int32(f.buf[3]))
+	n := int(int32(f.buf[0])<<24 | int32(f.buf[1])<<16 | int32(f.buf[2])<<8 | int32(f.buf[3]))
 	f.buf = f.buf[4:]
-	return
+	return n, nil
 }
 
-func (f *framer) readShort() (n uint16) {
+func (f *framer) readShort() (uint16, error) {
 	if len(f.buf) < 2 {
-		panic(fmt.Errorf("not enough bytes in buffer to read short require 2 got: %d", len(f.buf)))
+		return 0, fmt.Errorf("not enough bytes in buffer to read short require 2 got: %d", len(f.buf))
 	}
-	n = uint16(f.buf[0])<<8 | uint16(f.buf[1])
+	n := uint16(f.buf[0])<<8 | uint16(f.buf[1])
 	f.buf = f.buf[2:]
-	return
+	return n, nil
 }
 
-func (f *framer) readString() (s string) {
-	size := f.readShort()
+func (f *framer) readString() (string, error) {
+	size, err := f.readShort()
+	if err != nil {
+		return "", err
+	}
 
 	if len(f.buf) < int(size) {
-		panic(fmt.Errorf("not enough bytes in buffer to read string require %d got: %d", size, len(f.buf)))
+		return "", fmt.Errorf("not enough bytes in buffer to read string require %d got: %d", size, len(f.buf))
 	}
 
-	s = string(f.buf[:size])
+	s := string(f.buf[:size])
 	f.buf = f.buf[size:]
-	return
+	return s, nil
 }
 
-func (f *framer) readLongString() (s string) {
-	size := f.readInt()
+func (f *framer) readLongString() (string, error) {
+	size, err := f.readInt()
+	if err != nil {
+		return "", err
+	}
 
 	if len(f.buf) < size {
-		panic(fmt.Errorf("not enough bytes in buffer to read long string require %d got: %d", size, len(f.buf)))
+		return "", fmt.Errorf("not enough bytes in buffer to read long string require %d got: %d", size, len(f.buf))
 	}
 
-	s = string(f.buf[:size])
+	s := string(f.buf[:size])
 	f.buf = f.buf[size:]
-	return
+	return s, err
 }
 
-func (f *framer) readStringList() []string {
-	size := f.readShort()
+func (f *framer) readStringList() ([]string, error) {
+	size, err := f.readShort()
+	if err != nil {
+		return nil, err
+	}
 
 	l := make([]string, size)
 	for i := 0; i < int(size); i++ {
-		l[i] = f.readString()
+		l[i], err = f.readString()
+		if err != nil {
+			return nil, err
+		}
 	}
 
-	return l
+	return l, nil
 }
 
-func (f *framer) readBytesInternal() ([]byte, error) {
-	size := f.readInt()
+func (f *framer) readBytes() ([]byte, error) {
+	size, err := f.readInt()
+	if err != nil {
+		return nil, err
+	}
 	if size < 0 {
 		return nil, nil
 	}
@@ -1814,81 +2149,97 @@ func (f *framer) readBytesInternal() ([]byte, error) {
 	return l, nil
 }
 
-func (f *framer) readBytes() []byte {
-	l, err := f.readBytesInternal()
+func (f *framer) readShortBytes() ([]byte, error) {
+	size, err := f.readShort()
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
-
-	return l
-}
-
-func (f *framer) readShortBytes() []byte {
-	size := f.readShort()
 	if len(f.buf) < int(size) {
-		panic(fmt.Errorf("not enough bytes in buffer to read short bytes: require %d got %d", size, len(f.buf)))
+		return nil, fmt.Errorf("not enough bytes in buffer to read short bytes: require %d got %d", size, len(f.buf))
 	}
 
-	l := f.buf[:size]
+	b := f.buf[:size]
 	f.buf = f.buf[size:]
-
-	return l
+	return b, nil
 }
 
-func (f *framer) readInetAdressOnly() net.IP {
+func (f *framer) readInetAdressOnly() (net.IP, error) {
 	if len(f.buf) < 1 {
-		panic(fmt.Errorf("not enough bytes in buffer to read inet size require %d got: %d", 1, len(f.buf)))
+		return nil, fmt.Errorf("not enough bytes in buffer to read inet size require %d got: %d", 1, len(f.buf))
 	}
 
 	size := f.buf[0]
 	f.buf = f.buf[1:]
-
 	if !(size == 4 || size == 16) {
-		panic(fmt.Errorf("invalid IP size: %d", size))
+		return nil, fmt.Errorf("invalid IP size: %d", size)
 	}
 
 	if len(f.buf) < 1 {
-		panic(fmt.Errorf("not enough bytes in buffer to read inet require %d got: %d", size, len(f.buf)))
+		return nil, fmt.Errorf("not enough bytes in buffer to read inet require %d got: %d", size, len(f.buf))
 	}
 
 	ip := make([]byte, size)
 	copy(ip, f.buf[:size])
 	f.buf = f.buf[size:]
-	return net.IP(ip)
+	// TODO: should we check if IP is nil?
+	return net.IP(ip), nil
 }
 
-func (f *framer) readInet() (net.IP, int) {
-	return f.readInetAdressOnly(), f.readInt()
+func (f *framer) readInet() (net.IP, int, error) {
+	ip, err := f.readInetAdressOnly()
+	if err != nil {
+		return nil, 0, err
+	}
+	port, err := f.readShort()
+	if err != nil {
+		return nil, 0, err
+	}
+	return ip, int(port), nil
 }
 
-func (f *framer) readConsistency() Consistency {
-	return Consistency(f.readShort())
+func (f *framer) readConsistency() (Consistency, error) {
+	c, err := f.readShort()
+	if err != nil {
+		return 0, err
+	}
+	return Consistency(c), err
 }
 
-func (f *framer) readBytesMap() map[string][]byte {
-	size := f.readShort()
+func (f *framer) readBytesMap() (map[string][]byte, error) {
+	size, err := f.readShort()
+	if err != nil {
+		return nil, err
+	}
 	m := make(map[string][]byte, size)
-
+	var k string
 	for i := 0; i < int(size); i++ {
-		k := f.readString()
-		v := f.readBytes()
-		m[k] = v
+		k, err = f.readString()
+		if err != nil {
+			return nil, err
+		}
+		m[k], err = f.readBytes()
+		if err != nil {
+			return nil, err
+		}
 	}
-
-	return m
+	return m, nil
 }
 
-func (f *framer) readStringMultiMap() map[string][]string {
-	size := f.readShort()
+func (f *framer) readStringMultiMap() (map[string][]string, error) {
+	size, err := f.readShort()
 	m := make(map[string][]string, size)
-
+	var k string
 	for i := 0; i < int(size); i++ {
-		k := f.readString()
-		v := f.readStringList()
-		m[k] = v
+		k, err = f.readString()
+		if err != nil {
+			return nil, err
+		}
+		m[k], err = f.readStringList()
+		if err != nil {
+			return nil, err
+		}
 	}
-
-	return m
+	return m, nil
 }
 
 func (f *framer) writeByte(b byte) {

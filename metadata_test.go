@@ -36,8 +36,13 @@ import (
 // Tests V1 and V2 metadata "compilation" from example data which might be returned
 // from metadata schema queries (see getKeyspaceMetadata, getTableMetadata, and getColumnMetadata)
 func TestCompileMetadata(t *testing.T) {
-	// V1 tests - these are all based on real examples from the integration test ccm cluster
-	log := &defaultLogger{}
+	session := &Session{
+		cfg: ClusterConfig{
+			ProtoVersion: 1,
+		},
+		logger: &defaultLogger{},
+		types:  GlobalTypes,
+	}
 	// V2 test - V2+ protocol is simpler so here are some toy examples to verify that the mapping works
 	keyspace := &KeyspaceMetadata{
 		Name: "V2Keyspace",
@@ -101,7 +106,7 @@ func TestCompileMetadata(t *testing.T) {
 			Validator: "org.apache.cassandra.db.marshal.UTF8Type",
 		},
 	}
-	compileMetadata(2, keyspace, tables, columns, nil, nil, nil, nil, log)
+	compileMetadata(session, keyspace, tables, columns, nil, nil, nil, nil)
 	assertKeyspaceMetadata(
 		t,
 		keyspace,
@@ -112,19 +117,25 @@ func TestCompileMetadata(t *testing.T) {
 					PartitionKey: []*ColumnMetadata{
 						{
 							Name: "Key1",
-							Type: NativeType{typ: TypeVarchar},
+							Type: varcharLikeTypeInfo{
+								typ: TypeVarchar,
+							},
 						},
 					},
 					ClusteringColumns: []*ColumnMetadata{},
 					Columns: map[string]*ColumnMetadata{
 						"KEY1": {
 							Name: "KEY1",
-							Type: NativeType{typ: TypeVarchar},
+							Type: varcharLikeTypeInfo{
+								typ: TypeVarchar,
+							},
 							Kind: ColumnPartitionKey,
 						},
 						"Key1": {
 							Name: "Key1",
-							Type: NativeType{typ: TypeVarchar},
+							Type: varcharLikeTypeInfo{
+								typ: TypeVarchar,
+							},
 							Kind: ColumnPartitionKey,
 						},
 					},
@@ -133,42 +144,56 @@ func TestCompileMetadata(t *testing.T) {
 					PartitionKey: []*ColumnMetadata{
 						{
 							Name: "Column1",
-							Type: NativeType{typ: TypeVarchar},
+							Type: varcharLikeTypeInfo{
+								typ: TypeVarchar,
+							},
 						},
 					},
 					ClusteringColumns: []*ColumnMetadata{
 						{
-							Name:  "Column2",
-							Type:  NativeType{typ: TypeVarchar},
+							Name: "Column2",
+							Type: varcharLikeTypeInfo{
+								typ: TypeVarchar,
+							},
 							Order: ASC,
 						},
 						{
-							Name:  "Column3",
-							Type:  NativeType{typ: TypeVarchar},
+							Name: "Column3",
+							Type: varcharLikeTypeInfo{
+								typ: TypeVarchar,
+							},
 							Order: DESC,
 						},
 					},
 					Columns: map[string]*ColumnMetadata{
 						"Column1": {
 							Name: "Column1",
-							Type: NativeType{typ: TypeVarchar},
+							Type: varcharLikeTypeInfo{
+								typ: TypeVarchar,
+							},
 							Kind: ColumnPartitionKey,
 						},
 						"Column2": {
-							Name:  "Column2",
-							Type:  NativeType{typ: TypeVarchar},
+							Name: "Column2",
+							Type: varcharLikeTypeInfo{
+								typ: TypeVarchar,
+							},
 							Order: ASC,
 							Kind:  ColumnClusteringKey,
 						},
 						"Column3": {
-							Name:  "Column3",
-							Type:  NativeType{typ: TypeVarchar},
+							Name: "Column3",
+							Type: varcharLikeTypeInfo{
+								typ: TypeVarchar,
+							},
 							Order: DESC,
 							Kind:  ColumnClusteringKey,
 						},
 						"Column4": {
 							Name: "Column4",
-							Type: NativeType{typ: TypeVarchar},
+							Type: varcharLikeTypeInfo{
+								typ: TypeVarchar,
+							},
 							Kind: ColumnRegular,
 						},
 					},
@@ -402,10 +427,20 @@ func assertParseNonCompositeType(
 	typeExpected assertTypeInfo,
 ) {
 
-	log := &defaultLogger{}
-	result := parseType(def, protoVersion4, log)
+	session := &Session{
+		cfg: ClusterConfig{
+			ProtoVersion: 4,
+		},
+		logger: &defaultLogger{},
+		types:  GlobalTypes,
+	}
+	result, err := parseType(session, def)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(result.reversed) != 1 {
 		t.Errorf("%s expected %d reversed values but there were %d", def, 1, len(result.reversed))
+		return
 	}
 
 	assertParseNonCompositeTypes(
@@ -433,8 +468,17 @@ func assertParseCompositeType(
 	collectionsExpected map[string]assertTypeInfo,
 ) {
 
-	log := &defaultLogger{}
-	result := parseType(def, protoVersion4, log)
+	session := &Session{
+		cfg: ClusterConfig{
+			ProtoVersion: 4,
+		},
+		logger: &defaultLogger{},
+		types:  GlobalTypes,
+	}
+	result, err := parseType(session, def)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(result.reversed) != len(typesExpected) {
 		t.Errorf("%s expected %d reversed values but there were %d", def, len(typesExpected), len(result.reversed))
 	}
@@ -502,11 +546,17 @@ func assertParseNonCompositeTypes(
 
 		// check the type
 		if typeActual.Type() != typeExpected.Type {
-			t.Errorf("%s: Expected to parse Type to %s but was %s", context, typeExpected.Type, typeActual.Type())
+			t.Errorf("%s: Expected to parse Type to %v but was %v", context, typeExpected.Type, typeActual.Type())
 		}
-		// check the custom
-		if typeActual.Custom() != typeExpected.Custom {
-			t.Errorf("%s: Expected to parse Custom %s but was %s", context, typeExpected.Custom, typeActual.Custom())
+		if typeExpected.Custom != "" {
+			ct, ok := typeActual.(unknownTypeInfo)
+			if !ok {
+				t.Errorf("%s: Expected to get unknownCustomTypeInfo but was %T", context, typeActual)
+				continue
+			}
+			if string(ct) != typeExpected.Custom {
+				t.Errorf("%s: Expected to parse Custom %s but was %s", context, typeExpected.Custom, string(ct))
+			}
 		}
 
 		collection, _ := typeActual.(CollectionType)
