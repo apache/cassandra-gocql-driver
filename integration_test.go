@@ -204,7 +204,7 @@ func TestCustomPayloadMessages(t *testing.T) {
 	iter := query.Iter()
 	rCustomPayload := iter.GetCustomPayload()
 	if !reflect.DeepEqual(customPayload, rCustomPayload) {
-		t.Fatal("The received custom payload should match the sent")
+		t.Fatalf("The received custom payload %#v should match the sent %#v", rCustomPayload, customPayload)
 	}
 	iter.Close()
 
@@ -213,7 +213,7 @@ func TestCustomPayloadMessages(t *testing.T) {
 	iter = query.Iter()
 	rCustomPayload = iter.GetCustomPayload()
 	if !reflect.DeepEqual(customPayload, rCustomPayload) {
-		t.Fatal("The received custom payload should match the sent")
+		t.Fatalf("The received custom payload %#v should match the sent %#v", rCustomPayload, customPayload)
 	}
 	iter.Close()
 
@@ -242,7 +242,7 @@ func TestCustomPayloadValues(t *testing.T) {
 		iter := query.Iter()
 		rCustomPayload := iter.GetCustomPayload()
 		if !reflect.DeepEqual(customPayload, rCustomPayload) {
-			t.Fatal("The received custom payload should match the sent")
+			t.Fatalf("The received custom payload %#v should match the sent %#v", rCustomPayload, customPayload)
 		}
 	}
 }

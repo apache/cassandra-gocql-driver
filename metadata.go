@@ -359,13 +359,13 @@ func compileMetadata(
 		col := &columns[i]
 		// decode the validator for TypeInfo and order
 		if col.ClusteringOrder != "" { // Cassandra 3.x+
-			col.Type = getCassandraType(col.Validator, logger)
+			col.Type = getCassandraTypeInfo(protoVersion, col.Validator)
 			col.Order = ASC
 			if col.ClusteringOrder == "desc" {
 				col.Order = DESC
 			}
 		} else {
-			validatorParsed := parseType(col.Validator, logger)
+			validatorParsed := parseType(protoVersion, col.Validator, logger)
 			col.Type = validatorParsed.types[0]
 			col.Order = ASC
 			if validatorParsed.reversed[0] {
@@ -403,9 +403,9 @@ func compileV1Metadata(tables []TableMetadata, logger StdLogger) {
 		table := &tables[i]
 
 		// decode the key validator
-		keyValidatorParsed := parseType(table.KeyValidator, logger)
+		keyValidatorParsed := parseType(protoVersion1, table.KeyValidator, logger)
 		// decode the comparator
-		comparatorParsed := parseType(table.Comparator, logger)
+		comparatorParsed := parseType(protoVersion1, table.Comparator, logger)
 
 		// the partition key length is the same as the number of types in the
 		// key validator
@@ -491,7 +491,7 @@ func compileV1Metadata(tables []TableMetadata, logger StdLogger) {
 				alias = table.ValueAlias
 			}
 			// decode the default validator
-			defaultValidatorParsed := parseType(table.DefaultValidator, logger)
+			defaultValidatorParsed := parseType(protoVersion1, table.DefaultValidator, logger)
 			column := &ColumnMetadata{
 				Keyspace: table.Keyspace,
 				Table:    table.Name,
@@ -513,7 +513,7 @@ func compileV2Metadata(tables []TableMetadata, logger StdLogger) {
 		table.ClusteringColumns = make([]*ColumnMetadata, clusteringColumnCount)
 
 		if table.KeyValidator != "" {
-			keyValidatorParsed := parseType(table.KeyValidator, logger)
+			keyValidatorParsed := parseType(protoVersion2, table.KeyValidator, logger)
 			table.PartitionKey = make([]*ColumnMetadata, len(keyValidatorParsed.types))
 		} else { // Cassandra 3.x+
 			partitionKeyCount := componentColumnCountOfType(table.Columns, ColumnPartitionKey)
@@ -923,13 +923,6 @@ func getColumnMetadata(session *Session, keyspaceName string) ([]ColumnMetadata,
 	return columns, nil
 }
 
-func getTypeInfo(t string, logger StdLogger) TypeInfo {
-	if strings.HasPrefix(t, apacheCassandraTypePrefix) {
-		t = apacheToCassandraType(t)
-	}
-	return getCassandraType(t, logger)
-}
-
 func getUserTypeMetadata(session *Session, keyspaceName string) ([]UserTypeMetadata, error) {
 	if session.cfg.ProtoVersion == protoVersion1 {
 		return nil, nil
@@ -963,7 +956,7 @@ func getUserTypeMetadata(session *Session, keyspaceName string) ([]UserTypeMetad
 		}
 		uType.FieldTypes = make([]TypeInfo, len(argumentTypes))
 		for i, argumentType := range argumentTypes {
-			uType.FieldTypes[i] = getTypeInfo(argumentType, session.logger)
+			uType.FieldTypes[i] = getCassandraTypeInfo(session.cfg.ProtoVersion, argumentType)
 		}
 		uTypes = append(uTypes, uType)
 	}
@@ -1084,10 +1077,10 @@ func getFunctionsMetadata(session *Session, keyspaceName string) ([]FunctionMeta
 		if err != nil {
 			return nil, err
 		}
-		function.ReturnType = getTypeInfo(returnType, session.logger)
+		function.ReturnType = getCassandraTypeInfo(session.cfg.ProtoVersion, returnType)
 		function.ArgumentTypes = make([]TypeInfo, len(argumentTypes))
 		for i, argumentType := range argumentTypes {
-			function.ArgumentTypes[i] = getTypeInfo(argumentType, session.logger)
+			function.ArgumentTypes[i] = getCassandraTypeInfo(session.cfg.ProtoVersion, argumentType)
 		}
 		functions = append(functions, function)
 	}
@@ -1141,11 +1134,11 @@ func getAggregatesMetadata(session *Session, keyspaceName string) ([]AggregateMe
 		if err != nil {
 			return nil, err
 		}
-		aggregate.ReturnType = getTypeInfo(returnType, session.logger)
-		aggregate.StateType = getTypeInfo(stateType, session.logger)
+		aggregate.ReturnType = getCassandraTypeInfo(session.cfg.ProtoVersion, returnType)
+		aggregate.StateType = getCassandraTypeInfo(session.cfg.ProtoVersion, stateType)
 		aggregate.ArgumentTypes = make([]TypeInfo, len(argumentTypes))
 		for i, argumentType := range argumentTypes {
-			aggregate.ArgumentTypes[i] = getTypeInfo(argumentType, session.logger)
+			aggregate.ArgumentTypes[i] = getCassandraTypeInfo(session.cfg.ProtoVersion, argumentType)
 		}
 		aggregates = append(aggregates, aggregate)
 	}
@@ -1161,6 +1154,7 @@ func getAggregatesMetadata(session *Session, keyspaceName string) ([]AggregateMe
 type typeParser struct {
 	input  string
 	index  int
+	proto  int
 	logger StdLogger
 }
 
@@ -1173,8 +1167,8 @@ type typeParserResult struct {
 }
 
 // Parse the type definition used for validator and comparator schema data
-func parseType(def string, logger StdLogger) typeParserResult {
-	parser := &typeParser{input: def, logger: logger}
+func parseType(protoVersion int, def string, logger StdLogger) typeParserResult {
+	parser := &typeParser{input: def, proto: protoVersion, logger: logger}
 	return parser.parse()
 }
 
@@ -1193,6 +1187,7 @@ type typeParserClassNode struct {
 	params []typeParserParamNode
 	// this is the segment of the input string that defined this node
 	input string
+	proto int
 }
 
 // represents a class parameter in the type def AST
@@ -1285,43 +1280,26 @@ func (t *typeParser) parse() typeParserResult {
 }
 
 func (class *typeParserClassNode) asTypeInfo() TypeInfo {
-	if strings.HasPrefix(class.name, LIST_TYPE) {
-		elem := class.params[0].class.asTypeInfo()
-		return CollectionType{
-			NativeType: NativeType{
-				typ: TypeList,
-			},
-			Elem: elem,
+	typ := getCassandraType(class.name)
+	var params string
+	if len(class.params) > 0 {
+		if typ == TypeCustom {
+			params = class.input
+		} else {
+			// compile the params just like they are in 3.x
+			for i, param := range class.params {
+				if i > 0 {
+					params += ", "
+				}
+				params += param.class.name
+			}
 		}
 	}
-	if strings.HasPrefix(class.name, SET_TYPE) {
-		elem := class.params[0].class.asTypeInfo()
-		return CollectionType{
-			NativeType: NativeType{
-				typ: TypeSet,
-			},
-			Elem: elem,
-		}
+	rt := fastRegisteredTypeLookup(typ)
+	if rt == nil {
+		panic(fmt.Errorf("no registered type for %v", class.name))
 	}
-	if strings.HasPrefix(class.name, MAP_TYPE) {
-		key := class.params[0].class.asTypeInfo()
-		elem := class.params[1].class.asTypeInfo()
-		return CollectionType{
-			NativeType: NativeType{
-				typ: TypeMap,
-			},
-			Key:  key,
-			Elem: elem,
-		}
-	}
-
-	// must be a simple type or custom type
-	info := NativeType{typ: getApacheCassandraType(class.name)}
-	if info.typ == TypeCustom {
-		// add the entire class definition
-		info.custom = class.input
-	}
-	return info
+	return rt.TypeInfoFromString(class.proto, params)
 }
 
 // CLASS := ID [ PARAMS ]
@@ -1346,6 +1324,7 @@ func (t *typeParser) parseClassNode() (node *typeParserClassNode, ok bool) {
 		name:   name,
 		params: params,
 		input:  t.input[startIndex:endIndex],
+		proto:  t.proto,
 	}
 	return node, true
 }

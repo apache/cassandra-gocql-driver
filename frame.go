@@ -31,6 +31,7 @@ import (
 	"io"
 	"io/ioutil"
 	"net"
+	"reflect"
 	"runtime"
 	"strings"
 	"time"
@@ -858,68 +859,175 @@ func (w *writePrepareFrame) buildFrame(f *framer, streamID int) error {
 	return f.finish()
 }
 
+var (
+	typeInfoType      = reflect.TypeOf((*TypeInfo)(nil)).Elem()
+	typeType          = reflect.TypeOf(Type(0))
+	typeInfoSliceType = reflect.TypeOf([]TypeInfo(nil))
+	stringSliceType   = reflect.TypeOf([]string(nil))
+	udtFieldSliceType = reflect.TypeOf([]UDTField(nil))
+	stringType        = reflect.TypeOf("")
+	shortType         = reflect.TypeOf(uint16(0))
+	byteType          = reflect.TypeOf(byte(0))
+	intType           = reflect.TypeOf(int(0))
+)
+
+func (f *framer) readForType(typ reflect.Type) interface{} {
+	// check simple equality first
+	switch typ {
+	case stringType:
+		return f.readString()
+	case shortType:
+		return f.readShort()
+	case byteType:
+		return f.readByte()
+	case intType:
+		return f.readInt()
+	case stringSliceType:
+		return f.readStringList()
+	case udtFieldSliceType:
+		n := f.readShort()
+		fields := make([]UDTField, n)
+		for i := 0; i < int(n); i++ {
+			fields[i] = UDTField{
+				Name: f.readString(),
+				Type: f.readTypeInfo(),
+			}
+		}
+		return fields
+	case typeInfoType:
+		return f.readTypeInfo()
+	case typeType:
+		return Type(f.readShort())
+	case typeInfoSliceType:
+		n := f.readShort()
+		types := make([]TypeInfo, n)
+		for i := 0; i < int(n); i++ {
+			types[i] = f.readTypeInfo()
+		}
+		return types
+	}
+
+	// then check the kind and try to convert
+	switch typ.Kind() {
+	case reflect.String:
+		return reflect.ValueOf(f.readString()).Convert(typ).Interface()
+	case reflect.Int:
+		return reflect.ValueOf(f.readInt()).Convert(typ).Interface()
+	case reflect.Slice:
+		n := f.readShort()
+		slice := reflect.MakeSlice(typ, int(n), int(n))
+		for i := 0; i < int(n); i++ {
+			slice.Index(i).Set(reflect.ValueOf(f.readForType(typ.Elem())))
+		}
+		return slice.Interface()
+	}
+	panic(fmt.Errorf("unsupported type for reading from frame: %s", typ.String()))
+}
+
 func (f *framer) readTypeInfo() TypeInfo {
-	// TODO: factor this out so the same code paths can be used to parse custom
-	// types and other types, as much of the logic will be duplicated.
-	id := f.readShort()
-
-	simple := NativeType{
-		proto: f.proto,
-		typ:   Type(id),
-	}
-
-	if simple.typ == TypeCustom {
-		simple.custom = f.readString()
-		if cassType := getApacheCassandraType(simple.custom); cassType != TypeCustom {
-			simple.typ = cassType
-		}
-	}
-
-	switch simple.typ {
+	typ := Type(f.readShort())
+	var cqlt CQLType
+	var ok bool
+	switch typ {
+	case TypeAscii:
+		cqlt = asciiRegisteredType.CQLType
+		ok = true
+	case TypeBigInt:
+		cqlt = bigIntRegisteredType.CQLType
+		ok = true
+	case TypeBlob:
+		cqlt = blobRegisteredType.CQLType
+		ok = true
+	case TypeBoolean:
+		cqlt = booleanRegisteredType.CQLType
+		ok = true
+	case TypeCounter:
+		cqlt = counterRegisteredType.CQLType
+		ok = true
+	case TypeDate:
+		cqlt = dateRegisteredType.CQLType
+		ok = true
+	case TypeDecimal:
+		cqlt = decimalRegisteredType.CQLType
+		ok = true
+	case TypeDouble:
+		cqlt = doubleRegisteredType.CQLType
+		ok = true
+	case TypeDuration:
+		cqlt = durationRegisteredType.CQLType
+		ok = true
+	case TypeFloat:
+		cqlt = floatRegisteredType.CQLType
+		ok = true
+	case TypeInet:
+		cqlt = inetRegisteredType.CQLType
+		ok = true
+	case TypeInt:
+		cqlt = intRegisteredType.CQLType
+		ok = true
+	case TypeSmallInt:
+		cqlt = smallintRegisteredType.CQLType
+		ok = true
+	case TypeText:
+		cqlt = textRegisteredType.CQLType
+		ok = true
+	case TypeTime:
+		cqlt = timeRegisteredType.CQLType
+		ok = true
+	case TypeTimestamp:
+		cqlt = timestampRegisteredType.CQLType
+		ok = true
+	case TypeTimeUUID:
+		cqlt = timeUUIDRegisteredType.CQLType
+		ok = true
+	case TypeTinyInt:
+		cqlt = tinyIntRegisteredType.CQLType
+		ok = true
+	case TypeUUID:
+		cqlt = uuidRegisteredType.CQLType
+		ok = true
+	case TypeVarchar:
+		cqlt = varcharRegisteredType.CQLType
+		ok = true
+	case TypeVarint:
+		cqlt = varintRegisteredType.CQLType
+		ok = true
+	case TypeList:
+		cqlt = listRegisteredType.CQLType
+		ok = true
+	case TypeMap:
+		cqlt = mapRegisteredType.CQLType
+		ok = true
+	case TypeSet:
+		cqlt = setRegisteredType.CQLType
+		ok = true
 	case TypeTuple:
-		n := f.readShort()
-		tuple := TupleTypeInfo{
-			NativeType: simple,
-			Elems:      make([]TypeInfo, n),
-		}
-
-		for i := 0; i < int(n); i++ {
-			tuple.Elems[i] = f.readTypeInfo()
-		}
-
-		return tuple
-
+		cqlt = tupleRegisteredType.CQLType
+		ok = true
 	case TypeUDT:
-		udt := UDTTypeInfo{
-			NativeType: simple,
-		}
-		udt.KeySpace = f.readString()
-		udt.Name = f.readString()
-
-		n := f.readShort()
-		udt.Elements = make([]UDTField, n)
-		for i := 0; i < int(n); i++ {
-			field := &udt.Elements[i]
-			field.Name = f.readString()
-			field.Type = f.readTypeInfo()
-		}
-
-		return udt
-	case TypeMap, TypeList, TypeSet:
-		collection := CollectionType{
-			NativeType: simple,
-		}
-
-		if simple.typ == TypeMap {
-			collection.Key = f.readTypeInfo()
-		}
-
-		collection.Elem = f.readTypeInfo()
-
-		return collection
+		cqlt = udtRegisteredType.CQLType
+		ok = true
+	case TypeCustom:
+		cqlt = customRegisteredType.CQLType
+		ok = true
+	default:
+		cqlt = fastRegisteredTypeLookup(typ)
+		ok = cqlt != nil
 	}
 
-	return simple
+	if !ok {
+		panic(fmt.Errorf("unknown type id: %d", typ))
+	}
+
+	paramsTypes := cqlt.Params(int(f.proto))
+	var params []interface{}
+	if len(paramsTypes) > 0 {
+		params = make([]interface{}, len(paramsTypes))
+		for i, paramType := range paramsTypes {
+			params[i] = f.readForType(paramType)
+		}
+	}
+	return cqlt.TypeInfoFromParams(int(f.proto), params)
 }
 
 type preparedMetadata struct {

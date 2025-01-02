@@ -130,14 +130,14 @@ func TestCompileMetadata(t *testing.T) {
 					PartitionKey: []*ColumnMetadata{
 						{
 							Name: "key",
-							Type: NativeType{typ: TypeBlob},
+							Type: TypeBlob,
 						},
 					},
 					ClusteringColumns: []*ColumnMetadata{},
 					Columns: map[string]*ColumnMetadata{
 						"key": {
 							Name: "key",
-							Type: NativeType{typ: TypeBlob},
+							Type: TypeBlob,
 							Kind: ColumnPartitionKey,
 						},
 					},
@@ -146,42 +146,42 @@ func TestCompileMetadata(t *testing.T) {
 					PartitionKey: []*ColumnMetadata{
 						{
 							Name: "target_id",
-							Type: NativeType{typ: TypeUUID},
+							Type: TypeUUID,
 						},
 					},
 					ClusteringColumns: []*ColumnMetadata{
 						{
 							Name:  "hint_id",
-							Type:  NativeType{typ: TypeTimeUUID},
+							Type:  TypeTimeUUID,
 							Order: ASC,
 						},
 						{
 							Name:  "message_version",
-							Type:  NativeType{typ: TypeInt},
+							Type:  TypeInt,
 							Order: ASC,
 						},
 					},
 					Columns: map[string]*ColumnMetadata{
 						"target_id": {
 							Name: "target_id",
-							Type: NativeType{typ: TypeUUID},
+							Type: TypeUUID,
 							Kind: ColumnPartitionKey,
 						},
 						"hint_id": {
 							Name:  "hint_id",
-							Type:  NativeType{typ: TypeTimeUUID},
+							Type:  TypeTimeUUID,
 							Order: ASC,
 							Kind:  ColumnClusteringKey,
 						},
 						"message_version": {
 							Name:  "message_version",
-							Type:  NativeType{typ: TypeInt},
+							Type:  TypeInt,
 							Order: ASC,
 							Kind:  ColumnClusteringKey,
 						},
 						"mutation": {
 							Name: "mutation",
-							Type: NativeType{typ: TypeBlob},
+							Type: TypeBlob,
 							Kind: ColumnRegular,
 						},
 					},
@@ -190,22 +190,22 @@ func TestCompileMetadata(t *testing.T) {
 					PartitionKey: []*ColumnMetadata{
 						{
 							Name: "peer",
-							Type: NativeType{typ: TypeInet},
+							Type: TypeInet,
 						},
 					},
 					ClusteringColumns: []*ColumnMetadata{},
 					Columns: map[string]*ColumnMetadata{
 						"peer": {
 							Name: "peer",
-							Type: NativeType{typ: TypeInet},
+							Type: TypeInet,
 							Kind: ColumnPartitionKey,
 						},
-						"data_center":     {Keyspace: "V1Keyspace", Table: "peers", Kind: ColumnRegular, Name: "data_center", ComponentIndex: 0, Validator: "org.apache.cassandra.db.marshal.UTF8Type", Type: NativeType{typ: TypeVarchar}},
-						"host_id":         {Keyspace: "V1Keyspace", Table: "peers", Kind: ColumnRegular, Name: "host_id", ComponentIndex: 0, Validator: "org.apache.cassandra.db.marshal.UUIDType", Type: NativeType{typ: TypeUUID}},
-						"rack":            {Keyspace: "V1Keyspace", Table: "peers", Kind: ColumnRegular, Name: "rack", ComponentIndex: 0, Validator: "org.apache.cassandra.db.marshal.UTF8Type", Type: NativeType{typ: TypeVarchar}},
-						"release_version": {Keyspace: "V1Keyspace", Table: "peers", Kind: ColumnRegular, Name: "release_version", ComponentIndex: 0, Validator: "org.apache.cassandra.db.marshal.UTF8Type", Type: NativeType{typ: TypeVarchar}},
-						"rpc_address":     {Keyspace: "V1Keyspace", Table: "peers", Kind: ColumnRegular, Name: "rpc_address", ComponentIndex: 0, Validator: "org.apache.cassandra.db.marshal.InetAddressType", Type: NativeType{typ: TypeInet}},
-						"schema_version":  {Keyspace: "V1Keyspace", Table: "peers", Kind: ColumnRegular, Name: "schema_version", ComponentIndex: 0, Validator: "org.apache.cassandra.db.marshal.UUIDType", Type: NativeType{typ: TypeUUID}},
+						"data_center":     {Keyspace: "V1Keyspace", Table: "peers", Kind: ColumnRegular, Name: "data_center", ComponentIndex: 0, Validator: "org.apache.cassandra.db.marshal.UTF8Type", Type: TypeVarchar},
+						"host_id":         {Keyspace: "V1Keyspace", Table: "peers", Kind: ColumnRegular, Name: "host_id", ComponentIndex: 0, Validator: "org.apache.cassandra.db.marshal.UUIDType", Type: TypeUUID},
+						"rack":            {Keyspace: "V1Keyspace", Table: "peers", Kind: ColumnRegular, Name: "rack", ComponentIndex: 0, Validator: "org.apache.cassandra.db.marshal.UTF8Type", Type: TypeVarchar},
+						"release_version": {Keyspace: "V1Keyspace", Table: "peers", Kind: ColumnRegular, Name: "release_version", ComponentIndex: 0, Validator: "org.apache.cassandra.db.marshal.UTF8Type", Type: TypeVarchar},
+						"rpc_address":     {Keyspace: "V1Keyspace", Table: "peers", Kind: ColumnRegular, Name: "rpc_address", ComponentIndex: 0, Validator: "org.apache.cassandra.db.marshal.InetAddressType", Type: TypeInet},
+						"schema_version":  {Keyspace: "V1Keyspace", Table: "peers", Kind: ColumnRegular, Name: "schema_version", ComponentIndex: 0, Validator: "org.apache.cassandra.db.marshal.UUIDType", Type: TypeUUID},
 						"tokens":          {Keyspace: "V1Keyspace", Table: "peers", Kind: ColumnRegular, Name: "tokens", ComponentIndex: 0, Validator: "org.apache.cassandra.db.marshal.SetType(org.apache.cassandra.db.marshal.UTF8Type)", Type: CollectionType{NativeType: NativeType{typ: TypeSet}}},
 					},
 				},
@@ -213,31 +213,31 @@ func TestCompileMetadata(t *testing.T) {
 					PartitionKey: []*ColumnMetadata{
 						{
 							Name: "table_name",
-							Type: NativeType{typ: TypeVarchar},
+							Type: TypeVarchar,
 						},
 					},
 					ClusteringColumns: []*ColumnMetadata{
 						{
 							Name:  "index_name",
-							Type:  NativeType{typ: TypeVarchar},
+							Type:  TypeVarchar,
 							Order: DESC,
 						},
 					},
 					Columns: map[string]*ColumnMetadata{
 						"table_name": {
 							Name: "table_name",
-							Type: NativeType{typ: TypeVarchar},
+							Type: TypeVarchar,
 							Kind: ColumnPartitionKey,
 						},
 						"index_name": {
 							Name:  "index_name",
-							Type:  NativeType{typ: TypeVarchar},
+							Type:  TypeVarchar,
 							Order: DESC,
 							Kind:  ColumnClusteringKey,
 						},
 						"value": {
 							Name: "value",
-							Type: NativeType{typ: TypeBlob},
+							Type: TypeBlob,
 							Kind: ColumnRegular,
 						},
 					},
@@ -246,25 +246,25 @@ func TestCompileMetadata(t *testing.T) {
 					PartitionKey: []*ColumnMetadata{
 						{
 							Name: "title",
-							Type: NativeType{typ: TypeVarchar},
+							Type: TypeVarchar,
 						},
 					},
 					ClusteringColumns: []*ColumnMetadata{
 						{
 							Name:  "revid",
-							Type:  NativeType{typ: TypeTimeUUID},
+							Type:  TypeTimeUUID,
 							Order: ASC,
 						},
 					},
 					Columns: map[string]*ColumnMetadata{
 						"title": {
 							Name: "title",
-							Type: NativeType{typ: TypeVarchar},
+							Type: TypeVarchar,
 							Kind: ColumnPartitionKey,
 						},
 						"revid": {
 							Name: "revid",
-							Type: NativeType{typ: TypeTimeUUID},
+							Type: TypeTimeUUID,
 							Kind: ColumnClusteringKey,
 						},
 					},
@@ -273,62 +273,62 @@ func TestCompileMetadata(t *testing.T) {
 					PartitionKey: []*ColumnMetadata{
 						{
 							Name: "key",
-							Type: NativeType{typ: TypeUUID},
+							Type: TypeUUID,
 						},
 						{
 							Name: "key2",
-							Type: NativeType{typ: TypeUUID},
+							Type: TypeUUID,
 						},
 					},
 					ClusteringColumns: []*ColumnMetadata{
 						{
 							Name:  "column",
-							Type:  NativeType{typ: TypeInt},
+							Type:  TypeInt,
 							Order: ASC,
 						},
 						{
 							Name:  "column2",
-							Type:  NativeType{typ: TypeInt},
+							Type:  TypeInt,
 							Order: ASC,
 						},
 						{
 							Name:  "column3",
-							Type:  NativeType{typ: TypeInt},
+							Type:  TypeInt,
 							Order: ASC,
 						},
 					},
 					Columns: map[string]*ColumnMetadata{
 						"key": {
 							Name: "key",
-							Type: NativeType{typ: TypeUUID},
+							Type: TypeUUID,
 							Kind: ColumnPartitionKey,
 						},
 						"key2": {
 							Name: "key2",
-							Type: NativeType{typ: TypeUUID},
+							Type: TypeUUID,
 							Kind: ColumnPartitionKey,
 						},
 						"column": {
 							Name:  "column",
-							Type:  NativeType{typ: TypeInt},
+							Type:  TypeInt,
 							Order: ASC,
 							Kind:  ColumnClusteringKey,
 						},
 						"column2": {
 							Name:  "column2",
-							Type:  NativeType{typ: TypeInt},
+							Type:  TypeInt,
 							Order: ASC,
 							Kind:  ColumnClusteringKey,
 						},
 						"column3": {
 							Name:  "column3",
-							Type:  NativeType{typ: TypeInt},
+							Type:  TypeInt,
 							Order: ASC,
 							Kind:  ColumnClusteringKey,
 						},
 						"value": {
 							Name: "value",
-							Type: NativeType{typ: TypeBlob},
+							Type: TypeBlob,
 							Kind: ColumnRegular,
 						},
 					},
@@ -411,19 +411,19 @@ func TestCompileMetadata(t *testing.T) {
 					PartitionKey: []*ColumnMetadata{
 						{
 							Name: "Key1",
-							Type: NativeType{typ: TypeVarchar},
+							Type: TypeVarchar,
 						},
 					},
 					ClusteringColumns: []*ColumnMetadata{},
 					Columns: map[string]*ColumnMetadata{
 						"KEY1": {
 							Name: "KEY1",
-							Type: NativeType{typ: TypeVarchar},
+							Type: TypeVarchar,
 							Kind: ColumnPartitionKey,
 						},
 						"Key1": {
 							Name: "Key1",
-							Type: NativeType{typ: TypeVarchar},
+							Type: TypeVarchar,
 							Kind: ColumnPartitionKey,
 						},
 					},
@@ -432,42 +432,42 @@ func TestCompileMetadata(t *testing.T) {
 					PartitionKey: []*ColumnMetadata{
 						{
 							Name: "Column1",
-							Type: NativeType{typ: TypeVarchar},
+							Type: TypeVarchar,
 						},
 					},
 					ClusteringColumns: []*ColumnMetadata{
 						{
 							Name:  "Column2",
-							Type:  NativeType{typ: TypeVarchar},
+							Type:  TypeVarchar,
 							Order: ASC,
 						},
 						{
 							Name:  "Column3",
-							Type:  NativeType{typ: TypeVarchar},
+							Type:  TypeVarchar,
 							Order: DESC,
 						},
 					},
 					Columns: map[string]*ColumnMetadata{
 						"Column1": {
 							Name: "Column1",
-							Type: NativeType{typ: TypeVarchar},
+							Type: TypeVarchar,
 							Kind: ColumnPartitionKey,
 						},
 						"Column2": {
 							Name:  "Column2",
-							Type:  NativeType{typ: TypeVarchar},
+							Type:  TypeVarchar,
 							Order: ASC,
 							Kind:  ColumnClusteringKey,
 						},
 						"Column3": {
 							Name:  "Column3",
-							Type:  NativeType{typ: TypeVarchar},
+							Type:  TypeVarchar,
 							Order: DESC,
 							Kind:  ColumnClusteringKey,
 						},
 						"Column4": {
 							Name: "Column4",
-							Type: NativeType{typ: TypeVarchar},
+							Type: TypeVarchar,
 							Kind: ColumnRegular,
 						},
 					},
@@ -700,7 +700,7 @@ func assertParseNonCompositeType(
 ) {
 
 	log := &defaultLogger{}
-	result := parseType(def, log)
+	result := parseType(protoVersion1, def, log)
 	if len(result.reversed) != 1 {
 		t.Errorf("%s expected %d reversed values but there were %d", def, 1, len(result.reversed))
 	}
@@ -731,7 +731,7 @@ func assertParseCompositeType(
 ) {
 
 	log := &defaultLogger{}
-	result := parseType(def, log)
+	result := parseType(protoVersion1, def, log)
 	if len(result.reversed) != len(typesExpected) {
 		t.Errorf("%s expected %d reversed values but there were %d", def, len(typesExpected), len(result.reversed))
 	}
@@ -801,9 +801,15 @@ func assertParseNonCompositeTypes(
 		if typeActual.Type() != typeExpected.Type {
 			t.Errorf("%s: Expected to parse Type to %s but was %s", context, typeExpected.Type, typeActual.Type())
 		}
-		// check the custom
-		if typeActual.Custom() != typeExpected.Custom {
-			t.Errorf("%s: Expected to parse Custom %s but was %s", context, typeExpected.Custom, typeActual.Custom())
+		if typeExpected.Custom != "" {
+			ct, ok := typeActual.(NativeType)
+			if !ok {
+				t.Errorf("%s: Expected to get NativeType but was %T", context, typeActual)
+				continue
+			}
+			if ct.Custom() != typeExpected.Custom {
+				t.Errorf("%s: Expected to parse Custom %s but was %s", context, typeExpected.Custom, ct.Custom())
+			}
 		}
 
 		collection, _ := typeActual.(CollectionType)
