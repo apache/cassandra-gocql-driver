@@ -32,7 +32,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/stretchr/testify/require"
 	"io"
 	"math"
 	"math/big"
@@ -44,6 +43,8 @@ import (
 	"testing"
 	"time"
 	"unicode"
+
+	"github.com/stretchr/testify/require"
 
 	"gopkg.in/inf.v0"
 )
@@ -910,6 +911,7 @@ func TestMapScan(t *testing.T) {
 			fullname       text PRIMARY KEY,
 			age            int,
 			address        inet,
+			data           blob,
 		)`); err != nil {
 		t.Fatal("create table:", err)
 	}
@@ -918,8 +920,8 @@ func TestMapScan(t *testing.T) {
 		"Grace Hopper", 31, net.ParseIP("10.0.0.1")).Exec(); err != nil {
 		t.Fatal("insert:", err)
 	}
-	if err := session.Query(`INSERT INTO scan_map_table (fullname, age, address) values (?,?,?)`,
-		"Ada Lovelace", 30, net.ParseIP("10.0.0.2")).Exec(); err != nil {
+	if err := session.Query(`INSERT INTO scan_map_table (fullname, age, address, data) values (?,?,?,?)`,
+		"Ada Lovelace", 30, net.ParseIP("10.0.0.2"), []byte(`{"foo": "bar"}`)).Exec(); err != nil {
 		t.Fatal("insert:", err)
 	}
 
@@ -933,6 +935,7 @@ func TestMapScan(t *testing.T) {
 	assertEqual(t, "fullname", "Ada Lovelace", row["fullname"])
 	assertEqual(t, "age", 30, row["age"])
 	assertEqual(t, "address", "10.0.0.2", row["address"])
+	assertDeepEqual(t, "data", []byte(`{"foo": "bar"}`), row["data"])
 
 	// Second iteration using a new map
 	row = make(map[string]interface{})
@@ -942,6 +945,7 @@ func TestMapScan(t *testing.T) {
 	assertEqual(t, "fullname", "Grace Hopper", row["fullname"])
 	assertEqual(t, "age", 31, row["age"])
 	assertEqual(t, "address", "10.0.0.1", row["address"])
+	assertDeepEqual(t, "data", []byte(nil), row["data"])
 }
 
 func TestSliceMap(t *testing.T) {
