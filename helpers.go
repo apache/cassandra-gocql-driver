@@ -305,7 +305,7 @@ func getApacheCassandraType(class string) Type {
 func (r *RowData) rowMap(m map[string]interface{}) {
 	for i, column := range r.Columns {
 		val := dereference(r.Values[i])
-		if valVal := reflect.ValueOf(val); valVal.Kind() == reflect.Slice {
+		if valVal := reflect.ValueOf(val); valVal.Kind() == reflect.Slice && !valVal.IsNil() {
 			valCopy := reflect.MakeSlice(valVal.Type(), valVal.Len(), valVal.Cap())
 			reflect.Copy(valCopy, valVal)
 			m[column] = valCopy.Interface()

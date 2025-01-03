@@ -24,6 +24,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Bumped actions/upload-artifact and actions/cache versions to v4 in CI workflow (CASSGO-48)
 
+- Keep nil slices in MapScan (CASSGO-44)
+
 ### Fixed
 
 - Retry policy now takes into account query idempotency (CASSGO-27)
