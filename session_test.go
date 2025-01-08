@@ -32,6 +32,8 @@ import (
 	"fmt"
 	"net"
 	"testing"
+
+	"github.com/gocql/gocql/internal"
 )
 
 func TestSessionAPI(t *testing.T) {
@@ -341,7 +343,7 @@ func TestIsUseStatement(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		v := isUseStatement(tc.input)
+		v := internal.IsUseStatement(tc.input)
 		if v != tc.exp {
 			t.Fatalf("expected %v but got %v for statement %q", tc.exp, v, tc.input)
 		}

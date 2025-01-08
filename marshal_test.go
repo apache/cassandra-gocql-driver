@@ -38,6 +38,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gocql/gocql/internal"
+
 	"gopkg.in/inf.v0"
 )
 
@@ -1075,7 +1077,7 @@ var marshalTests = []struct {
 	},
 	{
 		NativeType{proto: 2, typ: TypeTime},
-		encBigInt(1000),
+		internal.EncBigInt(1000),
 		time.Duration(1000),
 		nil,
 		nil,
@@ -1726,7 +1728,7 @@ func TestMarshalPointer(t *testing.T) {
 func TestMarshalTime(t *testing.T) {
 	durationS := "1h10m10s"
 	duration, _ := time.ParseDuration(durationS)
-	expectedData := encBigInt(duration.Nanoseconds())
+	expectedData := internal.EncBigInt(duration.Nanoseconds())
 	var marshalTimeTests = []struct {
 		Info  TypeInfo
 		Data  []byte
@@ -1758,7 +1760,7 @@ func TestMarshalTime(t *testing.T) {
 		}
 		if !bytes.Equal(data, test.Data) {
 			t.Errorf("marshalTest[%d]: expected %x (%v), got %x (%v) for time %s", i,
-				test.Data, decInt(test.Data), data, decInt(data), test.Value)
+				test.Data, internal.DecInt(test.Data), data, internal.DecInt(data), test.Value)
 		}
 	}
 }
@@ -1824,7 +1826,7 @@ func TestMarshalTimestamp(t *testing.T) {
 		}
 		if !bytes.Equal(data, test.Data) {
 			t.Errorf("marshalTest[%d]: expected %x (%v), got %x (%v) for time %s", i,
-				test.Data, decBigInt(test.Data), data, decBigInt(data), test.Value)
+				test.Data, internal.DecBigInt(test.Data), data, internal.DecBigInt(data), test.Value)
 		}
 	}
 }
@@ -1961,7 +1963,7 @@ func TestMarshalTuple(t *testing.T) {
 
 			if !bytes.Equal(data, tc.expected) {
 				t.Errorf("marshalTest: expected %x (%v), got %x (%v)",
-					tc.expected, decBigInt(tc.expected), data, decBigInt(data))
+					tc.expected, internal.DecBigInt(tc.expected), data, internal.DecBigInt(data))
 				return
 			}
 
@@ -2244,7 +2246,7 @@ func TestUnmarshalDate(t *testing.T) {
 func TestMarshalDate(t *testing.T) {
 	now := time.Now().UTC()
 	timestamp := now.UnixNano() / int64(time.Millisecond)
-	expectedData := encInt(int32(timestamp/86400000 + int64(1<<31)))
+	expectedData := internal.EncInt(int32(timestamp/86400000 + int64(1<<31)))
 
 	var marshalDateTests = []struct {
 		Info  TypeInfo
@@ -2282,17 +2284,17 @@ func TestMarshalDate(t *testing.T) {
 		}
 		if !bytes.Equal(data, test.Data) {
 			t.Errorf("marshalTest[%d]: expected %x (%v), got %x (%v) for time %s", i,
-				test.Data, decInt(test.Data), data, decInt(data), test.Value)
+				test.Data, internal.DecInt(test.Data), data, internal.DecInt(data), test.Value)
 		}
 	}
 }
 
 func TestLargeDate(t *testing.T) {
 	farFuture := time.Date(999999, time.December, 31, 0, 0, 0, 0, time.UTC)
-	expectedFutureData := encInt(int32(farFuture.UnixMilli()/86400000 + int64(1<<31)))
+	expectedFutureData := internal.EncInt(int32(farFuture.UnixMilli()/86400000 + int64(1<<31)))
 
 	farPast := time.Date(-999999, time.January, 1, 0, 0, 0, 0, time.UTC)
-	expectedPastData := encInt(int32(farPast.UnixMilli()/86400000 + int64(1<<31)))
+	expectedPastData := internal.EncInt(int32(farPast.UnixMilli()/86400000 + int64(1<<31)))
 
 	var marshalDateTests = []struct {
 		Data         []byte
@@ -2323,7 +2325,7 @@ func TestLargeDate(t *testing.T) {
 		}
 		if !bytes.Equal(data, test.Data) {
 			t.Errorf("largeDateTest[%d]: expected %x (%v), got %x (%v) for time %s", i,
-				test.Data, decInt(test.Data), data, decInt(data), test.Value)
+				test.Data, internal.DecInt(test.Data), data, internal.DecInt(data), test.Value)
 		}
 
 		var date time.Time
@@ -2354,7 +2356,7 @@ func BenchmarkUnmarshalVarchar(b *testing.B) {
 func TestMarshalDuration(t *testing.T) {
 	durationS := "1h10m10s"
 	duration, _ := time.ParseDuration(durationS)
-	expectedData := append([]byte{0, 0}, encVint(duration.Nanoseconds())...)
+	expectedData := append([]byte{0, 0}, internal.EncVint(duration.Nanoseconds())...)
 	var marshalDurationTests = []struct {
 		Info  TypeInfo
 		Data  []byte
@@ -2391,7 +2393,7 @@ func TestMarshalDuration(t *testing.T) {
 		}
 		if !bytes.Equal(data, test.Data) {
 			t.Errorf("marshalTest[%d]: expected %x (%v), got %x (%v) for time %s", i,
-				test.Data, decInt(test.Data), data, decInt(data), test.Value)
+				test.Data, internal.DecInt(test.Data), data, internal.DecInt(data), test.Value)
 		}
 	}
 }

@@ -34,9 +34,9 @@ import (
 	"runtime"
 	"strings"
 	"time"
-)
 
-type unsetColumn struct{}
+	"github.com/gocql/gocql/internal"
+)
 
 // UnsetValue represents a value used in a query binding that will be ignored by Cassandra.
 //
@@ -45,7 +45,7 @@ type unsetColumn struct{}
 // want to update some fields, where before you needed to make another prepared statement.
 //
 // UnsetValue is only available when using the version 4 of the protocol.
-var UnsetValue = unsetColumn{}
+var UnsetValue = internal.UnsetColumn{}
 
 type namedValue struct {
 	name  string
@@ -331,10 +331,6 @@ var (
 
 const maxFrameHeaderSize = 9
 
-func readInt(p []byte) int32 {
-	return int32(p[0])<<24 | int32(p[1])<<16 | int32(p[2])<<8 | int32(p[3])
-}
-
 type frameHeader struct {
 	version  protoVersion
 	flags    byte
@@ -474,7 +470,7 @@ func readHeader(r io.Reader, p []byte) (head frameHeader, err error) {
 
 		head.stream = int(int16(p[2])<<8 | int16(p[3]))
 		head.op = frameOp(p[4])
-		head.length = int(readInt(p[5:]))
+		head.length = int(internal.ReadInt(p[5:]))
 	} else {
 		if len(p) != 8 {
 			return frameHeader{}, fmt.Errorf("not enough bytes to read header require 8 got: %d", len(p))
@@ -482,7 +478,7 @@ func readHeader(r io.Reader, p []byte) (head frameHeader, err error) {
 
 		head.stream = int(int8(p[2]))
 		head.op = frameOp(p[3])
-		head.length = int(readInt(p[4:]))
+		head.length = int(internal.ReadInt(p[4:]))
 	}
 
 	return head, nil
@@ -647,7 +643,7 @@ func (f *framer) parseErrorFrame() frame {
 		stmtId := f.readShortBytes()
 		return &RequestErrUnprepared{
 			errorFrame:  errD,
-			StatementId: copyBytes(stmtId), // defensively copy
+			StatementId: internal.CopyBytes(stmtId), // defensively copy
 		}
 	case ErrCodeReadFailure:
 		res := &RequestErrReadFailure{
@@ -969,7 +965,7 @@ func (f *framer) parsePreparedMetadata() preparedMetadata {
 	}
 
 	if meta.flags&flagHasMorePages == flagHasMorePages {
-		meta.pagingState = copyBytes(f.readBytes())
+		meta.pagingState = internal.CopyBytes(f.readBytes())
 	}
 
 	if meta.flags&flagNoMetaData == flagNoMetaData {
@@ -1057,7 +1053,7 @@ func (f *framer) parseResultMetadata() resultMetadata {
 	meta.actualColCount = meta.colCount
 
 	if meta.flags&flagHasMorePages == flagHasMorePages {
-		meta.pagingState = copyBytes(f.readBytes())
+		meta.pagingState = internal.CopyBytes(f.readBytes())
 	}
 
 	if meta.flags&flagNoMetaData == flagNoMetaData {
@@ -1940,49 +1936,6 @@ func (f *framer) writeByte(b byte) {
 	f.buf = append(f.buf, b)
 }
 
-func appendBytes(p []byte, d []byte) []byte {
-	if d == nil {
-		return appendInt(p, -1)
-	}
-	p = appendInt(p, int32(len(d)))
-	p = append(p, d...)
-	return p
-}
-
-func appendShort(p []byte, n uint16) []byte {
-	return append(p,
-		byte(n>>8),
-		byte(n),
-	)
-}
-
-func appendInt(p []byte, n int32) []byte {
-	return append(p, byte(n>>24),
-		byte(n>>16),
-		byte(n>>8),
-		byte(n))
-}
-
-func appendUint(p []byte, n uint32) []byte {
-	return append(p, byte(n>>24),
-		byte(n>>16),
-		byte(n>>8),
-		byte(n))
-}
-
-func appendLong(p []byte, n int64) []byte {
-	return append(p,
-		byte(n>>56),
-		byte(n>>48),
-		byte(n>>40),
-		byte(n>>32),
-		byte(n>>24),
-		byte(n>>16),
-		byte(n>>8),
-		byte(n),
-	)
-}
-
 func (f *framer) writeCustomPayload(customPayload *map[string][]byte) {
 	if len(*customPayload) > 0 {
 		if f.proto < protoVersion4 {
@@ -1994,19 +1947,19 @@ func (f *framer) writeCustomPayload(customPayload *map[string][]byte) {
 
 // these are protocol level binary types
 func (f *framer) writeInt(n int32) {
-	f.buf = appendInt(f.buf, n)
+	f.buf = internal.AppendInt(f.buf, n)
 }
 
 func (f *framer) writeUint(n uint32) {
-	f.buf = appendUint(f.buf, n)
+	f.buf = internal.AppendUint(f.buf, n)
 }
 
 func (f *framer) writeShort(n uint16) {
-	f.buf = appendShort(f.buf, n)
+	f.buf = internal.AppendShort(f.buf, n)
 }
 
 func (f *framer) writeLong(n int64) {
-	f.buf = appendLong(f.buf, n)
+	f.buf = internal.AppendLong(f.buf, n)
 }
 
 func (f *framer) writeString(s string) {

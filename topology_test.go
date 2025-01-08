@@ -26,6 +26,7 @@ package gocql
 
 import (
 	"fmt"
+	"github.com/gocql/gocql/internal"
 	"sort"
 	"testing"
 )
@@ -136,7 +137,7 @@ func TestPlacementStrategy_NetworkStrategy(t *testing.T) {
 					h := &HostInfo{hostId: fmt.Sprintf("%s:%s:%d", dc, rack, j), dataCenter: dc, rack: rack}
 
 					token := hostToken{
-						token: orderedToken([]byte(h.hostId)),
+						token: internal.OrderedToken([]byte(h.hostId)),
 						host:  h,
 					}
 
