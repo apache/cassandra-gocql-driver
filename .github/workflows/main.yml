@@ -44,7 +44,7 @@ jobs:
       - uses: actions/setup-go@v2
         with:
           go-version: ${{ matrix.go }}
-      - uses: actions/cache@v2
+      - uses: actions/cache@v4
         id: gomod-cache
         with:
           path: ~/go/pkg/mod
@@ -113,9 +113,9 @@ jobs:
           go test -v -tags "${{ matrix.tags }} gocql_debug" -timeout=5m -race ${{ env.args }}
       - name: 'Save ccm logs'
         if: 'failure()'
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
-          name: ccm-cluster
+          name: ccm-cluster-cassandra-${{ matrix.cassandra_version }}-go-${{ matrix.go }}-tag-${{ matrix.tags }}
           path: /home/runner/.ccm/test
           retention-days: 5
   integration-auth-cassandra:
