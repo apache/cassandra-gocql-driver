@@ -34,6 +34,7 @@ import (
 	"os"
 	"regexp"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -226,24 +227,31 @@ func (c *controlConn) discoverProtocol(hosts []*HostInfo) (int, error) {
 		}
 	})
 
-	var err error
+	var allErr []string
 	for _, host := range hosts {
-		var conn *Conn
-		conn, err = c.session.dial(c.session.ctx, host, &connCfg, handler)
+		conn, err := c.session.dial(c.session.ctx, host, &connCfg, handler)
 		if conn != nil {
 			conn.Close()
 		}
 
-		if err == nil {
-			return connCfg.ProtoVersion, nil
+		if err != nil {
+			if proto := parseProtocolFromError(err); proto > 0 {
+				return proto, nil
+			}
+
+			m := fmt.Sprintf("host [%s]: %s", host, err.Error())
+			if c.session.ctx.Err() != nil {
+				m = fmt.Sprintf("%s: context error %s", m, c.session.ctx.Err().Error())
+			}
+
+			allErr = append(allErr, m)
+			continue
 		}
 
-		if proto := parseProtocolFromError(err); proto > 0 {
-			return proto, nil
-		}
+		return connCfg.ProtoVersion, nil
 	}
 
-	return 0, err
+	return 0, fmt.Errorf("couldn't get the protocol, errors: (%s)", strings.Join(allErr, ";"))
 }
 
 func (c *controlConn) connect(hosts []*HostInfo) error {
