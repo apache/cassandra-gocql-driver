@@ -769,7 +769,7 @@ func (s *Session) ExecuteBatch(batch *Batch) error {
 // ExecuteBatchCAS executes a batch operation and returns true if successful and
 // an iterator (to scan additional rows if more than one conditional statement)
 // was sent.
-// Further scans on the interator must also remember to include
+// Further scans on the iterator must also remember to include
 // the applied boolean as the first argument to *Iter.Scan
 func (s *Session) ExecuteBatchCAS(batch *Batch, dest ...interface{}) (applied bool, iter *Iter, err error) {
 	iter = s.executeBatch(batch)
@@ -785,7 +785,7 @@ func (s *Session) ExecuteBatchCAS(batch *Batch, dest ...interface{}) (applied bo
 		iter.Scan(&applied)
 	}
 
-	return applied, iter, nil
+	return applied, iter, iter.err
 }
 
 // MapExecuteBatchCAS executes a batch operation much like ExecuteBatchCAS,

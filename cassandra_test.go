@@ -503,6 +503,18 @@ func TestCAS(t *testing.T) {
 			t.Fatal("scan:", err)
 		}
 	}
+
+	notAppliedBatch := session.Batch(LoggedBatch)
+	notAppliedBatch.Query("INSERT INTO cas_table (title, revid, last_modified) VALUES (?, ?, ?) IF NOT EXISTS", title, revid, modified)
+	// This record is already inserted into the table so C* should return [applied] = false and previous record state,
+	// but we didn't provide any destination variables to handle result, so it should return an error
+	if applied, _, err := session.ExecuteBatchCAS(notAppliedBatch); err == nil {
+		t.Fatal("should fail because of lacking of destination variables")
+	} else if applied {
+		t.Fatalf("insert should have not been applied")
+	} else if !strings.Contains(err.Error(), "gocql: not enough columns to scan into") {
+		t.Fatalf("should have failed because of invalid destination variables, but failed because: %v", err)
+	}
 }
 
 func TestDurationType(t *testing.T) {

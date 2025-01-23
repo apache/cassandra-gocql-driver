@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Retry policy now takes into account query idempotency (CASSGO-27)
 - Don't return error to caller with RetryType Ignore (CASSGO-28)
+- Enable Session.ExecuteBatchCAS() to return underlying scan errors (CASSGO-47)
 
 ## [1.7.0] - 2024-09-23
 
