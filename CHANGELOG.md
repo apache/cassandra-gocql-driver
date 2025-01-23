@@ -20,6 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Remove deprecated global logger (CASSGO-24)
 
+- Bumped actions/upload-artifact and actions/cache versions to v4 in CI workflow (CASSGO-48)
+
 ### Fixed
 
 - Retry policy now takes into account query idempotency (CASSGO-27)
