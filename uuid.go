@@ -95,12 +95,12 @@ func ParseUUID(input string) (UUID, error) {
 		case r >= 'A' && r <= 'F' && j < 32:
 			u[j/2] |= byte(r-'A'+10) << uint(4-j&1*4)
 		default:
-			return UUID{}, fmt.Errorf("invalid UUID %q", input)
+			return UUID{}, fmt.Errorf("gocql: invalid UUID %q", input)
 		}
 		j += 1
 	}
 	if j != 32 {
-		return UUID{}, fmt.Errorf("invalid UUID %q", input)
+		return UUID{}, fmt.Errorf("gocql: invalid UUID %q", input)
 	}
 	return u, nil
 }
@@ -323,7 +323,7 @@ func (u UUID) MarshalJSON() ([]byte, error) {
 func (u *UUID) UnmarshalJSON(data []byte) error {
 	str := strings.Trim(string(data), `"`)
 	if len(str) > 36 {
-		return fmt.Errorf("invalid JSON UUID %s", str)
+		return fmt.Errorf("gocql: invalid JSON UUID %s", str)
 	}
 
 	parsed, err := ParseUUID(str)

@@ -74,19 +74,19 @@ func getReplicationFactorFromOpts(val interface{}) (int, error) {
 	switch v := val.(type) {
 	case int:
 		if v < 0 {
-			return 0, fmt.Errorf("invalid replication_factor %d", v)
+			return 0, fmt.Errorf("gocql: invalid replication_factor %d", v)
 		}
 		return v, nil
 	case string:
 		n, err := strconv.Atoi(v)
 		if err != nil {
-			return 0, fmt.Errorf("invalid replication_factor %q: %v", v, err)
+			return 0, fmt.Errorf("gocql: invalid replication_factor %q: %w", v, err)
 		} else if n < 0 {
-			return 0, fmt.Errorf("invalid replication_factor %d", n)
+			return 0, fmt.Errorf("gocql: invalid replication_factor %d", n)
 		}
 		return n, nil
 	default:
-		return 0, fmt.Errorf("unknown replication_factor type %T", v)
+		return 0, fmt.Errorf("gocql: unknown replication_factor type %T", v)
 	}
 }
 
