@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Add a LatencyAwarePolicy that prioritizes the host with smaller average latency
 
 ### Changed
 
