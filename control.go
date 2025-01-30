@@ -37,6 +37,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/gocql/gocql/internal"
 )
 
 var (
@@ -50,7 +52,7 @@ func init() {
 		panic(fmt.Sprintf("unable to seed random number generator: %v", err))
 	}
 
-	randr = rand.New(rand.NewSource(int64(readInt(b))))
+	randr = rand.New(rand.NewSource(int64(internal.ReadInt(b))))
 }
 
 const (

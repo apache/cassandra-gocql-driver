@@ -36,11 +36,13 @@ import (
 	"sort"
 	"strconv"
 	"testing"
+
+	"github.com/gocql/gocql/internal"
 )
 
 // Tests of the murmur3Patitioner
 func TestMurmur3Partitioner(t *testing.T) {
-	token := murmur3Partitioner{}.ParseString("-1053604476080545076")
+	token := internal.Murmur3Partitioner{}.ParseString("-1053604476080545076")
 
 	if "-1053604476080545076" != token.String() {
 		t.Errorf("Expected '-1053604476080545076' but was '%s'", token)
@@ -48,32 +50,32 @@ func TestMurmur3Partitioner(t *testing.T) {
 
 	// at least verify that the partitioner
 	// doesn't return nil
-	pk, _ := marshalInt(nil, 1)
-	token = murmur3Partitioner{}.Hash(pk)
+	pk, _ := internal.MarshalInt(nil, 1)
+	token = internal.Murmur3Partitioner{}.Hash(pk)
 	if token == nil {
 		t.Fatal("token was nil")
 	}
 }
 
-// Tests of the murmur3Token
+// Tests of the internal.Murmur3Token
 func TestMurmur3Token(t *testing.T) {
-	if murmur3Token(42).Less(murmur3Token(42)) {
+	if internal.Murmur3Token(42).Less(internal.Murmur3Token(42)) {
 		t.Errorf("Expected Less to return false, but was true")
 	}
-	if !murmur3Token(-42).Less(murmur3Token(42)) {
+	if !internal.Murmur3Token(-42).Less(internal.Murmur3Token(42)) {
 		t.Errorf("Expected Less to return true, but was false")
 	}
-	if murmur3Token(42).Less(murmur3Token(-42)) {
+	if internal.Murmur3Token(42).Less(internal.Murmur3Token(-42)) {
 		t.Errorf("Expected Less to return false, but was true")
 	}
 }
 
-// Tests of the orderedPartitioner
+// Tests of the internal.OrderedPartitioner
 func TestOrderedPartitioner(t *testing.T) {
 	// at least verify that the partitioner
 	// doesn't return nil
-	p := orderedPartitioner{}
-	pk, _ := marshalInt(nil, 1)
+	p := internal.OrderedPartitioner{}
+	pk, _ := internal.MarshalInt(nil, 1)
 	token := p.Hash(pk)
 	if token == nil {
 		t.Fatal("token was nil")
@@ -82,34 +84,34 @@ func TestOrderedPartitioner(t *testing.T) {
 	str := token.String()
 	parsedToken := p.ParseString(str)
 
-	if !bytes.Equal([]byte(token.(orderedToken)), []byte(parsedToken.(orderedToken))) {
+	if !bytes.Equal([]byte(token.(internal.OrderedToken)), []byte(parsedToken.(internal.OrderedToken))) {
 		t.Errorf("Failed to convert to and from a string %s expected %x but was %x",
 			str,
-			[]byte(token.(orderedToken)),
-			[]byte(parsedToken.(orderedToken)),
+			[]byte(token.(internal.OrderedToken)),
+			[]byte(parsedToken.(internal.OrderedToken)),
 		)
 	}
 }
 
-// Tests of the orderedToken
+// Tests of the internal.OrderedToken
 func TestOrderedToken(t *testing.T) {
-	if orderedToken([]byte{0, 0, 4, 2}).Less(orderedToken([]byte{0, 0, 4, 2})) {
+	if internal.OrderedToken([]byte{0, 0, 4, 2}).Less(internal.OrderedToken([]byte{0, 0, 4, 2})) {
 		t.Errorf("Expected Less to return false, but was true")
 	}
-	if !orderedToken([]byte{0, 0, 3}).Less(orderedToken([]byte{0, 0, 4, 2})) {
+	if !internal.OrderedToken([]byte{0, 0, 3}).Less(internal.OrderedToken([]byte{0, 0, 4, 2})) {
 		t.Errorf("Expected Less to return true, but was false")
 	}
-	if orderedToken([]byte{0, 0, 4, 2}).Less(orderedToken([]byte{0, 0, 3})) {
+	if internal.OrderedToken([]byte{0, 0, 4, 2}).Less(internal.OrderedToken([]byte{0, 0, 3})) {
 		t.Errorf("Expected Less to return false, but was true")
 	}
 }
 
-// Tests of the randomPartitioner
+// Tests of the internal.RandomPartitioner
 func TestRandomPartitioner(t *testing.T) {
 	// at least verify that the partitioner
 	// doesn't return nil
-	p := randomPartitioner{}
-	pk, _ := marshalInt(nil, 1)
+	p := internal.RandomPartitioner{}
+	pk, _ := internal.MarshalInt(nil, 1)
 	token := p.Hash(pk)
 	if token == nil {
 		t.Fatal("token was nil")
@@ -118,7 +120,7 @@ func TestRandomPartitioner(t *testing.T) {
 	str := token.String()
 	parsedToken := p.ParseString(str)
 
-	if (*big.Int)(token.(*randomToken)).Cmp((*big.Int)(parsedToken.(*randomToken))) != 0 {
+	if (*big.Int)(token.(*internal.RandomToken)).Cmp((*big.Int)(parsedToken.(*internal.RandomToken))) != 0 {
 		t.Errorf("Failed to convert to and from a string %s expected %v but was %v",
 			str,
 			token,
@@ -132,7 +134,7 @@ func TestRandomPartitionerMatchesReference(t *testing.T) {
 	//    >>> from cassandra.metadata import MD5Token
 	//    >>> MD5Token.hash_fn("test")
 	//    12707736894140473154801792860916528374L
-	var p randomPartitioner
+	var p internal.RandomPartitioner
 	expect := "12707736894140473154801792860916528374"
 	actual := p.Hash([]byte("test")).String()
 	if actual != expect {
@@ -141,23 +143,23 @@ func TestRandomPartitionerMatchesReference(t *testing.T) {
 	}
 }
 
-// Tests of the randomToken
+// Tests of the internal.RandomToken
 func TestRandomToken(t *testing.T) {
-	if ((*randomToken)(big.NewInt(42))).Less((*randomToken)(big.NewInt(42))) {
+	if ((*internal.RandomToken)(big.NewInt(42))).Less((*internal.RandomToken)(big.NewInt(42))) {
 		t.Errorf("Expected Less to return false, but was true")
 	}
-	if !((*randomToken)(big.NewInt(41))).Less((*randomToken)(big.NewInt(42))) {
+	if !((*internal.RandomToken)(big.NewInt(41))).Less((*internal.RandomToken)(big.NewInt(42))) {
 		t.Errorf("Expected Less to return true, but was false")
 	}
-	if ((*randomToken)(big.NewInt(42))).Less((*randomToken)(big.NewInt(41))) {
+	if ((*internal.RandomToken)(big.NewInt(42))).Less((*internal.RandomToken)(big.NewInt(41))) {
 		t.Errorf("Expected Less to return false, but was true")
 	}
 }
 
 type intToken int
 
-func (i intToken) String() string        { return strconv.Itoa(int(i)) }
-func (i intToken) Less(token token) bool { return i < token.(intToken) }
+func (i intToken) String() string                 { return strconv.Itoa(int(i)) }
+func (i intToken) Less(token internal.Token) bool { return i < token.(intToken) }
 
 // Test of the token ring implementation based on example at the start of this
 // page of documentation:
@@ -260,7 +262,7 @@ func TestTokenRing_Murmur3(t *testing.T) {
 		t.Fatalf("Failed to create token ring due to error: %v", err)
 	}
 
-	p := murmur3Partitioner{}
+	p := internal.Murmur3Partitioner{}
 
 	for _, host := range hosts {
 		actual, _ := ring.GetHostForToken(p.ParseString(host.tokens[0]))
@@ -291,7 +293,7 @@ func TestTokenRing_Ordered(t *testing.T) {
 		t.Fatalf("Failed to create token ring due to error: %v", err)
 	}
 
-	p := orderedPartitioner{}
+	p := internal.OrderedPartitioner{}
 
 	var actual *HostInfo
 	for _, host := range hosts {
@@ -322,7 +324,7 @@ func TestTokenRing_Random(t *testing.T) {
 		t.Fatalf("Failed to create token ring due to error: %v", err)
 	}
 
-	p := randomPartitioner{}
+	p := internal.RandomPartitioner{}
 
 	var actual *HostInfo
 	for _, host := range hosts {

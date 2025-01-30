@@ -39,6 +39,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/gocql/gocql/internal"
 	"github.com/gocql/gocql/internal/lru"
 	"github.com/gocql/gocql/internal/streams"
 )
@@ -1268,7 +1269,7 @@ func (c *Conn) prepareStatement(ctx context.Context, stmt string, tracer Tracer)
 				flight.preparedStatment = &preparedStatment{
 					// defensively copy as we will recycle the underlying buffer after we
 					// return.
-					id: copyBytes(x.preparedID),
+					id: internal.CopyBytes(x.preparedID),
 					// the type info's should _not_ have a reference to the framers read buffer,
 					// therefore we can just copy them directly.
 					request:  x.reqMeta,
@@ -1300,7 +1301,7 @@ func marshalQueryValue(typ TypeInfo, value interface{}, dst *queryValues) error 
 		value = named.value
 	}
 
-	if _, ok := value.(unsetColumn); !ok {
+	if _, ok := value.(internal.UnsetColumn); !ok {
 		val, err := Marshal(typ, value)
 		if err != nil {
 			return err
@@ -1423,7 +1424,7 @@ func (c *Conn) executeQuery(ctx context.Context, qry *Query) *Iter {
 		if params.skipMeta {
 			if info != nil {
 				iter.meta = info.response
-				iter.meta.pagingState = copyBytes(x.meta.pagingState)
+				iter.meta.pagingState = internal.CopyBytes(x.meta.pagingState)
 			} else {
 				return &Iter{framer: framer, err: errors.New("gocql: did not receive metadata but prepared info is nil")}
 			}
@@ -1434,7 +1435,7 @@ func (c *Conn) executeQuery(ctx context.Context, qry *Query) *Iter {
 		if x.meta.morePages() && !qry.disableAutoPage {
 			newQry := new(Query)
 			*newQry = *qry
-			newQry.pageState = copyBytes(x.meta.pagingState)
+			newQry.pageState = internal.CopyBytes(x.meta.pagingState)
 			newQry.metrics = &queryMetrics{m: make(map[string]*hostMetrics)}
 
 			iter.next = &nextIter{

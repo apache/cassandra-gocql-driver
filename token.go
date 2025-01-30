@@ -30,120 +30,16 @@ package gocql
 
 import (
 	"bytes"
-	"crypto/md5"
 	"fmt"
-	"math/big"
 	"sort"
 	"strconv"
 	"strings"
 
-	"github.com/gocql/gocql/internal/murmur"
+	"github.com/gocql/gocql/internal"
 )
 
-// a token partitioner
-type partitioner interface {
-	Name() string
-	Hash([]byte) token
-	ParseString(string) token
-}
-
-// a token
-type token interface {
-	fmt.Stringer
-	Less(token) bool
-}
-
-// murmur3 partitioner and token
-type murmur3Partitioner struct{}
-type murmur3Token int64
-
-func (p murmur3Partitioner) Name() string {
-	return "Murmur3Partitioner"
-}
-
-func (p murmur3Partitioner) Hash(partitionKey []byte) token {
-	h1 := murmur.Murmur3H1(partitionKey)
-	return murmur3Token(h1)
-}
-
-// murmur3 little-endian, 128-bit hash, but returns only h1
-func (p murmur3Partitioner) ParseString(str string) token {
-	val, _ := strconv.ParseInt(str, 10, 64)
-	return murmur3Token(val)
-}
-
-func (m murmur3Token) String() string {
-	return strconv.FormatInt(int64(m), 10)
-}
-
-func (m murmur3Token) Less(token token) bool {
-	return m < token.(murmur3Token)
-}
-
-// order preserving partitioner and token
-type orderedPartitioner struct{}
-type orderedToken string
-
-func (p orderedPartitioner) Name() string {
-	return "OrderedPartitioner"
-}
-
-func (p orderedPartitioner) Hash(partitionKey []byte) token {
-	// the partition key is the token
-	return orderedToken(partitionKey)
-}
-
-func (p orderedPartitioner) ParseString(str string) token {
-	return orderedToken(str)
-}
-
-func (o orderedToken) String() string {
-	return string(o)
-}
-
-func (o orderedToken) Less(token token) bool {
-	return o < token.(orderedToken)
-}
-
-// random partitioner and token
-type randomPartitioner struct{}
-type randomToken big.Int
-
-func (r randomPartitioner) Name() string {
-	return "RandomPartitioner"
-}
-
-// 2 ** 128
-var maxHashInt, _ = new(big.Int).SetString("340282366920938463463374607431768211456", 10)
-
-func (p randomPartitioner) Hash(partitionKey []byte) token {
-	sum := md5.Sum(partitionKey)
-	val := new(big.Int)
-	val.SetBytes(sum[:])
-	if sum[0] > 127 {
-		val.Sub(val, maxHashInt)
-		val.Abs(val)
-	}
-
-	return (*randomToken)(val)
-}
-
-func (p randomPartitioner) ParseString(str string) token {
-	val := new(big.Int)
-	val.SetString(str, 10)
-	return (*randomToken)(val)
-}
-
-func (r *randomToken) String() string {
-	return (*big.Int)(r).String()
-}
-
-func (r *randomToken) Less(token token) bool {
-	return -1 == (*big.Int)(r).Cmp((*big.Int)(token.(*randomToken)))
-}
-
 type hostToken struct {
-	token token
+	token internal.Token
 	host  *HostInfo
 }
 
@@ -153,7 +49,7 @@ func (ht hostToken) String() string {
 
 // a data structure for organizing the relationship between tokens and hosts
 type tokenRing struct {
-	partitioner partitioner
+	partitioner internal.Partitioner
 
 	// tokens map token range to primary replica.
 	// The elements in tokens are sorted by token ascending.
@@ -171,11 +67,11 @@ func newTokenRing(partitioner string, hosts []*HostInfo) (*tokenRing, error) {
 	}
 
 	if strings.HasSuffix(partitioner, "Murmur3Partitioner") {
-		tokenRing.partitioner = murmur3Partitioner{}
+		tokenRing.partitioner = internal.Murmur3Partitioner{}
 	} else if strings.HasSuffix(partitioner, "OrderedPartitioner") {
-		tokenRing.partitioner = orderedPartitioner{}
+		tokenRing.partitioner = internal.OrderedPartitioner{}
 	} else if strings.HasSuffix(partitioner, "RandomPartitioner") {
-		tokenRing.partitioner = randomPartitioner{}
+		tokenRing.partitioner = internal.RandomPartitioner{}
 	} else {
 		return nil, fmt.Errorf("unsupported partitioner '%s'", partitioner)
 	}
@@ -226,7 +122,7 @@ func (t *tokenRing) String() string {
 	return string(buf.Bytes())
 }
 
-func (t *tokenRing) GetHostForToken(token token) (host *HostInfo, endToken token) {
+func (t *tokenRing) GetHostForToken(token internal.Token) (host *HostInfo, endToken internal.Token) {
 	if t == nil || len(t.tokens) == 0 {
 		return nil, nil
 	}

@@ -32,6 +32,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gocql/gocql/internal"
+
 	"gopkg.in/inf.v0"
 )
 
@@ -176,7 +178,7 @@ func getCassandraType(name string, logger StdLogger) TypeInfo {
 			Elem:       getCassandraType(strings.TrimPrefix(name[:len(name)-1], "list<"), logger),
 		}
 	} else if strings.HasPrefix(name, "map<") {
-		names := splitCompositeTypes(strings.TrimPrefix(name[:len(name)-1], "map<"))
+		names := internal.SplitCompositeTypes(strings.TrimPrefix(name[:len(name)-1], "map<"))
 		if len(names) != 2 {
 			logger.Printf("Error parsing map type, it has %d subelements, expecting 2\n", len(names))
 			return NativeType{
@@ -189,7 +191,7 @@ func getCassandraType(name string, logger StdLogger) TypeInfo {
 			Elem:       getCassandraType(names[1], logger),
 		}
 	} else if strings.HasPrefix(name, "tuple<") {
-		names := splitCompositeTypes(strings.TrimPrefix(name[:len(name)-1], "tuple<"))
+		names := internal.SplitCompositeTypes(strings.TrimPrefix(name[:len(name)-1], "tuple<"))
 		types := make([]TypeInfo, len(names))
 
 		for i, name := range names {
@@ -205,34 +207,6 @@ func getCassandraType(name string, logger StdLogger) TypeInfo {
 			typ: getCassandraBaseType(name),
 		}
 	}
-}
-
-func splitCompositeTypes(name string) []string {
-	if !strings.Contains(name, "<") {
-		return strings.Split(name, ", ")
-	}
-	var parts []string
-	lessCount := 0
-	segment := ""
-	for _, char := range name {
-		if char == ',' && lessCount == 0 {
-			if segment != "" {
-				parts = append(parts, strings.TrimSpace(segment))
-			}
-			segment = ""
-			continue
-		}
-		segment += string(char)
-		if char == '<' {
-			lessCount++
-		} else if char == '>' {
-			lessCount--
-		}
-	}
-	if segment != "" {
-		parts = append(parts, strings.TrimSpace(segment))
-	}
-	return parts
 }
 
 func apacheToCassandraType(t string) string {
@@ -449,12 +423,6 @@ func (iter *Iter) MapScan(m map[string]interface{}) bool {
 		return true
 	}
 	return false
-}
-
-func copyBytes(p []byte) []byte {
-	b := make([]byte, len(p))
-	copy(b, p)
-	return b
 }
 
 var failDNS = false
