@@ -32,6 +32,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/stretchr/testify/require"
 	"io"
 	"math"
 	"math/big"
@@ -1585,7 +1586,7 @@ func TestQueryInfo(t *testing.T) {
 	defer session.Close()
 
 	conn := getRandomConn(t, session)
-	info, err := conn.prepareStatement(context.Background(), "SELECT release_version, host_id FROM system.local WHERE key = ?", nil)
+	info, err := conn.prepareStatement(context.Background(), "SELECT release_version, host_id FROM system.local WHERE key = ?", nil, conn.currentKeyspace)
 
 	if err != nil {
 		t.Fatalf("Failed to execute query for preparing statement: %v", err)
@@ -2660,7 +2661,7 @@ func TestRoutingKey(t *testing.T) {
 		t.Fatalf("failed to create table with error '%v'", err)
 	}
 
-	routingKeyInfo, err := session.routingKeyInfo(context.Background(), "SELECT * FROM test_single_routing_key WHERE second_id=? AND first_id=?")
+	routingKeyInfo, err := session.routingKeyInfo(context.Background(), "SELECT * FROM test_single_routing_key WHERE second_id=? AND first_id=?", "")
 	if err != nil {
 		t.Fatalf("failed to get routing key info due to error: %v", err)
 	}
@@ -2684,7 +2685,7 @@ func TestRoutingKey(t *testing.T) {
 	}
 
 	// verify the cache is working
-	routingKeyInfo, err = session.routingKeyInfo(context.Background(), "SELECT * FROM test_single_routing_key WHERE second_id=? AND first_id=?")
+	routingKeyInfo, err = session.routingKeyInfo(context.Background(), "SELECT * FROM test_single_routing_key WHERE second_id=? AND first_id=?", "")
 	if err != nil {
 		t.Fatalf("failed to get routing key info due to error: %v", err)
 	}
@@ -2718,7 +2719,7 @@ func TestRoutingKey(t *testing.T) {
 		t.Errorf("Expected routing key %v but was %v", expectedRoutingKey, routingKey)
 	}
 
-	routingKeyInfo, err = session.routingKeyInfo(context.Background(), "SELECT * FROM test_composite_routing_key WHERE second_id=? AND first_id=?")
+	routingKeyInfo, err = session.routingKeyInfo(context.Background(), "SELECT * FROM test_composite_routing_key WHERE second_id=? AND first_id=?", "")
 	if err != nil {
 		t.Fatalf("failed to get routing key info due to error: %v", err)
 	}
@@ -3346,4 +3347,461 @@ func TestQuery_NamedValues(t *testing.T) {
 	if err := session.Query("SELECT VALUE from gocql_test.named_query WHERE id = :id", NamedValue("id", 1)).Scan(&value); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func TestQuery_WithNowInSeconds(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+
+	if session.cfg.ProtoVersion < protoVersion5 {
+		t.Skip("Query now in seconds are only available on protocol >= 5")
+	}
+
+	if err := createTable(session, `CREATE TABLE IF NOT EXISTS query_now_in_seconds (id int primary key, val text)`); err != nil {
+		t.Fatal(err)
+	}
+
+	err := session.Query("INSERT INTO query_now_in_seconds (id, val) VALUES (?, ?) USING TTL 20", 1, "val").
+		WithNowInSeconds(int(0)).
+		Exec()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var remainingTTL int
+	err = session.Query(`SELECT TTL(val) FROM query_now_in_seconds WHERE id = ?`, 1).
+		WithNowInSeconds(10).
+		Scan(&remainingTTL)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	require.Equal(t, remainingTTL, 10)
+}
+
+func TestQuery_SetKeyspace(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+
+	if session.cfg.ProtoVersion < protoVersion5 {
+		t.Skip("keyspace for QUERY message is not supported in protocol < 5")
+	}
+
+	const keyspaceStmt = `
+		CREATE KEYSPACE IF NOT EXISTS gocql_query_keyspace_override_test 
+		WITH replication = {
+			'class': 'SimpleStrategy', 
+			'replication_factor': '1'
+		};
+`
+
+	err := session.Query(keyspaceStmt).Exec()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = createTable(session, "CREATE TABLE IF NOT EXISTS gocql_query_keyspace_override_test.query_keyspace(id int, value text, PRIMARY KEY (id))")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	expectedID := 1
+	expectedText := "text"
+
+	// Testing PREPARE message
+	err = session.Query("INSERT INTO gocql_query_keyspace_override_test.query_keyspace (id, value) VALUES (?, ?)", expectedID, expectedText).Exec()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var (
+		id   int
+		text string
+	)
+
+	q := session.Query("SELECT * FROM gocql_query_keyspace_override_test.query_keyspace").
+		SetKeyspace("gocql_query_keyspace_override_test")
+	err = q.Scan(&id, &text)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	require.Equal(t, expectedID, id)
+	require.Equal(t, expectedText, text)
+
+	// Testing QUERY message
+	id = 0
+	text = ""
+
+	q = session.Query("SELECT * FROM gocql_query_keyspace_override_test.query_keyspace").
+		SetKeyspace("gocql_query_keyspace_override_test")
+	q.skipPrepare = true
+	err = q.Scan(&id, &text)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	require.Equal(t, expectedID, id)
+	require.Equal(t, expectedText, text)
+}
+
+func TestLargeSizeQuery(t *testing.T) {
+	// TestLargeSizeQuery runs a query bigger than the max allowed size of the payload of a frame,
+	// so it should be sent as 2 different frames where each contains a self-contained bit set to zero.
+
+	session := createSession(t)
+	defer session.Close()
+
+	if err := createTable(session, "CREATE TABLE IF NOT EXISTS gocql_test.large_size_query(id int, text_col text, PRIMARY KEY (id))"); err != nil {
+		t.Fatal(err)
+	}
+
+	longString := strings.Repeat("a", 500_000)
+
+	err := session.Query("INSERT INTO gocql_test.large_size_query (id, text_col) VALUES (?, ?)", "1", longString).Exec()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var result string
+	err = session.Query("SELECT text_col FROM gocql_test.large_size_query").Scan(&result)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	require.Equal(t, longString, result)
+}
+
+func TestQueryCompressionNotWorthIt(t *testing.T) {
+	// TestQueryCompressionNotWorthIt runs a query that is not likely to be compressed efficiently
+	// (uncompressed payload size > compressed payload size).
+	// So, it should send a Compressed Frame where:
+	// 	1. Compressed length is set to the length of the uncompressed payload;
+	//	2. Uncompressed length is set to zero;
+	//	3. Payload is the uncompressed payload.
+
+	session := createSession(t)
+	defer session.Close()
+
+	if err := createTable(session, "CREATE TABLE IF NOT EXISTS gocql_test.compression_now_worth_it(id int, text_col text, PRIMARY KEY (id))"); err != nil {
+		t.Fatal(err)
+	}
+
+	str := "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890!@#$%^&*()_+"
+	err := session.Query("INSERT INTO gocql_test.large_size_query (id, text_col) VALUES (?, ?)", "1", str).Exec()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var result string
+	err = session.Query("SELECT text_col FROM gocql_test.large_size_query").Scan(&result)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	require.Equal(t, str, result)
+}
+
+func TestPrepareExecuteMetadataChangedFlag(t *testing.T) {
+	// This test ensures that the whole Metadata_changed flow
+	// is handled properly.
+	//
+	// To trigger C* to return Metadata_changed we should do:
+	// 1. Create a table
+	// 2. Prepare stmt which uses the created table
+	// 3. Change the table schema in order to affect prepared stmt (e.g. add a column)
+	// 4. Execute prepared stmt. As a result C* should return RESULT/ROWS response with
+	//    Metadata_changed flag, new metadata id and updated metadata resultset.
+	//
+	// The driver should handle this by updating its prepared statement inside the cache
+	// when it receives RESULT/ROWS with Metadata_changed flag
+	session := createSession(t)
+	defer session.Close()
+
+	if session.cfg.ProtoVersion < protoVersion5 {
+		t.Skip("Metadata_changed mechanism is only available in proto > 4")
+	}
+
+	if err := createTable(session, "CREATE TABLE IF NOT EXISTS gocql_test.metadata_changed(id int, PRIMARY KEY (id))"); err != nil {
+		t.Fatal(err)
+	}
+
+	type record struct {
+		id     int
+		newCol int
+	}
+
+	firstRecord := record{
+		id: 1,
+	}
+	err := session.Query("INSERT INTO gocql_test.metadata_changed (id) VALUES (?)", firstRecord.id).Exec()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// We have to specify conn for all queries to ensure that
+	// all queries are running on the same node
+	conn := session.getConn()
+
+	const selectStmt = "SELECT * FROM gocql_test.metadata_changed"
+	queryBeforeTableAltering := session.Query(selectStmt)
+	queryBeforeTableAltering.conn = conn
+	row := make(map[string]interface{})
+	err = queryBeforeTableAltering.MapScan(row)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	require.Len(t, row, 1, "Expected to retrieve a single column")
+	require.Equal(t, 1, row["id"])
+
+	stmtCacheKey := session.stmtsLRU.keyFor(conn.host.HostID(), conn.currentKeyspace, queryBeforeTableAltering.stmt)
+	inflight, _ := session.stmtsLRU.get(stmtCacheKey)
+	preparedStatementBeforeTableAltering := inflight.preparedStatment
+
+	// Changing table schema in order to cause C* to return RESULT/ROWS Metadata_changed
+	alteringTableQuery := session.Query("ALTER TABLE gocql_test.metadata_changed ADD new_col int")
+	alteringTableQuery.conn = conn
+	err = alteringTableQuery.Exec()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	secondRecord := record{
+		id:     2,
+		newCol: 10,
+	}
+	err = session.Query("INSERT INTO gocql_test.metadata_changed (id, new_col) VALUES (?, ?)", secondRecord.id, secondRecord.newCol).
+		Exec()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Handles result from iter and ensures integrity of the result,
+	// closes iter and handles error
+	handleRows := func(iter *Iter) {
+		t.Helper()
+
+		var scannedID int
+		var scannedNewCol *int // to perform null values
+
+		// when the driver handling null values during unmarshalling
+		// it sets to dest type its zero value, which is (*int)(nil) for this case
+		var nilIntPtr *int
+
+		// Scanning first row
+		if iter.Scan(&scannedID, &scannedNewCol) {
+			require.Equal(t, firstRecord.id, scannedID)
+			require.Equal(t, nilIntPtr, scannedNewCol)
+		}
+
+		// Scanning second row
+		if iter.Scan(&scannedID, &scannedNewCol) {
+			require.Equal(t, secondRecord.id, scannedID)
+			require.Equal(t, &secondRecord.newCol, scannedNewCol)
+		}
+
+		err := iter.Close()
+		if err != nil {
+			if errors.Is(err, context.DeadlineExceeded) {
+				t.Fatal("It is likely failed due deadlock")
+			}
+			t.Fatal(err)
+		}
+	}
+
+	// Expecting C* will return RESULT/ROWS Metadata_changed
+	// and it will be properly handled
+	queryAfterTableAltering := session.Query(selectStmt)
+	queryAfterTableAltering.conn = conn
+	iter := queryAfterTableAltering.Iter()
+	handleRows(iter)
+
+	// Ensuring if cache contains updated prepared statement
+	inflight, _ = session.stmtsLRU.get(stmtCacheKey)
+	preparedStatementAfterTableAltering := inflight.preparedStatment
+	require.NotEqual(t, preparedStatementBeforeTableAltering.resultMetadataID, preparedStatementAfterTableAltering.resultMetadataID)
+	require.NotEqual(t, preparedStatementBeforeTableAltering.response, preparedStatementAfterTableAltering.response)
+
+	// FORCE SEND OLD RESULT METADATA ID (https://issues.apache.org/jira/browse/CASSANDRA-20028)
+	closedCh := make(chan struct{})
+	close(closedCh)
+	session.stmtsLRU.add(stmtCacheKey, &inflightPrepare{
+		done:             closedCh,
+		err:              nil,
+		preparedStatment: preparedStatementBeforeTableAltering,
+	})
+
+	// Running query with timeout to ensure there is no deadlocks.
+	// However, it doesn't 100% proves that there is a deadlock...
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*30)
+	defer cancel()
+
+	queryAfterTableAltering2 := session.Query(selectStmt).WithContext(ctx)
+	queryAfterTableAltering2.conn = conn
+	iter = queryAfterTableAltering2.Iter()
+	handleRows(iter)
+	err = iter.Close()
+
+	inflight, _ = session.stmtsLRU.get(stmtCacheKey)
+	preparedStatementAfterTableAltering2 := inflight.preparedStatment
+	require.NotEqual(t, preparedStatementBeforeTableAltering.resultMetadataID, preparedStatementAfterTableAltering2.resultMetadataID)
+	require.NotEqual(t, preparedStatementBeforeTableAltering.response, preparedStatementAfterTableAltering2.response)
+
+	require.Equal(t, preparedStatementAfterTableAltering.resultMetadataID, preparedStatementAfterTableAltering2.resultMetadataID)
+	require.NotEqual(t, preparedStatementAfterTableAltering.response, preparedStatementAfterTableAltering2.response) // METADATA_CHANGED flag
+	require.True(t, preparedStatementAfterTableAltering2.response.flags&flagMetaDataChanged != 0)
+
+	// Executing prepared stmt and expecting that C* won't return
+	// Metadata_changed because the table is not being changed.
+	queryAfterTableAltering3 := session.Query(selectStmt).WithContext(ctx)
+	queryAfterTableAltering3.conn = conn
+	iter = queryAfterTableAltering2.Iter()
+	handleRows(iter)
+
+	// Ensuring metadata of prepared stmt is not changed
+	inflight, _ = session.stmtsLRU.get(stmtCacheKey)
+	preparedStatementAfterTableAltering3 := inflight.preparedStatment
+	require.Equal(t, preparedStatementAfterTableAltering2.resultMetadataID, preparedStatementAfterTableAltering3.resultMetadataID)
+	require.Equal(t, preparedStatementAfterTableAltering2.response, preparedStatementAfterTableAltering3.response)
+}
+
+func TestStmtCacheUsesOverriddenKeyspace(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+
+	if session.cfg.ProtoVersion < protoVersion5 {
+		t.Skip("This tests only runs on proto > 4 due SetKeyspace availability")
+	}
+
+	const createKeyspaceStmt = `CREATE KEYSPACE IF NOT EXISTS %s
+	WITH replication = {
+		'class' : 'SimpleStrategy',
+			'replication_factor' : 1
+	}`
+
+	err := createTable(session, fmt.Sprintf(createKeyspaceStmt, "gocql_test_stmt_cache"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = createTable(session, "CREATE TABLE IF NOT EXISTS gocql_test.stmt_cache_uses_overridden_ks(id int, PRIMARY KEY (id))")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = createTable(session, "CREATE TABLE IF NOT EXISTS gocql_test_stmt_cache.stmt_cache_uses_overridden_ks(id int, PRIMARY KEY (id))")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	const insertQuery = "INSERT INTO stmt_cache_uses_overridden_ks (id) VALUES (?)"
+
+	// Inserting data via Batch to ensure that batches
+	// properly accounts for keyspace overriding
+	b1 := session.NewBatch(LoggedBatch)
+	b1.Query(insertQuery, 1)
+	err = session.ExecuteBatch(b1)
+	require.NoError(t, err)
+
+	b2 := session.NewBatch(LoggedBatch)
+	b2.SetKeyspace("gocql_test_stmt_cache")
+	b2.Query(insertQuery, 2)
+	err = session.ExecuteBatch(b2)
+	require.NoError(t, err)
+
+	var scannedID int
+
+	const selectStmt = "SELECT * FROM stmt_cache_uses_overridden_ks"
+
+	// By default in our test suite session uses gocql_test ks
+	err = session.Query(selectStmt).Scan(&scannedID)
+	require.NoError(t, err)
+	require.Equal(t, 1, scannedID)
+
+	scannedID = 0
+	err = session.Query(selectStmt).SetKeyspace("gocql_test_stmt_cache").Scan(&scannedID)
+	require.NoError(t, err)
+	require.Equal(t, 2, scannedID)
+
+	session.Query("DROP KEYSPACE IF EXISTS gocql_test_stmt_cache").Exec()
+}
+
+func TestRoutingKeyCacheUsesOverriddenKeyspace(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+
+	if session.cfg.ProtoVersion < protoVersion5 {
+		t.Skip("This tests only runs on proto > 4 due SetKeyspace availability")
+	}
+
+	const createKeyspaceStmt = `CREATE KEYSPACE IF NOT EXISTS %s
+	WITH replication = {
+		'class' : 'SimpleStrategy',
+			'replication_factor' : 1
+	}`
+
+	err := createTable(session, fmt.Sprintf(createKeyspaceStmt, "gocql_test_routing_key_cache"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = createTable(session, "CREATE TABLE IF NOT EXISTS gocql_test.routing_key_cache_uses_overridden_ks(id int, PRIMARY KEY (id))")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = createTable(session, "CREATE TABLE IF NOT EXISTS gocql_test_routing_key_cache.routing_key_cache_uses_overridden_ks(id int, PRIMARY KEY (id))")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	getRoutingKeyInfo := func(key string) *routingKeyInfo {
+		t.Helper()
+		session.routingKeyInfoCache.mu.Lock()
+		value, _ := session.routingKeyInfoCache.lru.Get(key)
+		session.routingKeyInfoCache.mu.Unlock()
+
+		inflight := value.(*inflightCachedEntry)
+		return inflight.value.(*routingKeyInfo)
+	}
+
+	const insertQuery = "INSERT INTO routing_key_cache_uses_overridden_ks (id) VALUES (?)"
+
+	// Running batch in default ks gocql_test
+	b1 := session.NewBatch(LoggedBatch)
+	b1.Query(insertQuery, 1)
+	_, err = b1.GetRoutingKey()
+	require.NoError(t, err)
+
+	// Ensuring that the cache contains the query with default ks
+	routingKeyInfo1 := getRoutingKeyInfo("gocql_test" + b1.Entries[0].Stmt)
+	require.Equal(t, "gocql_test", routingKeyInfo1.keyspace)
+
+	// Running batch in gocql_test_routing_key_cache ks
+	b2 := session.NewBatch(LoggedBatch)
+	b2.SetKeyspace("gocql_test_routing_key_cache")
+	b2.Query(insertQuery, 2)
+	_, err = b2.GetRoutingKey()
+	require.NoError(t, err)
+
+	// Ensuring that the cache contains the query with gocql_test_routing_key_cache ks
+	routingKeyInfo2 := getRoutingKeyInfo("gocql_test_routing_key_cache" + b2.Entries[0].Stmt)
+	require.Equal(t, "gocql_test_routing_key_cache", routingKeyInfo2.keyspace)
+
+	const selectStmt = "SELECT * FROM routing_key_cache_uses_overridden_ks WHERE id=?"
+
+	// Running query in default ks gocql_test
+	q1 := session.Query(selectStmt, 1)
+	_, err = q1.GetRoutingKey()
+	require.NoError(t, err)
+	require.Equal(t, "gocql_test", q1.routingInfo.keyspace)
+
+	// Running query in gocql_test_routing_key_cache ks
+	q2 := session.Query(selectStmt, 1)
+	_, err = q2.SetKeyspace("gocql_test_routing_key_cache").GetRoutingKey()
+	require.NoError(t, err)
+	require.Equal(t, "gocql_test_routing_key_cache", q2.routingInfo.keyspace)
+
+	session.Query("DROP KEYSPACE IF EXISTS gocql_test_routing_key_cache").Exec()
 }

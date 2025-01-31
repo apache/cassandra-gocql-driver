@@ -24,29 +24,24 @@
 
 package gocql
 
-import (
-	"github.com/golang/snappy"
-)
-
 type Compressor interface {
 	Name() string
-	Encode(data []byte) ([]byte, error)
-	Decode(data []byte) ([]byte, error)
-}
 
-// SnappyCompressor implements the Compressor interface and can be used to
-// compress incoming and outgoing frames. The snappy compression algorithm
-// aims for very high speeds and reasonable compression.
-type SnappyCompressor struct{}
+	// AppendCompressedWithLength compresses src bytes, appends the length of the compressed bytes to dst
+	// and then appends the compressed bytes to dst.
+	// It returns a new byte slice that is the result of the append operation.
+	AppendCompressedWithLength(dst, src []byte) ([]byte, error)
 
-func (s SnappyCompressor) Name() string {
-	return "snappy"
-}
+	// AppendDecompressedWithLength reads the length of the decompressed bytes from src,
+	// decompressed bytes from src and appends the decompressed bytes to dst.
+	// It returns a new byte slice that is the result of the append operation.
+	AppendDecompressedWithLength(dst, src []byte) ([]byte, error)
 
-func (s SnappyCompressor) Encode(data []byte) ([]byte, error) {
-	return snappy.Encode(nil, data), nil
-}
+	// AppendCompressed compresses src bytes and appends the compressed bytes to dst.
+	// It returns a new byte slice that is the result of the append operation.
+	AppendCompressed(dst, src []byte) ([]byte, error)
 
-func (s SnappyCompressor) Decode(data []byte) ([]byte, error) {
-	return snappy.Decode(nil, data)
+	// AppendDecompressed decompresses bytes from src and appends the decompressed bytes to dst.
+	// It returns a new byte slice that is the result of the append operation.
+	AppendDecompressed(dst, src []byte, decompressedLength uint32) ([]byte, error)
 }
