@@ -29,6 +29,7 @@ package gocql
 
 import (
 	"errors"
+	"fmt"
 	"net"
 	"sync"
 	"sync/atomic"
@@ -41,9 +42,13 @@ func TestUnmarshalCassVersion(t *testing.T) {
 		data    string
 		version cassVersion
 	}{
-		{"3.2", cassVersion{3, 2, 0}},
-		{"2.10.1-SNAPSHOT", cassVersion{2, 10, 1}},
-		{"1.2.3", cassVersion{1, 2, 3}},
+		{"3.2", cassVersion{3, 2, 0, ""}},
+		{"2.10.1-SNAPSHOT", cassVersion{2, 10, 1, ""}},
+		{"1.2.3", cassVersion{1, 2, 3, ""}},
+		{"4.0-rc2", cassVersion{4, 0, 0, "rc2"}},
+		{"4.3.2-rc1", cassVersion{4, 3, 2, "rc1"}},
+		{"4.3.2-rc1-qualifier1", cassVersion{4, 3, 2, "rc1-qualifier1"}},
+		{"4.3-rc1-qualifier1", cassVersion{4, 3, 0, "rc1-qualifier1"}},
 	}
 
 	for i, test := range tests {
@@ -53,6 +58,7 @@ func TestUnmarshalCassVersion(t *testing.T) {
 		} else if *v != test.version {
 			t.Errorf("%d: expected %#+v got %#+v", i, test.version, *v)
 		}
+		fmt.Println(v.String())
 	}
 }
 
@@ -60,14 +66,17 @@ func TestCassVersionBefore(t *testing.T) {
 	tests := [...]struct {
 		version             cassVersion
 		major, minor, patch int
+		Qualifier           string
 	}{
-		{cassVersion{1, 0, 0}, 0, 0, 0},
-		{cassVersion{0, 1, 0}, 0, 0, 0},
-		{cassVersion{0, 0, 1}, 0, 0, 0},
+		{cassVersion{1, 0, 0, ""}, 0, 0, 0, ""},
+		{cassVersion{0, 1, 0, ""}, 0, 0, 0, ""},
+		{cassVersion{0, 0, 1, ""}, 0, 0, 0, ""},
 
-		{cassVersion{1, 0, 0}, 0, 1, 0},
-		{cassVersion{0, 1, 0}, 0, 0, 1},
-		{cassVersion{4, 1, 0}, 3, 1, 2},
+		{cassVersion{1, 0, 0, ""}, 0, 1, 0, ""},
+		{cassVersion{0, 1, 0, ""}, 0, 0, 1, ""},
+		{cassVersion{4, 1, 0, ""}, 3, 1, 2, ""},
+
+		{cassVersion{4, 1, 0, ""}, 3, 1, 2, ""},
 	}
 
 	for i, test := range tests {

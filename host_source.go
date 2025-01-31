@@ -58,6 +58,7 @@ const (
 
 type cassVersion struct {
 	Major, Minor, Patch int
+	Qualifier           string
 }
 
 func (c *cassVersion) Set(v string) error {
@@ -89,13 +90,30 @@ func (c *cassVersion) unmarshal(data []byte) error {
 
 	c.Minor, err = strconv.Atoi(v[1])
 	if err != nil {
-		return fmt.Errorf("invalid minor version %v: %v", v[1], err)
+		vMinor := strings.Split(v[1], "-")
+		if len(vMinor) < 2 {
+			return fmt.Errorf("invalid minor version %v: %v", v[1], err)
+		}
+		c.Minor, err = strconv.Atoi(vMinor[0])
+		if err != nil {
+			return fmt.Errorf("invalid minor version %v: %v", v[1], err)
+		}
+		c.Qualifier = v[1][strings.Index(v[1], "-")+1:]
+		return nil
 	}
 
 	if len(v) > 2 {
 		c.Patch, err = strconv.Atoi(v[2])
 		if err != nil {
-			return fmt.Errorf("invalid patch version %v: %v", v[2], err)
+			vPatch := strings.Split(v[2], "-")
+			if len(vPatch) < 2 {
+				return fmt.Errorf("invalid patch version %v: %v", v[2], err)
+			}
+			c.Patch, err = strconv.Atoi(vPatch[0])
+			if err != nil {
+				return fmt.Errorf("invalid patch version %v: %v", v[2], err)
+			}
+			c.Qualifier = v[2][strings.Index(v[2], "-")+1:]
 		}
 	}
 
@@ -122,6 +140,9 @@ func (c cassVersion) AtLeast(major, minor, patch int) bool {
 }
 
 func (c cassVersion) String() string {
+	if c.Qualifier != "" {
+		return fmt.Sprintf("%d.%d.%d-%v", c.Major, c.Minor, c.Patch, c.Qualifier)
+	}
 	return fmt.Sprintf("v%d.%d.%d", c.Major, c.Minor, c.Patch)
 }
 

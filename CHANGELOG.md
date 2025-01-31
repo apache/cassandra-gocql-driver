@@ -34,6 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Standardized spelling of datacenter (CASSGO-35)
 
 ### Fixed
+- Cassandra version unmarshal fix (CASSGO-49)
 
 - Retry policy now takes into account query idempotency (CASSGO-27)
 
