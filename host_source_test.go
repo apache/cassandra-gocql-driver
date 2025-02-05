@@ -307,6 +307,32 @@ func TestRefreshDebouncer_EventsAfterRefreshNow(t *testing.T) {
 	}
 }
 
+// https://github.com/gocql/gocql/issues/1752
+func TestRefreshDebouncer_DeadlockOnStop(t *testing.T) {
+	// there's no way to guarantee this bug manifests because it depends on which `case` is picked from the `select`
+	// with 4 iterations of this test the deadlock would be hit pretty consistently
+	const iterations = 4
+	for i := 0; i < iterations; i++ {
+		refreshCalledCh := make(chan int, 5)
+		refreshDuration := 500 * time.Millisecond
+		fn := func() error {
+			refreshCalledCh <- 0
+			time.Sleep(refreshDuration)
+			return nil
+		}
+		d := newRefreshDebouncer(50*time.Millisecond, fn)
+		timeBeforeRefresh := time.Now()
+		_ = d.refreshNow()
+		<-refreshCalledCh
+		d.debounce()
+		d.stop()
+		timeAfterRefresh := time.Now()
+		if timeAfterRefresh.Sub(timeBeforeRefresh) < refreshDuration {
+			t.Errorf("refresh debouncer stop() didn't wait until flusher stopped")
+		}
+	}
+}
+
 func TestErrorBroadcaster_MultipleListeners(t *testing.T) {
 	b := newErrorBroadcaster()
 	defer b.stop()
