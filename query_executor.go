@@ -33,7 +33,7 @@ import (
 type ExecutableQuery interface {
 	borrowForExecution()    // Used to ensure that the query stays alive for lifetime of a particular execution goroutine.
 	releaseAfterExecution() // Used when a goroutine finishes its execution attempts, either with ok result or an error.
-	execute(ctx context.Context, conn *Conn) *Iter
+	execute(ctx context.Context, conn *Conn, iter *Iter) *Iter
 	attempt(keyspace string, end, start time.Time, iter *Iter, host *HostInfo)
 	retryPolicy() RetryPolicy
 	speculativeExecutionPolicy() SpeculativeExecutionPolicy
@@ -43,8 +43,11 @@ type ExecutableQuery interface {
 	IsIdempotent() bool
 
 	withContext(context.Context) ExecutableQuery
+	Clone() ExecutableQuery
 
-	RetryableQuery
+	SetConsistency(c Consistency)
+	GetConsistency() Consistency
+	Context() context.Context
 }
 
 type queryExecutor struct {
@@ -52,9 +55,9 @@ type queryExecutor struct {
 	policy HostSelectionPolicy
 }
 
-func (q *queryExecutor) attemptQuery(ctx context.Context, qry ExecutableQuery, conn *Conn) *Iter {
+func (q *queryExecutor) attemptQuery(ctx context.Context, qry ExecutableQuery, it *Iter, conn *Conn) *Iter {
 	start := time.Now()
-	iter := qry.execute(ctx, conn)
+	iter := qry.execute(ctx, conn, it)
 	end := time.Now()
 
 	qry.attempt(q.pool.keyspace, end, start, iter, conn.host)
@@ -67,13 +70,14 @@ func (q *queryExecutor) speculate(ctx context.Context, qry ExecutableQuery, sp S
 	ticker := time.NewTicker(sp.Delay())
 	defer ticker.Stop()
 
+	qry = qry.Clone()
 	for i := 0; i < sp.Attempts(); i++ {
 		select {
 		case <-ticker.C:
 			qry.borrowForExecution() // ensure liveness in case of executing Query to prevent races with Query.Release().
-			go q.run(ctx, qry, hostIter, results)
+			go q.run(ctx, qry, nil, hostIter, results)
 		case <-ctx.Done():
-			return &Iter{err: ctx.Err()}
+			return NewIterErr(qry, ctx.Err())
 		case iter := <-results:
 			return iter
 		}
@@ -82,14 +86,14 @@ func (q *queryExecutor) speculate(ctx context.Context, qry ExecutableQuery, sp S
 	return nil
 }
 
-func (q *queryExecutor) executeQuery(qry ExecutableQuery) (*Iter, error) {
+func (q *queryExecutor) executeQuery(qry ExecutableQuery, it *Iter) (*Iter, error) {
 	hostIter := q.policy.Pick(qry)
 
 	// check if the query is not marked as idempotent, if
 	// it is, we force the policy to NonSpeculative
 	sp := qry.speculativeExecutionPolicy()
 	if !qry.IsIdempotent() || sp.Attempts() == 0 {
-		return q.do(qry.Context(), qry, hostIter), nil
+		return q.do(qry.Context(), qry, it, hostIter), nil
 	}
 
 	// When speculative execution is enabled, we could be accessing the host iterator from multiple goroutines below.
@@ -109,7 +113,7 @@ func (q *queryExecutor) executeQuery(qry ExecutableQuery) (*Iter, error) {
 
 	// Launch the main execution
 	qry.borrowForExecution() // ensure liveness in case of executing Query to prevent races with Query.Release().
-	go q.run(ctx, qry, hostIter, results)
+	go q.run(ctx, qry, it, hostIter, results)
 
 	// The speculative executions are launched _in addition_ to the main
 	// execution, on a timer. So Speculation{2} would make 3 executions running
@@ -122,11 +126,11 @@ func (q *queryExecutor) executeQuery(qry ExecutableQuery) (*Iter, error) {
 	case iter := <-results:
 		return iter, nil
 	case <-ctx.Done():
-		return &Iter{err: ctx.Err()}, nil
+		return NewIterErr(qry, ctx.Err()), nil
 	}
 }
 
-func (q *queryExecutor) do(ctx context.Context, qry ExecutableQuery, hostIter NextHost) *Iter {
+func (q *queryExecutor) do(ctx context.Context, qry ExecutableQuery, it *Iter, hostIter NextHost) *Iter {
 	selectedHost := hostIter()
 	rt := qry.retryPolicy()
 
@@ -151,12 +155,14 @@ func (q *queryExecutor) do(ctx context.Context, qry ExecutableQuery, hostIter Ne
 			continue
 		}
 
-		iter = q.attemptQuery(ctx, qry, conn)
+		ni := q.attemptQuery(ctx, qry, it, conn)
+		ni.merge(iter)
+		iter = ni
 		iter.host = selectedHost.Info()
 		// Update host
 		switch iter.err {
 		case context.Canceled, context.DeadlineExceeded, ErrNotFound:
-			// those errors represents logical errors, they should not count
+			// those errors represent logical errors, they should not count
 			// toward removing a node from the pool
 			selectedHost.Mark(nil)
 			return iter
@@ -170,11 +176,12 @@ func (q *queryExecutor) do(ctx context.Context, qry ExecutableQuery, hostIter Ne
 			return iter
 		}
 
-		attemptsReached := !rt.Attempt(qry)
+		// clone to make the query attributes updatable by retry policy and original immutable
+		iter.qry = qry.Clone()
+		attemptsReached := !rt.Attempt(iter)
 		retryType := rt.GetRetryType(iter.err)
 
 		var stopRetries bool
-
 		// If query is unsuccessful, check the error with RetryPolicy to retry
 		switch retryType {
 		case Retry:
@@ -189,27 +196,28 @@ func (q *queryExecutor) do(ctx context.Context, qry ExecutableQuery, hostIter Ne
 			stopRetries = true
 		default:
 			// Undefined? Return nil and error, this will panic in the requester
-			return &Iter{err: ErrUnknownRetryType}
+			return NewIterErrFromIter(qry, ErrUnknownRetryType, iter)
 		}
 
 		if stopRetries || attemptsReached {
 			return iter
 		}
 
+		qry = iter.qry
 		lastErr = iter.err
 		continue
 	}
 
 	if lastErr != nil {
-		return &Iter{err: lastErr}
+		return NewIterErrFromIter(qry, lastErr, iter)
 	}
 
-	return &Iter{err: ErrNoConnections}
+	return NewIterErrFromIter(qry, ErrNoConnections, iter)
 }
 
-func (q *queryExecutor) run(ctx context.Context, qry ExecutableQuery, hostIter NextHost, results chan<- *Iter) {
+func (q *queryExecutor) run(ctx context.Context, qry ExecutableQuery, it *Iter, hostIter NextHost, results chan<- *Iter) {
 	select {
-	case results <- q.do(ctx, qry, hostIter):
+	case results <- q.do(ctx, qry, it, hostIter):
 	case <-ctx.Done():
 	}
 	qry.releaseAfterExecution()

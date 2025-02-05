@@ -116,6 +116,7 @@ func (c *cowHostList) remove(ip net.IP) bool {
 // RetryableQuery is an interface that represents a query or batch statement that
 // exposes the correct functions for the retry policy logic to evaluate correctly.
 type RetryableQuery interface {
+	GetQuery() ExecutableQuery
 	Attempts() int
 	SetConsistency(c Consistency)
 	GetConsistency() Consistency
@@ -206,6 +207,10 @@ func (e *ExponentialBackoffRetryPolicy) GetRetryType(err error) RetryType {
 	return RetryNextHost
 }
 
+func (e *ExponentialBackoffRetryPolicy) napTime(attempts int) time.Duration {
+	return getExponentialTime(e.Min, e.Max, attempts)
+}
+
 // DowngradingConsistencyRetryPolicy: Next retry will be with the next consistency level
 // provided in the slice
 //
@@ -259,10 +264,6 @@ func (d *DowngradingConsistencyRetryPolicy) GetRetryType(err error) RetryType {
 	default:
 		return RetryNextHost
 	}
-}
-
-func (e *ExponentialBackoffRetryPolicy) napTime(attempts int) time.Duration {
-	return getExponentialTime(e.Min, e.Max, attempts)
 }
 
 type HostStateNotifier interface {
