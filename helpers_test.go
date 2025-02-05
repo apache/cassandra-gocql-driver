@@ -29,8 +29,8 @@ import (
 	"testing"
 )
 
-func TestGetCassandraType_Set(t *testing.T) {
-	typ := getCassandraType("set<text>", &defaultLogger{})
+func TestGetCassandraTypeInfo_Set(t *testing.T) {
+	typ := getCassandraTypeInfo(protoVersion4, "set<text>")
 	set, ok := typ.(CollectionType)
 	if !ok {
 		t.Fatalf("expected CollectionType got %T", typ)
@@ -38,64 +38,59 @@ func TestGetCassandraType_Set(t *testing.T) {
 		t.Fatalf("expected type %v got %v", TypeSet, set.typ)
 	}
 
-	inner, ok := set.Elem.(NativeType)
+	inner, ok := set.Elem.(TypeInfo)
 	if !ok {
-		t.Fatalf("expected to get NativeType got %T", set.Elem)
-	} else if inner.typ != TypeText {
+		t.Fatalf("expected to get TypeInfo got %T", set.Elem)
+	} else if inner.Type() != TypeText {
 		t.Fatalf("expected to get %v got %v for set value", TypeText, set.typ)
 	}
 }
 
-func TestGetCassandraType(t *testing.T) {
+func TestGetCassandraTypeInfo(t *testing.T) {
 	tests := []struct {
 		input string
 		exp   TypeInfo
 	}{
 		{
 			"set<text>", CollectionType{
-				NativeType: NativeType{typ: TypeSet},
-
-				Elem: NativeType{typ: TypeText},
+				NativeType: NativeType{proto: byte(protoVersion4), typ: TypeSet},
+				Elem:       TypeText,
 			},
 		},
 		{
 			"map<text, varchar>", CollectionType{
-				NativeType: NativeType{typ: TypeMap},
+				NativeType: NativeType{proto: byte(protoVersion4), typ: TypeMap},
 
-				Key:  NativeType{typ: TypeText},
-				Elem: NativeType{typ: TypeVarchar},
+				Key:  TypeText,
+				Elem: TypeVarchar,
 			},
 		},
 		{
 			"list<int>", CollectionType{
-				NativeType: NativeType{typ: TypeList},
-				Elem:       NativeType{typ: TypeInt},
+				NativeType: NativeType{proto: byte(protoVersion4), typ: TypeList},
+				Elem:       TypeInt,
 			},
 		},
 		{
 			"tuple<int, int, text>", TupleTypeInfo{
-				NativeType: NativeType{typ: TypeTuple},
-
 				Elems: []TypeInfo{
-					NativeType{typ: TypeInt},
-					NativeType{typ: TypeInt},
-					NativeType{typ: TypeText},
+					TypeInt,
+					TypeInt,
+					TypeText,
 				},
 			},
 		},
 		{
 			"frozen<map<text, frozen<list<frozen<tuple<int, int>>>>>>", CollectionType{
-				NativeType: NativeType{typ: TypeMap},
+				NativeType: NativeType{proto: byte(protoVersion4), typ: TypeMap},
 
-				Key: NativeType{typ: TypeText},
+				Key: TypeText,
 				Elem: CollectionType{
-					NativeType: NativeType{typ: TypeList},
+					NativeType: NativeType{proto: byte(protoVersion4), typ: TypeList},
 					Elem: TupleTypeInfo{
-						NativeType: NativeType{typ: TypeTuple},
-
 						Elems: []TypeInfo{
-							NativeType{typ: TypeInt},
-							NativeType{typ: TypeInt},
+							TypeInt,
+							TypeInt,
 						},
 					},
 				},
@@ -104,50 +99,44 @@ func TestGetCassandraType(t *testing.T) {
 		{
 			"frozen<tuple<frozen<tuple<text, frozen<list<frozen<tuple<int, int>>>>>>, frozen<tuple<text, frozen<list<frozen<tuple<int, int>>>>>>,  frozen<map<text, frozen<list<frozen<tuple<int, int>>>>>>>>",
 			TupleTypeInfo{
-				NativeType: NativeType{typ: TypeTuple},
 				Elems: []TypeInfo{
 					TupleTypeInfo{
-						NativeType: NativeType{typ: TypeTuple},
 						Elems: []TypeInfo{
-							NativeType{typ: TypeText},
+							TypeText,
 							CollectionType{
-								NativeType: NativeType{typ: TypeList},
+								NativeType: NativeType{proto: byte(protoVersion4), typ: TypeList},
 								Elem: TupleTypeInfo{
-									NativeType: NativeType{typ: TypeTuple},
 									Elems: []TypeInfo{
-										NativeType{typ: TypeInt},
-										NativeType{typ: TypeInt},
+										TypeInt,
+										TypeInt,
 									},
 								},
 							},
 						},
 					},
 					TupleTypeInfo{
-						NativeType: NativeType{typ: TypeTuple},
 						Elems: []TypeInfo{
-							NativeType{typ: TypeText},
+							TypeText,
 							CollectionType{
-								NativeType: NativeType{typ: TypeList},
+								NativeType: NativeType{proto: byte(protoVersion4), typ: TypeList},
 								Elem: TupleTypeInfo{
-									NativeType: NativeType{typ: TypeTuple},
 									Elems: []TypeInfo{
-										NativeType{typ: TypeInt},
-										NativeType{typ: TypeInt},
+										TypeInt,
+										TypeInt,
 									},
 								},
 							},
 						},
 					},
 					CollectionType{
-						NativeType: NativeType{typ: TypeMap},
-						Key:        NativeType{typ: TypeText},
+						NativeType: NativeType{proto: byte(protoVersion4), typ: TypeMap},
+						Key:        TypeText,
 						Elem: CollectionType{
-							NativeType: NativeType{typ: TypeList},
+							NativeType: NativeType{proto: byte(protoVersion4), typ: TypeList},
 							Elem: TupleTypeInfo{
-								NativeType: NativeType{typ: TypeTuple},
 								Elems: []TypeInfo{
-									NativeType{typ: TypeInt},
-									NativeType{typ: TypeInt},
+									TypeInt,
+									TypeInt,
 								},
 							},
 						},
@@ -157,24 +146,18 @@ func TestGetCassandraType(t *testing.T) {
 		},
 		{
 			"frozen<tuple<frozen<tuple<int, int>>, int, frozen<tuple<int, int>>>>", TupleTypeInfo{
-				NativeType: NativeType{typ: TypeTuple},
-
 				Elems: []TypeInfo{
 					TupleTypeInfo{
-						NativeType: NativeType{typ: TypeTuple},
-
 						Elems: []TypeInfo{
-							NativeType{typ: TypeInt},
-							NativeType{typ: TypeInt},
+							TypeInt,
+							TypeInt,
 						},
 					},
-					NativeType{typ: TypeInt},
+					TypeInt,
 					TupleTypeInfo{
-						NativeType: NativeType{typ: TypeTuple},
-
 						Elems: []TypeInfo{
-							NativeType{typ: TypeInt},
-							NativeType{typ: TypeInt},
+							TypeInt,
+							TypeInt,
 						},
 					},
 				},
@@ -182,52 +165,49 @@ func TestGetCassandraType(t *testing.T) {
 		},
 		{
 			"frozen<map<frozen<tuple<int, int>>, int>>", CollectionType{
-				NativeType: NativeType{typ: TypeMap},
-
+				NativeType: NativeType{proto: byte(protoVersion4), typ: TypeMap},
 				Key: TupleTypeInfo{
-					NativeType: NativeType{typ: TypeTuple},
-
 					Elems: []TypeInfo{
-						NativeType{typ: TypeInt},
-						NativeType{typ: TypeInt},
+						TypeInt,
+						TypeInt,
 					},
 				},
-				Elem: NativeType{typ: TypeInt},
+				Elem: TypeInt,
 			},
 		},
 		{
 			"set<smallint>", CollectionType{
-				NativeType: NativeType{typ: TypeSet},
-				Elem:       NativeType{typ: TypeSmallInt},
+				NativeType: NativeType{proto: byte(protoVersion4), typ: TypeSet},
+				Elem:       TypeSmallInt,
 			},
 		},
 		{
 			"list<tinyint>", CollectionType{
-				NativeType: NativeType{typ: TypeList},
-				Elem:       NativeType{typ: TypeTinyInt},
+				NativeType: NativeType{proto: byte(protoVersion4), typ: TypeList},
+				Elem:       TypeTinyInt,
 			},
 		},
-		{"smallint", NativeType{typ: TypeSmallInt}},
-		{"tinyint", NativeType{typ: TypeTinyInt}},
-		{"duration", NativeType{typ: TypeDuration}},
-		{"date", NativeType{typ: TypeDate}},
+		{"smallint", TypeSmallInt},
+		{"tinyint", TypeTinyInt},
+		{"duration", TypeDuration},
+		{"date", TypeDate},
 		{
 			"list<date>", CollectionType{
-				NativeType: NativeType{typ: TypeList},
-				Elem:       NativeType{typ: TypeDate},
+				NativeType: NativeType{proto: byte(protoVersion4), typ: TypeList},
+				Elem:       TypeDate,
 			},
 		},
 		{
 			"set<duration>", CollectionType{
-				NativeType: NativeType{typ: TypeSet},
-				Elem:       NativeType{typ: TypeDuration},
+				NativeType: NativeType{proto: byte(protoVersion4), typ: TypeSet},
+				Elem:       TypeDuration,
 			},
 		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.input, func(t *testing.T) {
-			got := getCassandraType(test.input, &defaultLogger{})
+			got := getCassandraTypeInfo(protoVersion4, test.input)
 
 			// TODO(zariel): define an equal method on the types?
 			if !reflect.DeepEqual(got, test.exp) {

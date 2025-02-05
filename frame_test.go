@@ -57,8 +57,6 @@ func TestFuzzBugs(t *testing.T) {
 	}
 
 	for i, test := range tests {
-		t.Logf("test %d input: %q", i, test)
-
 		r := bytes.NewReader(test)
 		head, err := readHeader(r, make([]byte, 9))
 		if err != nil {

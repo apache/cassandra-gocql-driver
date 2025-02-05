@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Externally-defined type registration (CASSGO-43)
+
 ### Changed
 
 - Don't restrict server authenticator unless PasswordAuthentictor.AllowedAuthenticators is provided (CASSGO-19)
@@ -34,6 +36,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Remove HostPoolHostPolicy from gocql package (CASSGO-21)
 
 - Standardized spelling of datacenter (CASSGO-35)
+
+- inet columns are now unmarshalled as net.IP when using MapScan or SliceMap (CASSGO-43)
 
 ### Fixed
 - Cassandra version unmarshal fix (CASSGO-49)
