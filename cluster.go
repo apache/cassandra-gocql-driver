@@ -156,7 +156,7 @@ type ClusterConfig struct {
 
 	// Consistency for the serial part of queries, values can be either SERIAL or LOCAL_SERIAL.
 	// Default: unset
-	SerialConsistency SerialConsistency
+	SerialConsistency Consistency
 
 	// SslOpts configures TLS use when HostDialer is not set.
 	// SslOpts is ignored if HostDialer is set.
