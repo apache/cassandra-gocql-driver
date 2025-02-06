@@ -1498,7 +1498,7 @@ func (c *Conn) AvailableStreams() int {
 
 func (c *Conn) UseKeyspace(keyspace string) error {
 	q := &writeQueryFrame{statement: `USE "` + keyspace + `"`}
-	q.params.consistency = c.session.cons
+	q.params.consistency = c.session.getConsistency()
 
 	framer, err := c.exec(c.ctx, q, nil)
 	if err != nil {
