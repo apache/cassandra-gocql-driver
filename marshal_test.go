@@ -708,6 +708,7 @@ var marshalTests = []struct {
 		nil,
 		nil,
 	},
+
 	{
 		NativeType{proto: 2, typ: TypeFloat},
 		[]byte(nil),
@@ -1827,6 +1828,21 @@ func TestMarshalTimestamp(t *testing.T) {
 			NativeType{proto: 2, typ: TypeTimestamp},
 			[]byte("\xff\xff\xf7\x9c\x84\x2f\xa5\x09"),
 			time.Date(1677, time.September, 21, 00, 12, 43, 145224192, time.UTC),
+		},
+
+		{
+			// -9223372036855 is the minimum time representable in ms since the epoch
+			// with int64 if using UnixNano to convert
+			NativeType{proto: 2, typ: TypeTimestamp},
+			[]byte("\xff\xff\xf7\x9c\x84\x2f\xa4\x78"),
+			"1677-09-21T00:12:43Z",
+		},
+		{
+			// -9223372036855 is the minimum time representable in ms since the epoch
+			// with int64 if using UnixNano to convert
+			NativeType{proto: 2, typ: TypeTimestamp},
+			[]byte("\xff\xff\xf7\x9c\x84\x2f\xa4\x78"),
+			"1677-09-21T00:12:43",
 		},
 		{
 			// One nanosecond earlier causes overflow when using UnixNano
