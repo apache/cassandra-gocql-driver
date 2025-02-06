@@ -1453,8 +1453,17 @@ type Iter struct {
 	next    *nextIter
 	host    *HostInfo
 
-	framer *framer
-	closed int32
+	framer         *framer
+	closed         int32
+	isNullableScan bool
+}
+
+func (iter *Iter) getNullableScan() bool {
+	return iter.isNullableScan
+}
+
+func (iter *Iter) setNullableScan(v bool) {
+	iter.isNullableScan = v
 }
 
 // Host returns the host which the query was sent to.

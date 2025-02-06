@@ -32,6 +32,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/stretchr/testify/require"
 	"io"
 	"math"
 	"math/big"
@@ -995,6 +996,190 @@ func TestMapScan(t *testing.T) {
 	assertEqual(t, "age", 31, row["age"])
 	assertEqual(t, "address", "10.0.0.1", row["address"])
 	assertDeepEqual(t, "data", []byte(nil), row["data"])
+}
+
+type expec struct {
+	Id            int
+	Col_ascii     interface{}
+	Col_bigint    interface{}
+	Col_blob      interface{}
+	Col_boolean   interface{}
+	Col_date      interface{}
+	Col_decimal   interface{}
+	Col_double    interface{}
+	Col_duration  interface{}
+	Col_float     interface{}
+	Col_inet      interface{}
+	Col_int       interface{}
+	Col_smallint  interface{}
+	Col_text      interface{}
+	Col_time      interface{}
+	Col_timestamp interface{}
+	Col_timeuuid  interface{}
+	Col_tinyint   interface{}
+	Col_uuid      interface{}
+	Col_varchar   interface{}
+	Col_varint    interface{}
+}
+
+func TestMapScanWithNullbleValue(t *testing.T) {
+	timeUUID := TimeUUID()
+	date := time.Date(2009, time.November, 10, 0, 0, 0, 0, time.UTC)
+	timestamp := time.Time{}.Add(time.Duration(200))
+
+	testCases := []struct {
+		name         string
+		query        string
+		keys         []string
+		values       []interface{}
+		expectations expec
+		id           int64
+	}{
+		{
+			name: "with values",
+			query: `INSERT INTO gocql_test.scan_map_with_nullable_value_table 
+ (Id, Col_ascii, Col_bigint, Col_blob, Col_boolean, Col_date, Col_decimal, Col_double, 
+  Col_duration, Col_float, Col_inet, Col_int, Col_smallint, Col_text, Col_time, Col_timestamp, 
+  Col_timeuuid, Col_tinyint, Col_uuid, Col_varchar, Col_varint) 
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			keys: []string{"Id", "Col_ascii", "Col_bigint", "Col_blob", "Col_boolean", "Col_date", "Col_decimal", "Col_double", "Col_duration", "Col_float", "Col_inet", "Col_int", "Col_smallint", "Col_text", "Col_time", "Col_timestamp", "Col_timeuuid", "Col_tinyint", "Col_uuid", "Col_varchar", "Col_varint"},
+			values: []interface{}{1, "test_ascii", int64(123456789), []byte{0x01, 0x02, 0x03}, true,
+				date, *inf.NewDec(12345, 0), 123.45, Duration{
+					Months:      250,
+					Days:        500,
+					Nanoseconds: 300010001,
+				}, float32(3.14), "127.0.0.1",
+				123, int16(1000), "test_text", time.Duration(200), timestamp, timeUUID,
+				int8(5), timeUUID, "test_varchar", *big.NewInt(99999)},
+			expectations: expec{
+				Id:          1,
+				Col_ascii:   "test_ascii",
+				Col_bigint:  int64(123456789),
+				Col_blob:    []byte{0x01, 0x02, 0x03},
+				Col_boolean: true,
+				Col_date:    date,
+				Col_decimal: *inf.NewDec(12345, 0),
+				Col_double:  123.45,
+				Col_duration: Duration{
+					Months:      250,
+					Days:        500,
+					Nanoseconds: 300010001,
+				},
+				Col_float:     float32(3.14),
+				Col_inet:      "127.0.0.1",
+				Col_int:       123,
+				Col_smallint:  int16(1000),
+				Col_text:      "test_text",
+				Col_time:      time.Duration(200),
+				Col_timestamp: timestamp,
+				Col_timeuuid:  timeUUID,
+				Col_tinyint:   int8(5),
+				Col_uuid:      timeUUID,
+				Col_varchar:   "test_varchar",
+				Col_varint:    *big.NewInt(99999),
+			},
+			id: 1,
+		},
+
+		{
+			name:   "without values",
+			query:  `INSERT INTO gocql_test.scan_map_with_nullable_value_table (Id) VALUES (?)`,
+			keys:   []string{"Id", "Col_ascii", "Col_bigint", "Col_blob", "Col_boolean", "Col_date", "Col_decimal", "Col_double", "Col_duration", "Col_float", "Col_inet", "Col_int", "Col_smallint", "Col_text", "Col_time", "Col_timestamp", "Col_timeuuid", "Col_tinyint", "Col_uuid", "Col_varchar", "Col_varint"},
+			values: []interface{}{2},
+			expectations: expec{
+				Id:            2,
+				Col_ascii:     nil,
+				Col_bigint:    nil,
+				Col_blob:      nil,
+				Col_boolean:   nil,
+				Col_date:      nil,
+				Col_decimal:   nil,
+				Col_double:    nil,
+				Col_duration:  nil,
+				Col_float:     nil,
+				Col_inet:      nil,
+				Col_int:       nil,
+				Col_smallint:  nil,
+				Col_text:      nil,
+				Col_time:      nil,
+				Col_timestamp: nil,
+				Col_timeuuid:  nil,
+				Col_tinyint:   nil,
+				Col_uuid:      nil,
+				Col_varchar:   nil,
+				Col_varint:    nil,
+			},
+			id: 2,
+		},
+	}
+	session := createSession(t)
+	defer session.Close()
+
+	createTableQuery := `
+	CREATE TABLE IF NOT EXISTS gocql_test.scan_map_with_nullable_value_table (
+		Id INT PRIMARY KEY,
+		Col_ascii ASCII,
+		Col_bigint BIGINT,
+		Col_blob BLOB,
+		Col_boolean BOOLEAN,
+		Col_date DATE,
+		Col_decimal DECIMAL,
+		Col_double DOUBLE,
+		Col_duration DURATION,
+		Col_float FLOAT,
+		Col_inet INET,
+		Col_int INT,
+		Col_smallint SMALLINT,
+		Col_text TEXT,
+		Col_time TIME,
+		Col_timestamp TIMESTAMP,
+		Col_timeuuid TIMEUUID,
+		Col_tinyint TINYINT,
+		Col_uuid UUID,
+		Col_varchar VARCHAR,
+		Col_varint VARINT
+	);
+	`
+
+	err := session.Query(createTableQuery).Exec()
+	if err != nil {
+		t.Fatal("Failed to create the table:", err)
+	}
+
+	t.Log("Table created successfully!")
+
+	for _, testCase := range testCases {
+		testCase := testCase
+		t.Run(testCase.name, func(t *testing.T) {
+			err = session.Query(testCase.query, testCase.values...).Exec()
+			if err != nil {
+				t.Fatal("Failed to execute query:", err)
+			}
+
+			iter := session.Query(`SELECT * FROM gocql_test.scan_map_with_nullable_value_table WHERE Id = ? LIMIT 1`, testCase.id).Iter()
+			row := make(map[string]interface{})
+
+			if !iter.MapScanWithNullableValues(row) {
+				t.Fatal("select:", iter.Close())
+			}
+
+			v := reflect.ValueOf(testCase.expectations)
+			for _, key := range testCase.keys {
+				if testCase.id == 1 {
+					col := row[strings.ToLower(key)]
+					if !reflect.ValueOf(col).Elem().IsZero() {
+						got := reflect.ValueOf(col).Elem().Interface()
+
+						require.Equal(t, v.FieldByName(key).Interface(), got, key)
+					}
+				} else {
+					if key != "Id" && !reflect.ValueOf(row[strings.ToLower(key)]).IsZero() {
+						t.Fatalf("Failed on:%v,\nExpected %v to be %v,\n Got: %v", key, key, v.FieldByName(key).Interface(), row[strings.ToLower(key)])
+					}
+				}
+			}
+		})
+	}
 }
 
 func TestSliceMap(t *testing.T) {
