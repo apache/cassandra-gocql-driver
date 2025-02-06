@@ -30,7 +30,7 @@ import (
 )
 
 func TestRing_AddHostIfMissing_Missing(t *testing.T) {
-	ring := &ring{}
+	ring := &ringDescriber{}
 
 	host := &HostInfo{hostId: MustRandomUUID().String(), connectAddress: net.IPv4(1, 1, 1, 1)}
 	h1, ok := ring.addHostIfMissing(host)
@@ -44,7 +44,7 @@ func TestRing_AddHostIfMissing_Missing(t *testing.T) {
 }
 
 func TestRing_AddHostIfMissing_Existing(t *testing.T) {
-	ring := &ring{}
+	ring := &ringDescriber{}
 
 	host := &HostInfo{hostId: MustRandomUUID().String(), connectAddress: net.IPv4(1, 1, 1, 1)}
 	ring.addHostIfMissing(host)

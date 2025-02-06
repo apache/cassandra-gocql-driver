@@ -72,9 +72,6 @@ type Session struct {
 	pool     *policyConnPool
 	policy   HostSelectionPolicy
 
-	ring     ring
-	metadata clusterMetadata
-
 	mu sync.RWMutex
 
 	control *controlConn
@@ -166,8 +163,8 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 
 	s.routingKeyInfoCache.lru = lru.New(cfg.MaxRoutingKeyInfo)
 
-	s.hostSource = &ringDescriber{session: s}
-	s.ringRefresher = newRefreshDebouncer(ringRefreshDebounceTime, func() error { return refreshRing(s.hostSource) })
+	s.hostSource = &ringDescriber{cfg: &s.cfg, logger: s.logger}
+	s.ringRefresher = newRefreshDebouncer(ringRefreshDebounceTime, func() error { return refreshRing(s) })
 
 	if cfg.PoolConfig.HostSelectionPolicy == nil {
 		cfg.PoolConfig.HostSelectionPolicy = RoundRobinHostPolicy()
@@ -216,7 +213,6 @@ func (s *Session) init() error {
 	if err != nil {
 		return err
 	}
-	s.ring.endpoints = hosts
 
 	if !s.cfg.disableControlConn {
 		s.control = createControlConn(s)
@@ -239,7 +235,7 @@ func (s *Session) init() error {
 
 		if !s.cfg.DisableInitialHostLookup {
 			var partitioner string
-			newHosts, partitioner, err := s.hostSource.GetHosts()
+			newHosts, partitioner, err := s.hostSource.GetHostsFromSystem()
 			if err != nil {
 				return err
 			}
@@ -254,6 +250,8 @@ func (s *Session) init() error {
 			hosts = filteredHosts
 		}
 	}
+
+	s.hostSource.setControlConn(s.control)
 
 	for _, host := range hosts {
 		// In case when host lookup is disabled and when we are in unit tests,
@@ -282,7 +280,7 @@ func (s *Session) init() error {
 	// again
 	atomic.AddInt64(&left, 1)
 	for _, host := range hostMap {
-		host := s.ring.addOrUpdate(host)
+		host := s.hostSource.addOrUpdate(host)
 		if s.cfg.filterHost(host) {
 			continue
 		}
@@ -344,7 +342,7 @@ func (s *Session) init() error {
 		newer, _ := checkSystemSchema(s.control)
 		s.useSystemSchema = newer
 	} else {
-		version := s.ring.rrHost().Version()
+		version := s.hostSource.getHostsList()[0].Version()
 		s.useSystemSchema = version.AtLeast(3, 0, 0)
 		s.hasAggregatesAndFunctions = version.AtLeast(2, 2, 0)
 	}
@@ -388,11 +386,11 @@ func (s *Session) reconnectDownedHosts(intv time.Duration) {
 	for {
 		select {
 		case <-reconnectTicker.C:
-			hosts := s.ring.allHosts()
+			hosts := s.hostSource.getHostsList()
 
-			// Print session.ring for debug.
+			// Print session.hostSource for debug.
 			if gocqlDebug {
-				buf := bytes.NewBufferString("Session.ring:")
+				buf := bytes.NewBufferString("Session.hostSource:")
 				for _, h := range hosts {
 					buf.WriteString("[" + h.ConnectAddress().String() + ":" + h.State().String() + "]")
 				}
@@ -558,7 +556,7 @@ func (s *Session) removeHost(h *HostInfo) {
 	s.policy.RemoveHost(h)
 	hostID := h.HostID()
 	s.pool.removeHost(hostID)
-	s.ring.removeHost(hostID)
+	s.hostSource.removeHost(hostID)
 }
 
 // KeyspaceMetadata returns the schema metadata for the keyspace specified. Returns an error if the keyspace does not exist.
@@ -574,7 +572,7 @@ func (s *Session) KeyspaceMetadata(keyspace string) (*KeyspaceMetadata, error) {
 }
 
 func (s *Session) getConn() *Conn {
-	hosts := s.ring.allHosts()
+	hosts := s.hostSource.getHostsList()
 	for _, host := range hosts {
 		if !host.IsUp() {
 			continue

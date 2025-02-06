@@ -131,7 +131,7 @@ func TestControlConn_ReconnectRefreshesRing(t *testing.T) {
 	}()
 
 	assertNodeDown := func() error {
-		hosts := session.ring.currentHosts()
+		hosts := session.hostSource.getHostsMap()
 		if len(hosts) != 1 {
 			return fmt.Errorf("expected 1 host in ring but there were %v", len(hosts))
 		}
@@ -169,7 +169,7 @@ func TestControlConn_ReconnectRefreshesRing(t *testing.T) {
 	}
 
 	assertNodeUp := func() error {
-		hosts := session.ring.currentHosts()
+		hosts := session.hostSource.getHostsMap()
 		if len(hosts) != len(allCcmHosts) {
 			return fmt.Errorf("expected %v hosts in ring but there were %v", len(allCcmHosts), len(hosts))
 		}
