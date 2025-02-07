@@ -103,6 +103,8 @@ type Session struct {
 	isInitialized bool
 
 	logger StdLogger
+
+	rateLimiter *ConfigurableRateLimiter
 }
 
 var queryPool = &sync.Pool{
@@ -187,6 +189,10 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 	s.connectObserver = cfg.ConnectObserver
 	s.frameObserver = cfg.FrameHeaderObserver
 	s.streamObserver = cfg.StreamObserver
+
+	if cfg.RateLimiterConfig != nil {
+		s.rateLimiter = NewConfigurableRateLimiter(cfg.RateLimiterConfig.rate, cfg.RateLimiterConfig.burst)
+	}
 
 	//Check the TLS Config before trying to connect to anything external
 	connCfg, err := connConfig(&s.cfg)
@@ -452,6 +458,12 @@ func (s *Session) SetTrace(trace Tracer) {
 // value before the query is executed. Query is automatically prepared
 // if it has not previously been executed.
 func (s *Session) Query(stmt string, values ...interface{}) *Query {
+	if s.rateLimiter != nil {
+		for !s.rateLimiter.Allow() {
+			time.Sleep(time.Millisecond * 50)
+		}
+	}
+
 	qry := queryPool.Get().(*Query)
 	qry.session = s
 	qry.stmt = stmt
