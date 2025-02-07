@@ -1447,13 +1447,10 @@ func (q *Query) releaseAfterExecution() {
 	q.decRefCount()
 }
 
-// SetHostID allows to define on which host the query should be executed.
-// If hostID is not set, then the HostSelectionPolicy will be used to pick a host.
-// It is recommended to get host id from HostInfo.HostID(), but it is not required.
-// It is strongly recommended to use WithContext() with this option because
-// if the specified host goes down during execution, the driver will try to send the query to this host until it succeeds
-// which may lead to an endless execution.
-// Setting hostID to empty restores behavior to default.
+// SetHostID allows to define the host the query should be executed against. If the
+// host was filtered or otherwise unavailable, then the query will error. If an empty
+// string is sent, the default behavior, using the configured HostSelectionPolicy will
+// be used. A hostID can be obtained from HostInfo.HostID() after calling GetHosts().
 func (q *Query) SetHostID(hostID string) *Query {
 	q.hostID = hostID
 	return q
