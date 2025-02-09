@@ -1699,6 +1699,12 @@ func (c *Conn) awaitSchemaAgreement(ctx context.Context) (err error) {
 				continue
 			}
 
+			peerInfo := c.session.ring.getHost(host.HostID())
+			if peerInfo == nil || !peerInfo.IsUp() {
+				c.logger.Printf("invalid or unreachable peer: peer=%q", host)
+				continue
+			}
+
 			versions[host.schemaVersion] = struct{}{}
 		}
 
