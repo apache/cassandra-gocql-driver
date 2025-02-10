@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added `ObservedQuery.Consistency` and `ObservedBatch.Consistency` fields (CASSGO-53)
+
 ### Changed
 
 - Don't restrict server authenticator unless PasswordAuthentictor.AllowedAuthenticators is provided (CASSGO-19)
