@@ -40,13 +40,13 @@ func TestSnappyCompressor(t *testing.T) {
 	str := "My Test String"
 	//Test Encoding
 	expected := snappy.Encode(nil, []byte(str))
-	if res, err := c.Encode([]byte(str)); err != nil {
+	if res, err := c.AppendCompressedWithLength(nil, []byte(str)); err != nil {
 		t.Fatalf("failed to encode '%v' with error %v", str, err)
 	} else if bytes.Compare(expected, res) != 0 {
 		t.Fatal("failed to match the expected encoded value with the result encoded value.")
 	}
 
-	val, err := c.Encode([]byte(str))
+	val, err := c.AppendCompressedWithLength(nil, []byte(str))
 	if err != nil {
 		t.Fatalf("failed to encode '%v' with error '%v'", str, err)
 	}
@@ -54,7 +54,7 @@ func TestSnappyCompressor(t *testing.T) {
 	//Test Decoding
 	if expected, err := snappy.Decode(nil, val); err != nil {
 		t.Fatalf("failed to decode '%v' with error %v", val, err)
-	} else if res, err := c.Decode(val); err != nil {
+	} else if res, err := c.AppendDecompressedWithLength(nil, val); err != nil {
 		t.Fatalf("failed to decode '%v' with error %v", val, err)
 	} else if bytes.Compare(expected, res) != 0 {
 		t.Fatal("failed to match the expected decoded value with the result decoded value.")

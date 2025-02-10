@@ -28,6 +28,7 @@
 package gocql
 
 import (
+	"github.com/stretchr/testify/require"
 	"testing"
 	"time"
 )
@@ -84,5 +85,86 @@ func TestBatch_WithTimestamp(t *testing.T) {
 
 	if storedTs != micros {
 		t.Errorf("got ts %d, expected %d", storedTs, micros)
+	}
+}
+
+func TestBatch_WithNowInSeconds(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+
+	if session.cfg.ProtoVersion < protoVersion5 {
+		t.Skip("Batch now in seconds are only available on protocol >= 5")
+	}
+
+	if err := createTable(session, `CREATE TABLE IF NOT EXISTS batch_now_in_seconds (id int primary key, val text)`); err != nil {
+		t.Fatal(err)
+	}
+
+	b := session.NewBatch(LoggedBatch)
+	b.WithNowInSeconds(0)
+	b.Query("INSERT INTO batch_now_in_seconds (id, val) VALUES (?, ?) USING TTL 20", 1, "val")
+	if err := session.ExecuteBatch(b); err != nil {
+		t.Fatal(err)
+	}
+
+	var remainingTTL int
+	err := session.Query(`SELECT TTL(val) FROM batch_now_in_seconds WHERE id = ?`, 1).
+		WithNowInSeconds(10).
+		Scan(&remainingTTL)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	require.Equal(t, remainingTTL, 10)
+}
+
+func TestBatch_SetKeyspace(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+
+	if session.cfg.ProtoVersion < protoVersion5 {
+		t.Skip("keyspace for BATCH message is not supported in protocol < 5")
+	}
+
+	const keyspaceStmt = `
+		CREATE KEYSPACE IF NOT EXISTS gocql_keyspace_override_test 
+		WITH replication = {
+			'class': 'SimpleStrategy', 
+			'replication_factor': '1'
+		};
+`
+
+	err := session.Query(keyspaceStmt).Exec()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = createTable(session, "CREATE TABLE IF NOT EXISTS gocql_keyspace_override_test.batch_keyspace(id int, value text, PRIMARY KEY (id))")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ids := []int{1, 2}
+	texts := []string{"val1", "val2"}
+
+	b := session.NewBatch(LoggedBatch).SetKeyspace("gocql_keyspace_override_test")
+	b.Query("INSERT INTO batch_keyspace(id, value) VALUES (?, ?)", ids[0], texts[0])
+	b.Query("INSERT INTO batch_keyspace(id, value) VALUES (?, ?)", ids[1], texts[1])
+	err = session.ExecuteBatch(b)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var (
+		id   int
+		text string
+	)
+
+	iter := session.Query("SELECT * FROM gocql_keyspace_override_test.batch_keyspace").Iter()
+	defer iter.Close()
+
+	for i := 0; iter.Scan(&id, &text); i++ {
+		require.Equal(t, id, ids[i])
+		require.Equal(t, text, texts[i])
 	}
 }
