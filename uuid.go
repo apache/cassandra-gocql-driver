@@ -116,6 +116,7 @@ func UUIDFromBytes(input []byte) (UUID, error) {
 	return u, nil
 }
 
+// MustRandomUUID wraps RandomUUID but panics in case of an error.
 func MustRandomUUID() UUID {
 	uuid, err := RandomUUID()
 	if err != nil {

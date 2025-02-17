@@ -35,6 +35,7 @@ import (
 	"gopkg.in/inf.v0"
 )
 
+// RowData contains values and column names of a single row.
 type RowData struct {
 	Columns []string
 	Values  []interface{}

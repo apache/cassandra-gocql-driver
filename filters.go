@@ -47,6 +47,7 @@ func AcceptAllFilter() HostFilter {
 	})
 }
 
+// DenyAllFilter will deny all hosts
 func DenyAllFilter() HostFilter {
 	return HostFilterFunc(func(host *HostInfo) bool {
 		return false
@@ -59,12 +60,6 @@ func DataCenterHostFilter(dataCenter string) HostFilter {
 	return HostFilterFunc(func(host *HostInfo) bool {
 		return host.DataCenter() == dataCenter
 	})
-}
-
-// Deprecated: Use DataCenterHostFilter instead.
-// DataCentreHostFilter is an alias that doesn't use the preferred spelling.
-func DataCentreHostFilter(dataCenter string) HostFilter {
-	return DataCenterHostFilter(dataCenter)
 }
 
 // WhiteListHostFilter filters incoming hosts by checking that their address is

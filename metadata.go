@@ -136,6 +136,7 @@ type MaterializedViewMetadata struct {
 	baseTableName string
 }
 
+// UserTypeMetadata holds the metadata for user types.
 type UserTypeMetadata struct {
 	Keyspace   string
 	Name       string
