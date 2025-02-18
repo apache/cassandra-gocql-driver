@@ -2146,14 +2146,15 @@ func NewTraceWriter(session *Session, w io.Writer) Tracer {
 
 func (t *traceWriter) Trace(traceId []byte) {
 	var (
-		coordinator string
-		duration    int
+		coordinator     string
+		duration        int
+		coordinatorPort int
 	)
-	iter := t.session.control.query(`SELECT coordinator, duration
-			FROM system_traces.sessions
-			WHERE session_id = ?`, traceId)
+	iter := t.session.control.query(`SELECT coordinator, duration, coordinator_port
+      FROM system_traces.sessions
+      WHERE session_id = ?`, traceId)
 
-	iter.Scan(&coordinator, &duration)
+	iter.Scan(&coordinator, &duration, &coordinatorPort)
 	if err := iter.Close(); err != nil {
 		t.mu.Lock()
 		fmt.Fprintln(t.w, "Error:", err)
@@ -2162,26 +2163,27 @@ func (t *traceWriter) Trace(traceId []byte) {
 	}
 
 	var (
-		timestamp time.Time
-		activity  string
-		source    string
-		elapsed   int
-		thread    string
+		timestamp  time.Time
+		activity   string
+		source     string
+		elapsed    int
+		thread     string
+		sourcePort int
 	)
 
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
-	fmt.Fprintf(t.w, "Tracing session %016x (coordinator: %s, duration: %v):\n",
-		traceId, coordinator, time.Duration(duration)*time.Microsecond)
+	fmt.Fprintf(t.w, "Tracing session %016x (coordinator: %s, duration: %v, coordinator_port: %d):\n",
+		traceId, coordinator, time.Duration(duration)*time.Microsecond, coordinatorPort)
 
-	iter = t.session.control.query(`SELECT event_id, activity, source, source_elapsed, thread
-			FROM system_traces.events
-			WHERE session_id = ?`, traceId)
+	iter = t.session.control.query(`SELECT event_id, activity, source, source_elapsed, source_port, thread
+      FROM system_traces.events
+      WHERE session_id = ?`, traceId)
 
-	for iter.Scan(&timestamp, &activity, &source, &elapsed, &thread) {
-		fmt.Fprintf(t.w, "%s: %s [%s] (source: %s, elapsed: %d)\n",
-			timestamp.Format("2006/01/02 15:04:05.999999"), activity, thread, source, elapsed)
+	for iter.Scan(&timestamp, &activity, &source, &elapsed, &sourcePort, &thread) {
+		fmt.Fprintf(t.w, "%s: %s [%s] (source: %s, elapsed: %d, source_port: %d)\n",
+			timestamp.Format("2006/01/02 15:04:05.999999"), activity, thread, source, elapsed, sourcePort)
 	}
 
 	if err := iter.Close(); err != nil {
