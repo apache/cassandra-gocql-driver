@@ -173,9 +173,10 @@ func TestObserve(t *testing.T) {
 	}
 
 	var (
-		observedErr      error
-		observedKeyspace string
-		observedStmt     string
+		observedErr         error
+		observedKeyspace    string
+		observedStmt        string
+		observedConsistency Consistency
 	)
 
 	const keyspace = "gocql_test"
@@ -184,12 +185,14 @@ func TestObserve(t *testing.T) {
 		observedErr = errors.New("placeholder only") // used to distinguish err=nil cases
 		observedKeyspace = ""
 		observedStmt = ""
+		observedConsistency = 0
 	}
 
 	observer := funcQueryObserver(func(ctx context.Context, o ObservedQuery) {
 		observedKeyspace = o.Keyspace
 		observedStmt = o.Statement
 		observedErr = o.Err
+		observedConsistency = o.Consistency
 	})
 
 	// select before inserted, will error but the reporting is err=nil as the query is valid
@@ -203,6 +206,8 @@ func TestObserve(t *testing.T) {
 		t.Fatal("select: unexpected observed keyspace", observedKeyspace)
 	} else if observedStmt != `SELECT id FROM observe WHERE id = ?` {
 		t.Fatal("select: unexpected observed stmt", observedStmt)
+	} else if observedConsistency != Quorum {
+		t.Fatal("select: unexpected observed consistency", observedConsistency)
 	}
 
 	resetObserved()
@@ -214,6 +219,8 @@ func TestObserve(t *testing.T) {
 		t.Fatal("insert: unexpected observed keyspace", observedKeyspace)
 	} else if observedStmt != `INSERT INTO observe (id) VALUES (?)` {
 		t.Fatal("insert: unexpected observed stmt", observedStmt)
+	} else if observedConsistency != Quorum {
+		t.Fatal("select: unexpected observed consistency", observedConsistency)
 	}
 
 	resetObserved()
@@ -228,6 +235,8 @@ func TestObserve(t *testing.T) {
 		t.Fatal("select: unexpected observed keyspace", observedKeyspace)
 	} else if observedStmt != `SELECT id FROM observe WHERE id = ?` {
 		t.Fatal("select: unexpected observed stmt", observedStmt)
+	} else if observedConsistency != Quorum {
+		t.Fatal("select: unexpected observed consistency", observedConsistency)
 	}
 
 	// also works from session observer
@@ -241,6 +250,8 @@ func TestObserve(t *testing.T) {
 		t.Fatal("select: unexpected observed keyspace", observedKeyspace)
 	} else if observedStmt != `SELECT id FROM observe WHERE id = ?` {
 		t.Fatal("select: unexpected observed stmt", observedStmt)
+	} else if observedConsistency != Quorum {
+		t.Fatal("select: unexpected observed consistency", observedConsistency)
 	}
 
 	// reports errors when the query is poorly formed
@@ -254,6 +265,16 @@ func TestObserve(t *testing.T) {
 		t.Fatal("select: unexpected observed keyspace", observedKeyspace)
 	} else if observedStmt != `SELECT id FROM unknown_table WHERE id = ?` {
 		t.Fatal("select: unexpected observed stmt", observedStmt)
+	} else if observedConsistency != Quorum {
+		t.Fatal("select: unexpected observed consistency", observedConsistency)
+	}
+
+	resetObserved()
+	expectedConsistency := One
+	if err := session.Query(`SELECT id FROM unknown_table WHERE id = ?`, 42).Observer(observer).Consistency(expectedConsistency).Scan(&value); err == nil {
+		t.Fatal("select: expecting error")
+	} else if observedConsistency != expectedConsistency {
+		t.Fatalf("select: unexpected observed consistency %s, expected %s", observedConsistency, expectedConsistency)
 	}
 }
 
@@ -1992,25 +2013,28 @@ func TestBatchObserve(t *testing.T) {
 	}
 
 	type observation struct {
-		observedErr      error
-		observedKeyspace string
-		observedStmts    []string
-		observedValues   [][]interface{}
+		observedErr         error
+		observedKeyspace    string
+		observedStmts       []string
+		observedValues      [][]interface{}
+		observedConsistency Consistency
 	}
 
 	var observedBatch *observation
 
 	batch := session.Batch(LoggedBatch)
+	batch.SetConsistency(Quorum)
 	batch.Observer(funcBatchObserver(func(ctx context.Context, o ObservedBatch) {
 		if observedBatch != nil {
 			t.Fatal("batch observe called more than once")
 		}
 
 		observedBatch = &observation{
-			observedKeyspace: o.Keyspace,
-			observedStmts:    o.Statements,
-			observedErr:      o.Err,
-			observedValues:   o.Values,
+			observedKeyspace:    o.Keyspace,
+			observedStmts:       o.Statements,
+			observedErr:         o.Err,
+			observedValues:      o.Values,
+			observedConsistency: o.Consistency,
 		}
 	}))
 	for i := 0; i < 100; i++ {
@@ -2039,6 +2063,10 @@ func TestBatchObserve(t *testing.T) {
 		}
 
 		assertDeepEqual(t, "observed value", []interface{}{i}, observedBatch.observedValues[i])
+	}
+
+	if observedBatch.observedConsistency != Quorum {
+		t.Fatalf("expecting consistency %s, got %s", batch.Cons, observedBatch.observedConsistency)
 	}
 }
 
