@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Move lz4 compressor to lz4 package within the gocql module (CASSGO-32)
+
 - Don't restrict server authenticator unless PasswordAuthentictor.AllowedAuthenticators is provided (CASSGO-19)
 
 - Cleanup of deprecated elements (CASSGO-12)
