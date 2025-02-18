@@ -523,6 +523,7 @@ func (s *Session) Close() {
 	s.sessionStateMu.Unlock()
 }
 
+// Closed returns true only after you call Session.Close().
 func (s *Session) Closed() bool {
 	s.sessionStateMu.RLock()
 	closed := s.isClosed
@@ -1000,6 +1001,7 @@ func (q *Query) Attempts() int {
 	return q.metrics.attempts()
 }
 
+// AddAttempts adds number of attempts i for given host.
 func (q *Query) AddAttempts(i int, host *HostInfo) {
 	q.metrics.attempt(i, 0, host, false)
 }
@@ -1009,6 +1011,7 @@ func (q *Query) Latency() int64 {
 	return q.metrics.latency()
 }
 
+// AddLatency adds latency for given host.
 func (q *Query) AddLatency(l int64, host *HostInfo) {
 	q.metrics.attempt(0, time.Duration(l)*time.Nanosecond, host, false)
 }
@@ -1038,6 +1041,8 @@ func (q *Query) CustomPayload(customPayload map[string][]byte) *Query {
 	return q
 }
 
+// Context returns the context of the Query.
+// Returns the context.Background() if Query.Context == nil.
 func (q *Query) Context() context.Context {
 	if q.context == nil {
 		return context.Background()
@@ -1113,11 +1118,6 @@ func (q *Query) WithContext(ctx context.Context) *Query {
 	q2 := *q
 	q2.context = ctx
 	return &q2
-}
-
-// Deprecate: does nothing, cancel the context passed to WithContext
-func (q *Query) Cancel() {
-	// TODO: delete
 }
 
 func (q *Query) execute(ctx context.Context, conn *Conn) *Iter {
@@ -1743,6 +1743,7 @@ func (n *nextIter) fetch() *Iter {
 	return n.next
 }
 
+// Batch represents a group of CQL statements that can be executed together.
 type Batch struct {
 	Type                  BatchType
 	Entries               []BatchEntry
@@ -1809,6 +1810,7 @@ func (b *Batch) Observer(observer BatchObserver) *Batch {
 	return b
 }
 
+// Keyspace returns the keyspace the batch will be executed against.
 func (b *Batch) Keyspace() string {
 	return b.keyspace
 }
@@ -1823,6 +1825,7 @@ func (b *Batch) Attempts() int {
 	return b.metrics.attempts()
 }
 
+// AddAttempts adds number of attempts i for given host.
 func (b *Batch) AddAttempts(i int, host *HostInfo) {
 	b.metrics.attempt(i, 0, host, false)
 }
@@ -1832,6 +1835,7 @@ func (b *Batch) Latency() int64 {
 	return b.metrics.latency()
 }
 
+// AddLatency adds latency for given host.
 func (b *Batch) AddLatency(l int64, host *HostInfo) {
 	b.metrics.attempt(0, time.Duration(l)*time.Nanosecond, host, false)
 }
@@ -1848,6 +1852,8 @@ func (b *Batch) SetConsistency(c Consistency) {
 	b.Cons = c
 }
 
+// Context returns the context of the Batch.
+// Returns the context.Background() if Batch.Context == nil.
 func (b *Batch) Context() context.Context {
 	if b.context == nil {
 		return context.Background()
@@ -1855,6 +1861,7 @@ func (b *Batch) Context() context.Context {
 	return b.context
 }
 
+// IsIdempotent returns false if one of the Batch.Entries are not Idempotent.
 func (b *Batch) IsIdempotent() bool {
 	for _, entry := range b.Entries {
 		if !entry.Idempotent {
@@ -1868,6 +1875,7 @@ func (b *Batch) speculativeExecutionPolicy() SpeculativeExecutionPolicy {
 	return b.spec
 }
 
+// SpeculativeExecutionPolicy sets SpeculativeExecutionPolicy and returns Batch
 func (b *Batch) SpeculativeExecutionPolicy(sp SpeculativeExecutionPolicy) *Batch {
 	b.spec = sp
 	return b
@@ -1910,11 +1918,6 @@ func (b *Batch) WithContext(ctx context.Context) *Batch {
 	b2 := *b
 	b2.context = ctx
 	return &b2
-}
-
-// Deprecate: does nothing, cancel the context passed to WithContext
-func (*Batch) Cancel() {
-	// TODO: delete
 }
 
 // Size returns the number of batch statements to be executed by the batch operation.
@@ -1987,6 +1990,12 @@ func (b *Batch) attempt(keyspace string, end, start time.Time, iter *Iter, host 
 	})
 }
 
+// GetRoutingKey gets the routing key to use for routing this batch. If
+// a routing key has not been explicitly set, then the routing key will
+// be constructed if possible using the keyspace's schema and the batch
+// info for this batch entry statement. If the routing key cannot be determined
+// then nil will be returned with no error. On any error condition,
+// an error description will be returned.
 func (b *Batch) GetRoutingKey() ([]byte, error) {
 	if b.routingKey != nil {
 		return b.routingKey, nil
@@ -2065,6 +2074,7 @@ const (
 	CounterBatch  BatchType = 2
 )
 
+// BatchEntry represents a single query inside a batch operation.
 type BatchEntry struct {
 	Stmt       string
 	Args       []interface{}
@@ -2189,6 +2199,7 @@ func (t *traceWriter) Trace(traceId []byte) {
 	}
 }
 
+// ObservedQuery observes a single query.
 type ObservedQuery struct {
 	Keyspace  string
 	Statement string
@@ -2230,6 +2241,7 @@ type QueryObserver interface {
 	ObserveQuery(context.Context, ObservedQuery)
 }
 
+// ObservedBatch observes a single batch operation.
 type ObservedBatch struct {
 	Keyspace   string
 	Statements []string

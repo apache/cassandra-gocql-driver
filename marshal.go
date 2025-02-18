@@ -2469,6 +2469,7 @@ type TypeInfo interface {
 	NewWithError() (interface{}, error)
 }
 
+// NativeType describes a Cassandra native types
 type NativeType struct {
 	proto  byte
 	typ    Type
@@ -2487,14 +2488,17 @@ func (t NativeType) NewWithError() (interface{}, error) {
 	return reflect.New(typ).Interface(), nil
 }
 
+// Type returns identifier of a Cassandra internal datatype.
 func (s NativeType) Type() Type {
 	return s.typ
 }
 
+// Version returns native protocol version of a type.
 func (s NativeType) Version() byte {
 	return s.proto
 }
 
+// Custom returns the name of custom class.
 func (s NativeType) Custom() string {
 	return s.custom
 }
@@ -2508,6 +2512,7 @@ func (s NativeType) String() string {
 	}
 }
 
+// CollectionType describes a Cassandra collection types.
 type CollectionType struct {
 	NativeType
 	Key  TypeInfo // only used for TypeMap
@@ -2535,6 +2540,7 @@ func (c CollectionType) String() string {
 	}
 }
 
+// TupleTypeInfo describes a Cassandra tuple types.
 type TupleTypeInfo struct {
 	NativeType
 	Elems []TypeInfo
@@ -2564,6 +2570,7 @@ type UDTField struct {
 	Type TypeInfo
 }
 
+// UDTTypeInfo describes a Cassandra UDT types.
 type UDTTypeInfo struct {
 	NativeType
 	KeySpace string
