@@ -286,6 +286,14 @@ func assertEqual(t *testing.T, description string, expected, actual interface{})
 
 func assertDeepEqual(t *testing.T, description string, expected, actual interface{}) {
 	t.Helper()
+	rv1 := reflect.ValueOf(expected)
+	rv2 := reflect.ValueOf(actual)
+	if rv1.Kind() == reflect.Ptr {
+		expected = rv1.Elem().Interface()
+	}
+	if rv2.Kind() == reflect.Ptr {
+		actual = rv2.Elem().Interface()
+	}
 	if !reflect.DeepEqual(expected, actual) {
 		t.Fatalf("expected %s to be (%+v) but was (%+v) instead", description, expected, actual)
 	}
