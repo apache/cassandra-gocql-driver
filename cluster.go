@@ -112,6 +112,11 @@ type ClusterConfig struct {
 	// Default: 2
 	NumConns int
 
+	// Maximum number of inflight requests allowed per connection.
+	// Default: 32768 for CQL v3 and newer
+	// Default: 128 for older CQL versions
+	MaxRequestsPerConn int
+
 	// Default consistency level.
 	// Default: Quorum
 	Consistency Consistency
@@ -288,6 +293,7 @@ func NewCluster(hosts ...string) *ClusterConfig {
 		ConnectTimeout:         11 * time.Second,
 		Port:                   9042,
 		NumConns:               2,
+		MaxRequestsPerConn:     0,
 		Consistency:            Quorum,
 		MaxPreparedStmts:       defaultMaxPreparedStmts,
 		MaxRoutingKeyInfo:      1000,

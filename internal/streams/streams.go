@@ -43,17 +43,29 @@ type IDGenerator struct {
 	offset  uint32
 }
 
+func NewStreamIDGenerator(protocol, maxRequestsPerConn int) *IDGenerator {
+	if maxRequestsPerConn > 0 {
+		return NewLimited(maxRequestsPerConn)
+	}
+	return New(protocol)
+}
+
 func New(protocol int) *IDGenerator {
 	maxStreams := 128
 	if protocol > 2 {
 		maxStreams = 32768
 	}
+	return NewLimited(maxStreams)
+}
+
+func NewLimited(maxStreams int) *IDGenerator {
+	// Round up maxStreams to a nearest multiple of 64
+	maxStreams = ((maxStreams + 63) / 64) * 64
 
 	buckets := maxStreams / 64
 	// reserve stream 0
 	streams := make([]uint64, buckets)
 	streams[0] = 1 << 63
-
 	return &IDGenerator{
 		NumStreams: maxStreams,
 		streams:    streams,
