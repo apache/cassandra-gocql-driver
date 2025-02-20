@@ -91,14 +91,14 @@ func TestSessionAPI(t *testing.T) {
 		t.Fatalf("expected qry.stmt to be 'test', got '%v'", boundQry.stmt)
 	}
 
-	itr := s.executeQuery(qry)
+	itr := s.executeQuery(qry, nil)
 	if itr.err != ErrNoConnections {
 		t.Fatalf("expected itr.err to be '%v', got '%v'", ErrNoConnections, itr.err)
 	}
 
 	testBatch := s.Batch(LoggedBatch)
 	testBatch.Query("test")
-	err := s.ExecuteBatch(testBatch)
+	_, err := s.ExecuteBatch(testBatch)
 
 	if err != ErrNoConnections {
 		t.Fatalf("expected session.ExecuteBatch to return '%v', got '%v'", ErrNoConnections, err)
@@ -111,7 +111,7 @@ func TestSessionAPI(t *testing.T) {
 	//Should just return cleanly
 	s.Close()
 
-	err = s.ExecuteBatch(testBatch)
+	_, err = s.ExecuteBatch(testBatch)
 	if err != ErrSessionClosed {
 		t.Fatalf("expected session.ExecuteBatch to return '%v', got '%v'", ErrSessionClosed, err)
 	}
@@ -123,29 +123,33 @@ func (f funcQueryObserver) ObserveQuery(ctx context.Context, o ObservedQuery) {
 	f(ctx, o)
 }
 
-func TestQueryBasicAPI(t *testing.T) {
-	qry := &Query{routingInfo: &queryRoutingInfo{}}
+func TestIterBasicAPI(t *testing.T) {
+	iter := &Iter{}
 
 	// Initiate host
 	ip := "127.0.0.1"
 
-	qry.metrics = preFilledQueryMetrics(map[string]*hostMetrics{ip: {Attempts: 0, TotalLatency: 0}})
-	if qry.Latency() != 0 {
-		t.Fatalf("expected Query.Latency() to return 0, got %v", qry.Latency())
+	iter.metrics = preFilledQueryMetrics(map[string]*hostMetrics{ip: {Attempts: 0, TotalLatency: 0}})
+	if iter.Latency() != 0 {
+		t.Fatalf("expected Iter.Latency() to return 0, got %v", iter.Latency())
 	}
 
-	qry.metrics = preFilledQueryMetrics(map[string]*hostMetrics{ip: {Attempts: 2, TotalLatency: 4}})
-	if qry.Attempts() != 2 {
-		t.Fatalf("expected Query.Attempts() to return 2, got %v", qry.Attempts())
+	iter.metrics = preFilledQueryMetrics(map[string]*hostMetrics{ip: {Attempts: 2, TotalLatency: 4}})
+	if iter.Attempts() != 2 {
+		t.Fatalf("expected Iter.Attempts() to return 2, got %v", iter.Attempts())
 	}
-	if qry.Latency() != 2 {
-		t.Fatalf("expected Query.Latency() to return 2, got %v", qry.Latency())
+	if iter.Latency() != 2 {
+		t.Fatalf("expected Iter.Latency() to return 2, got %v", iter.Latency())
 	}
 
-	qry.AddAttempts(2, &HostInfo{hostname: ip, connectAddress: net.ParseIP(ip), port: 9042})
-	if qry.Attempts() != 4 {
-		t.Fatalf("expected Query.Attempts() to return 4, got %v", qry.Attempts())
+	iter.AddAttempts(2, &HostInfo{hostname: ip, connectAddress: net.ParseIP(ip), port: 9042})
+	if iter.Attempts() != 4 {
+		t.Fatalf("expected Iter.Attempts() to return 4, got %v", iter.Attempts())
 	}
+}
+
+func TestQueryBasicAPI(t *testing.T) {
+	qry := &Query{routingInfo: &queryRoutingInfo{}}
 
 	qry.Consistency(All)
 	if qry.GetConsistency() != All {
@@ -230,29 +234,6 @@ func TestBatchBasicAPI(t *testing.T) {
 	b = s.Batch(LoggedBatch)
 	if b.Type != LoggedBatch {
 		t.Fatalf("expected batch.Type to be '%v', got '%v'", LoggedBatch, b.Type)
-	}
-
-	ip := "127.0.0.1"
-
-	// Test attempts
-	b.metrics = preFilledQueryMetrics(map[string]*hostMetrics{ip: {Attempts: 1}})
-	if b.Attempts() != 1 {
-		t.Fatalf("expected batch.Attempts() to return %v, got %v", 1, b.Attempts())
-	}
-
-	b.AddAttempts(2, &HostInfo{hostname: ip, connectAddress: net.ParseIP(ip), port: 9042})
-	if b.Attempts() != 3 {
-		t.Fatalf("expected batch.Attempts() to return %v, got %v", 3, b.Attempts())
-	}
-
-	// Test latency
-	if b.Latency() != 0 {
-		t.Fatalf("expected batch.Latency() to be 0, got %v", b.Latency())
-	}
-
-	b.metrics = preFilledQueryMetrics(map[string]*hostMetrics{ip: {Attempts: 1, TotalLatency: 4}})
-	if b.Latency() != 4 {
-		t.Fatalf("expected batch.Latency() to return %v, got %v", 4, b.Latency())
 	}
 
 	// Test Consistency

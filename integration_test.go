@@ -221,7 +221,7 @@ func TestCustomPayloadMessages(t *testing.T) {
 	b := session.Batch(LoggedBatch)
 	b.CustomPayload = customPayload
 	b.Query("INSERT INTO testCustomPayloadMessages(id,value) VALUES(1, 1)")
-	if err := session.ExecuteBatch(b); err != nil {
+	if _, err := session.ExecuteBatch(b); err != nil {
 		t.Fatalf("query failed. %v", err)
 	}
 }
