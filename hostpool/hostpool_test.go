@@ -17,12 +17,18 @@ func TestHostPolicy_HostPool(t *testing.T) {
 	//	{hostId: "0", connectAddress: net.IPv4(10, 0, 0, 0)},
 	//	{hostId: "1", connectAddress: net.IPv4(10, 0, 0, 1)},
 	//}
-	firstHost := &gocql.HostInfo{}
+	
+	firstHost, err := gocql.NewHostInfo(net.IPv4(10, 0, 0, 0), 9042)
+	if err != nil {
+		t.Errorf("Error creating first host: %v", err)
+	}
 	firstHost.SetHostID("0")
-	firstHost.SetConnectAddress(net.IPv4(10, 0, 0, 0))
-	secHost := &gocql.HostInfo{}
+
+	secHost, err := gocql.NewHostInfo(net.IPv4(10, 0, 0, 1), 9042)
+	if err != nil {
+		t.Errorf("Error creating second host: %v", err)
+	}
 	secHost.SetHostID("1")
-	secHost.SetConnectAddress(net.IPv4(10, 0, 0, 1))
 	hosts := []*gocql.HostInfo{firstHost, secHost}
 	// Using set host to control the ordering of the hosts as calling "AddHost" iterates the map
 	// which will result in an unpredictable ordering

@@ -146,7 +146,7 @@ func hostInfo(addr string, defaultPort int) ([]*HostInfo, error) {
 
 	// Check if host is a literal IP address
 	if ip := net.ParseIP(host); ip != nil {
-		h, err := newHostInfo(ip, port)
+		h, err := NewHostInfo(ip, port)
 		if err != nil {
 			return nil, err
 		}
@@ -176,7 +176,7 @@ func hostInfo(addr string, defaultPort int) ([]*HostInfo, error) {
 	}
 
 	for _, ip := range ips {
-		h, err := newHostInfo(ip, port)
+		h, err := NewHostInfo(ip, port)
 		if err != nil {
 			return nil, err
 		}
