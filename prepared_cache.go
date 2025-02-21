@@ -100,3 +100,20 @@ func (p *preparedLRU) evictPreparedID(key string, id []byte) {
 	}
 
 }
+
+func (p *preparedLRU) get(key string) (*inflightPrepare, bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	val, ok := p.lru.Get(key)
+	if !ok {
+		return nil, false
+	}
+
+	ifp, ok := val.(*inflightPrepare)
+	if !ok {
+		return nil, false
+	}
+
+	return ifp, true
+}
