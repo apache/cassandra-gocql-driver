@@ -181,7 +181,9 @@ type HostInfo struct {
 	tokens           []string
 }
 
-func newHostInfo(addr net.IP, port int) (*HostInfo, error) {
+// NewHostInfo creates HostInfo with provided connectAddress and port.
+// It returns an error if addr is invalid.
+func NewHostInfo(addr net.IP, port int) (*HostInfo, error) {
 	if !validIpAddr(addr) {
 		return nil, errors.New("invalid host address")
 	}
