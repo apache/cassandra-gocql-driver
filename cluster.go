@@ -220,6 +220,10 @@ type ClusterConfig struct {
 	// See https://issues.apache.org/jira/browse/CASSANDRA-10786
 	DisableSkipMetadata bool
 
+	// QueryAttemptInterceptor will set the provided query interceptor on all queries created from this session.
+	// Use it to intercept and modify queries by providing an implementation of QueryAttemptInterceptor.
+	QueryAttemptInterceptor QueryAttemptInterceptor
+
 	// QueryObserver will set the provided query observer on all queries created from this session.
 	// Use it to collect metrics / stats from queries by providing an implementation of QueryObserver.
 	QueryObserver QueryObserver

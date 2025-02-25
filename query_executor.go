@@ -26,6 +26,7 @@ package gocql
 
 import (
 	"context"
+	"net"
 	"sync"
 	"time"
 )
@@ -34,7 +35,7 @@ type ExecutableQuery interface {
 	borrowForExecution()    // Used to ensure that the query stays alive for lifetime of a particular execution goroutine.
 	releaseAfterExecution() // Used when a goroutine finishes its execution attempts, either with ok result or an error.
 	execute(ctx context.Context, conn *Conn) *Iter
-	attempt(keyspace string, end, start time.Time, iter *Iter, host *HostInfo)
+	attempt(ctx context.Context, keyspace string, end, start time.Time, iter *Iter, host *HostInfo)
 	retryPolicy() RetryPolicy
 	speculativeExecutionPolicy() SpeculativeExecutionPolicy
 	GetRoutingKey() ([]byte, error)
@@ -48,16 +49,68 @@ type ExecutableQuery interface {
 }
 
 type queryExecutor struct {
-	pool   *policyConnPool
-	policy HostSelectionPolicy
+	pool        *policyConnPool
+	policy      HostSelectionPolicy
+	interceptor QueryAttemptInterceptor
+}
+
+type QueryAttempt struct {
+	// The query to execute, either a *gocql.Query or *gocql.Batch.
+	Query ExecutableQuery
+	// The host that will receive the query.
+	Host *HostInfo
+	// The local address of the connection used to execute the query.
+	LocalAddr net.Addr
+	// The remote address of the connection used to execute the query.
+	RemoteAddr net.Addr
+	// The number of previous query attempts. 0 for the initial attempt, 1 for the first retry, etc.
+	Attempts int
+}
+
+// QueryAttemptHandler is a function that attempts query execution.
+type QueryAttemptHandler = func(context.Context, QueryAttempt) (*Iter, error)
+
+// QueryAttemptInterceptor is the interface implemented by query interceptors / middleware.
+//
+// Interceptors are well-suited to logic that is not specific to a single query or batch.
+type QueryAttemptInterceptor interface {
+	// Intercept is invoked once immediately before a query execution attempt, including retry attempts and
+	// speculative execution attempts.
+
+	// The interceptor is responsible for calling the `handler` function and returning the handler result. If the
+	// interceptor wants to bypass the handler and skip query execution, it should return an error. Failure to
+	// return either the handler result or an error will panic.
+	Intercept(ctx context.Context, attempt QueryAttempt, handler QueryAttemptHandler) (*Iter, error)
 }
 
 func (q *queryExecutor) attemptQuery(ctx context.Context, qry ExecutableQuery, conn *Conn) *Iter {
 	start := time.Now()
-	iter := qry.execute(ctx, conn)
-	end := time.Now()
+	var iter *Iter
+	var err error
+	if q.interceptor != nil {
+		// Propagate interceptor context modifications.
+		_ctx := ctx
+		attempt := QueryAttempt{
+			Query:      qry,
+			Host:       conn.host,
+			LocalAddr:  conn.conn.LocalAddr(),
+			RemoteAddr: conn.conn.RemoteAddr(),
+			Attempts:   qry.Attempts(),
+		}
+		iter, err = q.interceptor.Intercept(_ctx, attempt, func(_ctx context.Context, attempt QueryAttempt) (*Iter, error) {
+			ctx = _ctx
+			iter := attempt.Query.execute(ctx, conn)
+			return iter, iter.err
+		})
+		if err != nil {
+			iter = &Iter{err: err}
+		}
+	} else {
+		iter = qry.execute(ctx, conn)
+	}
 
-	qry.attempt(q.pool.keyspace, end, start, iter, conn.host)
+	end := time.Now()
+	qry.attempt(ctx, q.pool.keyspace, end, start, iter, conn.host)
 
 	return iter
 }
