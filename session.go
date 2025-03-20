@@ -1135,16 +1135,17 @@ func (q *Query) attempt(keyspace string, end, start time.Time, iter *Iter, host 
 
 	if q.observer != nil {
 		q.observer.ObserveQuery(q.Context(), ObservedQuery{
-			Keyspace:  keyspace,
-			Statement: q.stmt,
-			Values:    q.values,
-			Start:     start,
-			End:       end,
-			Rows:      iter.numRows,
-			Host:      host,
-			Metrics:   metricsForHost,
-			Err:       iter.err,
-			Attempt:   attempt,
+			Keyspace:     keyspace,
+			Statement:    q.stmt,
+			IsIdempotent: q.IsIdempotent(),
+			Values:       q.values,
+			Start:        start,
+			End:          end,
+			Rows:         iter.numRows,
+			Host:         host,
+			Metrics:      metricsForHost,
+			Err:          iter.err,
+			Attempt:      attempt,
 		})
 	}
 }
@@ -1993,11 +1994,12 @@ func (b *Batch) attempt(keyspace string, end, start time.Time, iter *Iter, host 
 	}
 
 	b.observer.ObserveBatch(b.Context(), ObservedBatch{
-		Keyspace:   keyspace,
-		Statements: statements,
-		Values:     values,
-		Start:      start,
-		End:        end,
+		Keyspace:     keyspace,
+		Statements:   statements,
+		IsIdempotent: b.IsIdempotent(),
+		Values:       values,
+		Start:        start,
+		End:          end,
 		// Rows not used in batch observations // TODO - might be able to support it when using BatchCAS
 		Host:    host,
 		Metrics: metricsForHost,
@@ -2226,6 +2228,9 @@ type ObservedQuery struct {
 	// Do not modify the values here, they are shared with multiple goroutines.
 	Values []interface{}
 
+	// IsIdempotent is true if the query is marked as idempotent.
+	IsIdempotent bool
+
 	Start time.Time // time immediately before the query was called
 	End   time.Time // time immediately after the query returned
 
@@ -2262,6 +2267,9 @@ type QueryObserver interface {
 type ObservedBatch struct {
 	Keyspace   string
 	Statements []string
+
+	// IsIdempotent is true if the query is marked as idempotent.
+	IsIdempotent bool
 
 	// Values holds a slice of bound values for each statement.
 	// Values[i] are bound values passed to Statements[i].
