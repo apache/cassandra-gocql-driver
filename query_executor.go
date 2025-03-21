@@ -83,7 +83,7 @@ func (q *queryExecutor) speculate(ctx context.Context, qry ExecutableQuery, sp S
 	return nil
 }
 
-func (q *queryExecutor) executeQuery(qry ExecutableQuery) (*Iter, error) {
+func (q *queryExecutor) executeQuery(qry ExecutableQuery) *Iter {
 	var hostIter NextHost
 
 	// check if the host id is specified for the query,
@@ -110,7 +110,7 @@ func (q *queryExecutor) executeQuery(qry ExecutableQuery) (*Iter, error) {
 	// it is, we force the policy to NonSpeculative
 	sp := qry.speculativeExecutionPolicy()
 	if qry.GetHostID() != "" || !qry.IsIdempotent() || sp.Attempts() == 0 {
-		return q.do(qry.Context(), qry, hostIter), nil
+		return q.do(qry.Context(), qry, hostIter)
 	}
 
 	// When speculative execution is enabled, we could be accessing the host iterator from multiple goroutines below.
@@ -136,14 +136,14 @@ func (q *queryExecutor) executeQuery(qry ExecutableQuery) (*Iter, error) {
 	// execution, on a timer. So Speculation{2} would make 3 executions running
 	// in total.
 	if iter := q.speculate(ctx, qry, sp, hostIter, results); iter != nil {
-		return iter, nil
+		return iter
 	}
 
 	select {
 	case iter := <-results:
-		return iter, nil
+		return iter
 	case <-ctx.Done():
-		return &Iter{err: ctx.Err()}, nil
+		return &Iter{err: ctx.Err()}
 	}
 }
 

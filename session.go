@@ -51,20 +51,22 @@ import (
 // and automatically sets a default consistency level on all operations
 // that do not have a consistency level set.
 type Session struct {
-	cons                Consistency
-	pageSize            int
-	prefetch            float64
-	routingKeyInfoCache routingKeyInfoLRU
-	schemaDescriber     *schemaDescriber
-	trace               Tracer
-	queryObserver       QueryObserver
-	batchObserver       BatchObserver
-	connectObserver     ConnectObserver
-	frameObserver       FrameHeaderObserver
-	streamObserver      StreamObserver
-	hostSource          *ringDescriber
-	ringRefresher       *refreshDebouncer
-	stmtsLRU            *preparedLRU
+	cons                 Consistency
+	pageSize             int
+	prefetch             float64
+	routingKeyInfoCache  routingKeyInfoLRU
+	schemaDescriber      *schemaDescriber
+	trace                Tracer
+	queryObserver        QueryObserver
+	queryRequestObserver QueryObserver
+	batchObserver        BatchObserver
+	batchRequestObserver BatchObserver
+	connectObserver      ConnectObserver
+	frameObserver        FrameHeaderObserver
+	streamObserver       StreamObserver
+	hostSource           *ringDescriber
+	ringRefresher        *refreshDebouncer
+	stmtsLRU             *preparedLRU
 
 	connCfg *ConnConfig
 
@@ -187,7 +189,9 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 	}
 
 	s.queryObserver = cfg.QueryObserver
+	s.queryRequestObserver = cfg.QueryRequestObserver
 	s.batchObserver = cfg.BatchObserver
+	s.batchRequestObserver = cfg.BatchRequestObserver
 	s.connectObserver = cfg.ConnectObserver
 	s.frameObserver = cfg.FrameHeaderObserver
 	s.streamObserver = cfg.StreamObserver
@@ -548,15 +552,7 @@ func (s *Session) executeQuery(qry *Query) (it *Iter) {
 		return &Iter{err: ErrSessionClosed}
 	}
 
-	iter, err := s.executor.executeQuery(qry)
-	if err != nil {
-		return &Iter{err: err}
-	}
-	if iter == nil {
-		panic("nil iter")
-	}
-
-	return iter
+	return s.executor.executeQuery(qry)
 }
 
 func (s *Session) removeHost(h *HostInfo) {
@@ -767,10 +763,9 @@ func (s *Session) executeBatch(batch *Batch) *Iter {
 		return &Iter{err: ErrTooManyStmts}
 	}
 
-	iter, err := s.executor.executeQuery(batch)
-	if err != nil {
-		return &Iter{err: err}
-	}
+	start := time.Now()
+	iter := s.executor.executeQuery(batch)
+	batch.observeRequest(start, time.Now(), iter)
 
 	return iter
 }
@@ -939,6 +934,7 @@ type Query struct {
 	prefetch              float64
 	trace                 Tracer
 	observer              QueryObserver
+	requestObserver       QueryObserver
 	session               *Session
 	conn                  *Conn
 	rt                    RetryPolicy
@@ -991,6 +987,7 @@ func (q *Query) defaultsFromSession() {
 	q.pageSize = s.pageSize
 	q.trace = s.trace
 	q.observer = s.queryObserver
+	q.requestObserver = s.queryRequestObserver
 	q.prefetch = s.prefetch
 	q.rt = s.cfg.RetryPolicy
 	q.serialCons = s.cfg.SerialConsistency
@@ -1163,6 +1160,20 @@ func (q *Query) attempt(keyspace string, end, start time.Time, iter *Iter, host 
 			Metrics:   metricsForHost,
 			Err:       iter.err,
 			Attempt:   attempt,
+		})
+	}
+}
+
+func (q *Query) observeRequest(start, end time.Time, iter *Iter) {
+	if q.requestObserver != nil {
+		q.requestObserver.ObserveQuery(q.Context(), ObservedQuery{
+			Keyspace:  q.session.pool.keyspace,
+			Statement: q.stmt,
+			Values:    q.values,
+			Start:     start,
+			End:       end,
+			Rows:      iter.numRows,
+			Err:       iter.err,
 		})
 	}
 }
@@ -1352,12 +1363,20 @@ func (q *Query) Iter() *Iter {
 	if isUseStatement(q.stmt) {
 		return &Iter{err: ErrUseStmt}
 	}
+	return q.iter()
+}
+
+func (q *Query) iter() *Iter {
+	start := time.Now()
+	var iter *Iter
 	// if the query was specifically run on a connection then re-use that
 	// connection when fetching the next results
 	if q.conn != nil {
-		return q.conn.executeQuery(q.Context(), q)
+		iter = q.conn.executeQuery(q.Context(), q)
 	}
-	return q.session.executeQuery(q)
+	iter = q.session.executeQuery(q)
+	q.observeRequest(start, time.Now(), iter)
+	return iter
 }
 
 // MapScan executes the query, copies the columns of the first selected
@@ -1792,15 +1811,7 @@ func (n *nextIter) fetchAsync() {
 }
 
 func (n *nextIter) fetch() *Iter {
-	n.once.Do(func() {
-		// if the query was specifically run on a connection then re-use that
-		// connection when fetching the next results
-		if n.qry.conn != nil {
-			n.next = n.qry.conn.executeQuery(n.qry.Context(), n.qry)
-		} else {
-			n.next = n.qry.session.executeQuery(n.qry)
-		}
-	})
+	n.once.Do(func() { n.next = n.qry.iter() })
 	return n.next
 }
 
@@ -1814,6 +1825,7 @@ type Batch struct {
 	spec                  SpeculativeExecutionPolicy
 	trace                 Tracer
 	observer              BatchObserver
+	requestObserver       BatchObserver
 	session               *Session
 	serialCons            Consistency
 	defaultTimestamp      bool
@@ -1844,6 +1856,7 @@ func (s *Session) Batch(typ BatchType) *Batch {
 		serialCons:       s.cfg.SerialConsistency,
 		trace:            s.trace,
 		observer:         s.batchObserver,
+		requestObserver:  s.batchRequestObserver,
 		session:          s,
 		Cons:             s.cons,
 		defaultTimestamp: s.cfg.DefaultTimestamp,
@@ -2050,6 +2063,17 @@ func (b *Batch) attempt(keyspace string, end, start time.Time, iter *Iter, host 
 		Err:     iter.err,
 		Attempt: attempt,
 	})
+}
+
+func (b *Batch) observeRequest(start, end time.Time, iter *Iter) {
+	if b.requestObserver != nil {
+		b.requestObserver.ObserveBatch(b.Context(), ObservedBatch{
+			Keyspace: b.session.pool.keyspace,
+			Start:    start,
+			End:      end,
+			Err:      iter.err,
+		})
+	}
 }
 
 func (b *Batch) GetRoutingKey() ([]byte, error) {

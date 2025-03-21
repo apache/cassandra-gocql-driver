@@ -224,9 +224,15 @@ type ClusterConfig struct {
 	// Use it to collect metrics / stats from queries by providing an implementation of QueryObserver.
 	QueryObserver QueryObserver
 
+	// Similar to QueryObserver but tracks total latency for all attempts.
+	QueryRequestObserver QueryObserver
+
 	// BatchObserver will set the provided batch observer on all queries created from this session.
 	// Use it to collect metrics / stats from batch queries by providing an implementation of BatchObserver.
 	BatchObserver BatchObserver
+
+	// Similar to BatchObserver but tracks total latency for all attempts.
+	BatchRequestObserver BatchObserver
 
 	// ConnectObserver will set the provided connect observer on all queries
 	// created from this session.
