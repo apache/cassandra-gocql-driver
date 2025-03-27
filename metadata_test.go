@@ -477,6 +477,51 @@ func TestCompileMetadata(t *testing.T) {
 	)
 }
 
+func TestCompileVirtualMetadata(t *testing.T) {
+	keyspace := &VirtualKeyspaceMetadata{
+		Name: "V1Keyspace",
+	}
+	tables := []VirtualTableMetadata{
+		{
+			Keyspace: "V1Keyspace",
+			Name:     "peers",
+			Comment:  "some",
+		},
+	}
+	columns := []VirtualColumnMetadata{
+		// Here are the regular columns from the peers table for testing regular columns
+		{Keyspace: "V1Keyspace", Table: "peers", Kind: ColumnRegular, Name: "data_center", Type: NativeType{typ: TypeVarchar}},
+		{Keyspace: "V1Keyspace", Table: "peers", Kind: ColumnRegular, Name: "host_id", Type: NativeType{typ: TypeVarchar}},
+		{Keyspace: "V1Keyspace", Table: "peers", Kind: ColumnRegular, Name: "rack", Type: NativeType{typ: TypeVarchar}},
+		{Keyspace: "V1Keyspace", Table: "peers", Kind: ColumnRegular, Name: "release_version", Type: NativeType{typ: TypeVarchar}},
+		{Keyspace: "V1Keyspace", Table: "peers", Kind: ColumnRegular, Name: "rpc_address", Type: NativeType{typ: TypeVarchar}},
+		{Keyspace: "V1Keyspace", Table: "peers", Kind: ColumnRegular, Name: "schema_version", Type: NativeType{typ: TypeVarchar}},
+		{Keyspace: "V1Keyspace", Table: "peers", Kind: ColumnRegular, Name: "tokens", Type: NativeType{typ: TypeVarchar}},
+	}
+
+	compileVirtualMetadata(keyspace, tables, columns)
+	assertVirtualKeyspaceMetadata(t, keyspace,
+		&VirtualKeyspaceMetadata{
+			Name: "V1Keyspace",
+			Tables: map[string]*VirtualTableMetadata{
+				"peers": {
+					Keyspace: "V1Keyspace",
+					Name:     "peers",
+					Columns: map[string]*VirtualColumnMetadata{
+						"data_center":     {Keyspace: "V1Keyspace", Table: "peers", Kind: ColumnRegular, Name: "data_center", Type: NativeType{typ: TypeVarchar}},
+						"host_id":         {Keyspace: "V1Keyspace", Table: "peers", Kind: ColumnRegular, Name: "host_id", Type: NativeType{typ: TypeVarchar}},
+						"rack":            {Keyspace: "V1Keyspace", Table: "peers", Kind: ColumnRegular, Name: "rack", Type: NativeType{typ: TypeVarchar}},
+						"release_version": {Keyspace: "V1Keyspace", Table: "peers", Kind: ColumnRegular, Name: "release_version", Type: NativeType{typ: TypeVarchar}},
+						"rpc_address":     {Keyspace: "V1Keyspace", Table: "peers", Kind: ColumnRegular, Name: "rpc_address", Type: NativeType{typ: TypeVarchar}},
+						"schema_version":  {Keyspace: "V1Keyspace", Table: "peers", Kind: ColumnRegular, Name: "schema_version", Type: NativeType{typ: TypeVarchar}},
+						"tokens":          {Keyspace: "V1Keyspace", Table: "peers", Kind: ColumnRegular, Name: "tokens", Type: NativeType{typ: TypeVarchar}},
+					},
+				},
+			},
+		},
+	)
+}
+
 // Helper function for asserting that actual metadata returned was as expected
 func assertKeyspaceMetadata(t *testing.T, actual, expected *KeyspaceMetadata) {
 	if len(expected.Tables) != len(actual.Tables) {
@@ -565,7 +610,7 @@ func assertKeyspaceMetadata(t *testing.T, actual, expected *KeyspaceMetadata) {
 						t.Errorf("Expected %s.Tables[%s].Columns[%s] but was not found", expected.Name, keyT, keyC)
 					} else {
 						if keyC != ac.Name {
-							t.Errorf("Expected %s.Tables[%s].Columns[%s].Name to be '%v' but was '%v'", expected.Name, keyT, keyC, keyC, at.Name)
+							t.Errorf("Expected %s.Tables[%s].Columns[%s].Name to be '%v' but was '%v'", expected.Name, keyT, keyC, keyC, ac.Name)
 						}
 						if expected.Name != ac.Keyspace {
 							t.Errorf("Expected %s.Tables[%s].Columns[%s].Keyspace to be '%v' but was '%v'", expected.Name, keyT, keyC, expected.Name, ac.Keyspace)
@@ -587,6 +632,61 @@ func assertKeyspaceMetadata(t *testing.T, actual, expected *KeyspaceMetadata) {
 			}
 		}
 	}
+}
+
+func assertVirtualKeyspaceMetadata(t *testing.T, actualKeyspace, expectedKeyspace *VirtualKeyspaceMetadata) {
+	if len(expectedKeyspace.Tables) != len(actualKeyspace.Tables) {
+		t.Errorf("Expected len(%s.Tables) to be %v but was %v", expectedKeyspace.Name, len(expectedKeyspace.Tables), len(actualKeyspace.Tables))
+	}
+	for expectedTableName, expectedTable := range expectedKeyspace.Tables {
+		actualTable, found := actualKeyspace.Tables[expectedTableName]
+		if !found {
+			t.Errorf("Expected %s.Tables[%s] but was not found", expectedKeyspace.Name, expectedTableName)
+		} else {
+			if expectedTableName != actualTable.Name {
+				t.Errorf("Expected %s.Tables[%s].Name to be %v but was %v", expectedKeyspace.Name, expectedTableName, expectedTableName, actualTable.Name)
+			}
+			if expectedTableName == "peers" {
+
+			}
+			if len(expectedTable.Columns) != len(actualTable.Columns) {
+				eKeys := make([]string, 0, len(expectedTable.Columns))
+				for key := range expectedTable.Columns {
+					eKeys = append(eKeys, key)
+				}
+				aKeys := make([]string, 0, len(actualTable.Columns))
+				for key := range actualTable.Columns {
+					aKeys = append(aKeys, key)
+				}
+				t.Errorf("Expected len(%s.Tables[%s].Columns) to be %v (keys:%v) but was %v (keys:%v)", expectedKeyspace.Name, expectedTableName, len(expectedTable.Columns), eKeys, len(actualTable.Columns), aKeys)
+			} else {
+				for expectedColumnName, expectedColumn := range expectedTable.Columns {
+					actualColumn, found := actualTable.Columns[expectedColumnName]
+
+					if !found {
+						t.Errorf("Expected %s.Tables[%s].Columns[%s] but was not found", expectedKeyspace.Name, expectedTableName, expectedColumnName)
+					} else {
+						if expectedColumnName != actualColumn.Name {
+							t.Errorf("Expected %s.Tables[%s].Columns[%s].Name to be '%v' but was '%v'", expectedKeyspace.Name, expectedTableName, expectedColumnName, expectedColumnName, actualColumn.Name)
+						}
+						if expectedKeyspace.Name != actualColumn.Keyspace {
+							t.Errorf("Expected %s.Tables[%s].Columns[%s].Keyspace to be '%v' but was '%v'", expectedKeyspace.Name, expectedTableName, expectedColumnName, expectedKeyspace.Name, actualColumn.Keyspace)
+						}
+						if expectedTableName != actualColumn.Table {
+							t.Errorf("Expected %s.Tables[%s].Columns[%s].Table to be '%v' but was '%v'", expectedKeyspace.Name, expectedTableName, expectedColumnName, expectedTableName, actualColumn.Table)
+						}
+						if expectedColumn.Type.Type() != actualColumn.Type.Type() {
+							t.Errorf("Expected %s.Tables[%s].Columns[%s].Type.Type to be %v but was %v", expectedKeyspace.Name, expectedTableName, expectedColumnName, expectedColumn.Type.Type(), actualColumn.Type.Type())
+						}
+						if expectedColumn.Kind != actualColumn.Kind {
+							t.Errorf("Expected %s.Tables[%s].Columns[%s].Kind to be '%v' but was '%v'", expectedKeyspace.Name, expectedTableName, expectedColumnName, expectedColumn.Kind, actualColumn.Kind)
+						}
+					}
+				}
+			}
+		}
+	}
+
 }
 
 // Tests the cassandra type definition parser

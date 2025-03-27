@@ -51,20 +51,21 @@ import (
 // and automatically sets a default consistency level on all operations
 // that do not have a consistency level set.
 type Session struct {
-	cons                Consistency
-	pageSize            int
-	prefetch            float64
-	routingKeyInfoCache routingKeyInfoLRU
-	schemaDescriber     *schemaDescriber
-	trace               Tracer
-	queryObserver       QueryObserver
-	batchObserver       BatchObserver
-	connectObserver     ConnectObserver
-	frameObserver       FrameHeaderObserver
-	streamObserver      StreamObserver
-	hostSource          *ringDescriber
-	ringRefresher       *refreshDebouncer
-	stmtsLRU            *preparedLRU
+	cons                   Consistency
+	pageSize               int
+	prefetch               float64
+	routingKeyInfoCache    routingKeyInfoLRU
+	schemaDescriber        *schemaDescriber
+	virtualSchemaDescriber *virtualSchemaDescriber
+	trace                  Tracer
+	queryObserver          QueryObserver
+	batchObserver          BatchObserver
+	connectObserver        ConnectObserver
+	frameObserver          FrameHeaderObserver
+	streamObserver         StreamObserver
+	hostSource             *ringDescriber
+	ringRefresher          *refreshDebouncer
+	stmtsLRU               *preparedLRU
 
 	connCfg *ConnConfig
 
@@ -164,6 +165,7 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 	}
 
 	s.schemaDescriber = newSchemaDescriber(s)
+	s.virtualSchemaDescriber = newVirtualSchemaDescriber(s)
 
 	s.nodeEvents = newEventDebouncer("NodeEvents", s.handleNodeEvent, s.logger)
 	s.schemaEvents = newEventDebouncer("SchemaEvents", s.handleSchemaEvent, s.logger)
@@ -576,6 +578,17 @@ func (s *Session) KeyspaceMetadata(keyspace string) (*KeyspaceMetadata, error) {
 	}
 
 	return s.schemaDescriber.getSchema(keyspace)
+}
+
+// VirtualKeyspaceMetadata returns the schema metadata for the virtual keyspace specified. Returns an error if the keyspace does not exist.
+func (s *Session) VirtualKeyspaceMetadata(keyspace string) (*VirtualKeyspaceMetadata, error) {
+	if s.Closed() {
+		return nil, ErrSessionClosed
+	} else if keyspace == "" {
+		return nil, ErrNoKeyspace
+	}
+
+	return s.virtualSchemaDescriber.getSchema(keyspace)
 }
 
 func (s *Session) getConn() *Conn {

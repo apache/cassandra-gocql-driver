@@ -50,6 +50,12 @@ type KeyspaceMetadata struct {
 	UserTypes         map[string]*UserTypeMetadata
 }
 
+// schema metadata for a virtual keyspace
+type VirtualKeyspaceMetadata struct {
+	Name   string
+	Tables map[string]*VirtualTableMetadata
+}
+
 // schema metadata for a table (a.k.a. column family)
 type TableMetadata struct {
 	Keyspace          string
@@ -66,6 +72,13 @@ type TableMetadata struct {
 	OrderedColumns    []string
 }
 
+type VirtualTableMetadata struct {
+	Keyspace string
+	Name     string
+	Comment  string
+	Columns  map[string]*VirtualColumnMetadata
+}
+
 // schema metadata for a column
 type ColumnMetadata struct {
 	Keyspace        string
@@ -78,6 +91,15 @@ type ColumnMetadata struct {
 	ClusteringOrder string
 	Order           ColumnOrder
 	Index           ColumnIndexMetadata
+}
+
+type VirtualColumnMetadata struct {
+	Keyspace        string
+	Table           string
+	Name            string
+	ClusteringOrder string
+	Kind            ColumnKind
+	Type            TypeInfo
 }
 
 // FunctionMetadata holds metadata for function constructs
@@ -231,12 +253,28 @@ type schemaDescriber struct {
 	cache map[string]*KeyspaceMetadata
 }
 
+// queries the cluster for schema information for a virtual keyspace
+type virtualSchemaDescriber struct {
+	session *Session
+	mu      sync.Mutex
+	cache   map[string]*VirtualKeyspaceMetadata
+}
+
 // creates a session bound schema describer which will query and cache
 // keyspace metadata
 func newSchemaDescriber(session *Session) *schemaDescriber {
 	return &schemaDescriber{
 		session: session,
 		cache:   map[string]*KeyspaceMetadata{},
+	}
+}
+
+// creates a session bound schema describer which will query and cache
+// virtual keyspace metadata
+func newVirtualSchemaDescriber(session *Session) *virtualSchemaDescriber {
+	return &virtualSchemaDescriber{
+		session: session,
+		cache:   map[string]*VirtualKeyspaceMetadata{},
 	}
 }
 
@@ -254,6 +292,23 @@ func (s *schemaDescriber) getSchema(keyspaceName string) (*KeyspaceMetadata, err
 			return nil, err
 		}
 
+		metadata = s.cache[keyspaceName]
+	}
+
+	return metadata, nil
+}
+
+// returns the cached VirtualKeyspaceMetadata held by the describer for the named
+// keyspace.
+func (s *virtualSchemaDescriber) getSchema(keyspaceName string) (*VirtualKeyspaceMetadata, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	metadata, found := s.cache[keyspaceName]
+	if !found {
+		err := s.refreshSchema(keyspaceName)
+		if err != nil {
+			return nil, err
+		}
 		metadata = s.cache[keyspaceName]
 	}
 
@@ -310,6 +365,43 @@ func (s *schemaDescriber) refreshSchema(keyspaceName string) error {
 
 	// update the cache
 	s.cache[keyspaceName] = keyspace
+
+	return nil
+}
+
+// forcibly updates the current VirtualKeyspaceMetadata held by the virtual schema describer
+// for a given named keyspace.
+func (s *virtualSchemaDescriber) refreshSchema(keyspaceName string) error {
+	var wg sync.WaitGroup
+
+	var (
+		tables              []VirtualTableMetadata
+		columns             []VirtualColumnMetadata
+		tableErr, columnErr error
+	)
+
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		tables, tableErr = getVirtualTableMetadata(s.session, keyspaceName)
+	}()
+	go func() {
+		defer wg.Done()
+		columns, columnErr = getVirtualColumnMetadata(s.session, keyspaceName)
+	}()
+	wg.Wait()
+
+	if columnErr != nil {
+		return columnErr
+	}
+	if tableErr != nil {
+		return tableErr
+	}
+
+	keyspaceMetadata := &VirtualKeyspaceMetadata{Name: keyspaceName}
+	compileVirtualMetadata(keyspaceMetadata, tables, columns)
+
+	s.cache[keyspaceName] = keyspaceMetadata
 
 	return nil
 }
@@ -392,6 +484,33 @@ func compileMetadata(
 		compileV1Metadata(tables, logger)
 	} else {
 		compileV2Metadata(tables, logger)
+	}
+}
+
+// "compiles" derived information about virtual keyspace, table, and column metadata
+// for a keyspace from the basic queried metadata objects returned by
+// getVirtualTableMetadata, and getVirtualColumnMetadata respectively;
+// Links the metadata objects together.
+func compileVirtualMetadata(
+	keyspace *VirtualKeyspaceMetadata,
+	tables []VirtualTableMetadata,
+	columns []VirtualColumnMetadata,
+) {
+	keyspace.Tables = make(map[string]*VirtualTableMetadata)
+	for i := range tables {
+		tables[i].Columns = make(map[string]*VirtualColumnMetadata)
+
+		keyspace.Tables[tables[i].Name] = &tables[i]
+	}
+
+	for i := range columns {
+		col := &columns[i]
+		table, ok := keyspace.Tables[col.Table]
+		if !ok {
+			continue
+		}
+
+		table.Columns[col.Name] = col
 	}
 }
 
@@ -738,6 +857,37 @@ func getTableMetadata(session *Session, keyspaceName string) ([]TableMetadata, e
 	return tables, nil
 }
 
+// query for only the table metadata in the specified keyspace from system_virtual_schema.tables
+func getVirtualTableMetadata(s *Session, keyspaceName string) ([]VirtualTableMetadata, error) {
+	const stmt = `
+		SELECT
+			table_name,
+			comment
+			FROM system_virtual_schema.tables
+			WHERE keyspace_name = ?`
+
+	tables := []VirtualTableMetadata{}
+	table := VirtualTableMetadata{Keyspace: keyspaceName}
+
+	iter := s.control.query(stmt, keyspaceName)
+	defer iter.Close()
+
+	if iter.err != nil {
+		return nil, fmt.Errorf("failed to iterate virtual table metadata for keyspace: %w", iter.err)
+	}
+
+	if iter.NumRows() == 0 {
+		return nil, ErrKeyspaceDoesNotExist
+	}
+
+	for iter.Scan(&table.Name, &table.Comment) {
+		tables = append(tables, table)
+		table = VirtualTableMetadata{Keyspace: keyspaceName}
+	}
+
+	return tables, nil
+}
+
 func (s *Session) scanColumnMetadataV1(keyspace string) ([]ColumnMetadata, error) {
 	// V1 does not support the type column, and all returned rows are
 	// of kind "regular".
@@ -920,6 +1070,52 @@ func getColumnMetadata(session *Session, keyspaceName string) ([]ColumnMetadata,
 
 	if err != nil && err != ErrNotFound {
 		return nil, fmt.Errorf("error querying column schema: %v", err)
+	}
+
+	return columns, nil
+}
+
+// query for only the column metadata in the specified keyspace from system_virtual_schema.columns
+func getVirtualColumnMetadata(s *Session, keyspaceName string) ([]VirtualColumnMetadata, error) {
+	const stmt = `
+		SELECT
+			table_name,
+			column_name,
+			clustering_order,
+			kind,
+			type
+			FROM system_virtual_schema.columns
+			WHERE keyspace_name = ?`
+
+	var columns []VirtualColumnMetadata
+
+	rows := s.control.query(stmt, keyspaceName).Scanner()
+
+	for rows.Next() {
+		var (
+			column     = VirtualColumnMetadata{Keyspace: keyspaceName}
+			columnType string
+		)
+
+		err := rows.Scan(
+			&column.Table,
+			&column.Name,
+			&column.ClusteringOrder,
+			&column.Kind,
+			&columnType,
+		)
+
+		if err != nil {
+			return nil, err
+		}
+
+		column.Type = getCassandraType(columnType, s.logger)
+
+		columns = append(columns, column)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate virtual column metadata for keyspace: %w", err)
 	}
 
 	return columns, nil
