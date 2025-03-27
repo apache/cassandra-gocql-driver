@@ -332,23 +332,29 @@ func (iter *Iter) RowData() (RowData, error) {
 	values := make([]interface{}, 0, len(iter.Columns()))
 
 	for _, column := range iter.Columns() {
-		if c, ok := column.TypeInfo.(TupleTypeInfo); !ok {
-			val, err := column.TypeInfo.NewWithError()
-			if err != nil {
-				iter.err = err
-				return RowData{}, err
-			}
+		if column.Name == "rack" && column.Keyspace == "system" && (column.Table == "peers_v2" || column.Table == "peers") {
+			var strPtr = new(string)
 			columns = append(columns, column.Name)
-			values = append(values, val)
+			values = append(values, &strPtr)
 		} else {
-			for i, elem := range c.Elems {
-				columns = append(columns, TupleColumnName(column.Name, i))
-				val, err := elem.NewWithError()
+			if c, ok := column.TypeInfo.(TupleTypeInfo); !ok {
+				val, err := column.TypeInfo.NewWithError()
 				if err != nil {
 					iter.err = err
 					return RowData{}, err
 				}
+				columns = append(columns, column.Name)
 				values = append(values, val)
+			} else {
+				for i, elem := range c.Elems {
+					columns = append(columns, TupleColumnName(column.Name, i))
+					val, err := elem.NewWithError()
+					if err != nil {
+						iter.err = err
+						return RowData{}, err
+					}
+					values = append(values, val)
+				}
 			}
 		}
 	}

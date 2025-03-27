@@ -50,6 +50,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Refactoring hostpool package test and Expose HostInfo creation (CASSGO-59)
 
+- Unable to discover cluster nodes with an empty rack name (CASSGO-6)
+
 ### Fixed
 - Cassandra version unmarshal fix (CASSGO-49)
 

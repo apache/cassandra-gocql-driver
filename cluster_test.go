@@ -25,6 +25,7 @@
 package gocql
 
 import (
+	"errors"
 	"net"
 	"reflect"
 	"testing"
@@ -79,4 +80,60 @@ func TestClusterConfig_translateAddressAndPort_Success(t *testing.T) {
 	newAddr, newPort := cfg.translateAddressPort(net.ParseIP("10.0.0.1"), 2345)
 	assertTrue(t, "translated address", net.ParseIP("10.10.10.10").Equal(newAddr))
 	assertEqual(t, "translated port", 5432, newPort)
+}
+
+func TestEmptyRack(t *testing.T) {
+	s := &Session{}
+	host := &HostInfo{}
+
+	row := make(map[string]interface{})
+
+	row["preferred_ip"] = "172.3.0.2"
+	row["rpc_address"] = "172.3.0.2"
+	row["host_id"] = UUIDFromTime(time.Now())
+	row["data_center"] = "dc1"
+	row["tokens"] = []string{"t1", "t2"}
+	row["rack"] = "rack1"
+
+	validHost, err := s.hostInfoFromMap(row, host)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !isValidPeer(validHost) {
+		t.Fatal(errors.New("expected valid host"))
+	}
+
+	row["rack"] = ""
+
+	validHost, err = s.hostInfoFromMap(row, host)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !isValidPeer(validHost) {
+		t.Fatal(errors.New("expected valid host"))
+	}
+
+	strPtr := new(string)
+	*strPtr = "rack"
+	row["rack"] = strPtr
+
+	validHost, err = s.hostInfoFromMap(row, host)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !isValidPeer(validHost) {
+		t.Fatal(errors.New("expected valid host"))
+	}
+
+	strPtr = new(string)
+	strPtr = nil
+	row["rack"] = strPtr
+
+	validHost, err = s.hostInfoFromMap(row, host)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if isValidPeer(validHost) {
+		t.Fatal(errors.New("expected invalid host"))
+	}
 }
