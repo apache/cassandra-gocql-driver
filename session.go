@@ -1153,16 +1153,18 @@ func (q *Query) attempt(keyspace string, end, start time.Time, iter *Iter, host 
 
 	if q.observer != nil {
 		q.observer.ObserveQuery(q.Context(), ObservedQuery{
-			Keyspace:  keyspace,
-			Statement: q.stmt,
-			Values:    q.values,
-			Start:     start,
-			End:       end,
-			Rows:      iter.numRows,
-			Host:      host,
-			Metrics:   metricsForHost,
-			Err:       iter.err,
-			Attempt:   attempt,
+			Keyspace:         keyspace,
+			Table:            q.Table(),
+			ConsistencyLevel: q.cons,
+			Statement:        q.stmt,
+			Values:           q.values,
+			Start:            start,
+			End:              end,
+			Rows:             iter.numRows,
+			Host:             host,
+			Metrics:          metricsForHost,
+			Err:              iter.err,
+			Attempt:          attempt,
 		})
 	}
 }
@@ -2283,8 +2285,10 @@ func (s *Session) GetHosts() []*HostInfo {
 }
 
 type ObservedQuery struct {
-	Keyspace  string
-	Statement string
+	Keyspace         string
+	Table            string
+	Statement        string
+	ConsistencyLevel Consistency
 
 	// Values holds a slice of bound values for the query.
 	// Do not modify the values here, they are shared with multiple goroutines.
