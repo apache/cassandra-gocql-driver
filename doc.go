@@ -271,7 +271,7 @@
 //
 // # Paging
 //
-// The driver supports paging of results with automatic prefetch, see ClusterConfig.PageSize, Session.SetPrefetch,
+// The driver supports paging of results with automatic prefetch, see ClusterConfig.PageSize,
 // Query.PageSize, and Query.Prefetch.
 //
 // It is also possible to control the paging manually with Query.PageState (this disables automatic prefetch).

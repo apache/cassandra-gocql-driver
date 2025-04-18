@@ -54,6 +54,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Move "execute batch" methods to Batch type (CASSGO-57)
 
+- Make `Session` immutable by removing setters and associated mutex (CASSGO-23)
+
 ### Fixed
 - Cassandra version unmarshal fix (CASSGO-49)
 

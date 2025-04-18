@@ -152,11 +152,10 @@ func TestTracing(t *testing.T) {
 	}
 
 	// also works from session tracer
-	session.SetTrace(trace)
 	trace.mu.Lock()
 	buf.Reset()
 	trace.mu.Unlock()
-	if err := session.Query(`SELECT id FROM trace WHERE id = ?`, 42).Scan(&value); err != nil {
+	if err := session.Query(`SELECT id FROM trace WHERE id = ?`, 42).Trace(trace).Scan(&value); err != nil {
 		t.Fatal("select:", err)
 	}
 	if buf.Len() == 0 {

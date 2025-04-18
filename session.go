@@ -75,8 +75,6 @@ type Session struct {
 	ring     ring
 	metadata clusterMetadata
 
-	mu sync.RWMutex
-
 	control *controlConn
 
 	// event handlers
@@ -153,7 +151,7 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 
 	s := &Session{
 		cons:            cfg.Consistency,
-		prefetch:        0.25,
+		prefetch:        cfg.NextPagePrefetch,
 		cfg:             cfg,
 		pageSize:        cfg.PageSize,
 		stmtsLRU:        &preparedLRU{lru: lru.New(cfg.MaxPreparedStmts)},
@@ -161,6 +159,7 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 		ctx:             ctx,
 		cancel:          cancel,
 		logger:          cfg.logger(),
+		trace:           cfg.Tracer,
 	}
 
 	s.schemaDescriber = newSchemaDescriber(s)
@@ -414,41 +413,6 @@ func (s *Session) reconnectDownedHosts(intv time.Duration) {
 			return
 		}
 	}
-}
-
-// SetConsistency sets the default consistency level for this session. This
-// setting can also be changed on a per-query basis and the default value
-// is Quorum.
-func (s *Session) SetConsistency(cons Consistency) {
-	s.mu.Lock()
-	s.cons = cons
-	s.mu.Unlock()
-}
-
-// SetPageSize sets the default page size for this session. A value <= 0 will
-// disable paging. This setting can also be changed on a per-query basis.
-func (s *Session) SetPageSize(n int) {
-	s.mu.Lock()
-	s.pageSize = n
-	s.mu.Unlock()
-}
-
-// SetPrefetch sets the default threshold for pre-fetching new pages. If
-// there are only p*pageSize rows remaining, the next page will be requested
-// automatically. This value can also be changed on a per-query basis and
-// the default value is 0.25.
-func (s *Session) SetPrefetch(p float64) {
-	s.mu.Lock()
-	s.prefetch = p
-	s.mu.Unlock()
-}
-
-// SetTrace sets the default tracer for this session. This setting can also
-// be changed on a per-query basis.
-func (s *Session) SetTrace(trace Tracer) {
-	s.mu.Lock()
-	s.trace = trace
-	s.mu.Unlock()
 }
 
 // Query generates a new query object for interacting with the database.
@@ -1005,7 +969,6 @@ type queryRoutingInfo struct {
 func (q *Query) defaultsFromSession() {
 	s := q.session
 
-	s.mu.RLock()
 	q.cons = s.cons
 	q.pageSize = s.pageSize
 	q.trace = s.trace
@@ -1018,7 +981,6 @@ func (q *Query) defaultsFromSession() {
 	q.metrics = &queryMetrics{m: make(map[string]*hostMetrics)}
 
 	q.spec = &NonSpeculativeExecution{}
-	s.mu.RUnlock()
 }
 
 // Statement returns the statement that was used to generate this query.
@@ -1855,7 +1817,6 @@ func (s *Session) NewBatch(typ BatchType) *Batch {
 
 // Batch creates a new batch operation using defaults defined in the cluster
 func (s *Session) Batch(typ BatchType) *Batch {
-	s.mu.RLock()
 	batch := &Batch{
 		Type:             typ,
 		rt:               s.cfg.RetryPolicy,
@@ -1871,7 +1832,6 @@ func (s *Session) Batch(typ BatchType) *Batch {
 		routingInfo:      &queryRoutingInfo{},
 	}
 
-	s.mu.RUnlock()
 	return batch
 }
 

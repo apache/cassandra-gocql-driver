@@ -35,7 +35,7 @@ import (
 )
 
 func TestSessionAPI(t *testing.T) {
-	cfg := &ClusterConfig{}
+	cfg := NewCluster()
 
 	s := &Session{
 		cfg:    *cfg,
@@ -43,34 +43,12 @@ func TestSessionAPI(t *testing.T) {
 		policy: RoundRobinHostPolicy(),
 		logger: cfg.logger(),
 	}
+	defer s.Close()
 
 	s.pool = cfg.PoolConfig.buildPool(s)
 	s.executor = &queryExecutor{
 		pool:   s.pool,
 		policy: s.policy,
-	}
-	defer s.Close()
-
-	s.SetConsistency(All)
-	if s.cons != All {
-		t.Fatalf("expected consistency 'All', got '%v'", s.cons)
-	}
-
-	s.SetPageSize(100)
-	if s.pageSize != 100 {
-		t.Fatalf("expected pageSize 100, got %v", s.pageSize)
-	}
-
-	s.SetPrefetch(0.75)
-	if s.prefetch != 0.75 {
-		t.Fatalf("expceted prefetch 0.75, got %v", s.prefetch)
-	}
-
-	trace := &traceWriter{}
-
-	s.SetTrace(trace)
-	if s.trace != trace {
-		t.Fatalf("expected traceWriter '%v',got '%v'", trace, s.trace)
 	}
 
 	qry := s.Query("test", 1)
