@@ -665,11 +665,6 @@ func (r *ringDescriber) getClusterPeerInfo(localHost *HostInfo) ([]*HostInfo, er
 		return nil, errNoControl
 	}
 
-	// Check if host lookup is disabled
-	if r.session.cfg.DisableHostLookup {
-		return []*HostInfo{}, nil
-	}
-
 	var peers []*HostInfo
 	iter := r.session.control.withConnHost(func(ch *connHost) *Iter {
 		return ch.conn.querySystemPeers(context.TODO(), localHost.version)
@@ -752,6 +747,9 @@ func (s *Session) refreshRing() error {
 }
 
 func refreshRing(r *ringDescriber) error {
+	if r.session.cfg.DisableInitialHostLookup {
+		return nil
+	}
 	hosts, partitioner, err := r.GetHosts()
 	if err != nil {
 		return err
