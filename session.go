@@ -760,6 +760,9 @@ func (s *Session) executeBatch(batch *Batch) *Iter {
 		return &Iter{err: ErrSessionClosed}
 	}
 
+	// Drop metrics from prior query executions
+	batch.metrics.reset()
+
 	// Prevent the execution of the batch if greater than the limit
 	// Currently batches have a limit of 65536 queries.
 	// https://datastax-oss.atlassian.net/browse/JAVA-229
@@ -877,6 +880,14 @@ func (qm *queryMetrics) hostMetricsLocked(host *HostInfo) *hostMetrics {
 	}
 
 	return metrics
+}
+
+// reset resets metrics, to forget about prior query executions
+func (qm *queryMetrics) reset() {
+	qm.l.Lock()
+	qm.m = make(map[string]*hostMetrics)
+	qm.totalAttempts = 0
+	qm.l.Unlock()
 }
 
 // attempts returns the number of times the query was executed.
@@ -1352,6 +1363,9 @@ func (q *Query) Iter() *Iter {
 	if isUseStatement(q.stmt) {
 		return &Iter{err: ErrUseStmt}
 	}
+
+	// Drop metrics from prior query executions
+	q.metrics.reset()
 	// if the query was specifically run on a connection then re-use that
 	// connection when fetching the next results
 	if q.conn != nil {
