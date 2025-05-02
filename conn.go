@@ -1179,6 +1179,9 @@ func (c *Conn) exec(ctx context.Context, req frameBuilder, tracer Tracer) (*fram
 
 func (c *Conn) execInternal(ctx context.Context, req frameBuilder, tracer Tracer, startupCompleted bool) (*framer, error) {
 	if ctxErr := ctx.Err(); ctxErr != nil {
+		if ctxErr == context.DeadlineExceeded {
+			c.handleTimeout()
+		}
 		return nil, ctxErr
 	}
 
@@ -1273,7 +1276,8 @@ func (c *Conn) execInternal(ctx context.Context, req frameBuilder, tracer Tracer
 	}
 
 	var timeoutCh <-chan time.Time
-	if timeout := c.r.GetTimeout(); timeout > 0 {
+	_, isDeadline := ctx.Deadline()
+	if timeout := c.r.GetTimeout(); timeout > 0 && !isDeadline {
 		if call.timer == nil {
 			call.timer = time.NewTimer(0)
 			<-call.timer.C
@@ -1326,6 +1330,9 @@ func (c *Conn) execInternal(ctx context.Context, req frameBuilder, tracer Tracer
 		c.handleTimeout()
 		return nil, ErrTimeoutNoResponse
 	case <-ctxDone:
+		if ctx.Err() == context.DeadlineExceeded {
+			c.handleTimeout()
+		}
 		close(call.timeout)
 		return nil, ctx.Err()
 	case <-c.ctx.Done():

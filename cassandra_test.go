@@ -44,7 +44,7 @@ import (
 	"time"
 	"unicode"
 
-	inf "gopkg.in/inf.v0"
+	"gopkg.in/inf.v0"
 
 	"github.com/stretchr/testify/require"
 )
@@ -3957,4 +3957,47 @@ func TestRoutingKeyCacheUsesOverriddenKeyspace(t *testing.T) {
 	require.Equal(t, "gocql_test_routing_key_cache", q2.routingInfo.keyspace)
 
 	session.Query("DROP KEYSPACE IF EXISTS gocql_test_routing_key_cache").Exec()
+}
+
+func TestTimeoutOverride(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+
+	if session.cfg.ProtoVersion < 3 {
+		t.Skip("named Values are not supported in protocol < 3")
+	}
+
+	if err := createTable(session, "CREATE TABLE gocql_test.named_query(id int, value text, PRIMARY KEY (id))"); err != nil {
+		t.Fatal(err)
+	}
+
+	// normal case
+	err := session.Query("INSERT INTO gocql_test.named_query(id, value) VALUES(1, 'value')").Exec()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	//decrease Conn.timeout
+	session.executor.pool.mu.Lock()
+	for _, conPool := range session.executor.pool.hostConnPools {
+		conPool.mu.Lock()
+		for _, conn := range conPool.conns {
+			conn.r.SetTimeout(50)
+		}
+		conPool.mu.Unlock()
+	}
+	session.executor.pool.mu.Unlock()
+	err = session.Query("INSERT INTO gocql_test.named_query(id, value) VALUES(2, 'value')").Exec()
+	if err != ErrTimeoutNoResponse {
+		t.Fatalf("expected: ErrTimeoutNoResponse, got: %v", err)
+	}
+
+	// override timeout with context
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	err = session.Query("TRUNCATE TABLE gocql_test.named_query").WithContext(ctx).Exec()
+	if err != nil {
+		t.Fatal(err)
+	}
+
 }

@@ -1151,6 +1151,13 @@ func (q *Query) withContext(ctx context.Context) ExecutableQuery {
 // The provided context controls the entire lifetime of executing a
 // query, queries will be canceled and return once the context is
 // canceled.
+//
+// You can set context.WithTimeout to override default timeout with custom (per query):
+// Example:
+//
+//	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+//	defer cancel()
+//	err = session.Query("SELECT * FROM my_table").WithContext(ctx).Exec()
 func (q *Query) WithContext(ctx context.Context) *Query {
 	q2 := *q
 	q2.context = ctx
