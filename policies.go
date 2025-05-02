@@ -133,7 +133,7 @@ const (
 
 // ErrUnknownRetryType is returned if the retry policy returns a retry type
 // unknown to the query executor.
-var ErrUnknownRetryType = errors.New("unknown retry type returned by retry policy")
+var ErrUnknownRetryType = errors.New("gocql: unknown retry type returned by retry policy")
 
 // RetryPolicy interface is used by gocql to determine if a query can be attempted
 // again after a retryable error has been received. The interface allows gocql

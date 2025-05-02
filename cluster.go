@@ -335,7 +335,7 @@ func (cfg *ClusterConfig) filterHost(host *HostInfo) bool {
 }
 
 var (
-	ErrNoHosts              = errors.New("no hosts provided")
-	ErrNoConnectionsStarted = errors.New("no connections were made when creating the session")
-	ErrHostQueryFailed      = errors.New("unable to populate Hosts")
+	ErrAuthenticatorAndAuthProvider = errors.New("gocql: Can't use both Authenticator and AuthProvider in cluster config.")
+	ErrNoHosts                      = errors.New("gocql: no hosts provided")
+	ErrNoConnectionsStarted         = errors.New("gocql: no connections were made when creating the session")
 )

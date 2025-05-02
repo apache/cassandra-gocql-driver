@@ -159,7 +159,7 @@ func hostInfo(addr string, defaultPort int) ([]*HostInfo, error) {
 	if err != nil {
 		return nil, err
 	} else if len(ips) == 0 {
-		return nil, fmt.Errorf("no IP's returned from DNS lookup for %q", addr)
+		return nil, fmt.Errorf("gocql: no IP's returned from DNS lookup for %q", addr)
 	}
 
 	// Filter to v4 addresses if any present
@@ -284,7 +284,7 @@ func (c *controlConn) connect(hosts []*HostInfo) error {
 		conn = nil
 	}
 	if conn == nil {
-		return fmt.Errorf("unable to connect to initial hosts: %v", err)
+		return fmt.Errorf("gocql: unable to connect to initial hosts: %w", err)
 	}
 
 	// we could fetch the initial ring here and update initial host data. So that
@@ -311,11 +311,11 @@ func (c *controlConn) setupConn(conn *Conn) error {
 	host = c.session.ring.addOrUpdate(host)
 
 	if c.session.cfg.filterHost(host) {
-		return fmt.Errorf("host was filtered: %v", host.ConnectAddress())
+		return fmt.Errorf("gocql: host was filtered: %v", host.ConnectAddress())
 	}
 
 	if err := c.registerEvents(conn); err != nil {
-		return fmt.Errorf("register events: %v", err)
+		return fmt.Errorf("gocql: register events: %w", err)
 	}
 
 	ch := &connHost{
@@ -365,7 +365,7 @@ func (c *controlConn) registerEvents(conn *Conn) error {
 	if err != nil {
 		return err
 	} else if _, ok := frame.(*readyFrame); !ok {
-		return fmt.Errorf("unexpected frame in response to register: got %T: %v\n", frame, frame)
+		return fmt.Errorf("gocql: unexpected frame in response to register: got %T: %v\n", frame, frame)
 	}
 
 	return nil
@@ -422,7 +422,7 @@ func (c *controlConn) attemptReconnect() (*Conn, error) {
 	// changed their IPs while keeping the same hostname(s).
 	initialHosts, resolvErr := addrsToHosts(c.session.cfg.Hosts, c.session.cfg.Port, c.session.logger)
 	if resolvErr != nil {
-		return nil, fmt.Errorf("resolve contact points' hostnames: %v", resolvErr)
+		return nil, fmt.Errorf("gocql: resolve contact points' hostnames: %w", resolvErr)
 	}
 
 	return c.attemptReconnectToAnyOfHosts(initialHosts)

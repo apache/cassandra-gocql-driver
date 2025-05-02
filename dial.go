@@ -64,9 +64,9 @@ func (hd *defaultHostDialer) DialHost(ctx context.Context, host *HostInfo) (*Dia
 	port := host.Port()
 
 	if !validIpAddr(ip) {
-		return nil, fmt.Errorf("host missing connect ip address: %v", ip)
+		return nil, fmt.Errorf("gocql: host missing connect ip address: %v", ip)
 	} else if port == 0 {
-		return nil, fmt.Errorf("host missing port: %v", port)
+		return nil, fmt.Errorf("gocql: host missing port: %v", port)
 	}
 
 	connAddr := host.ConnectAddressAndPort()

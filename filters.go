@@ -73,7 +73,7 @@ func WhiteListHostFilter(hosts ...string) HostFilter {
 	hostInfos, err := addrsToHosts(hosts, 9042, nopLogger{})
 	if err != nil {
 		// dont want to panic here, but rather not break the API
-		panic(fmt.Errorf("unable to lookup host info from address: %v", err))
+		panic(fmt.Errorf("gocql: unable to lookup host info from address: %w", err))
 	}
 
 	m := make(map[string]bool, len(hostInfos))
