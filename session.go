@@ -454,6 +454,10 @@ func (s *Session) Bind(stmt string, b func(q *QueryInfo) ([]interface{}, error))
 // Close closes all connections. The session is unusable after this
 // operation.
 func (s *Session) Close() {
+	// Closing a nil session is a non-event, return.
+	if s == nil {
+		return
+	}
 
 	s.sessionStateMu.Lock()
 	if s.isClosing {
