@@ -166,6 +166,7 @@ func (s *SimpleRetryPolicy) Attempt(q RetryableQuery) bool {
 	return q.Attempts() <= s.NumRetries
 }
 
+// GetRetryType returns RetryNextHost.
 func (s *SimpleRetryPolicy) GetRetryType(err error) RetryType {
 	return RetryNextHost
 }
@@ -176,6 +177,7 @@ type ExponentialBackoffRetryPolicy struct {
 	Min, Max   time.Duration
 }
 
+// Attempt returns false if number of attempts is bigger than number of retries.
 func (e *ExponentialBackoffRetryPolicy) Attempt(q RetryableQuery) bool {
 	if q.Attempts() > e.NumRetries {
 		return false
@@ -202,11 +204,12 @@ func getExponentialTime(min time.Duration, max time.Duration, attempts int) time
 	return time.Duration(napDuration)
 }
 
+// GetRetryType returns RetryNextHost.
 func (e *ExponentialBackoffRetryPolicy) GetRetryType(err error) RetryType {
 	return RetryNextHost
 }
 
-// DowngradingConsistencyRetryPolicy: Next retry will be with the next consistency level
+// DowngradingConsistencyRetryPolicy is a retry policy where next retry will be with the next consistency level
 // provided in the slice
 //
 // On a read timeout: the operation is retried with the next provided consistency
@@ -220,11 +223,12 @@ func (e *ExponentialBackoffRetryPolicy) GetRetryType(err error) RetryType {
 //
 // On an unavailable exception: if at least one replica is alive, the
 // operation is retried with the next provided consistency level.
-
 type DowngradingConsistencyRetryPolicy struct {
 	ConsistencyLevelsToTry []Consistency
 }
 
+// Attempt returns true if number of attempts is less then ConsistencyLevelsToTry.
+// Downgrade consistency if number of attempts is bigger than 0.
 func (d *DowngradingConsistencyRetryPolicy) Attempt(q RetryableQuery) bool {
 	currentAttempt := q.Attempts()
 
@@ -236,6 +240,7 @@ func (d *DowngradingConsistencyRetryPolicy) Attempt(q RetryableQuery) bool {
 	return true
 }
 
+// GetRetryType returns retry type according to an error type.
 func (d *DowngradingConsistencyRetryPolicy) GetRetryType(err error) RetryType {
 	switch t := err.(type) {
 	case *RequestErrUnavailable:
@@ -775,10 +780,6 @@ func (d *dcAwareRR) Pick(q ExecutableQuery) NextHost {
 	return roundRobbin(int(nextStartOffset), d.localHosts.get(), d.remoteHosts.get())
 }
 
-// RackAwareRoundRobinPolicy is a host selection policies which will prioritize and
-// return hosts which are in the local rack, before hosts in the local datacenter but
-// a different rack, before hosts in all other datacenters
-
 type rackAwareRR struct {
 	// lastUsedHostIdx keeps the index of the last used host.
 	// It is accessed atomically and needs to be aligned to 64 bits, so we
@@ -790,6 +791,9 @@ type rackAwareRR struct {
 	hosts           []cowHostList
 }
 
+// RackAwareRoundRobinPolicy is a host selection policy which will prioritize and
+// return hosts which are in the local rack, before hosts in the local datacenter but
+// a different rack, before hosts in all other datacenters.
 func RackAwareRoundRobinPolicy(localDC string, localRack string) HostSelectionPolicy {
 	hosts := make([]cowHostList, 3)
 	return &rackAwareRR{localDC: localDC, localRack: localRack, hosts: hosts}
@@ -919,10 +923,12 @@ type ConstantReconnectionPolicy struct {
 	Interval   time.Duration
 }
 
+// GetInterval returns a time interval between connection retries.
 func (c *ConstantReconnectionPolicy) GetInterval(currentRetry int) time.Duration {
 	return c.Interval
 }
 
+// GetMaxRetries returns a max number of connect retries.
 func (c *ConstantReconnectionPolicy) GetMaxRetries() int {
 	return c.MaxRetries
 }
@@ -934,6 +940,7 @@ type ExponentialReconnectionPolicy struct {
 	MaxInterval     time.Duration
 }
 
+// GetInterval returns a computed interval between connection retries.
 func (e *ExponentialReconnectionPolicy) GetInterval(currentRetry int) time.Duration {
 	max := e.MaxInterval
 	if max < e.InitialInterval {
@@ -942,6 +949,7 @@ func (e *ExponentialReconnectionPolicy) GetInterval(currentRetry int) time.Durat
 	return getExponentialTime(e.InitialInterval, max, currentRetry)
 }
 
+// GetMaxRetries returns a max number of connect retries.
 func (e *ExponentialReconnectionPolicy) GetMaxRetries() int {
 	return e.MaxRetries
 }

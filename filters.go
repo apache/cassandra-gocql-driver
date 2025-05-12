@@ -47,6 +47,7 @@ func AcceptAllFilter() HostFilter {
 	})
 }
 
+// DenyAllFilter will deny all hosts
 func DenyAllFilter() HostFilter {
 	return HostFilterFunc(func(host *HostInfo) bool {
 		return false

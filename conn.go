@@ -85,6 +85,8 @@ type PasswordAuthenticator struct {
 	AllowedAuthenticators []string
 }
 
+// Challenge creates challenge response for auth handshake.
+// Returns an error if authenticator is not approved.
 func (p PasswordAuthenticator) Challenge(req []byte) ([]byte, Authenticator, error) {
 	if !approve(string(req), p.AllowedAuthenticators) {
 		return nil, nil, fmt.Errorf("unexpected authenticator %q", req)
@@ -97,6 +99,7 @@ func (p PasswordAuthenticator) Challenge(req []byte) ([]byte, Authenticator, err
 	return resp, nil, nil
 }
 
+// Success used in case of success auth handshake.
 func (p PasswordAuthenticator) Success(data []byte) error {
 	return nil
 }
@@ -132,6 +135,7 @@ type SslOptions struct {
 	EnableHostVerification bool
 }
 
+// ConnConfig configures connection used by the driver.
 type ConnConfig struct {
 	ProtoVersion   int
 	CQLVersion     string
@@ -322,6 +326,9 @@ func (c *Conn) init(ctx context.Context, dialedHost *DialedHost) error {
 	return nil
 }
 
+// Write writes p to the connection.
+// It returns the number of bytes written from p (0 <= n <= len(p)) and any error that caused the write to stop
+// early.
 func (c *Conn) Write(p []byte) (n int, err error) {
 	return c.w.writeContext(context.Background(), p)
 }
@@ -548,6 +555,7 @@ func (c *Conn) closeWithError(err error) {
 	}
 }
 
+// Close closes the connection.
 func (c *Conn) Close() {
 	c.closeWithError(nil)
 }
@@ -1689,6 +1697,7 @@ func (c *Conn) executeQuery(ctx context.Context, qry *Query) *Iter {
 	}
 }
 
+// Pick returns nil if connection is closed.
 func (c *Conn) Pick(qry *Query) *Conn {
 	if c.Closed() {
 		return nil
@@ -1696,20 +1705,24 @@ func (c *Conn) Pick(qry *Query) *Conn {
 	return c
 }
 
+// Closed returns true if connection close process for the connection started.
 func (c *Conn) Closed() bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.closed
 }
 
+// Address returns address used for the connection.
 func (c *Conn) Address() string {
 	return c.addr
 }
 
+// AvailableStreams returns the number of the available streams.
 func (c *Conn) AvailableStreams() int {
 	return c.streams.Available()
 }
 
+// UseKeyspace executes `USE <keyspace>;` query and set keyspace as current.
 func (c *Conn) UseKeyspace(keyspace string) error {
 	q := &writeQueryFrame{statement: `USE "` + keyspace + `"`}
 	q.params.consistency = c.session.cons

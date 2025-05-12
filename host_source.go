@@ -155,6 +155,7 @@ func (c cassVersion) nodeUpDelay() time.Duration {
 	return 10 * time.Second
 }
 
+// HostInfo holds information about the host (e.g. addresses and state).
 type HostInfo struct {
 	// TODO(zariel): reduce locking maybe, not all values will change, but to ensure
 	// that we are thread safe use a mutex to access all fields.
@@ -195,6 +196,7 @@ func NewHostInfo(addr net.IP, port int) (*HostInfo, error) {
 	return host, nil
 }
 
+// Equal returns true if hosts are equal of if connect addresses of the hosts are equal.
 func (h *HostInfo) Equal(host *HostInfo) bool {
 	if h == host {
 		// prevent rlock reentry
@@ -204,6 +206,7 @@ func (h *HostInfo) Equal(host *HostInfo) bool {
 	return h.ConnectAddress().Equal(host.ConnectAddress())
 }
 
+// Peer returns hosts peer.
 func (h *HostInfo) Peer() net.IP {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
@@ -261,30 +264,35 @@ func (h *HostInfo) ConnectAddress() net.IP {
 	return addr
 }
 
+// BroadcastAddress returns the broadcast address of the host.
 func (h *HostInfo) BroadcastAddress() net.IP {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	return h.broadcastAddress
 }
 
+// ListenAddress returns the address on which a host listens for incoming connections.
 func (h *HostInfo) ListenAddress() net.IP {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	return h.listenAddress
 }
 
+// RPCAddress returns address on which host listens for RPC requests.
 func (h *HostInfo) RPCAddress() net.IP {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	return h.rpcAddress
 }
 
+// PreferredIP returns the preferred IP of the host.
 func (h *HostInfo) PreferredIP() net.IP {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	return h.preferredIP
 }
 
+// DataCenter returns the name of the host data center.
 func (h *HostInfo) DataCenter() string {
 	h.mu.RLock()
 	dc := h.dataCenter
@@ -292,6 +300,7 @@ func (h *HostInfo) DataCenter() string {
 	return dc
 }
 
+// Rack returns the name of the host rack.
 func (h *HostInfo) Rack() string {
 	h.mu.RLock()
 	rack := h.rack
@@ -299,54 +308,63 @@ func (h *HostInfo) Rack() string {
 	return rack
 }
 
+// HostID returns the host ID.
 func (h *HostInfo) HostID() string {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	return h.hostId
 }
 
+// SetHostID sets the host ID.
 func (h *HostInfo) SetHostID(hostID string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.hostId = hostID
 }
 
+// WorkLoad returns the current workload of the host.
 func (h *HostInfo) WorkLoad() string {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	return h.workload
 }
 
+// Graph returns true if graph mode is enabled for the DSE.
 func (h *HostInfo) Graph() bool {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	return h.graph
 }
 
+// DSEVersion returns the version of DSE instance.
 func (h *HostInfo) DSEVersion() string {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	return h.dseVersion
 }
 
+// Partitioner returns the partitioner kind.
 func (h *HostInfo) Partitioner() string {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	return h.partitioner
 }
 
+// ClusterName returns name of the cluster.
 func (h *HostInfo) ClusterName() string {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	return h.clusterName
 }
 
+// Version returns version of the Cassandra instance.
 func (h *HostInfo) Version() cassVersion {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	return h.version
 }
 
+// State returns state of the node.
 func (h *HostInfo) State() nodeState {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
@@ -360,12 +378,14 @@ func (h *HostInfo) setState(state nodeState) *HostInfo {
 	return h
 }
 
+// Tokens returns slice of tokens.
 func (h *HostInfo) Tokens() []string {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	return h.tokens
 }
 
+// Port returns port which used for the connection.
 func (h *HostInfo) Port() int {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
@@ -434,10 +454,13 @@ func (h *HostInfo) update(from *HostInfo) {
 	}
 }
 
+// IsUp return true if the host is not nil and if the host state is node NodeUp.
 func (h *HostInfo) IsUp() bool {
 	return h != nil && h.State() == NodeUp
 }
 
+// HostnameAndPort returns a network address of the form "host:port".
+// If host contains a colon - "[host]:port" will be returned.
 func (h *HostInfo) HostnameAndPort() string {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -448,6 +471,8 @@ func (h *HostInfo) HostnameAndPort() string {
 	return net.JoinHostPort(h.hostname, strconv.Itoa(h.port))
 }
 
+// ConnectAddressAndPort returns a network address of the form "host:port".
+// If connect address contains a colon - "[host]:port" will be returned.
 func (h *HostInfo) ConnectAddressAndPort() string {
 	h.mu.Lock()
 	defer h.mu.Unlock()
