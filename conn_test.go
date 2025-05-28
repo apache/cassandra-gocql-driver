@@ -333,17 +333,17 @@ func TestCancel(t *testing.T) {
 	// Make sure we finish the query without leftovers
 	var wg sync.WaitGroup
 	wg.Add(1)
-
 	go func() {
-		if err := qry.Exec(); err != context.Canceled {
-			t.Fatalf("expected to get context cancel error: '%v', got '%v'", context.Canceled, err)
-		}
+		err = qry.Exec()
 		wg.Done()
 	}()
 
 	// The query will timeout after about 1 seconds, so cancel it after a short pause
 	time.AfterFunc(20*time.Millisecond, cancel)
 	wg.Wait()
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected to get context cancel error: '%v', got '%v'", context.Canceled, err)
+	}
 }
 
 type testQueryObserver struct {
