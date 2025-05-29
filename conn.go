@@ -179,7 +179,7 @@ type Conn struct {
 	frameObserver  FrameHeaderObserver
 	streamObserver StreamObserver
 
-	headerBuf [maxFrameHeaderSize]byte
+	headerBuf [frameHeadSize]byte
 
 	streams *streams.IDGenerator
 	mu      sync.Mutex
@@ -784,12 +784,11 @@ func (c *Conn) recvSegment(ctx context.Context) error {
 		return err
 	}
 
-	const frameHeaderLength = 9
-	buf := bytes.NewBuffer(make([]byte, 0, head.length+frameHeaderLength))
+	buf := bytes.NewBuffer(make([]byte, 0, head.length+frameHeadSize))
 	buf.Write(frame)
 
 	// Computing how many bytes of message left to read
-	bytesToRead := head.length - len(frame) + frameHeaderLength
+	bytesToRead := head.length - len(frame) + frameHeadSize
 
 	err = c.recvPartialFrames(buf, bytesToRead)
 	if err != nil {
@@ -1738,10 +1737,6 @@ func (c *Conn) UseKeyspace(keyspace string) error {
 }
 
 func (c *Conn) executeBatch(ctx context.Context, batch *Batch) *Iter {
-	if c.version == protoVersion1 {
-		return &Iter{err: ErrUnsupported}
-	}
-
 	n := len(batch.Entries)
 	req := &writeBatchFrame{
 		typ:                   batch.Type,

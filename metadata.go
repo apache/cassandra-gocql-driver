@@ -32,7 +32,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"strconv"
 	"strings"
 	"sync"
 )
@@ -388,122 +387,7 @@ func compileMetadata(
 		table.OrderedColumns = append(table.OrderedColumns, col.Name)
 	}
 
-	if protoVersion == protoVersion1 {
-		compileV1Metadata(tables, protoVersion, logger)
-	} else {
-		compileV2Metadata(tables, protoVersion, logger)
-	}
-}
-
-// Compiles derived information from TableMetadata which have had
-// ColumnMetadata added already. V1 protocol does not return as much
-// column metadata as V2+ (because V1 doesn't support the "type" column in the
-// system.schema_columns table) so determining PartitionKey and ClusterColumns
-// is more complex.
-func compileV1Metadata(tables []TableMetadata, protoVer int, logger StdLogger) {
-	for i := range tables {
-		table := &tables[i]
-
-		// decode the key validator
-		keyValidatorParsed := parseType(table.KeyValidator, byte(protoVer), logger)
-		// decode the comparator
-		comparatorParsed := parseType(table.Comparator, byte(protoVer), logger)
-
-		// the partition key length is the same as the number of types in the
-		// key validator
-		table.PartitionKey = make([]*ColumnMetadata, len(keyValidatorParsed.types))
-
-		// V1 protocol only returns "regular" columns from
-		// system.schema_columns (there is no type field for columns)
-		// so the alias information is used to
-		// create the partition key and clustering columns
-
-		// construct the partition key from the alias
-		for i := range table.PartitionKey {
-			var alias string
-			if len(table.KeyAliases) > i {
-				alias = table.KeyAliases[i]
-			} else if i == 0 {
-				alias = DEFAULT_KEY_ALIAS
-			} else {
-				alias = DEFAULT_KEY_ALIAS + strconv.Itoa(i+1)
-			}
-
-			column := &ColumnMetadata{
-				Keyspace:       table.Keyspace,
-				Table:          table.Name,
-				Name:           alias,
-				Type:           keyValidatorParsed.types[i],
-				Kind:           ColumnPartitionKey,
-				ComponentIndex: i,
-			}
-
-			table.PartitionKey[i] = column
-			table.Columns[alias] = column
-		}
-
-		// determine the number of clustering columns
-		size := len(comparatorParsed.types)
-		if comparatorParsed.isComposite {
-			if len(comparatorParsed.collections) != 0 ||
-				(len(table.ColumnAliases) == size-1 &&
-					comparatorParsed.types[size-1].Type() == TypeVarchar) {
-				size = size - 1
-			}
-		} else {
-			if !(len(table.ColumnAliases) != 0 || len(table.Columns) == 0) {
-				size = 0
-			}
-		}
-
-		table.ClusteringColumns = make([]*ColumnMetadata, size)
-
-		for i := range table.ClusteringColumns {
-			var alias string
-			if len(table.ColumnAliases) > i {
-				alias = table.ColumnAliases[i]
-			} else if i == 0 {
-				alias = DEFAULT_COLUMN_ALIAS
-			} else {
-				alias = DEFAULT_COLUMN_ALIAS + strconv.Itoa(i+1)
-			}
-
-			order := ASC
-			if comparatorParsed.reversed[i] {
-				order = DESC
-			}
-
-			column := &ColumnMetadata{
-				Keyspace:       table.Keyspace,
-				Table:          table.Name,
-				Name:           alias,
-				Type:           comparatorParsed.types[i],
-				Order:          order,
-				Kind:           ColumnClusteringKey,
-				ComponentIndex: i,
-			}
-
-			table.ClusteringColumns[i] = column
-			table.Columns[alias] = column
-		}
-
-		if size != len(comparatorParsed.types)-1 {
-			alias := DEFAULT_VALUE_ALIAS
-			if len(table.ValueAlias) > 0 {
-				alias = table.ValueAlias
-			}
-			// decode the default validator
-			defaultValidatorParsed := parseType(table.DefaultValidator, byte(protoVer), logger)
-			column := &ColumnMetadata{
-				Keyspace: table.Keyspace,
-				Table:    table.Name,
-				Name:     alias,
-				Type:     defaultValidatorParsed.types[0],
-				Kind:     ColumnRegular,
-			}
-			table.Columns[alias] = column
-		}
-	}
+	compileV2Metadata(tables, protoVersion, logger)
 }
 
 // The simpler compile case for V2+ protocol
@@ -611,9 +495,6 @@ func getTableMetadata(session *Session, keyspaceName string) ([]TableMetadata, e
 		iter *Iter
 		scan func(iter *Iter, table *TableMetadata) bool
 		stmt string
-
-		keyAliasesJSON    []byte
-		columnAliasesJSON []byte
 	)
 
 	if session.useSystemSchema { // Cassandra 3.x+
@@ -647,31 +528,6 @@ func getTableMetadata(session *Session, keyspaceName string) ([]TableMetadata, e
 			}
 			return r
 		}
-	} else if session.cfg.ProtoVersion == protoVersion1 {
-		// we have key aliases
-		stmt = `
-		SELECT
-			columnfamily_name,
-			key_validator,
-			comparator,
-			default_validator,
-			key_aliases,
-			column_aliases,
-			value_alias
-		FROM system.schema_columnfamilies
-		WHERE keyspace_name = ?`
-
-		scan = func(iter *Iter, table *TableMetadata) bool {
-			return iter.Scan(
-				&table.Name,
-				&table.KeyValidator,
-				&table.Comparator,
-				&table.DefaultValidator,
-				&keyAliasesJSON,
-				&columnAliasesJSON,
-				&table.ValueAlias,
-			)
-		}
 	} else {
 		stmt = `
 		SELECT
@@ -698,34 +554,6 @@ func getTableMetadata(session *Session, keyspaceName string) ([]TableMetadata, e
 	table := TableMetadata{Keyspace: keyspaceName}
 
 	for scan(iter, &table) {
-		var err error
-
-		// decode the key aliases
-		if keyAliasesJSON != nil {
-			table.KeyAliases = []string{}
-			err = json.Unmarshal(keyAliasesJSON, &table.KeyAliases)
-			if err != nil {
-				iter.Close()
-				return nil, fmt.Errorf(
-					"invalid JSON value '%s' as key_aliases for in table '%s': %v",
-					keyAliasesJSON, table.Name, err,
-				)
-			}
-		}
-
-		// decode the column aliases
-		if columnAliasesJSON != nil {
-			table.ColumnAliases = []string{}
-			err = json.Unmarshal(columnAliasesJSON, &table.ColumnAliases)
-			if err != nil {
-				iter.Close()
-				return nil, fmt.Errorf(
-					"invalid JSON value '%s' as column_aliases for in table '%s': %v",
-					columnAliasesJSON, table.Name, err,
-				)
-			}
-		}
-
 		tables = append(tables, table)
 		table = TableMetadata{Keyspace: keyspaceName}
 	}
@@ -933,9 +761,6 @@ func getTypeInfo(t string, protoVer byte, logger StdLogger) TypeInfo {
 }
 
 func getUserTypeMetadata(session *Session, keyspaceName string) ([]UserTypeMetadata, error) {
-	if session.cfg.ProtoVersion == protoVersion1 {
-		return nil, nil
-	}
 	var tableName string
 	if session.useSystemSchema {
 		tableName = "system_schema.types"
@@ -1179,7 +1004,7 @@ func getMaterializedViewsMetadata(session *Session, keyspaceName string) ([]Mate
 }
 
 func getFunctionsMetadata(session *Session, keyspaceName string) ([]FunctionMetadata, error) {
-	if session.cfg.ProtoVersion == protoVersion1 || !session.hasAggregatesAndFunctions {
+	if !session.hasAggregatesAndFunctions {
 		return nil, nil
 	}
 	var tableName string
@@ -1234,7 +1059,7 @@ func getFunctionsMetadata(session *Session, keyspaceName string) ([]FunctionMeta
 }
 
 func getAggregatesMetadata(session *Session, keyspaceName string) ([]AggregateMetadata, error) {
-	if session.cfg.ProtoVersion == protoVersion1 || !session.hasAggregatesAndFunctions {
+	if !session.hasAggregatesAndFunctions {
 		return nil, nil
 	}
 	var tableName string

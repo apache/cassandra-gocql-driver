@@ -116,7 +116,6 @@ func Marshal(info TypeInfo, value interface{}) ([]byte, error) {
 	if info.Version() < protoVersion1 {
 		panic("protocol version not set")
 	}
-
 	if valueRef := reflect.ValueOf(value); valueRef.Kind() == reflect.Ptr {
 		if valueRef.IsNil() {
 			return nil, nil
@@ -1565,25 +1564,15 @@ func encVint(v int64) []byte {
 	return buf
 }
 
-func writeCollectionSize(info CollectionType, n int, buf *bytes.Buffer) error {
-	if info.proto > protoVersion2 {
-		if n > math.MaxInt32 {
-			return marshalErrorf("marshal: collection too large")
-		}
-
-		buf.WriteByte(byte(n >> 24))
-		buf.WriteByte(byte(n >> 16))
-		buf.WriteByte(byte(n >> 8))
-		buf.WriteByte(byte(n))
-	} else {
-		if n > math.MaxUint16 {
-			return marshalErrorf("marshal: collection too large")
-		}
-
-		buf.WriteByte(byte(n >> 8))
-		buf.WriteByte(byte(n))
+func writeCollectionSize(n int, buf *bytes.Buffer) error {
+	if n > math.MaxInt32 {
+		return marshalErrorf("marshal: collection too large")
 	}
 
+	buf.WriteByte(byte(n >> 24))
+	buf.WriteByte(byte(n >> 16))
+	buf.WriteByte(byte(n >> 8))
+	buf.WriteByte(byte(n))
 	return nil
 }
 
@@ -1611,7 +1600,7 @@ func marshalList(info TypeInfo, value interface{}) ([]byte, error) {
 		buf := &bytes.Buffer{}
 		n := rv.Len()
 
-		if err := writeCollectionSize(listInfo, n, buf); err != nil {
+		if err := writeCollectionSize(n, buf); err != nil {
 			return nil, err
 		}
 
@@ -1622,10 +1611,10 @@ func marshalList(info TypeInfo, value interface{}) ([]byte, error) {
 			}
 			itemLen := len(item)
 			// Set the value to null for supported protocols
-			if item == nil && listInfo.proto > protoVersion2 {
+			if item == nil {
 				itemLen = -1
 			}
-			if err := writeCollectionSize(listInfo, itemLen, buf); err != nil {
+			if err := writeCollectionSize(itemLen, buf); err != nil {
 				return nil, err
 			}
 			buf.Write(item)
@@ -1645,20 +1634,12 @@ func marshalList(info TypeInfo, value interface{}) ([]byte, error) {
 	return nil, marshalErrorf("can not marshal %T into %s. Accepted types: slice, array, map[]struct.", value, info)
 }
 
-func readCollectionSize(info CollectionType, data []byte) (size, read int, err error) {
-	if info.proto > protoVersion2 {
-		if len(data) < 4 {
-			return 0, 0, unmarshalErrorf("unmarshal list: unexpected eof")
-		}
-		size = int(int32(data[0])<<24 | int32(data[1])<<16 | int32(data[2])<<8 | int32(data[3]))
-		read = 4
-	} else {
-		if len(data) < 2 {
-			return 0, 0, unmarshalErrorf("unmarshal list: unexpected eof")
-		}
-		size = int(data[0])<<8 | int(data[1])
-		read = 2
+func readCollectionSize(data []byte) (size, read int, err error) {
+	if len(data) < 4 {
+		return 0, 0, unmarshalErrorf("unmarshal list: unexpected eof")
 	}
+	size = int(int32(data[0])<<24 | int32(data[1])<<16 | int32(data[2])<<8 | int32(data[3]))
+	read = 4
 	return
 }
 
@@ -1688,7 +1669,7 @@ func unmarshalList(info TypeInfo, data []byte, value interface{}) error {
 			rv.Set(reflect.Zero(t))
 			return nil
 		}
-		n, p, err := readCollectionSize(listInfo, data)
+		n, p, err := readCollectionSize(data)
 		if err != nil {
 			return err
 		}
@@ -1701,7 +1682,7 @@ func unmarshalList(info TypeInfo, data []byte, value interface{}) error {
 			rv.Set(reflect.MakeSlice(t, n, n))
 		}
 		for i := 0; i < n; i++ {
-			m, p, err := readCollectionSize(listInfo, data)
+			m, p, err := readCollectionSize(data)
 			if err != nil {
 				return err
 			}
@@ -1909,7 +1890,7 @@ func marshalMap(info TypeInfo, value interface{}) ([]byte, error) {
 	buf := &bytes.Buffer{}
 	n := rv.Len()
 
-	if err := writeCollectionSize(mapInfo, n, buf); err != nil {
+	if err := writeCollectionSize(n, buf); err != nil {
 		return nil, err
 	}
 
@@ -1921,10 +1902,10 @@ func marshalMap(info TypeInfo, value interface{}) ([]byte, error) {
 		}
 		itemLen := len(item)
 		// Set the key to null for supported protocols
-		if item == nil && mapInfo.proto > protoVersion2 {
+		if item == nil {
 			itemLen = -1
 		}
-		if err := writeCollectionSize(mapInfo, itemLen, buf); err != nil {
+		if err := writeCollectionSize(itemLen, buf); err != nil {
 			return nil, err
 		}
 		buf.Write(item)
@@ -1935,10 +1916,10 @@ func marshalMap(info TypeInfo, value interface{}) ([]byte, error) {
 		}
 		itemLen = len(item)
 		// Set the value to null for supported protocols
-		if item == nil && mapInfo.proto > protoVersion2 {
+		if item == nil {
 			itemLen = -1
 		}
-		if err := writeCollectionSize(mapInfo, itemLen, buf); err != nil {
+		if err := writeCollectionSize(itemLen, buf); err != nil {
 			return nil, err
 		}
 		buf.Write(item)
@@ -1965,7 +1946,7 @@ func unmarshalMap(info TypeInfo, data []byte, value interface{}) error {
 		rv.Set(reflect.Zero(t))
 		return nil
 	}
-	n, p, err := readCollectionSize(mapInfo, data)
+	n, p, err := readCollectionSize(data)
 	if err != nil {
 		return err
 	}
@@ -1975,7 +1956,7 @@ func unmarshalMap(info TypeInfo, data []byte, value interface{}) error {
 	rv.Set(reflect.MakeMapWithSize(t, n))
 	data = data[p:]
 	for i := 0; i < n; i++ {
-		m, p, err := readCollectionSize(mapInfo, data)
+		m, p, err := readCollectionSize(data)
 		if err != nil {
 			return err
 		}
@@ -1994,7 +1975,7 @@ func unmarshalMap(info TypeInfo, data []byte, value interface{}) error {
 			return err
 		}
 
-		m, p, err = readCollectionSize(mapInfo, data)
+		m, p, err = readCollectionSize(data)
 		if err != nil {
 			return err
 		}

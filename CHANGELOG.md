@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+- Drop support for old CQL protocol versions: 1 and 2 (CASSGO-75)
+
 ### Added
 
 - Support vector type [CASSGO-11](https://issues.apache.org/jira/browse/CASSGO-11)

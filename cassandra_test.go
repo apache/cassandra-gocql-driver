@@ -2284,25 +2284,7 @@ func TestGetTableMetadata(t *testing.T) {
 	if testTable == nil {
 		t.Fatal("Expected table metadata for name 'test_table_metadata'")
 	}
-	if session.cfg.ProtoVersion == protoVersion1 {
-		if testTable.KeyValidator != "org.apache.cassandra.db.marshal.Int32Type" {
-			t.Errorf("Expected test_table_metadata key validator to be 'org.apache.cassandra.db.marshal.Int32Type' but was '%s'", testTable.KeyValidator)
-		}
-		if testTable.Comparator != "org.apache.cassandra.db.marshal.CompositeType(org.apache.cassandra.db.marshal.Int32Type,org.apache.cassandra.db.marshal.UTF8Type)" {
-			t.Errorf("Expected test_table_metadata key validator to be 'org.apache.cassandra.db.marshal.CompositeType(org.apache.cassandra.db.marshal.Int32Type,org.apache.cassandra.db.marshal.UTF8Type)' but was '%s'", testTable.Comparator)
-		}
-		if testTable.DefaultValidator != "org.apache.cassandra.db.marshal.BytesType" {
-			t.Errorf("Expected test_table_metadata key validator to be 'org.apache.cassandra.db.marshal.BytesType' but was '%s'", testTable.DefaultValidator)
-		}
-		expectedKeyAliases := []string{"first_id"}
-		if !reflect.DeepEqual(testTable.KeyAliases, expectedKeyAliases) {
-			t.Errorf("Expected key aliases %v but was %v", expectedKeyAliases, testTable.KeyAliases)
-		}
-		expectedColumnAliases := []string{"second_id"}
-		if !reflect.DeepEqual(testTable.ColumnAliases, expectedColumnAliases) {
-			t.Errorf("Expected key aliases %v but was %v", expectedColumnAliases, testTable.ColumnAliases)
-		}
-	}
+
 	if testTable.ValueAlias != "" {
 		t.Errorf("Expected value alias '' but was '%s'", testTable.ValueAlias)
 	}
@@ -3227,10 +3209,6 @@ func TestDiscoverViaProxy(t *testing.T) {
 func TestUnmarshallNestedTypes(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
-
-	if session.cfg.ProtoVersion < protoVersion3 {
-		t.Skip("can not have frozen types in cassandra < 2.1.3")
-	}
 
 	if err := createTable(session, `CREATE TABLE gocql_test.test_557 (
 		    id text PRIMARY KEY,
