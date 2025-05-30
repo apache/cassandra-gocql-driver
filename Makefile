@@ -8,6 +8,7 @@ TEST_COMPRESSOR ?= no-compression
 TEST_INTEGRATION_TAGS ?= integration
 
 CCM_VERSION ?= 39b8222b31a6c7afe8fe845d16981088a5a735ad
+GOLANGCI_VERSION = v2.1.6
 JVM_EXTRA_OPTS ?= -Dcassandra.test.fail_writes_ks=test -Dcassandra.custom_query_handler_class=org.apache.cassandra.cql3.CustomPayloadMirroringQueryHandler
 ifeq (${CCM_CONFIG_DIR},)
 	CCM_CONFIG_DIR = ~/.ccm
@@ -101,9 +102,15 @@ test-unit:
 	@go clean -testcache
 	go test -tags unit -timeout=5m -race ./...
 
-check:
-	@echo "Run go vet linter"
-	go vet --tags "unit all cassandra integration" ./...
+check: .prepare-golangci
+	@echo "Build"
+	@go build -tags all .
+	@echo "Check linting"
+	@golangci-lint run
+
+fix: .prepare-golangci
+	@echo "Fix linting"
+	golangci-lint run --fix
 
 .prepare-java:
 ifeq ($(shell if [ -f ~/.sdkman/bin/sdkman-init.sh ]; then echo "installed"; else echo "not-installed"; fi), not-installed)
@@ -148,4 +155,10 @@ install-ccm:
 	@pip install "git+https://github.com/riptano/ccm.git@${CCM_VERSION}"
 	@mkdir ${CCM_CONFIG_DIR} 2>/dev/null 1>&2 || true
 	@echo ${CCM_VERSION} > ${CCM_CONFIG_DIR}/ccm-version
+
+.prepare-golangci:
+	@if ! golangci-lint --version 2>/dev/null | grep ${GOLANGCI_VERSION} >/dev/null; then \
+  		echo "Installing golangci-ling ${GOLANGCI_VERSION}"; \
+		go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@${GOLANGCI_VERSION}; \
+  	fi
 

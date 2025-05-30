@@ -1900,6 +1900,7 @@ func (c *Conn) awaitSchemaAgreement(ctx context.Context) (err error) {
 
 	var versions map[string]struct{}
 	var schemaVersion string
+	var rows []map[string]interface{}
 
 	endDeadline := time.Now().Add(c.session.cfg.MaxWaitSchemaAgreement)
 
@@ -1908,17 +1909,18 @@ func (c *Conn) awaitSchemaAgreement(ctx context.Context) (err error) {
 
 		versions = make(map[string]struct{})
 
-		rows, err := iter.SliceMap()
+		rows, err = iter.SliceMap()
 		if err != nil {
 			goto cont
 		}
 
 		for _, row := range rows {
-			h, err := NewHostInfo(c.host.ConnectAddress(), c.session.cfg.Port)
+			var host *HostInfo
+			host, err = NewHostInfo(c.host.ConnectAddress(), c.session.cfg.Port)
 			if err != nil {
 				goto cont
 			}
-			host, err := c.session.hostInfoFromMap(row, h)
+			host, err = c.session.hostInfoFromMap(row, host)
 			if err != nil {
 				goto cont
 			}

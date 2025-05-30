@@ -2603,7 +2603,7 @@ func unmarshalUDT(info TypeInfo, data []byte, value interface{}) error {
 		f, ok := fields[e.Name]
 		if !ok {
 			f = k.FieldByName(e.Name)
-			if f == emptyValue {
+			if f == emptyValue { //nolint:govet // there is no other way to compare with empty value
 				// skip fields which exist in the UDT but not in
 				// the struct passed in
 				continue
