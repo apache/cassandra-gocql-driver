@@ -722,7 +722,21 @@ func (r *ringDescriber) GetHosts() ([]*HostInfo, string, error) {
 		return r.prevHosts, r.prevPartitioner, err
 	}
 
-	hosts := append([]*HostInfo{localHost}, peerHosts...)
+	// if the same HostID exists in peerHosts, localHost needs to be excluded to work properly with Amazon Keyspaces (CASSGO-72, #1873)
+	var hasSameHostID bool
+	for _, h := range peerHosts {
+		if h.HostID() == localHost.HostID() {
+			hasSameHostID = true
+		}
+	}
+
+	var hosts []*HostInfo
+	if hasSameHostID {
+		hosts = peerHosts
+	} else {
+		hosts = append([]*HostInfo{localHost}, peerHosts...)
+	}
+
 	var partitioner string
 	if len(hosts) > 0 {
 		partitioner = hosts[0].Partitioner()
