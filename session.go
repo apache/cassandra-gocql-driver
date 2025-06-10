@@ -187,8 +187,9 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 	s.policy.Init(s)
 
 	s.executor = &queryExecutor{
-		pool:   s.pool,
-		policy: cfg.PoolConfig.HostSelectionPolicy,
+		pool:        s.pool,
+		policy:      cfg.PoolConfig.HostSelectionPolicy,
+		interceptor: cfg.QueryAttemptInterceptor,
 	}
 
 	s.queryObserver = cfg.QueryObserver
@@ -1134,12 +1135,12 @@ func (q *Query) execute(ctx context.Context, conn *Conn) *Iter {
 	return conn.executeQuery(ctx, q)
 }
 
-func (q *Query) attempt(keyspace string, end, start time.Time, iter *Iter, host *HostInfo) {
+func (q *Query) attempt(ctx context.Context, keyspace string, end, start time.Time, iter *Iter, host *HostInfo) {
 	latency := end.Sub(start)
 	attempt, metricsForHost := q.metrics.attempt(1, latency, host, q.observer != nil)
 
 	if q.observer != nil {
-		q.observer.ObserveQuery(q.Context(), ObservedQuery{
+		q.observer.ObserveQuery(ctx, ObservedQuery{
 			Keyspace:  keyspace,
 			Statement: q.stmt,
 			Values:    q.values,
@@ -2006,7 +2007,7 @@ func (b *Batch) WithTimestamp(timestamp int64) *Batch {
 	return b
 }
 
-func (b *Batch) attempt(keyspace string, end, start time.Time, iter *Iter, host *HostInfo) {
+func (b *Batch) attempt(ctx context.Context, keyspace string, end, start time.Time, iter *Iter, host *HostInfo) {
 	latency := end.Sub(start)
 	attempt, metricsForHost := b.metrics.attempt(1, latency, host, b.observer != nil)
 
@@ -2022,7 +2023,7 @@ func (b *Batch) attempt(keyspace string, end, start time.Time, iter *Iter, host 
 		values[i] = entry.Args
 	}
 
-	b.observer.ObserveBatch(b.Context(), ObservedBatch{
+	b.observer.ObserveBatch(ctx, ObservedBatch{
 		Keyspace:   keyspace,
 		Statements: statements,
 		Values:     values,
