@@ -76,7 +76,7 @@ func TestHostPolicy_TokenAware_SimpleStrategy(t *testing.T) {
 		return nil, errors.New("not initalized")
 	}
 
-	query := &Query{routingInfo: &queryRoutingInfo{}}
+	query := &Query{}
 	query.getKeyspace = func() string { return keyspace }
 
 	iter := policy.Pick(nil)
@@ -129,7 +129,7 @@ func TestHostPolicy_TokenAware_SimpleStrategy(t *testing.T) {
 
 	// now the token ring is configured
 	query.RoutingKey([]byte("20"))
-	iter = policy.Pick(query)
+	iter = policy.Pick(newInternalQuery(query, nil))
 	// first token-aware hosts
 	expectHosts(t, "hosts[0]", iter, "1")
 	expectHosts(t, "hosts[1]", iter, "2")
@@ -182,11 +182,11 @@ func TestHostPolicy_TokenAware_NilHostInfo(t *testing.T) {
 	}
 	policy.SetPartitioner("OrderedPartitioner")
 
-	query := &Query{routingInfo: &queryRoutingInfo{}}
+	query := &Query{}
 	query.getKeyspace = func() string { return "myKeyspace" }
 	query.RoutingKey([]byte("20"))
 
-	iter := policy.Pick(query)
+	iter := policy.Pick(newInternalQuery(query, nil))
 	next := iter()
 	if next == nil {
 		t.Fatal("got nil host")
@@ -240,7 +240,7 @@ func TestCOWList_Add(t *testing.T) {
 
 // TestSimpleRetryPolicy makes sure that we only allow 1 + numRetries attempts
 func TestSimpleRetryPolicy(t *testing.T) {
-	q := &Query{routingInfo: &queryRoutingInfo{}}
+	q := newInternalQuery(&Query{}, nil)
 
 	// this should allow a total of 3 tries.
 	rt := &SimpleRetryPolicy{NumRetries: 2}
@@ -298,7 +298,7 @@ func TestExponentialBackoffPolicy(t *testing.T) {
 
 func TestDowngradingConsistencyRetryPolicy(t *testing.T) {
 
-	q := &Query{cons: LocalQuorum, routingInfo: &queryRoutingInfo{}}
+	q := newInternalQuery(&Query{initialConsistency: LocalQuorum}, nil)
 
 	rewt0 := &RequestErrWriteTimeout{
 		Received:  0,
@@ -459,7 +459,7 @@ func TestHostPolicy_TokenAware(t *testing.T) {
 		return nil, errors.New("not initialized")
 	}
 
-	query := &Query{routingInfo: &queryRoutingInfo{}}
+	query := &Query{}
 	query.getKeyspace = func() string { return keyspace }
 
 	iter := policy.Pick(nil)
@@ -497,7 +497,7 @@ func TestHostPolicy_TokenAware(t *testing.T) {
 	}
 
 	query.RoutingKey([]byte("30"))
-	if actual := policy.Pick(query)(); actual == nil {
+	if actual := policy.Pick(newInternalQuery(query, nil))(); actual == nil {
 		t.Fatal("expected to get host from fallback got nil")
 	}
 
@@ -541,7 +541,7 @@ func TestHostPolicy_TokenAware(t *testing.T) {
 
 	// now the token ring is configured
 	query.RoutingKey([]byte("23"))
-	iter = policy.Pick(query)
+	iter = policy.Pick(newInternalQuery(query, nil))
 	// first should be host with matching token from the local DC
 	expectHosts(t, "matching token from local DC", iter, "4")
 	// next are in non-deterministic order
@@ -561,7 +561,7 @@ func TestHostPolicy_TokenAware_NetworkStrategy(t *testing.T) {
 		return nil, errors.New("not initialized")
 	}
 
-	query := &Query{routingInfo: &queryRoutingInfo{}}
+	query := &Query{}
 	query.getKeyspace = func() string { return keyspace }
 
 	iter := policy.Pick(nil)
@@ -632,7 +632,7 @@ func TestHostPolicy_TokenAware_NetworkStrategy(t *testing.T) {
 
 	// now the token ring is configured
 	query.RoutingKey([]byte("18"))
-	iter = policy.Pick(query)
+	iter = policy.Pick(newInternalQuery(query, nil))
 	// first should be hosts with matching token from the local DC
 	expectHosts(t, "matching token from local DC", iter, "4", "7")
 	// rest should be hosts with matching token from remote DCs
@@ -688,7 +688,7 @@ func TestHostPolicy_TokenAware_RackAware(t *testing.T) {
 	policyWithFallbackInternal.getKeyspaceName = policyInternal.getKeyspaceName
 	policyWithFallbackInternal.getKeyspaceMetadata = policyInternal.getKeyspaceMetadata
 
-	query := &Query{routingInfo: &queryRoutingInfo{}}
+	query := &Query{}
 	query.getKeyspace = func() string { return keyspace }
 
 	iter := policy.Pick(nil)
@@ -727,7 +727,7 @@ func TestHostPolicy_TokenAware_RackAware(t *testing.T) {
 	}
 
 	query.RoutingKey([]byte("30"))
-	if actual := policy.Pick(query)(); actual == nil {
+	if actual := policy.Pick(newInternalQuery(query, nil))(); actual == nil {
 		t.Fatal("expected to get host from fallback got nil")
 	}
 
@@ -775,7 +775,7 @@ func TestHostPolicy_TokenAware_RackAware(t *testing.T) {
 
 	// now the token ring is configured
 	// Test the policy with fallback
-	iter = policyWithFallback.Pick(query)
+	iter = policyWithFallback.Pick(newInternalQuery(query, nil))
 
 	// first should be host with matching token from the local DC & rack
 	expectHosts(t, "matching token from local DC and local rack", iter, "7")
@@ -792,7 +792,7 @@ func TestHostPolicy_TokenAware_RackAware(t *testing.T) {
 	expectNoMoreHosts(t, iter)
 
 	// Test the policy without fallback
-	iter = policy.Pick(query)
+	iter = policy.Pick(newInternalQuery(query, nil))
 
 	// first should be host with matching token from the local DC & Rack
 	expectHosts(t, "matching token from local DC and local rack", iter, "7")

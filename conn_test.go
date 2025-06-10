@@ -392,12 +392,14 @@ func TestQueryRetry(t *testing.T) {
 	rt := &SimpleRetryPolicy{NumRetries: 1}
 
 	qry := db.Query("kill").RetryPolicy(rt)
-	if err := qry.Exec(); err == nil {
+	iter := qry.Iter()
+	err = iter.Close()
+	if err == nil {
 		t.Fatalf("expected error")
 	}
 
 	requests := atomic.LoadInt64(&srv.nKillReq)
-	attempts := qry.Attempts()
+	attempts := iter.Attempts()
 	if requests != int64(attempts) {
 		t.Fatalf("expected requests %v to match query attempts %v", requests, attempts)
 	}
@@ -439,13 +441,15 @@ func TestQueryMultinodeWithMetrics(t *testing.T) {
 	rt := &SimpleRetryPolicy{NumRetries: 3}
 	observer := &testQueryObserver{metrics: make(map[string]*hostMetrics), verbose: false, logger: log}
 	qry := db.Query("kill").RetryPolicy(rt).Observer(observer).Idempotent(true)
-	if err := qry.Exec(); err == nil {
+	iter := qry.Iter()
+	err = iter.Close()
+	if err == nil {
 		t.Fatalf("expected error")
 	}
 
 	for i, ip := range addresses {
 		host := &HostInfo{connectAddress: net.ParseIP(ip)}
-		queryMetric := qry.metrics.hostMetrics(host)
+		queryMetric := iter.metrics.hostMetrics(host)
 		observedMetrics := observer.GetMetrics(host)
 
 		requests := int(atomic.LoadInt64(&nodes[i].nKillReq))
@@ -465,7 +469,7 @@ func TestQueryMultinodeWithMetrics(t *testing.T) {
 		}
 	}
 	// the query will only be attempted once, but is being retried
-	attempts := qry.Attempts()
+	attempts := iter.Attempts()
 	if attempts != rt.NumRetries {
 		t.Fatalf("failed to retry the query %v time(s). Query executed %v times", rt.NumRetries, attempts)
 	}

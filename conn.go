@@ -1497,32 +1497,34 @@ func marshalQueryValue(typ TypeInfo, value interface{}, dst *queryValues) error 
 	return nil
 }
 
-func (c *Conn) executeQuery(ctx context.Context, qry *Query) *Iter {
+func (c *Conn) executeQuery(ctx context.Context, q *internalQuery) *Iter {
+	qryOpts := q.qryOpts
 	params := queryParams{
-		consistency: qry.cons,
+		consistency: q.GetConsistency(),
 	}
+	iter := newIter(q.metrics, q.Keyspace(), q.routingInfo, q.qryOpts.getKeyspace)
 
 	// frame checks that it is not 0
-	params.serialConsistency = qry.serialCons
-	params.defaultTimestamp = qry.defaultTimestamp
-	params.defaultTimestampValue = qry.defaultTimestampValue
+	params.serialConsistency = qryOpts.serialCons
+	params.defaultTimestamp = qryOpts.defaultTimestamp
+	params.defaultTimestampValue = qryOpts.defaultTimestampValue
 
-	if len(qry.pageState) > 0 {
-		params.pagingState = qry.pageState
+	if len(q.pageState) > 0 {
+		params.pagingState = q.pageState
 	}
-	if qry.pageSize > 0 {
-		params.pageSize = qry.pageSize
+	if qryOpts.pageSize > 0 {
+		params.pageSize = qryOpts.pageSize
 	}
 	if c.version > protoVersion4 {
-		params.keyspace = qry.keyspace
-		params.nowInSeconds = qry.nowInSecondsValue
+		params.keyspace = qryOpts.keyspace
+		params.nowInSeconds = qryOpts.nowInSecondsValue
 	}
 
 	// If a keyspace for the qry is overriden,
 	// then we should use it to create stmt cache key
 	usedKeyspace := c.currentKeyspace
-	if qry.keyspace != "" {
-		usedKeyspace = qry.keyspace
+	if qryOpts.keyspace != "" {
+		usedKeyspace = qryOpts.keyspace
 	}
 
 	var (
@@ -1530,17 +1532,18 @@ func (c *Conn) executeQuery(ctx context.Context, qry *Query) *Iter {
 		info  *preparedStatment
 	)
 
-	if !qry.skipPrepare && qry.shouldPrepare() {
+	if !qryOpts.skipPrepare && shouldPrepare(qryOpts.stmt) {
 		// Prepare all DML queries. Other queries can not be prepared.
 		var err error
-		info, err = c.prepareStatement(ctx, qry.stmt, qry.trace, usedKeyspace)
+		info, err = c.prepareStatement(ctx, qryOpts.stmt, qryOpts.trace, usedKeyspace)
 		if err != nil {
-			return &Iter{err: err}
+			iter.err = err
+			return iter
 		}
 
-		values := qry.values
-		if qry.binding != nil {
-			values, err = qry.binding(&QueryInfo{
+		values := qryOpts.values
+		if qryOpts.binding != nil {
+			values, err = qryOpts.binding(&QueryInfo{
 				Id:          info.id,
 				Args:        info.request.columns,
 				Rval:        info.response.columns,
@@ -1548,12 +1551,14 @@ func (c *Conn) executeQuery(ctx context.Context, qry *Query) *Iter {
 			})
 
 			if err != nil {
-				return &Iter{err: err}
+				iter.err = err
+				return iter
 			}
 		}
 
 		if len(values) != info.request.actualColCount {
-			return &Iter{err: fmt.Errorf("gocql: expected %d values send got %d", info.request.actualColCount, len(values))}
+			iter.err = fmt.Errorf("gocql: expected %d values send got %d", info.request.actualColCount, len(values))
+			return iter
 		}
 
 		params.values = make([]queryValues, len(values))
@@ -1562,59 +1567,63 @@ func (c *Conn) executeQuery(ctx context.Context, qry *Query) *Iter {
 			value := values[i]
 			typ := info.request.columns[i].TypeInfo
 			if err := marshalQueryValue(typ, value, v); err != nil {
-				return &Iter{err: err}
+				iter.err = err
+				return iter
 			}
 		}
 
 		// if the metadata was not present in the response then we should not skip it
-		params.skipMeta = !(c.session.cfg.DisableSkipMetadata || qry.disableSkipMetadata) && info != nil && info.response.flags&flagNoMetaData == 0
+		params.skipMeta = !(c.session.cfg.DisableSkipMetadata || qryOpts.disableSkipMetadata) && info != nil && info.response.flags&flagNoMetaData == 0
 
 		frame = &writeExecuteFrame{
 			preparedID:       info.id,
 			params:           params,
-			customPayload:    qry.customPayload,
+			customPayload:    qryOpts.customPayload,
 			resultMetadataID: info.resultMetadataID,
 		}
 
 		// Set "keyspace" and "table" property in the query if it is present in preparedMetadata
-		qry.routingInfo.mu.Lock()
-		qry.routingInfo.keyspace = info.request.keyspace
+		q.routingInfo.mu.Lock()
+		q.routingInfo.keyspace = info.request.keyspace
 		if info.request.keyspace == "" {
-			qry.routingInfo.keyspace = usedKeyspace
+			q.routingInfo.keyspace = usedKeyspace
 		}
-		qry.routingInfo.table = info.request.table
-		qry.routingInfo.mu.Unlock()
+		q.routingInfo.table = info.request.table
+		q.routingInfo.mu.Unlock()
 	} else {
 		frame = &writeQueryFrame{
-			statement:     qry.stmt,
+			statement:     qryOpts.stmt,
 			params:        params,
-			customPayload: qry.customPayload,
+			customPayload: qryOpts.customPayload,
 		}
 	}
 
-	framer, err := c.exec(ctx, frame, qry.trace)
+	framer, err := c.exec(ctx, frame, qryOpts.trace)
 	if err != nil {
-		return &Iter{err: err}
+		iter.err = err
+		return iter
 	}
 
 	resp, err := framer.parseFrame()
 	if err != nil {
-		return &Iter{err: err}
+		iter.err = err
+		return iter
 	}
 
-	if len(framer.traceID) > 0 && qry.trace != nil {
-		qry.trace.Trace(framer.traceID)
+	if len(framer.traceID) > 0 && qryOpts.trace != nil {
+		qryOpts.trace.Trace(framer.traceID)
 	}
 
 	switch x := resp.(type) {
 	case *resultVoidFrame:
-		return &Iter{framer: framer}
+		iter.framer = framer
+		return iter
 	case *resultRowsFrame:
 		if x.meta.newMetadataID != nil {
 			// If a RESULT/Rows message reports
 			//      changed resultset metadata with the Metadata_changed flag, the reported new
 			//      resultset metadata must be used in subsequent executions
-			stmtCacheKey := c.session.stmtsLRU.keyFor(c.host.HostID(), usedKeyspace, qry.stmt)
+			stmtCacheKey := c.session.stmtsLRU.keyFor(c.host.HostID(), usedKeyspace, qryOpts.stmt)
 			oldInflight, ok := c.session.stmtsLRU.get(stmtCacheKey)
 			if ok {
 				newInflight := &inflightPrepare{
@@ -1635,33 +1644,32 @@ func (c *Conn) executeQuery(ctx context.Context, qry *Query) *Iter {
 				info = newInflight.preparedStatment
 			}
 		}
-
-		iter := &Iter{
-			meta:    x.meta,
-			framer:  framer,
-			numRows: x.numRows,
-		}
+		iter.meta = x.meta
+		iter.framer = framer
+		iter.numRows = x.numRows
 
 		if x.meta.noMetaData() {
 			if info != nil {
 				iter.meta = info.response
 				iter.meta.pagingState = copyBytes(x.meta.pagingState)
 			} else {
-				return &Iter{framer: framer, err: errors.New("gocql: did not receive metadata but prepared info is nil")}
+				iter = newErrIter(errors.New("gocql: did not receive metadata but prepared info is nil"), q.metrics, q.Keyspace(), q.routingInfo, q.qryOpts.getKeyspace)
+				iter.framer = framer
+				return iter
 			}
 		} else {
 			iter.meta = x.meta
 		}
 
-		if x.meta.morePages() && !qry.disableAutoPage {
-			newQry := new(Query)
-			*newQry = *qry
+		if x.meta.morePages() && !qryOpts.disableAutoPage {
+			newQry := new(internalQuery)
+			*newQry = *q
 			newQry.pageState = copyBytes(x.meta.pagingState)
 			newQry.metrics = &queryMetrics{m: make(map[string]*hostMetrics)}
 
 			iter.next = &nextIter{
-				qry: newQry,
-				pos: int((1 - qry.prefetch) * float64(x.numRows)),
+				q:   newQry,
+				pos: int((1 - qryOpts.prefetch) * float64(x.numRows)),
 			}
 
 			if iter.next.pos < 1 {
@@ -1671,9 +1679,10 @@ func (c *Conn) executeQuery(ctx context.Context, qry *Query) *Iter {
 
 		return iter
 	case *resultKeyspaceFrame:
-		return &Iter{framer: framer}
+		iter.framer = framer
+		return iter
 	case *schemaChangeKeyspace, *schemaChangeTable, *schemaChangeFunction, *schemaChangeAggregate, *schemaChangeType:
-		iter := &Iter{framer: framer}
+		iter.framer = framer
 		if err := c.awaitSchemaAgreement(ctx); err != nil {
 			// TODO: should have this behind a flag
 			c.logger.Println(err)
@@ -1683,16 +1692,17 @@ func (c *Conn) executeQuery(ctx context.Context, qry *Query) *Iter {
 		// is not consistent with regards to its schema.
 		return iter
 	case *RequestErrUnprepared:
-		stmtCacheKey := c.session.stmtsLRU.keyFor(c.host.HostID(), usedKeyspace, qry.stmt)
+		stmtCacheKey := c.session.stmtsLRU.keyFor(c.host.HostID(), usedKeyspace, qryOpts.stmt)
 		c.session.stmtsLRU.evictPreparedID(stmtCacheKey, x.StatementId)
-		return c.executeQuery(ctx, qry)
+		return c.executeQuery(ctx, q)
 	case error:
-		return &Iter{err: x, framer: framer}
+		iter.err = x
+		iter.framer = framer
+		return iter
 	default:
-		return &Iter{
-			err:    NewErrProtocol("Unknown type in response to execute query (%T): %s", x, x),
-			framer: framer,
-		}
+		iter.err = NewErrProtocol("Unknown type in response to execute query (%T): %s", x, x)
+		iter.framer = framer
+		return iter
 	}
 }
 
@@ -1744,38 +1754,40 @@ func (c *Conn) UseKeyspace(keyspace string) error {
 	return nil
 }
 
-func (c *Conn) executeBatch(ctx context.Context, batch *Batch) *Iter {
-	n := len(batch.Entries)
+func (c *Conn) executeBatch(ctx context.Context, b *internalBatch) *Iter {
+	iter := newIter(b.metrics, b.Keyspace(), b.routingInfo, nil)
+	n := len(b.batchOpts.entries)
 	req := &writeBatchFrame{
-		typ:                   batch.Type,
+		typ:                   b.batchOpts.bType,
 		statements:            make([]batchStatment, n),
-		consistency:           batch.Cons,
-		serialConsistency:     batch.serialCons,
-		defaultTimestamp:      batch.defaultTimestamp,
-		defaultTimestampValue: batch.defaultTimestampValue,
-		customPayload:         batch.CustomPayload,
+		consistency:           b.GetConsistency(),
+		serialConsistency:     b.batchOpts.serialCons,
+		defaultTimestamp:      b.batchOpts.defaultTimestamp,
+		defaultTimestampValue: b.batchOpts.defaultTimestampValue,
+		customPayload:         b.batchOpts.customPayload,
 	}
 
 	if c.version > protoVersion4 {
-		req.keyspace = batch.keyspace
-		req.nowInSeconds = batch.nowInSeconds
+		req.keyspace = b.batchOpts.keyspace
+		req.nowInSeconds = b.batchOpts.nowInSeconds
 	}
 
 	usedKeyspace := c.currentKeyspace
-	if batch.keyspace != "" {
-		usedKeyspace = batch.keyspace
+	if b.batchOpts.keyspace != "" {
+		usedKeyspace = b.batchOpts.keyspace
 	}
 
-	stmts := make(map[string]string, len(batch.Entries))
+	stmts := make(map[string]string, len(b.batchOpts.entries))
 
 	for i := 0; i < n; i++ {
-		entry := &batch.Entries[i]
-		b := &req.statements[i]
+		entry := &b.batchOpts.entries[i]
+		batchStmt := &req.statements[i]
 
 		if len(entry.Args) > 0 || entry.binding != nil {
-			info, err := c.prepareStatement(batch.Context(), entry.Stmt, batch.trace, usedKeyspace)
+			info, err := c.prepareStatement(ctx, entry.Stmt, b.batchOpts.trace, usedKeyspace)
 			if err != nil {
-				return &Iter{err: err}
+				iter.err = err
+				return iter
 			}
 
 			var values []interface{}
@@ -1789,68 +1801,75 @@ func (c *Conn) executeBatch(ctx context.Context, batch *Batch) *Iter {
 					PKeyColumns: info.request.pkeyColumns,
 				})
 				if err != nil {
-					return &Iter{err: err}
+					iter.err = err
+					return iter
 				}
 			}
 
 			if len(values) != info.request.actualColCount {
-				return &Iter{err: fmt.Errorf("gocql: batch statement %d expected %d values send got %d", i, info.request.actualColCount, len(values))}
+				iter.err = fmt.Errorf("gocql: batch statement %d expected %d values send got %d", i, info.request.actualColCount, len(values))
+				return iter
 			}
 
-			b.preparedID = info.id
+			batchStmt.preparedID = info.id
 			stmts[string(info.id)] = entry.Stmt
 
-			b.values = make([]queryValues, info.request.actualColCount)
+			batchStmt.values = make([]queryValues, info.request.actualColCount)
 
 			for j := 0; j < info.request.actualColCount; j++ {
-				v := &b.values[j]
+				v := &batchStmt.values[j]
 				value := values[j]
 				typ := info.request.columns[j].TypeInfo
 				if err := marshalQueryValue(typ, value, v); err != nil {
-					return &Iter{err: err}
+					iter.err = err
+					return iter
 				}
 			}
 		} else {
-			b.statement = entry.Stmt
+			batchStmt.statement = entry.Stmt
 		}
 	}
 
-	framer, err := c.exec(batch.Context(), req, batch.trace)
+	framer, err := c.exec(ctx, req, b.batchOpts.trace)
 	if err != nil {
-		return &Iter{err: err}
+		iter.err = err
+		return iter
 	}
 
 	resp, err := framer.parseFrame()
 	if err != nil {
-		return &Iter{err: err, framer: framer}
+		iter.err = err
+		iter.framer = framer
+		return iter
 	}
 
-	if len(framer.traceID) > 0 && batch.trace != nil {
-		batch.trace.Trace(framer.traceID)
+	if len(framer.traceID) > 0 && b.batchOpts.trace != nil {
+		b.batchOpts.trace.Trace(framer.traceID)
 	}
 
 	switch x := resp.(type) {
 	case *resultVoidFrame:
-		return &Iter{}
+		return iter
 	case *RequestErrUnprepared:
 		stmt, found := stmts[string(x.StatementId)]
 		if found {
 			key := c.session.stmtsLRU.keyFor(c.host.HostID(), usedKeyspace, stmt)
 			c.session.stmtsLRU.evictPreparedID(key, x.StatementId)
 		}
-		return c.executeBatch(ctx, batch)
+		return c.executeBatch(ctx, b)
 	case *resultRowsFrame:
-		iter := &Iter{
-			meta:    x.meta,
-			framer:  framer,
-			numRows: x.numRows,
-		}
-
+		iter.meta = x.meta
+		iter.framer = framer
+		iter.numRows = x.numRows
 		return iter
 	case error:
-		return &Iter{err: x, framer: framer}
+		iter.err = x
+		iter.framer = framer
+		return iter
 	default:
-		return &Iter{err: NewErrProtocol("Unknown type in response to batch statement: %s", x), framer: framer}
+		iter.err = NewErrProtocol("Unknown type in response to batch statement: %s", x)
+		iter.framer = framer
+		return iter
 	}
 }
 
@@ -1858,9 +1877,9 @@ func (c *Conn) query(ctx context.Context, statement string, values ...interface{
 	q := c.session.Query(statement, values...).Consistency(One).Trace(nil)
 	q.skipPrepare = true
 	q.disableSkipMetadata = true
+
 	// we want to keep the query on this connection
-	q.conn = c
-	return c.executeQuery(ctx, q)
+	return q.iterInternal(c, ctx)
 }
 
 func (c *Conn) querySystemPeers(ctx context.Context, version cassVersion) *Iter {

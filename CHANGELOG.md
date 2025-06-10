@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Support for Native Protocol 5. Following protocol changes exposed new API
   Query.SetKeyspace(), Query.WithNowInSeconds(), Batch.SetKeyspace(), Batch.WithNowInSeconds() (CASSGO-1)
 - Externally-defined type registration (CASSGO-43)
+- Add Query and Batch to ObservedQuery and ObservedBatch (CASSGO-73)
 
 ### Changed
 
@@ -43,6 +44,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - inet columns default to net.IP when using MapScan or SliceMap (CASSGO-43)
 - NativeType removed (CASSGO-43)
 - `New` and `NewWithError` removed and replaced with `Zero` (CASSGO-43)
+- Changes to Query and Batch to make them safely reusable (CASSGO-22)
 
 ### Fixed
 

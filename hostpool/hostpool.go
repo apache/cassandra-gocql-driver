@@ -100,7 +100,7 @@ func (r *hostPoolHostPolicy) HostDown(host *gocql.HostInfo) {
 	r.RemoveHost(host)
 }
 
-func (r *hostPoolHostPolicy) Pick(qry gocql.ExecutableQuery) gocql.NextHost {
+func (r *hostPoolHostPolicy) Pick(qry gocql.ExecutableStatement) gocql.NextHost {
 	return func() gocql.SelectedHost {
 		r.mu.RLock()
 		defer r.mu.RUnlock()

@@ -31,22 +31,41 @@ import (
 	"time"
 )
 
-type ExecutableQuery interface {
-	borrowForExecution()    // Used to ensure that the query stays alive for lifetime of a particular execution goroutine.
-	releaseAfterExecution() // Used when a goroutine finishes its execution attempts, either with ok result or an error.
-	execute(ctx context.Context, conn *Conn) *Iter
-	attempt(keyspace string, end, start time.Time, iter *Iter, host *HostInfo)
-	retryPolicy() RetryPolicy
-	speculativeExecutionPolicy() SpeculativeExecutionPolicy
+// Deprecated: Will be removed in a future major release. Also Query and Batch no longer implement this interface.
+//
+// Please use Statement (for Query / Batch objects) or ExecutableStatement (in HostSelectionPolicy implementations) instead.
+type ExecutableQuery = ExecutableStatement
+
+// ExecutableStatement is an interface that represents a query or batch statement that
+// exposes the correct functions for the HostSelectionPolicy to operate correctly.
+type ExecutableStatement interface {
 	GetRoutingKey() ([]byte, error)
 	Keyspace() string
 	Table() string
 	IsIdempotent() bool
 	GetHostID() string
+	Statement() Statement
+}
 
-	withContext(context.Context) ExecutableQuery
+// Statement is an interface that represents a CQL statement that the driver can execute
+// (currently Query and Batch via Session.Query and Session.Batch)
+type Statement interface {
+	Iter() *Iter
+	IterContext(ctx context.Context) *Iter
+	Exec() error
+	ExecContext(ctx context.Context) error
+}
 
+type internalRequest interface {
+	execute(ctx context.Context, conn *Conn) *Iter
+	attempt(keyspace string, end, start time.Time, iter *Iter, host *HostInfo)
+	retryPolicy() RetryPolicy
+	speculativeExecutionPolicy() SpeculativeExecutionPolicy
+	getQueryMetrics() *queryMetrics
+	getRoutingInfo() *queryRoutingInfo
+	getKeyspaceFunc() func() string
 	RetryableQuery
+	ExecutableStatement
 }
 
 type queryExecutor struct {
@@ -54,7 +73,7 @@ type queryExecutor struct {
 	policy HostSelectionPolicy
 }
 
-func (q *queryExecutor) attemptQuery(ctx context.Context, qry ExecutableQuery, conn *Conn) *Iter {
+func (q *queryExecutor) attemptQuery(ctx context.Context, qry internalRequest, conn *Conn) *Iter {
 	start := time.Now()
 	iter := qry.execute(ctx, conn)
 	end := time.Now()
@@ -64,7 +83,7 @@ func (q *queryExecutor) attemptQuery(ctx context.Context, qry ExecutableQuery, c
 	return iter
 }
 
-func (q *queryExecutor) speculate(ctx context.Context, qry ExecutableQuery, sp SpeculativeExecutionPolicy,
+func (q *queryExecutor) speculate(ctx context.Context, qry internalRequest, sp SpeculativeExecutionPolicy,
 	hostIter NextHost, results chan *Iter) *Iter {
 	ticker := time.NewTicker(sp.Delay())
 	defer ticker.Stop()
@@ -72,10 +91,9 @@ func (q *queryExecutor) speculate(ctx context.Context, qry ExecutableQuery, sp S
 	for i := 0; i < sp.Attempts(); i++ {
 		select {
 		case <-ticker.C:
-			qry.borrowForExecution() // ensure liveness in case of executing Query to prevent races with Query.Release().
 			go q.run(ctx, qry, hostIter, results)
 		case <-ctx.Done():
-			return &Iter{err: ctx.Err()}
+			return newErrIter(ctx.Err(), qry.getQueryMetrics(), qry.Keyspace(), qry.getRoutingInfo(), qry.getKeyspaceFunc())
 		case iter := <-results:
 			return iter
 		}
@@ -84,7 +102,7 @@ func (q *queryExecutor) speculate(ctx context.Context, qry ExecutableQuery, sp S
 	return nil
 }
 
-func (q *queryExecutor) executeQuery(qry ExecutableQuery) (*Iter, error) {
+func (q *queryExecutor) executeQuery(qry internalRequest) (*Iter, error) {
 	var hostIter NextHost
 
 	// check if the host id is specified for the query,
@@ -132,7 +150,6 @@ func (q *queryExecutor) executeQuery(qry ExecutableQuery) (*Iter, error) {
 	results := make(chan *Iter, 1)
 
 	// Launch the main execution
-	qry.borrowForExecution() // ensure liveness in case of executing Query to prevent races with Query.Release().
 	go q.run(ctx, qry, hostIter, results)
 
 	// The speculative executions are launched _in addition_ to the main
@@ -146,11 +163,11 @@ func (q *queryExecutor) executeQuery(qry ExecutableQuery) (*Iter, error) {
 	case iter := <-results:
 		return iter, nil
 	case <-ctx.Done():
-		return &Iter{err: ctx.Err()}, nil
+		return newErrIter(ctx.Err(), qry.getQueryMetrics(), qry.Keyspace(), qry.getRoutingInfo(), qry.getKeyspaceFunc()), nil
 	}
 }
 
-func (q *queryExecutor) do(ctx context.Context, qry ExecutableQuery, hostIter NextHost) *Iter {
+func (q *queryExecutor) do(ctx context.Context, qry internalRequest, hostIter NextHost) *Iter {
 	selectedHost := hostIter()
 	rt := qry.retryPolicy()
 
@@ -213,7 +230,7 @@ func (q *queryExecutor) do(ctx context.Context, qry ExecutableQuery, hostIter Ne
 			stopRetries = true
 		default:
 			// Undefined? Return nil and error, this will panic in the requester
-			return &Iter{err: ErrUnknownRetryType}
+			return newErrIter(ErrUnknownRetryType, qry.getQueryMetrics(), qry.Keyspace(), qry.getRoutingInfo(), qry.getKeyspaceFunc())
 		}
 
 		if stopRetries || attemptsReached {
@@ -225,16 +242,447 @@ func (q *queryExecutor) do(ctx context.Context, qry ExecutableQuery, hostIter Ne
 	}
 
 	if lastErr != nil {
-		return &Iter{err: lastErr}
+		return newErrIter(lastErr, qry.getQueryMetrics(), qry.Keyspace(), qry.getRoutingInfo(), qry.getKeyspaceFunc())
 	}
 
-	return &Iter{err: ErrNoConnections}
+	return newErrIter(ErrNoConnections, qry.getQueryMetrics(), qry.Keyspace(), qry.getRoutingInfo(), qry.getKeyspaceFunc())
 }
 
-func (q *queryExecutor) run(ctx context.Context, qry ExecutableQuery, hostIter NextHost, results chan<- *Iter) {
+func (q *queryExecutor) run(ctx context.Context, qry internalRequest, hostIter NextHost, results chan<- *Iter) {
 	select {
 	case results <- q.do(ctx, qry, hostIter):
 	case <-ctx.Done():
 	}
-	qry.releaseAfterExecution()
+}
+
+type queryOptions struct {
+	stmt string
+
+	// Paging
+	pageSize        int
+	disableAutoPage bool
+
+	// Monitoring
+	trace    Tracer
+	observer QueryObserver
+
+	// Parameters
+	values  []interface{}
+	binding func(q *QueryInfo) ([]interface{}, error)
+
+	// Timestamp
+	defaultTimestamp      bool
+	defaultTimestampValue int64
+
+	// Consistency
+	serialCons SerialConsistency
+
+	// Protocol flag
+	disableSkipMetadata bool
+
+	customPayload     map[string][]byte
+	prefetch          float64
+	rt                RetryPolicy
+	spec              SpeculativeExecutionPolicy
+	context           context.Context
+	idempotent        bool
+	keyspace          string
+	skipPrepare       bool
+	routingKey        []byte
+	nowInSecondsValue *int
+	hostID            string
+
+	// getKeyspace is field so that it can be overriden in tests
+	getKeyspace func() string
+}
+
+func newQueryOptions(q *Query, ctx context.Context) *queryOptions {
+	var newRoutingKey []byte
+	if q.routingKey != nil {
+		routingKey := q.routingKey
+		newRoutingKey = make([]byte, len(routingKey))
+		copy(newRoutingKey, routingKey)
+	}
+	if ctx == nil {
+		ctx = q.Context()
+	}
+	return &queryOptions{
+		stmt:                  q.stmt,
+		values:                q.values,
+		pageSize:              q.pageSize,
+		prefetch:              q.prefetch,
+		trace:                 q.trace,
+		observer:              q.observer,
+		rt:                    q.rt,
+		spec:                  q.spec,
+		binding:               q.binding,
+		serialCons:            q.serialCons,
+		defaultTimestamp:      q.defaultTimestamp,
+		defaultTimestampValue: q.defaultTimestampValue,
+		disableSkipMetadata:   q.disableSkipMetadata,
+		context:               ctx,
+		idempotent:            q.idempotent,
+		customPayload:         q.customPayload,
+		disableAutoPage:       q.disableAutoPage,
+		skipPrepare:           q.skipPrepare,
+		routingKey:            newRoutingKey,
+		getKeyspace:           q.getKeyspace,
+		nowInSecondsValue:     q.nowInSecondsValue,
+		keyspace:              q.keyspace,
+		hostID:                q.hostID,
+	}
+}
+
+type internalQuery struct {
+	originalQuery *Query
+	qryOpts       *queryOptions
+	pageState     []byte
+	metrics       *queryMetrics
+	conn          *Conn
+	consistency   uint32
+	session       *Session
+	routingInfo   *queryRoutingInfo
+}
+
+func newInternalQuery(q *Query, ctx context.Context) *internalQuery {
+	var newPageState []byte
+	if q.initialPageState != nil {
+		pageState := q.initialPageState
+		newPageState = make([]byte, len(pageState))
+		copy(newPageState, pageState)
+	}
+	return &internalQuery{
+		originalQuery: q,
+		qryOpts:       newQueryOptions(q, ctx),
+		metrics:       &queryMetrics{m: make(map[string]*hostMetrics)},
+		consistency:   uint32(q.initialConsistency),
+		pageState:     newPageState,
+		conn:          nil,
+		session:       q.session,
+		routingInfo:   &queryRoutingInfo{},
+	}
+}
+
+// Attempts returns the number of times the query was executed.
+func (q *internalQuery) Attempts() int {
+	return q.metrics.attempts()
+}
+
+func (q *internalQuery) attempt(keyspace string, end, start time.Time, iter *Iter, host *HostInfo) {
+	latency := end.Sub(start)
+	attempt, metricsForHost := q.metrics.attempt(1, latency, host, q.qryOpts.observer != nil)
+
+	if q.qryOpts.observer != nil {
+		q.qryOpts.observer.ObserveQuery(q.qryOpts.context, ObservedQuery{
+			Keyspace:  keyspace,
+			Statement: q.qryOpts.stmt,
+			Values:    q.qryOpts.values,
+			Start:     start,
+			End:       end,
+			Rows:      iter.numRows,
+			Host:      host,
+			Metrics:   metricsForHost,
+			Err:       iter.err,
+			Attempt:   attempt,
+			Query:     q.originalQuery,
+		})
+	}
+}
+
+func (q *internalQuery) execute(ctx context.Context, conn *Conn) *Iter {
+	return conn.executeQuery(ctx, q)
+}
+
+func (q *internalQuery) retryPolicy() RetryPolicy {
+	return q.qryOpts.rt
+}
+
+func (q *internalQuery) speculativeExecutionPolicy() SpeculativeExecutionPolicy {
+	return q.qryOpts.spec
+}
+
+func (q *internalQuery) GetRoutingKey() ([]byte, error) {
+	if q.qryOpts.routingKey != nil {
+		return q.qryOpts.routingKey, nil
+	}
+
+	if q.qryOpts.binding != nil && len(q.qryOpts.values) == 0 {
+		// If this query was created using session.Bind we wont have the query
+		// values yet, so we have to pass down to the next policy.
+		// TODO: Remove this and handle this case
+		return nil, nil
+	}
+
+	// try to determine the routing key
+	routingKeyInfo, err := q.session.routingKeyInfo(q.Context(), q.qryOpts.stmt, q.qryOpts.keyspace)
+	if err != nil {
+		return nil, err
+	}
+
+	if routingKeyInfo != nil {
+		q.routingInfo.mu.Lock()
+		q.routingInfo.keyspace = routingKeyInfo.keyspace
+		q.routingInfo.table = routingKeyInfo.table
+		q.routingInfo.mu.Unlock()
+	}
+	return createRoutingKey(routingKeyInfo, q.qryOpts.values)
+}
+
+func (q *internalQuery) Keyspace() string {
+	if q.qryOpts.getKeyspace != nil {
+		return q.qryOpts.getKeyspace()
+	}
+
+	qrKs := q.routingInfo.getKeyspace()
+	if qrKs != "" {
+		return qrKs
+	}
+	if q.qryOpts.keyspace != "" {
+		return q.qryOpts.keyspace
+	}
+
+	if q.session == nil {
+		return ""
+	}
+	// TODO(chbannis): this should be parsed from the query or we should let
+	// this be set by users.
+	return q.session.cfg.Keyspace
+}
+
+func (q *internalQuery) Table() string {
+	return q.routingInfo.getTable()
+}
+
+func (q *internalQuery) IsIdempotent() bool {
+	return q.qryOpts.idempotent
+}
+
+func (q *internalQuery) getQueryMetrics() *queryMetrics {
+	return q.metrics
+}
+
+func (q *internalQuery) SetConsistency(c Consistency) {
+	atomic.StoreUint32(&q.consistency, uint32(c))
+}
+
+func (q *internalQuery) GetConsistency() Consistency {
+	return Consistency(atomic.LoadUint32(&q.consistency))
+}
+
+func (q *internalQuery) Context() context.Context {
+	return q.qryOpts.context
+}
+
+func (q *internalQuery) Statement() Statement {
+	return q.originalQuery
+}
+
+func (q *internalQuery) GetHostID() string {
+	return q.qryOpts.hostID
+}
+
+func (q *internalQuery) getRoutingInfo() *queryRoutingInfo {
+	return q.routingInfo
+}
+
+func (q *internalQuery) getKeyspaceFunc() func() string {
+	return q.qryOpts.getKeyspace
+}
+
+type batchOptions struct {
+	trace    Tracer
+	observer BatchObserver
+
+	bType   BatchType
+	entries []BatchEntry
+
+	defaultTimestamp      bool
+	defaultTimestampValue int64
+
+	serialCons SerialConsistency
+
+	customPayload map[string][]byte
+	rt            RetryPolicy
+	spec          SpeculativeExecutionPolicy
+	context       context.Context
+	keyspace      string
+	idempotent    bool
+	routingKey    []byte
+	nowInSeconds  *int
+}
+
+func newBatchOptions(b *Batch, ctx context.Context) *batchOptions {
+	// make a new array so if user keeps appending entries on the Batch object it doesn't affect this execution
+	newEntries := make([]BatchEntry, len(b.Entries))
+	for i, e := range b.Entries {
+		newEntries[i] = e
+	}
+	var newRoutingKey []byte
+	if b.routingKey != nil {
+		routingKey := b.routingKey
+		newRoutingKey = make([]byte, len(routingKey))
+		copy(newRoutingKey, routingKey)
+	}
+	if ctx == nil {
+		ctx = b.Context()
+	}
+	return &batchOptions{
+		bType:                 b.Type,
+		entries:               newEntries,
+		customPayload:         b.CustomPayload,
+		rt:                    b.rt,
+		spec:                  b.spec,
+		trace:                 b.trace,
+		observer:              b.observer,
+		serialCons:            b.serialCons,
+		defaultTimestamp:      b.defaultTimestamp,
+		defaultTimestampValue: b.defaultTimestampValue,
+		context:               ctx,
+		keyspace:              b.Keyspace(),
+		idempotent:            b.IsIdempotent(),
+		routingKey:            newRoutingKey,
+		nowInSeconds:          b.nowInSeconds,
+	}
+}
+
+type internalBatch struct {
+	originalBatch *Batch
+	batchOpts     *batchOptions
+	metrics       *queryMetrics
+	consistency   uint32
+	routingInfo   *queryRoutingInfo
+	session       *Session
+}
+
+func newInternalBatch(batch *Batch, ctx context.Context) *internalBatch {
+	return &internalBatch{
+		originalBatch: batch,
+		batchOpts:     newBatchOptions(batch, ctx),
+		metrics:       &queryMetrics{m: make(map[string]*hostMetrics)},
+		routingInfo:   &queryRoutingInfo{},
+		session:       batch.session,
+		consistency:   uint32(batch.GetConsistency()),
+	}
+}
+
+// Attempts returns the number of attempts made to execute the batch.
+func (b *internalBatch) Attempts() int {
+	return b.metrics.attempts()
+}
+
+func (b *internalBatch) attempt(keyspace string, end, start time.Time, iter *Iter, host *HostInfo) {
+	latency := end.Sub(start)
+	attempt, metricsForHost := b.metrics.attempt(1, latency, host, b.batchOpts.observer != nil)
+
+	if b.batchOpts.observer == nil {
+		return
+	}
+
+	statements := make([]string, len(b.batchOpts.entries))
+	values := make([][]interface{}, len(b.batchOpts.entries))
+
+	for i, entry := range b.batchOpts.entries {
+		statements[i] = entry.Stmt
+		values[i] = entry.Args
+	}
+
+	b.batchOpts.observer.ObserveBatch(b.batchOpts.context, ObservedBatch{
+		Keyspace:   keyspace,
+		Statements: statements,
+		Values:     values,
+		Start:      start,
+		End:        end,
+		// Rows not used in batch observations // TODO - might be able to support it when using BatchCAS
+		Host:    host,
+		Metrics: metricsForHost,
+		Err:     iter.err,
+		Attempt: attempt,
+		Batch:   b.originalBatch,
+	})
+}
+
+func (b *internalBatch) retryPolicy() RetryPolicy {
+	return b.batchOpts.rt
+}
+
+func (b *internalBatch) speculativeExecutionPolicy() SpeculativeExecutionPolicy {
+	return b.batchOpts.spec
+}
+
+func (b *internalBatch) GetRoutingKey() ([]byte, error) {
+	if b.batchOpts.routingKey != nil {
+		return b.batchOpts.routingKey, nil
+	}
+
+	if len(b.batchOpts.entries) == 0 {
+		return nil, nil
+	}
+
+	entry := b.batchOpts.entries[0]
+	if entry.binding != nil {
+		// bindings do not have the values let's skip it like Query does.
+		return nil, nil
+	}
+	// try to determine the routing key
+	routingKeyInfo, err := b.session.routingKeyInfo(b.Context(), entry.Stmt, b.batchOpts.keyspace)
+	if err != nil {
+		return nil, err
+	}
+
+	if routingKeyInfo != nil {
+		b.routingInfo.mu.Lock()
+		b.routingInfo.keyspace = routingKeyInfo.keyspace
+		b.routingInfo.table = routingKeyInfo.table
+		b.routingInfo.mu.Unlock()
+	}
+
+	return createRoutingKey(routingKeyInfo, entry.Args)
+}
+
+func (b *internalBatch) Keyspace() string {
+	return b.batchOpts.keyspace
+}
+
+func (b *internalBatch) Table() string {
+	return b.routingInfo.getTable()
+}
+
+func (b *internalBatch) IsIdempotent() bool {
+	return b.batchOpts.idempotent
+}
+
+func (b *internalBatch) getQueryMetrics() *queryMetrics {
+	return b.metrics
+}
+
+func (b *internalBatch) SetConsistency(c Consistency) {
+	atomic.StoreUint32(&b.consistency, uint32(c))
+}
+
+func (b *internalBatch) GetConsistency() Consistency {
+	return Consistency(atomic.LoadUint32(&b.consistency))
+}
+
+func (b *internalBatch) Context() context.Context {
+	return b.batchOpts.context
+}
+
+func (b *internalBatch) Statement() Statement {
+	return b.originalBatch
+}
+
+func (b *internalBatch) GetHostID() string {
+	return ""
+}
+
+func (b *internalBatch) getRoutingInfo() *queryRoutingInfo {
+	return b.routingInfo
+}
+
+func (b *internalBatch) getKeyspaceFunc() func() string {
+	return nil
+}
+
+func (b *internalBatch) execute(ctx context.Context, conn *Conn) *Iter {
+	return conn.executeBatch(ctx, b)
 }

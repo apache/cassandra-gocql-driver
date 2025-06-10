@@ -104,12 +104,6 @@ type Session struct {
 	logger StdLogger
 }
 
-var queryPool = &sync.Pool{
-	New: func() interface{} {
-		return &Query{routingInfo: &queryRoutingInfo{}, refCount: 1}
-	},
-}
-
 func addrsToHosts(addrs []string, defaultPort int, logger StdLogger) ([]*HostInfo, error) {
 	var hosts []*HostInfo
 	for _, hostaddr := range addrs {
@@ -386,7 +380,7 @@ func (s *Session) AwaitSchemaAgreement(ctx context.Context) error {
 		return errNoControl
 	}
 	return s.control.withConn(func(conn *Conn) *Iter {
-		return &Iter{err: conn.awaitSchemaAgreement(ctx)}
+		return newErrIter(conn.awaitSchemaAgreement(ctx), newQueryMetrics(), "", nil, nil)
 	}).err
 }
 
@@ -426,7 +420,7 @@ func (s *Session) reconnectDownedHosts(intv time.Duration) {
 // value before the query is executed. Query is automatically prepared
 // if it has not previously been executed.
 func (s *Session) Query(stmt string, values ...interface{}) *Query {
-	qry := queryPool.Get().(*Query)
+	qry := &Query{}
 	qry.session = s
 	qry.stmt = stmt
 	qry.values = values
@@ -449,7 +443,7 @@ type QueryInfo struct {
 // During execution, the meta data of the prepared query will be routed to the
 // binding callback, which is responsible for producing the query argument values.
 func (s *Session) Bind(stmt string, b func(q *QueryInfo) ([]interface{}, error)) *Query {
-	qry := queryPool.Get().(*Query)
+	qry := &Query{}
 	qry.session = s
 	qry.stmt = stmt
 	qry.binding = b
@@ -512,15 +506,15 @@ func (s *Session) initialized() bool {
 	return initialized
 }
 
-func (s *Session) executeQuery(qry *Query) (it *Iter) {
+func (s *Session) executeQuery(qry *internalQuery) (it *Iter) {
 	// fail fast
 	if s.Closed() {
-		return &Iter{err: ErrSessionClosed}
+		return newErrIter(ErrSessionClosed, qry.metrics, qry.Keyspace(), qry.getRoutingInfo(), qry.getKeyspaceFunc())
 	}
 
 	iter, err := s.executor.executeQuery(qry)
 	if err != nil {
-		return &Iter{err: err}
+		return newErrIter(err, qry.metrics, qry.Keyspace(), qry.getRoutingInfo(), qry.getKeyspaceFunc())
 	}
 	if iter == nil {
 		panic("nil iter")
@@ -713,33 +707,47 @@ func (s *Session) routingKeyInfo(ctx context.Context, stmt string, keyspace stri
 	return routingKeyInfo, nil
 }
 
-func (b *Batch) execute(ctx context.Context, conn *Conn) *Iter {
-	return conn.executeBatch(ctx, b)
-}
-
 // Exec executes a batch operation and returns nil if successful
 // otherwise an error is returned describing the failure.
 func (b *Batch) Exec() error {
-	iter := b.session.executeBatch(b)
+	iter := b.session.executeBatch(b, nil)
 	return iter.Close()
 }
 
-func (s *Session) executeBatch(batch *Batch) *Iter {
+// ExecContext executes a batch operation with the provided context and returns nil if successful
+// otherwise an error is returned describing the failure.
+func (b *Batch) ExecContext(ctx context.Context) error {
+	iter := b.session.executeBatch(b, ctx)
+	return iter.Close()
+}
+
+// Iter executes a batch operation and returns an Iter object
+// that can be used to access properties related to the execution like Iter.Attempts and Iter.Latency
+func (b *Batch) Iter() *Iter { return b.IterContext(nil) }
+
+// IterContext executes a batch operation with the provided context and returns an Iter object
+// that can be used to access properties related to the execution like Iter.Attempts and Iter.Latency
+func (b *Batch) IterContext(ctx context.Context) *Iter {
+	return b.session.executeBatch(b, ctx)
+}
+
+func (s *Session) executeBatch(batch *Batch, ctx context.Context) *Iter {
+	b := newInternalBatch(batch, ctx)
 	// fail fast
 	if s.Closed() {
-		return &Iter{err: ErrSessionClosed}
+		return newErrIter(ErrSessionClosed, b.metrics, b.Keyspace(), b.getRoutingInfo(), b.getKeyspaceFunc())
 	}
 
 	// Prevent the execution of the batch if greater than the limit
 	// Currently batches have a limit of 65536 queries.
 	// https://datastax-oss.atlassian.net/browse/JAVA-229
 	if batch.Size() > BatchSizeMaximum {
-		return &Iter{err: ErrTooManyStmts}
+		return newErrIter(ErrTooManyStmts, b.metrics, b.Keyspace(), b.getRoutingInfo(), b.getKeyspaceFunc())
 	}
 
-	iter, err := s.executor.executeQuery(batch)
+	iter, err := s.executor.executeQuery(b)
 	if err != nil {
-		return &Iter{err: err}
+		return newErrIter(err, b.metrics, b.Keyspace(), b.getRoutingInfo(), b.getKeyspaceFunc())
 	}
 
 	return iter
@@ -749,7 +757,7 @@ func (s *Session) executeBatch(batch *Batch) *Iter {
 // ExecuteBatch executes a batch operation and returns nil if successful
 // otherwise an error is returned describing the failure.
 func (s *Session) ExecuteBatch(batch *Batch) error {
-	iter := s.executeBatch(batch)
+	iter := s.executeBatch(batch, nil)
 	return iter.Close()
 }
 
@@ -769,7 +777,7 @@ func (s *Session) ExecuteBatchCAS(batch *Batch, dest ...interface{}) (applied bo
 // Further scans on the interator must also remember to include
 // the applied boolean as the first argument to *Iter.Scan
 func (b *Batch) ExecCAS(dest ...interface{}) (applied bool, iter *Iter, err error) {
-	iter = b.session.executeBatch(b)
+	iter = b.session.executeBatch(b, nil)
 	if err := iter.checkErrAndNotFound(); err != nil {
 		iter.Close()
 		return false, nil, err
@@ -797,7 +805,7 @@ func (s *Session) MapExecuteBatchCAS(batch *Batch, dest map[string]interface{}) 
 // however it accepts a map rather than a list of arguments for the initial
 // scan.
 func (b *Batch) MapExecCAS(dest map[string]interface{}) (applied bool, iter *Iter, err error) {
-	iter = b.session.executeBatch(b)
+	iter = b.session.executeBatch(b, nil)
 	if err := iter.checkErrAndNotFound(); err != nil {
 		iter.Close()
 		return false, nil, err
@@ -833,6 +841,10 @@ type queryMetrics struct {
 	// totalAttempts is total number of attempts.
 	// Equal to sum of all hostMetrics' Attempts.
 	totalAttempts int
+}
+
+func newQueryMetrics() *queryMetrics {
+	return &queryMetrics{m: make(map[string]*hostMetrics)}
 }
 
 // preFilledQueryMetrics initializes new queryMetrics based on per-host supplied data.
@@ -921,15 +933,14 @@ func (qm *queryMetrics) attempt(addAttempts int, addLatency time.Duration,
 type Query struct {
 	stmt                  string
 	values                []interface{}
-	cons                  Consistency
+	initialConsistency    Consistency
 	pageSize              int
 	routingKey            []byte
-	pageState             []byte
+	initialPageState      []byte
 	prefetch              float64
 	trace                 Tracer
 	observer              QueryObserver
 	session               *Session
-	conn                  *Conn
 	rt                    RetryPolicy
 	spec                  SpeculativeExecutionPolicy
 	binding               func(q *QueryInfo) ([]interface{}, error)
@@ -940,8 +951,6 @@ type Query struct {
 	context               context.Context
 	idempotent            bool
 	customPayload         map[string][]byte
-	metrics               *queryMetrics
-	refCount              uint32
 
 	disableAutoPage bool
 
@@ -951,9 +960,6 @@ type Query struct {
 	// used by control conn queries to prevent triggering a write to systems
 	// tables in AWS MCS see
 	skipPrepare bool
-
-	// routingInfo is a pointer because Query can be copied and copyable struct can't hold a mutex.
-	routingInfo *queryRoutingInfo
 
 	// hostID specifies the host on which the query should be executed.
 	// If it is empty, then the host is picked by HostSelectionPolicy
@@ -972,10 +978,22 @@ type queryRoutingInfo struct {
 	table string
 }
 
+func (qr *queryRoutingInfo) getKeyspace() string {
+	qr.mu.RLock()
+	defer qr.mu.RUnlock()
+	return qr.keyspace
+}
+
+func (qr *queryRoutingInfo) getTable() string {
+	qr.mu.RLock()
+	defer qr.mu.RUnlock()
+	return qr.table
+}
+
 func (q *Query) defaultsFromSession() {
 	s := q.session
 
-	q.cons = s.cons
+	q.initialConsistency = s.cons
 	q.pageSize = s.pageSize
 	q.trace = s.trace
 	q.observer = s.queryObserver
@@ -984,7 +1002,6 @@ func (q *Query) defaultsFromSession() {
 	q.serialCons = s.cfg.SerialConsistency
 	q.defaultTimestamp = s.cfg.DefaultTimestamp
 	q.idempotent = s.cfg.DefaultIdempotence
-	q.metrics = &queryMetrics{m: make(map[string]*hostMetrics)}
 
 	q.spec = &NonSpeculativeExecution{}
 }
@@ -1002,47 +1019,30 @@ func (q Query) Values() []interface{} {
 
 // String implements the stringer interface.
 func (q Query) String() string {
-	return fmt.Sprintf("[query statement=%q values=%+v consistency=%s]", q.stmt, q.values, q.cons)
-}
-
-// Attempts returns the number of times the query was executed.
-func (q *Query) Attempts() int {
-	return q.metrics.attempts()
-}
-
-func (q *Query) AddAttempts(i int, host *HostInfo) {
-	q.metrics.attempt(i, 0, host, false)
-}
-
-// Latency returns the average amount of nanoseconds per attempt of the query.
-func (q *Query) Latency() int64 {
-	return q.metrics.latency()
-}
-
-func (q *Query) AddLatency(l int64, host *HostInfo) {
-	q.metrics.attempt(0, time.Duration(l)*time.Nanosecond, host, false)
+	return fmt.Sprintf("[query statement=%q values=%+v consistency=%s]", q.stmt, q.values, q.initialConsistency)
 }
 
 // Consistency sets the consistency level for this query. If no consistency
 // level have been set, the default consistency level of the cluster
 // is used.
 func (q *Query) Consistency(c Consistency) *Query {
-	q.cons = c
+	q.initialConsistency = c
 	return q
 }
 
 // GetConsistency returns the currently configured consistency level for
 // the query.
 func (q *Query) GetConsistency() Consistency {
-	return q.cons
+	return q.initialConsistency
 }
 
-// Same as Consistency but without a return value
+// Deprecated: use Query.Consistency instead
 func (q *Query) SetConsistency(c Consistency) {
-	q.cons = c
+	q.initialConsistency = c
 }
 
-// CustomPayload sets the custom payload level for this query.
+// CustomPayload sets the custom payload level for this query. The map is not copied internally
+// so it shouldn't be modified after the query is scheduled for execution.
 func (q *Query) CustomPayload(customPayload map[string][]byte) *Query {
 	q.customPayload = customPayload
 	return q
@@ -1108,11 +1108,8 @@ func (q *Query) RoutingKey(routingKey []byte) *Query {
 	return q
 }
 
-func (q *Query) withContext(ctx context.Context) ExecutableQuery {
-	// I really wish go had covariant types
-	return q.WithContext(ctx)
-}
-
+// Deprecated: Use Query.ExecContext or Query.IterContext instead. This will be removed in a future major version.
+//
 // WithContext returns a shallow copy of q with its context
 // set to ctx.
 //
@@ -1125,46 +1122,10 @@ func (q *Query) WithContext(ctx context.Context) *Query {
 	return &q2
 }
 
-// Deprecate: does nothing, cancel the context passed to WithContext
-func (q *Query) Cancel() {
-	// TODO: delete
-}
-
-func (q *Query) execute(ctx context.Context, conn *Conn) *Iter {
-	return conn.executeQuery(ctx, q)
-}
-
-func (q *Query) attempt(keyspace string, end, start time.Time, iter *Iter, host *HostInfo) {
-	latency := end.Sub(start)
-	attempt, metricsForHost := q.metrics.attempt(1, latency, host, q.observer != nil)
-
-	if q.observer != nil {
-		q.observer.ObserveQuery(q.Context(), ObservedQuery{
-			Keyspace:  keyspace,
-			Statement: q.stmt,
-			Values:    q.values,
-			Start:     start,
-			End:       end,
-			Rows:      iter.numRows,
-			Host:      host,
-			Metrics:   metricsForHost,
-			Err:       iter.err,
-			Attempt:   attempt,
-		})
-	}
-}
-
-func (q *Query) retryPolicy() RetryPolicy {
-	return q.rt
-}
-
 // Keyspace returns the keyspace the query will be executed against.
 func (q *Query) Keyspace() string {
 	if q.getKeyspace != nil {
 		return q.getKeyspace()
-	}
-	if q.routingInfo.keyspace != "" {
-		return q.routingInfo.keyspace
 	}
 	if q.keyspace != "" {
 		return q.keyspace
@@ -1178,45 +1139,12 @@ func (q *Query) Keyspace() string {
 	return q.session.cfg.Keyspace
 }
 
-// Table returns name of the table the query will be executed against.
-func (q *Query) Table() string {
-	return q.routingInfo.table
-}
-
-// GetRoutingKey gets the routing key to use for routing this query. If
-// a routing key has not been explicitly set, then the routing key will
-// be constructed if possible using the keyspace's schema and the query
-// info for this query statement. If the routing key cannot be determined
-// then nil will be returned with no error. On any error condition,
-// an error description will be returned.
-func (q *Query) GetRoutingKey() ([]byte, error) {
-	if q.routingKey != nil {
-		return q.routingKey, nil
-	} else if q.binding != nil && len(q.values) == 0 {
-		// If this query was created using session.Bind we wont have the query
-		// values yet, so we have to pass down to the next policy.
-		// TODO: Remove this and handle this case
-		return nil, nil
-	}
-
-	// try to determine the routing key
-	routingKeyInfo, err := q.session.routingKeyInfo(q.Context(), q.stmt, q.keyspace)
-	if err != nil {
-		return nil, err
-	}
-
-	if routingKeyInfo != nil {
-		q.routingInfo.mu.Lock()
-		q.routingInfo.keyspace = routingKeyInfo.keyspace
-		q.routingInfo.table = routingKeyInfo.table
-		q.routingInfo.mu.Unlock()
-	}
-	return createRoutingKey(routingKeyInfo, q.values)
-}
-
 func (q *Query) shouldPrepare() bool {
+	return shouldPrepare(q.stmt)
+}
 
-	stmt := strings.TrimLeftFunc(strings.TrimRightFunc(q.stmt, func(r rune) bool {
+func shouldPrepare(s string) bool {
+	stmt := strings.TrimLeftFunc(strings.TrimRightFunc(s, func(r rune) bool {
 		return unicode.IsSpace(r) || r == ';'
 	}), unicode.IsSpace)
 
@@ -1256,11 +1184,6 @@ func (q *Query) SetSpeculativeExecutionPolicy(sp SpeculativeExecutionPolicy) *Qu
 	return q
 }
 
-// speculativeExecutionPolicy fetches the policy
-func (q *Query) speculativeExecutionPolicy() SpeculativeExecutionPolicy {
-	return q.spec
-}
-
 // IsIdempotent returns whether the query is marked as idempotent.
 // Non-idempotent query won't be retried.
 // See "Retries and speculative execution" in package docs for more details.
@@ -1281,7 +1204,6 @@ func (q *Query) Idempotent(value bool) *Query {
 // to an existing query instance.
 func (q *Query) Bind(v ...interface{}) *Query {
 	q.values = v
-	q.pageState = nil
 	return q
 }
 
@@ -1302,7 +1224,7 @@ func (q *Query) SerialConsistency(cons Consistency) *Query {
 // point in time. Setting this will disable to query paging for this query, and
 // must be used for all subsequent pages.
 func (q *Query) PageState(state []byte) *Query {
-	q.pageState = state
+	q.initialPageState = state
 	q.disableAutoPage = true
 	return q
 }
@@ -1325,6 +1247,11 @@ func (q *Query) Exec() error {
 	return q.Iter().Close()
 }
 
+// ExecContext executes the query with the provided context without returning any rows.
+func (q *Query) ExecContext(ctx context.Context) error {
+	return q.IterContext(ctx).Close()
+}
+
 func isUseStatement(stmt string) bool {
 	if len(stmt) < 3 {
 		return false
@@ -1336,15 +1263,25 @@ func isUseStatement(stmt string) bool {
 // Iter executes the query and returns an iterator capable of iterating
 // over all results.
 func (q *Query) Iter() *Iter {
+	return q.IterContext(nil)
+}
+
+// IterContext executes the query with the provided context and returns an iterator capable of iterating
+// over all results.
+func (q *Query) IterContext(ctx context.Context) *Iter {
 	if isUseStatement(q.stmt) {
-		return &Iter{err: ErrUseStmt}
+		return newErrIter(ErrUseStmt, newQueryMetrics(), q.Keyspace(), nil, q.getKeyspace)
 	}
-	// if the query was specifically run on a connection then re-use that
-	// connection when fetching the next results
-	if q.conn != nil {
-		return q.conn.executeQuery(q.Context(), q)
-	}
-	return q.session.executeQuery(q)
+
+	internalQry := newInternalQuery(q, ctx)
+	return q.session.executeQuery(internalQry)
+}
+
+func (q *Query) iterInternal(c *Conn, ctx context.Context) *Iter {
+	internalQry := newInternalQuery(q, ctx)
+	internalQry.conn = c
+
+	return c.executeQuery(internalQry.Context(), internalQry)
 }
 
 // MapScan executes the query, copies the columns of the first selected
@@ -1421,43 +1358,6 @@ func (q *Query) MapScanCAS(dest map[string]interface{}) (applied bool, err error
 	return applied, iter.Close()
 }
 
-// Release releases a query back into a pool of queries. Released Queries
-// cannot be reused.
-//
-// Example:
-//
-//	qry := session.Query("SELECT * FROM my_table")
-//	qry.Exec()
-//	qry.Release()
-func (q *Query) Release() {
-	q.decRefCount()
-}
-
-// reset zeroes out all fields of a query so that it can be safely pooled.
-func (q *Query) reset() {
-	*q = Query{routingInfo: &queryRoutingInfo{}, refCount: 1}
-}
-
-func (q *Query) incRefCount() {
-	atomic.AddUint32(&q.refCount, 1)
-}
-
-func (q *Query) decRefCount() {
-	if res := atomic.AddUint32(&q.refCount, ^uint32(0)); res == 0 {
-		// do release
-		q.reset()
-		queryPool.Put(q)
-	}
-}
-
-func (q *Query) borrowForExecution() {
-	q.incRefCount()
-}
-
-func (q *Query) releaseAfterExecution() {
-	q.decRefCount()
-}
-
 // SetHostID allows to define the host the query should be executed against. If the
 // host was filtered or otherwise unavailable, then the query will error. If an empty
 // string is sent, the default behavior, using the configured HostSelectionPolicy will
@@ -1490,9 +1390,13 @@ func (q *Query) WithNowInSeconds(now int) *Query {
 	return q
 }
 
-// Iter represents an iterator that can be used to iterate over all rows that
-// were returned by a query. The iterator might send additional queries to the
+// Iter represents the result that was returned by the execution of a statement.
+//
+// If the statement is a query then this can be seen as an iterator that can be used to iterate over all rows that
+// were returned by the query. The iterator might send additional queries to the
 // database during the iteration if paging was enabled.
+//
+// It also contains metadata about the request that can be accessed by Iter.Keyspace(), Iter.Table(), Iter.Attempts(), Iter.Latency().
 type Iter struct {
 	err     error
 	pos     int
@@ -1500,12 +1404,27 @@ type Iter struct {
 	numRows int
 	next    *nextIter
 	host    *HostInfo
+	metrics *queryMetrics
+
+	getKeyspace func() string
+	keyspace    string
+	routingInfo *queryRoutingInfo
 
 	framer *framer
 	closed int32
 }
 
-// Host returns the host which the query was sent to.
+func newErrIter(err error, metrics *queryMetrics, keyspace string, routingInfo *queryRoutingInfo, getKeyspace func() string) *Iter {
+	iter := newIter(metrics, keyspace, routingInfo, getKeyspace)
+	iter.err = err
+	return iter
+}
+
+func newIter(metrics *queryMetrics, keyspace string, routingInfo *queryRoutingInfo, getKeyspace func() string) *Iter {
+	return &Iter{metrics: metrics, keyspace: keyspace, routingInfo: routingInfo, getKeyspace: getKeyspace}
+}
+
+// Host returns the host which the statement was sent to.
 func (iter *Iter) Host() *HostInfo {
 	return iter.host
 }
@@ -1513,6 +1432,39 @@ func (iter *Iter) Host() *HostInfo {
 // Columns returns the name and type of the selected columns.
 func (iter *Iter) Columns() []ColumnInfo {
 	return iter.meta.columns
+}
+
+// Attempts returns the number of times the statement was executed.
+func (iter *Iter) Attempts() int {
+	return iter.metrics.attempts()
+}
+
+// Latency returns the average amount of nanoseconds per attempt of the statement.
+func (iter *Iter) Latency() int64 {
+	return iter.metrics.latency()
+}
+
+// Keyspace returns the keyspace the statement was executed against if the driver could determine it.
+func (iter *Iter) Keyspace() string {
+	if iter.getKeyspace != nil {
+		return iter.getKeyspace()
+	}
+
+	if iter.routingInfo != nil {
+		if ks := iter.routingInfo.getKeyspace(); ks != "" {
+			return ks
+		}
+	}
+
+	return iter.keyspace
+}
+
+// Table returns name of the table the statement was executed against if the driver could determine it.
+func (iter *Iter) Table() string {
+	if iter.routingInfo != nil {
+		return iter.routingInfo.getTable()
+	}
+	return ""
 }
 
 type Scanner interface {
@@ -1765,7 +1717,7 @@ func (iter *Iter) NumRows() int {
 // nextIter holds state for fetching a single page in an iterator.
 // single page might be attempted multiple times due to retries.
 type nextIter struct {
-	qry   *Query
+	q     *internalQuery
 	pos   int
 	oncea sync.Once
 	once  sync.Once
@@ -1782,10 +1734,10 @@ func (n *nextIter) fetch() *Iter {
 	n.once.Do(func() {
 		// if the query was specifically run on a connection then re-use that
 		// connection when fetching the next results
-		if n.qry.conn != nil {
-			n.next = n.qry.conn.executeQuery(n.qry.Context(), n.qry)
+		if n.q.conn != nil {
+			n.next = n.q.conn.executeQuery(n.q.qryOpts.context, n.q)
 		} else {
-			n.next = n.qry.session.executeQuery(n.qry)
+			n.next = n.q.session.executeQuery(n.q)
 		}
 	})
 	return n.next
@@ -1806,17 +1758,14 @@ type Batch struct {
 	defaultTimestamp      bool
 	defaultTimestampValue int64
 	context               context.Context
-	cancelBatch           func()
 	keyspace              string
-	metrics               *queryMetrics
 	nowInSeconds          *int
-
-	// routingInfo is a pointer because Query can be copied and copyable struct can't hold a mutex.
-	routingInfo *queryRoutingInfo
 }
 
 // Deprecated: use Session.Batch instead
 // NewBatch creates a new batch operation using defaults defined in the cluster
+//
+// Deprecated: use Session.Batch instead
 func (s *Session) NewBatch(typ BatchType) *Batch {
 	return s.Batch(typ)
 }
@@ -1833,9 +1782,7 @@ func (s *Session) Batch(typ BatchType) *Batch {
 		Cons:             s.cons,
 		defaultTimestamp: s.cfg.DefaultTimestamp,
 		keyspace:         s.cfg.Keyspace,
-		metrics:          &queryMetrics{m: make(map[string]*hostMetrics)},
 		spec:             &NonSpeculativeExecution{},
-		routingInfo:      &queryRoutingInfo{},
 	}
 
 	return batch
@@ -1859,27 +1806,12 @@ func (b *Batch) Keyspace() string {
 	return b.keyspace
 }
 
-// Batch has no reasonable eqivalent of Query.Table().
-func (b *Batch) Table() string {
-	return b.routingInfo.table
-}
-
-// Attempts returns the number of attempts made to execute the batch.
-func (b *Batch) Attempts() int {
-	return b.metrics.attempts()
-}
-
-func (b *Batch) AddAttempts(i int, host *HostInfo) {
-	b.metrics.attempt(i, 0, host, false)
-}
-
-// Latency returns the average number of nanoseconds to execute a single attempt of the batch.
-func (b *Batch) Latency() int64 {
-	return b.metrics.latency()
-}
-
-func (b *Batch) AddLatency(l int64, host *HostInfo) {
-	b.metrics.attempt(0, time.Duration(l)*time.Nanosecond, host, false)
+// Consistency sets the consistency level for this batch. If no consistency
+// level have been set, the default consistency level of the cluster
+// is used.
+func (b *Batch) Consistency(cons Consistency) *Batch {
+	b.Cons = cons
+	return b
 }
 
 // GetConsistency returns the currently configured consistency level for the batch
@@ -1888,8 +1820,7 @@ func (b *Batch) GetConsistency() Consistency {
 	return b.Cons
 }
 
-// SetConsistency sets the currently configured consistency level for the batch
-// operation.
+// Deprecated: Use Batch.Consistency
 func (b *Batch) SetConsistency(c Consistency) {
 	b.Cons = c
 }
@@ -1932,20 +1863,14 @@ func (b *Batch) Bind(stmt string, bind func(q *QueryInfo) ([]interface{}, error)
 	b.Entries = append(b.Entries, BatchEntry{Stmt: stmt, binding: bind})
 }
 
-func (b *Batch) retryPolicy() RetryPolicy {
-	return b.rt
-}
-
 // RetryPolicy sets the retry policy to use when executing the batch operation
 func (b *Batch) RetryPolicy(r RetryPolicy) *Batch {
 	b.rt = r
 	return b
 }
 
-func (b *Batch) withContext(ctx context.Context) ExecutableQuery {
-	return b.WithContext(ctx)
-}
-
+// Deprecated: Use Batch.ExecContext or Batch.IterContext instead. This will be removed in a future major version.
+//
 // WithContext returns a shallow copy of b with its context
 // set to ctx.
 //
@@ -1956,11 +1881,6 @@ func (b *Batch) WithContext(ctx context.Context) *Batch {
 	b2 := *b
 	b2.context = ctx
 	return &b2
-}
-
-// Deprecate: does nothing, cancel the context passed to WithContext
-func (*Batch) Cancel() {
-	// TODO: delete
 }
 
 // Size returns the number of batch statements to be executed by the batch operation.
@@ -2006,59 +1926,6 @@ func (b *Batch) WithTimestamp(timestamp int64) *Batch {
 	return b
 }
 
-func (b *Batch) attempt(keyspace string, end, start time.Time, iter *Iter, host *HostInfo) {
-	latency := end.Sub(start)
-	attempt, metricsForHost := b.metrics.attempt(1, latency, host, b.observer != nil)
-
-	if b.observer == nil {
-		return
-	}
-
-	statements := make([]string, len(b.Entries))
-	values := make([][]interface{}, len(b.Entries))
-
-	for i, entry := range b.Entries {
-		statements[i] = entry.Stmt
-		values[i] = entry.Args
-	}
-
-	b.observer.ObserveBatch(b.Context(), ObservedBatch{
-		Keyspace:   keyspace,
-		Statements: statements,
-		Values:     values,
-		Start:      start,
-		End:        end,
-		// Rows not used in batch observations // TODO - might be able to support it when using BatchCAS
-		Host:    host,
-		Metrics: metricsForHost,
-		Err:     iter.err,
-		Attempt: attempt,
-	})
-}
-
-func (b *Batch) GetRoutingKey() ([]byte, error) {
-	if b.routingKey != nil {
-		return b.routingKey, nil
-	}
-
-	if len(b.Entries) == 0 {
-		return nil, nil
-	}
-
-	entry := b.Entries[0]
-	if entry.binding != nil {
-		// bindings do not have the values let's skip it like Query does.
-		return nil, nil
-	}
-	// try to determine the routing key
-	routingKeyInfo, err := b.session.routingKeyInfo(b.Context(), entry.Stmt, b.keyspace)
-	if err != nil {
-		return nil, err
-	}
-
-	return createRoutingKey(routingKeyInfo, entry.Args)
-}
-
 func createRoutingKey(routingKeyInfo *routingKeyInfo, values []interface{}) ([]byte, error) {
 	if routingKeyInfo == nil {
 		return nil, nil
@@ -2094,21 +1961,6 @@ func createRoutingKey(routingKeyInfo *routingKeyInfo, values []interface{}) ([]b
 	}
 	routingKey := buf.Bytes()
 	return routingKey, nil
-}
-
-func (b *Batch) borrowForExecution() {
-	// empty, because Batch has no equivalent of Query.Release()
-	// that would race with speculative executions.
-}
-
-func (b *Batch) releaseAfterExecution() {
-	// empty, because Batch has no equivalent of Query.Release()
-	// that would race with speculative executions.
-}
-
-// GetHostID satisfies ExecutableQuery interface but does noop.
-func (b *Batch) GetHostID() string {
-	return ""
 }
 
 // SetKeyspace will enable keyspace flag on the query.
@@ -2295,6 +2147,9 @@ type ObservedQuery struct {
 	// Attempt is the index of attempt at executing this query.
 	// The first attempt is number zero and any retries have non-zero attempt number.
 	Attempt int
+
+	// Query object associated with this request. Should be used as read only.
+	Query *Query
 }
 
 // QueryObserver is the interface implemented by query observers / stat collectors.
@@ -2332,6 +2187,9 @@ type ObservedBatch struct {
 	// Attempt is the index of attempt at executing this query.
 	// The first attempt is number zero and any retries have non-zero attempt number.
 	Attempt int
+
+	// Batch object associated with this request. Should be used as read only.
+	Batch *Batch
 }
 
 // BatchObserver is the interface implemented by batch observers / stat collectors.

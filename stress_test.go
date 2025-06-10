@@ -29,7 +29,6 @@ package gocql
 
 import (
 	"sync/atomic"
-
 	"testing"
 )
 
@@ -82,7 +81,7 @@ func BenchmarkConnRoutingKey(b *testing.B) {
 		query := session.Query("insert into routing_key_stress (id) values (?)")
 
 		for pb.Next() {
-			if _, err := query.Bind(i * seed).GetRoutingKey(); err != nil {
+			if _, err := newInternalQuery(query.Bind(i*seed), nil).GetRoutingKey(); err != nil {
 				b.Error(err)
 				return
 			}

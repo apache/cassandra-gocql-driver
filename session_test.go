@@ -30,7 +30,6 @@ package gocql
 import (
 	"context"
 	"fmt"
-	"net"
 	"testing"
 )
 
@@ -69,7 +68,7 @@ func TestSessionAPI(t *testing.T) {
 		t.Fatalf("expected qry.stmt to be 'test', got '%v'", boundQry.stmt)
 	}
 
-	itr := s.executeQuery(qry)
+	itr := s.executeQuery(newInternalQuery(qry, nil))
 	if itr.err != ErrNoConnections {
 		t.Fatalf("expected itr.err to be '%v', got '%v'", ErrNoConnections, itr.err)
 	}
@@ -102,28 +101,7 @@ func (f funcQueryObserver) ObserveQuery(ctx context.Context, o ObservedQuery) {
 }
 
 func TestQueryBasicAPI(t *testing.T) {
-	qry := &Query{routingInfo: &queryRoutingInfo{}}
-
-	// Initiate host
-	ip := "127.0.0.1"
-
-	qry.metrics = preFilledQueryMetrics(map[string]*hostMetrics{ip: {Attempts: 0, TotalLatency: 0}})
-	if qry.Latency() != 0 {
-		t.Fatalf("expected Query.Latency() to return 0, got %v", qry.Latency())
-	}
-
-	qry.metrics = preFilledQueryMetrics(map[string]*hostMetrics{ip: {Attempts: 2, TotalLatency: 4}})
-	if qry.Attempts() != 2 {
-		t.Fatalf("expected Query.Attempts() to return 2, got %v", qry.Attempts())
-	}
-	if qry.Latency() != 2 {
-		t.Fatalf("expected Query.Latency() to return 2, got %v", qry.Latency())
-	}
-
-	qry.AddAttempts(2, &HostInfo{hostname: ip, connectAddress: net.ParseIP(ip), port: 9042})
-	if qry.Attempts() != 4 {
-		t.Fatalf("expected Query.Attempts() to return 4, got %v", qry.Attempts())
-	}
+	qry := &Query{}
 
 	qry.Consistency(All)
 	if qry.GetConsistency() != All {
@@ -166,7 +144,7 @@ func TestQueryBasicAPI(t *testing.T) {
 func TestQueryShouldPrepare(t *testing.T) {
 	toPrepare := []string{"select * ", "INSERT INTO", "update table", "delete from", "begin batch"}
 	cantPrepare := []string{"create table", "USE table", "LIST keyspaces", "alter table", "drop table", "grant user", "revoke user"}
-	q := &Query{routingInfo: &queryRoutingInfo{}}
+	q := &Query{}
 
 	for i := 0; i < len(toPrepare); i++ {
 		q.stmt = toPrepare[i]
@@ -208,29 +186,6 @@ func TestBatchBasicAPI(t *testing.T) {
 	b = s.Batch(LoggedBatch)
 	if b.Type != LoggedBatch {
 		t.Fatalf("expected batch.Type to be '%v', got '%v'", LoggedBatch, b.Type)
-	}
-
-	ip := "127.0.0.1"
-
-	// Test attempts
-	b.metrics = preFilledQueryMetrics(map[string]*hostMetrics{ip: {Attempts: 1}})
-	if b.Attempts() != 1 {
-		t.Fatalf("expected batch.Attempts() to return %v, got %v", 1, b.Attempts())
-	}
-
-	b.AddAttempts(2, &HostInfo{hostname: ip, connectAddress: net.ParseIP(ip), port: 9042})
-	if b.Attempts() != 3 {
-		t.Fatalf("expected batch.Attempts() to return %v, got %v", 3, b.Attempts())
-	}
-
-	// Test latency
-	if b.Latency() != 0 {
-		t.Fatalf("expected batch.Latency() to be 0, got %v", b.Latency())
-	}
-
-	b.metrics = preFilledQueryMetrics(map[string]*hostMetrics{ip: {Attempts: 1, TotalLatency: 4}})
-	if b.Latency() != 4 {
-		t.Fatalf("expected batch.Latency() to return %v, got %v", 4, b.Latency())
 	}
 
 	// Test Consistency
@@ -275,6 +230,43 @@ func TestBatchBasicAPI(t *testing.T) {
 		t.Fatalf("expected batch.Size() to return 2, got %v", b.Size())
 	}
 
+}
+
+func TestQueryIterBasicApi(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+
+	qry := session.Query("INSERT INTO gocql_test.invalid_table(value) VALUES(1)")
+	iter1 := qry.Iter()
+	if iter1.Attempts() != 1 {
+		t.Fatalf("expected iter1 Iter.Attempts() to return 1, got %v", iter1.Attempts())
+	}
+	iter2 := qry.Iter()
+	if iter2.Attempts() != 1 {
+		t.Fatalf("expected iter2 Iter.Attempts() to return 1, got %v", iter2.Attempts())
+	}
+	if iter1.Attempts() != 1 {
+		t.Fatalf("expected iter1 Iter.Attempts() to still return 1, got %v", iter1.Attempts())
+	}
+}
+
+func TestBatchIterBasicApi(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+
+	b := session.Batch(LoggedBatch)
+	b.Query("INSERT INTO gocql_test.invalid_table(value) VALUES(1)")
+	iter1 := b.Iter()
+	if iter1.Attempts() != 1 {
+		t.Fatalf("expected iter1 Iter.Attempts() to return 1, got %v", iter1.Attempts())
+	}
+	iter2 := b.Iter()
+	if iter2.Attempts() != 1 {
+		t.Fatalf("expected iter2 Iter.Attempts() to return 1, got %v", iter2.Attempts())
+	}
+	if iter1.Attempts() != 1 {
+		t.Fatalf("expected iter1 Iter.Attempts() to still return 1, got %v", iter1.Attempts())
+	}
 }
 
 func TestConsistencyNames(t *testing.T) {
