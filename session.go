@@ -268,7 +268,7 @@ func (s *Session) init() error {
 		// by internal logic.
 		// Associate random UUIDs here with all hosts missing this information.
 		if len(host.HostID()) == 0 {
-			host.SetHostID(MustRandomUUID().String())
+			host.setHostID(MustRandomUUID().String())
 		}
 	}
 
@@ -2143,7 +2143,7 @@ type ObservedQuery struct {
 	// Rows is not used in batch queries and remains at the default value
 	Rows int
 
-	// Host is the informations about the host that performed the query
+	// Host is the information about the host that performed the query
 	Host *HostInfo
 
 	// The metrics per this host

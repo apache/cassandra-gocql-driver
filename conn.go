@@ -1938,11 +1938,7 @@ func (c *Conn) awaitSchemaAgreement(ctx context.Context) (err error) {
 
 		for _, row := range rows {
 			var host *HostInfo
-			host, err = NewHostInfo(c.host.ConnectAddress(), c.session.cfg.Port)
-			if err != nil {
-				goto cont
-			}
-			host, err = c.session.hostInfoFromMap(row, host)
+			host, err = c.session.newHostInfoFromMap(c.host.ConnectAddress(), c.session.cfg.Port, row)
 			if err != nil {
 				goto cont
 			}

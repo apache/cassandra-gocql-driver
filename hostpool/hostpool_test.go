@@ -35,21 +35,33 @@ func TestHostPolicy_HostPool(t *testing.T) {
 	policy := HostPoolHostPolicy(hostpool.New(nil))
 
 	//hosts := []*gocql.HostInfo{
-	//	{hostId: "0", connectAddress: net.IPv4(10, 0, 0, 0)},
-	//	{hostId: "1", connectAddress: net.IPv4(10, 0, 0, 1)},
+	//	{hostId: "f1935733-af5f-4995-bd1e-94a7a3e67bfd", connectAddress: net.ParseIP("10.0.0.0")},
+	//	{hostId: "93ca4489-b322-4fda-b5a5-12d4436271df", connectAddress: net.ParseIP("10.0.0.1")},
 	//}
+	firstHostId, err1 := gocql.ParseUUID("f1935733-af5f-4995-bd1e-94a7a3e67bfd")
+	secondHostId, err2 := gocql.ParseUUID("93ca4489-b322-4fda-b5a5-12d4436271df")
 
-	firstHost, err := gocql.NewHostInfo(net.IPv4(10, 0, 0, 0), 9042)
+	if err1 != nil || err2 != nil {
+		t.Fatal(err1, err2)
+	}
+
+	firstHost, err := gocql.NewTestHostInfoFromRow(
+		map[string]interface{}{
+			"peer":        net.ParseIP("10.0.0.0"),
+			"native_port": 9042,
+			"host_id":     firstHostId})
 	if err != nil {
 		t.Errorf("Error creating first host: %v", err)
 	}
-	firstHost.SetHostID("0")
 
-	secHost, err := gocql.NewHostInfo(net.IPv4(10, 0, 0, 1), 9042)
+	secHost, err := gocql.NewTestHostInfoFromRow(
+		map[string]interface{}{
+			"peer":        net.ParseIP("10.0.0.1"),
+			"native_port": 9042,
+			"host_id":     secondHostId})
 	if err != nil {
 		t.Errorf("Error creating second host: %v", err)
 	}
-	secHost.SetHostID("1")
 	hosts := []*gocql.HostInfo{firstHost, secHost}
 	// Using set host to control the ordering of the hosts as calling "AddHost" iterates the map
 	// which will result in an unpredictable ordering
@@ -59,26 +71,26 @@ func TestHostPolicy_HostPool(t *testing.T) {
 	// interleaved iteration should always increment the host
 	iter := policy.Pick(nil)
 	actualA := iter()
-	if actualA.Info().HostID() != "0" {
-		t.Errorf("Expected hosts[0] but was hosts[%s]", actualA.Info().HostID())
+	if actualA.Info().HostID() != firstHostId.String() {
+		t.Errorf("Expected first host id but was %s", actualA.Info().HostID())
 	}
 	actualA.Mark(nil)
 
 	actualB := iter()
-	if actualB.Info().HostID() != "1" {
-		t.Errorf("Expected hosts[1] but was hosts[%s]", actualB.Info().HostID())
+	if actualB.Info().HostID() != secondHostId.String() {
+		t.Errorf("Expected second host id but was %s", actualB.Info().HostID())
 	}
 	actualB.Mark(fmt.Errorf("error"))
 
 	actualC := iter()
-	if actualC.Info().HostID() != "0" {
-		t.Errorf("Expected hosts[0] but was hosts[%s]", actualC.Info().HostID())
+	if actualC.Info().HostID() != firstHostId.String() {
+		t.Errorf("Expected first host id but was %s", actualC.Info().HostID())
 	}
 	actualC.Mark(nil)
 
 	actualD := iter()
-	if actualD.Info().HostID() != "0" {
-		t.Errorf("Expected hosts[0] but was hosts[%s]", actualD.Info().HostID())
+	if actualD.Info().HostID() != firstHostId.String() {
+		t.Errorf("Expected first host id but was %s", actualD.Info().HostID())
 	}
 	actualD.Mark(nil)
 }

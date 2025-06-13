@@ -155,6 +155,8 @@ func (c cassVersion) nodeUpDelay() time.Duration {
 	return 10 * time.Second
 }
 
+// HostInfo represents a server Host/Node. You can create a HostInfo object with either NewHostInfoFromAddrPort or
+// NewTestHostInfoFromRow.
 type HostInfo struct {
 	// TODO(zariel): reduce locking maybe, not all values will change, but to ensure
 	// that we are thread safe use a mutex to access all fields.
@@ -181,9 +183,12 @@ type HostInfo struct {
 	tokens           []string
 }
 
-// NewHostInfo creates HostInfo with provided connectAddress and port.
+// NewHostInfoFromAddrPort creates HostInfo with provided connectAddress and port.
 // It returns an error if addr is invalid.
-func NewHostInfo(addr net.IP, port int) (*HostInfo, error) {
+//
+// If you're looking for a way to create a HostInfo object with more than just an address and port for
+// testing purposes then you can use NewTestHostInfoFromRow
+func NewHostInfoFromAddrPort(addr net.IP, port int) (*HostInfo, error) {
 	if !validIpAddr(addr) {
 		return nil, errors.New("invalid host address")
 	}
@@ -251,7 +256,7 @@ func (h *HostInfo) nodeToNodeAddress() net.IP {
 	return net.IPv4zero
 }
 
-// Returns the address that should be used to connect to the host.
+// ConnectAddress Returns the address that should be used to connect to the host.
 // If you wish to override this, use an AddressTranslator
 func (h *HostInfo) ConnectAddress() net.IP {
 	h.mu.RLock()
@@ -305,7 +310,7 @@ func (h *HostInfo) HostID() string {
 	return h.hostId
 }
 
-func (h *HostInfo) SetHostID(hostID string) {
+func (h *HostInfo) setHostID(hostID string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.hostId = hostID
@@ -492,17 +497,42 @@ func checkSystemSchema(control *controlConn) (bool, error) {
 	return true, nil
 }
 
-func (s *Session) newHostInfoFromMap(addr net.IP, port int, row map[string]interface{}) (*HostInfo, error) {
-	return s.hostInfoFromMap(row, &HostInfo{connectAddress: addr, port: port})
-}
-
 // Given a map that represents a row from either system.local or system.peers
 // return as much information as we can in *HostInfo
-func (s *Session) hostInfoFromMap(row map[string]interface{}, host *HostInfo) (*HostInfo, error) {
+func (s *Session) newHostInfoFromMap(addr net.IP, port int, row map[string]interface{}) (*HostInfo, error) {
+	return newHostInfoFromRow(s, addr, port, row)
+}
+
+// NewTestHostInfoFromRow creates a new HostInfo object from a system.peers or system.local row. The port
+// defaults to 9042.
+//
+// You can create a HostInfo object for testing purposes using this function:
+//
+// Example usage:
+//
+//	row := map[string]interface{}{
+//		"broadcast_address": net.ParseIP("10.0.0.1"),
+//		"listen_address":    net.ParseIP("10.0.0.1"),
+//		"rpc_address":       net.ParseIP("10.0.0.1"),
+//		"peer":              net.ParseIP("10.0.0.1"), // system.peers only
+//		"data_center":       "dc1",
+//		"rack":              "rack1",
+//		"host_id":           MustRandomUUID(),        // can also use ParseUUID("550e8400-e29b-41d4-a716-446655440000")
+//		"release_version":   "4.0.0",
+//		"native_port":       9042,
+//	}
+//	host, err := NewTestHostInfoFromRow(row)
+func NewTestHostInfoFromRow(row map[string]interface{}) (*HostInfo, error) {
+	return newHostInfoFromRow(nil, nil, 9042, row)
+}
+
+func newHostInfoFromRow(s *Session, defaultAddr net.IP, defaultPort int, row map[string]interface{}) (*HostInfo, error) {
 	const assertErrorMsg = "Assertion failed for %s, type was %T"
 	var ok bool
 
-	// Default to our connected port if the cluster doesn't have port information
+	host := &HostInfo{connectAddress: defaultAddr, port: defaultPort}
+
+	// Process all fields from the row
 	for key, value := range row {
 		switch key {
 		case "data_center":
@@ -606,18 +636,34 @@ func (s *Session) hostInfoFromMap(row map[string]interface{}, host *HostInfo) (*
 			}
 			host.schemaVersion = schemaVersion.String()
 		}
-		// TODO(thrawn01): Add 'port'? once CASSANDRA-7544 is complete
-		// Not sure what the port field will be called until the JIRA issue is complete
 	}
 
-	ip, port := s.cfg.translateAddressPort(host.ConnectAddress(), host.port, s.logger)
-	if !validIpAddr(ip) {
-		return nil, fmt.Errorf("invalid host address (before translation: %v:%v, after translation: %v:%v)", host.ConnectAddress(), host.port, ip.String(), port)
+	// Determine the connect address from available addresses
+	if validIpAddr(host.rpcAddress) {
+		host.connectAddress = host.rpcAddress
+	} else if validIpAddr(host.preferredIP) {
+		host.connectAddress = host.preferredIP
+	} else if validIpAddr(host.broadcastAddress) {
+		host.connectAddress = host.broadcastAddress
+	} else if validIpAddr(host.peer) {
+		host.connectAddress = host.peer
 	}
-	host.connectAddress = ip
-	host.port = port
 
-	return host, nil
+	if s != nil && s.cfg.AddressTranslator != nil {
+		ip, port := s.cfg.translateAddressPort(host.ConnectAddress(), host.port, s.logger)
+		if !validIpAddr(ip) {
+			return nil, fmt.Errorf("invalid host address (before translation: %v:%v, after translation: %v:%v)", host.ConnectAddress(), host.port, ip.String(), port)
+		}
+		host.connectAddress = ip
+		host.port = port
+	}
+
+	if validIpAddr(host.connectAddress) {
+		host.hostname = host.connectAddress.String()
+		return host, nil
+	} else {
+		return nil, errors.New("invalid host address")
+	}
 }
 
 func (s *Session) hostInfoFromIter(iter *Iter, connectAddress net.IP, defaultPort int) (*HostInfo, error) {

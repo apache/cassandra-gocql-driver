@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Cleanup of deprecated elements (CASSGO-12)
 - Remove global NewBatch function (CASSGO-15)
 - Remove deprecated global logger (CASSGO-24)
+- HostInfo.SetHostID is no longer exported (CASSGO-71)
 
 ### Added
 
@@ -23,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Query.SetKeyspace(), Query.WithNowInSeconds(), Batch.SetKeyspace(), Batch.WithNowInSeconds() (CASSGO-1)
 - Externally-defined type registration (CASSGO-43)
 - Add Query and Batch to ObservedQuery and ObservedBatch (CASSGO-73)
+- Add way to create HostInfo objects for testing purposes (CASSGO-71)
 
 ### Changed
 
