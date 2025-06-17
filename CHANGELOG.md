@@ -50,6 +50,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `New` and `NewWithError` removed and replaced with `Zero` (CASSGO-43)
 - Changes to Query and Batch to make them safely reusable (CASSGO-22)
 - Change logger interface so it supports structured logging and log levels (CASSGO-9)
+- Bump go version in go.mod to 1.19 (CASSGO-34)
 
 ### Fixed
 
