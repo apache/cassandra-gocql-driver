@@ -1,3 +1,6 @@
+//go:build all || unit
+// +build all unit
+
 // Copyright (c) 2015 The gocql Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
@@ -40,7 +43,7 @@ func TestCompileMetadata(t *testing.T) {
 		cfg: ClusterConfig{
 			ProtoVersion: 1,
 		},
-		logger: &defaultLogger{},
+		logger: NewLogger(LogLevelNone),
 		types:  GlobalTypes,
 	}
 	// V2 test - V2+ protocol is simpler so here are some toy examples to verify that the mapping works
@@ -431,7 +434,7 @@ func assertParseNonCompositeType(
 		cfg: ClusterConfig{
 			ProtoVersion: 4,
 		},
-		logger: &defaultLogger{},
+		logger: NewLogger(LogLevelNone),
 		types:  GlobalTypes,
 	}
 	result, err := parseType(session, def)
@@ -472,7 +475,7 @@ func assertParseCompositeType(
 		cfg: ClusterConfig{
 			ProtoVersion: 4,
 		},
-		logger: &defaultLogger{},
+		logger: NewLogger(LogLevelNone),
 		types:  GlobalTypes,
 	}
 	result, err := parseType(session, def)

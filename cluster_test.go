@@ -1,3 +1,6 @@
+//go:build all || unit
+// +build all unit
+
 /*
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
@@ -60,7 +63,7 @@ func TestNewCluster_WithHosts(t *testing.T) {
 func TestClusterConfig_translateAddressAndPort_NilTranslator(t *testing.T) {
 	cfg := NewCluster()
 	assertNil(t, "cluster config address translator", cfg.AddressTranslator)
-	newAddr, newPort := cfg.translateAddressPort(net.ParseIP("10.0.0.1"), 1234)
+	newAddr, newPort := cfg.translateAddressPort(net.ParseIP("10.0.0.1"), 1234, nopLoggerSingleton)
 	assertTrue(t, "same address as provided", net.ParseIP("10.0.0.1").Equal(newAddr))
 	assertEqual(t, "translated host and port", 1234, newPort)
 }
@@ -68,7 +71,7 @@ func TestClusterConfig_translateAddressAndPort_NilTranslator(t *testing.T) {
 func TestClusterConfig_translateAddressAndPort_EmptyAddr(t *testing.T) {
 	cfg := NewCluster()
 	cfg.AddressTranslator = staticAddressTranslator(net.ParseIP("10.10.10.10"), 5432)
-	newAddr, newPort := cfg.translateAddressPort(net.IP([]byte{}), 0)
+	newAddr, newPort := cfg.translateAddressPort(net.IP([]byte{}), 0, nopLoggerSingleton)
 	assertTrue(t, "translated address is still empty", len(newAddr) == 0)
 	assertEqual(t, "translated port", 0, newPort)
 }
@@ -76,7 +79,7 @@ func TestClusterConfig_translateAddressAndPort_EmptyAddr(t *testing.T) {
 func TestClusterConfig_translateAddressAndPort_Success(t *testing.T) {
 	cfg := NewCluster()
 	cfg.AddressTranslator = staticAddressTranslator(net.ParseIP("10.10.10.10"), 5432)
-	newAddr, newPort := cfg.translateAddressPort(net.ParseIP("10.0.0.1"), 2345)
+	newAddr, newPort := cfg.translateAddressPort(net.ParseIP("10.0.0.1"), 2345, nopLoggerSingleton)
 	assertTrue(t, "translated address", net.ParseIP("10.10.10.10").Equal(newAddr))
 	assertEqual(t, "translated port", 5432, newPort)
 }

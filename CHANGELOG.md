@@ -10,6 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 
 - Drop support for old CQL protocol versions: 1 and 2 (CASSGO-75)
+- Cleanup of deprecated elements (CASSGO-12)
+- Remove global NewBatch function (CASSGO-15)
+- Remove deprecated global logger (CASSGO-24)
 
 ### Added
 
@@ -27,19 +30,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Move lz4 compressor to lz4 package within the gocql module (CASSGO-32)
 - Don't restrict server authenticator unless PasswordAuthentictor.AllowedAuthenticators is provided (CASSGO-19)
-- Cleanup of deprecated elements (CASSGO-12)
-- Remove global NewBatch function (CASSGO-15)
 - Detailed description for NumConns (CASSGO-3)
 - Change Batch API to be consistent with Query() (CASSGO-7)
-- Added Cassandra 4.0 table options support(CASSGO-13)
-- Remove deprecated global logger (CASSGO-24)
+- Added Cassandra 4.0 table options support (CASSGO-13)
 - Bumped actions/upload-artifact and actions/cache versions to v4 in CI workflow (CASSGO-48)
 - Keep nil slices in MapScan (CASSGO-44)
 - Improve error messages for marshalling (CASSGO-38)
 - Remove HostPoolHostPolicy from gocql package (CASSGO-21)
 - Standardized spelling of datacenter (CASSGO-35)
 - Refactor HostInfo creation and ConnectAddress() method (CASSGO-45)
-- gocql.Compressor interface changes to follow append-like design. Bumped Go version to 1.19 (CASSGO-1)
+- gocql.Compressor interface changes to follow append-like design (CASSGO-1)
 - Refactoring hostpool package test and Expose HostInfo creation (CASSGO-59)
 - Move "execute batch" methods to Batch type (CASSGO-57)
 - Make `Session` immutable by removing setters and associated mutex (CASSGO-23)
@@ -47,6 +47,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - NativeType removed (CASSGO-43)
 - `New` and `NewWithError` removed and replaced with `Zero` (CASSGO-43)
 - Changes to Query and Batch to make them safely reusable (CASSGO-22)
+- Change logger interface so it supports structured logging and log levels (CASSGO-9)
 
 ### Fixed
 

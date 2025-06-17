@@ -1,3 +1,6 @@
+//go:build all || unit || integration || ccm || cassandra
+// +build all unit integration ccm cassandra
+
 /*
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
@@ -85,7 +88,7 @@ func addSslOptions(cluster *ClusterConfig) *ClusterConfig {
 var initOnce sync.Once
 
 func createTable(s *Session, table string) error {
-	// lets just be really sure
+	// let's just be really sure
 	if err := s.control.awaitSchemaAgreement(); err != nil {
 		log.Printf("error waiting for schema agreement pre create table=%q err=%v\n", table, err)
 		return err

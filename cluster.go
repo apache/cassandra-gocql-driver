@@ -259,9 +259,15 @@ type ClusterConfig struct {
 	// If not provided, Dialer will be used instead.
 	HostDialer HostDialer
 
-	// Logger for this ClusterConfig.
-	// If not specified, defaults to the gocql.defaultLogger.
-	Logger StdLogger
+	// StructuredLogger for this ClusterConfig.
+	//
+	// There are 3 built in implementations of StructuredLogger:
+	//  - std library "log" package: gocql.NewLogger
+	//  - zerolog: gocqlzerolog.NewZerologLogger
+	//  - zap: gocqlzap.NewZapLogger
+	//
+	// You can also provide your own logger implementation of the StructuredLogger interface.
+	Logger StructuredLogger
 
 	// Tracer will be used for all queries. Alternatively it can be set of on a
 	// per query basis.
@@ -318,11 +324,11 @@ func NewCluster(hosts ...string) *ClusterConfig {
 	return cfg
 }
 
-func (cfg *ClusterConfig) logger() StdLogger {
-	if cfg.Logger == nil {
-		return &defaultLogger{}
+func (cfg *ClusterConfig) newLogger() StructuredLogger {
+	if cfg.Logger != nil {
+		return cfg.Logger
 	}
-	return cfg.Logger
+	return NewLogger(LogLevelNone)
 }
 
 // CreateSession initializes the cluster based on this config and returns a
@@ -335,14 +341,14 @@ func (cfg *ClusterConfig) CreateSession() (*Session, error) {
 // if defined, to translate the given address and port into a possibly new address
 // and port, If no AddressTranslator or if an error occurs, the given address and
 // port will be returned.
-func (cfg *ClusterConfig) translateAddressPort(addr net.IP, port int) (net.IP, int) {
+func (cfg *ClusterConfig) translateAddressPort(addr net.IP, port int, logger StructuredLogger) (net.IP, int) {
 	if cfg.AddressTranslator == nil || len(addr) == 0 {
 		return addr, port
 	}
 	newAddr, newPort := cfg.AddressTranslator.Translate(addr, port)
-	if gocqlDebug {
-		cfg.logger().Printf("gocql: translating address '%v:%d' to '%v:%d'", addr, port, newAddr, newPort)
-	}
+	logger.Debug("Translating address.",
+		newLogFieldIp("old_addr", addr), newLogFieldInt("old_port", port),
+		newLogFieldIp("new_addr", newAddr), newLogFieldInt("new_port", newPort))
 	return newAddr, newPort
 }
 

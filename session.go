@@ -101,17 +101,17 @@ type Session struct {
 	// you can use initialized() to read the value.
 	isInitialized bool
 
-	logger StdLogger
+	logger StructuredLogger
 }
 
-func addrsToHosts(addrs []string, defaultPort int, logger StdLogger) ([]*HostInfo, error) {
+func addrsToHosts(addrs []string, defaultPort int, logger StructuredLogger) ([]*HostInfo, error) {
 	var hosts []*HostInfo
 	for _, hostaddr := range addrs {
 		resolvedHosts, err := hostInfo(hostaddr, defaultPort)
 		if err != nil {
 			// Try other hosts if unable to resolve DNS name
 			if _, ok := err.(*net.DNSError); ok {
-				logger.Printf("gocql: dns error: %v\n", err)
+				logger.Error("DNS error.", newLogFieldError("err", err))
 				continue
 			}
 			return nil, err
@@ -153,7 +153,7 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 		connectObserver: cfg.ConnectObserver,
 		ctx:             ctx,
 		cancel:          cancel,
-		logger:          cfg.logger(),
+		logger:          cfg.newLogger(),
 		trace:           cfg.Tracer,
 	}
 	if cfg.RegisteredTypes == nil {
@@ -234,9 +234,10 @@ func (s *Session) init() error {
 			// TODO(zariel): we really only need this in 1 place
 			s.cfg.ProtoVersion = proto
 			s.connCfg.ProtoVersion = proto
+			s.logger.Info("Discovered protocol version.", newLogFieldInt("protocol_version", proto))
 		}
 
-		if err := s.control.connect(hosts); err != nil {
+		if err := s.control.connect(hosts, true); err != nil {
 			return err
 		}
 
@@ -255,6 +256,9 @@ func (s *Session) init() error {
 			}
 
 			hosts = filteredHosts
+			s.logger.Info("Refreshed ring.", newLogFieldString("ring", ringString(hosts)))
+		} else {
+			s.logger.Info("Not performing a ring refresh because DisableInitialHostLookup is true.")
 		}
 	}
 
@@ -285,9 +289,13 @@ func (s *Session) init() error {
 	// again
 	atomic.AddInt64(&left, 1)
 	for _, host := range hostMap {
-		host := s.ring.addOrUpdate(host)
+		host, exists := s.ring.addOrUpdate(host)
 		if s.cfg.filterHost(host) {
 			continue
+		}
+		if !exists {
+			s.logger.Info("Adding host (session initialization).",
+				newLogFieldIp("host_addr", host.ConnectAddress()), newLogFieldString("host_id", host.HostID()))
 		}
 
 		atomic.AddInt64(&left, 1)
@@ -366,6 +374,7 @@ func (s *Session) init() error {
 	s.isInitialized = true
 	s.sessionStateMu.Unlock()
 
+	s.logger.Info("Session initialized successfully.")
 	return nil
 }
 
@@ -391,21 +400,20 @@ func (s *Session) reconnectDownedHosts(intv time.Duration) {
 	for {
 		select {
 		case <-reconnectTicker.C:
+			s.logger.Debug("Connecting to downed hosts if there is any.")
 			hosts := s.ring.allHosts()
 
 			// Print session.ring for debug.
-			if gocqlDebug {
-				buf := bytes.NewBufferString("Session.ring:")
-				for _, h := range hosts {
-					buf.WriteString("[" + h.ConnectAddress().String() + ":" + h.State().String() + "]")
-				}
-				s.logger.Println(buf.String())
-			}
+			s.logger.Debug("Logging current ring state.", newLogFieldString("ring", ringString(hosts)))
 
 			for _, h := range hosts {
 				if h.IsUp() {
 					continue
 				}
+				s.logger.Debug("Reconnecting to downed host.",
+					newLogFieldIp("host_addr", h.ConnectAddress()),
+					newLogFieldInt("host_port", h.Port()),
+					newLogFieldString("host_id", h.HostID()))
 				// we let the pool call handleNodeConnected to change the host state
 				s.pool.addHost(h)
 			}
@@ -524,6 +532,7 @@ func (s *Session) executeQuery(qry *internalQuery) (it *Iter) {
 }
 
 func (s *Session) removeHost(h *HostInfo) {
+	s.logger.Warning("Removing host.", newLogFieldIp("host_addr", h.ConnectAddress()), newLogFieldString("host_id", h.HostID()))
 	s.policy.RemoveHost(h)
 	hostID := h.HostID()
 	s.pool.removeHost(hostID)

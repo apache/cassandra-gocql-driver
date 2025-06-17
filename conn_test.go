@@ -41,6 +41,7 @@ import (
 	"math/rand"
 	"net"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -184,7 +185,7 @@ func newTestSession(proto protoVersion, addresses ...string) (*Session, error) {
 }
 
 func TestDNSLookupConnected(t *testing.T) {
-	log := &testLogger{}
+	log := newTestLogger(LogLevelDebug)
 
 	// Override the defaul DNS resolver and restore at the end
 	failDNS = true
@@ -205,13 +206,13 @@ func TestDNSLookupConnected(t *testing.T) {
 		t.Fatal("CreateSession() should have connected")
 	}
 
-	if !strings.Contains(log.String(), "gocql: dns error") {
+	if !strings.Contains(log.String(), "gocql: DNS error") {
 		t.Fatalf("Expected to receive dns error log message  - got '%s' instead", log.String())
 	}
 }
 
 func TestDNSLookupError(t *testing.T) {
-	log := &testLogger{}
+	log := newTestLogger(LogLevelDebug)
 
 	// Override the defaul DNS resolver and restore at the end
 	failDNS = true
@@ -229,7 +230,7 @@ func TestDNSLookupError(t *testing.T) {
 		t.Fatal("CreateSession() should have returned an error")
 	}
 
-	if !strings.Contains(log.String(), "gocql: dns error") {
+	if !strings.Contains(log.String(), "gocql: DNS error") {
 		t.Fatalf("Expected to receive dns error log message  - got '%s' instead", log.String())
 	}
 
@@ -240,7 +241,7 @@ func TestDNSLookupError(t *testing.T) {
 
 func TestStartupTimeout(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
-	log := &testLogger{}
+	log := newTestLogger(LogLevelDebug)
 
 	srv := NewTestServer(t, defaultProto, ctx)
 	defer srv.Stop()
@@ -348,17 +349,20 @@ func TestCancel(t *testing.T) {
 
 type testQueryObserver struct {
 	metrics map[string]*hostMetrics
-	verbose bool
-	logger  StdLogger
+	logger  StructuredLogger
 }
 
 func (o *testQueryObserver) ObserveQuery(ctx context.Context, q ObservedQuery) {
 	host := q.Host.ConnectAddress().String()
 	o.metrics[host] = q.Metrics
-	if o.verbose {
-		o.logger.Printf("Observed query %q. Returned %v rows, took %v on host %q with %v attempts and total latency %v. Error: %q\n",
-			q.Statement, q.Rows, q.End.Sub(q.Start), host, q.Metrics.Attempts, q.Metrics.TotalLatency, q.Err)
-	}
+	o.logger.Debug("Observed query.",
+		newLogFieldString("stmt", q.Statement),
+		newLogFieldInt("rows", q.Rows),
+		newLogFieldString("duration", q.End.Sub(q.Start).String()),
+		newLogFieldString("host", host),
+		newLogFieldInt("attempts", q.Metrics.Attempts),
+		newLogFieldString("latency", strconv.FormatInt(q.Metrics.TotalLatency, 10)),
+		newLogFieldError("err", q.Err))
 }
 
 func (o *testQueryObserver) GetMetrics(host *HostInfo) *hostMetrics {
@@ -411,7 +415,7 @@ func TestQueryRetry(t *testing.T) {
 }
 
 func TestQueryMultinodeWithMetrics(t *testing.T) {
-	log := &testLogger{}
+	log := newTestLogger(LogLevelNone)
 	defer func() {
 		os.Stdout.WriteString(log.String())
 	}()
@@ -439,7 +443,7 @@ func TestQueryMultinodeWithMetrics(t *testing.T) {
 
 	// 1 retry per host
 	rt := &SimpleRetryPolicy{NumRetries: 3}
-	observer := &testQueryObserver{metrics: make(map[string]*hostMetrics), verbose: false, logger: log}
+	observer := &testQueryObserver{metrics: make(map[string]*hostMetrics), logger: log}
 	qry := db.Query("kill").RetryPolicy(rt).Observer(observer).Idempotent(true)
 	iter := qry.Iter()
 	err = iter.Close()
@@ -488,7 +492,7 @@ func (t *testRetryPolicy) GetRetryType(err error) RetryType {
 }
 
 func TestSpeculativeExecution(t *testing.T) {
-	log := &testLogger{}
+	log := newTestLogger(LogLevelDebug)
 	defer func() {
 		os.Stdout.WriteString(log.String())
 	}()
@@ -724,7 +728,7 @@ func TestStream0(t *testing.T) {
 		session: &Session{
 			types: GlobalTypes,
 		},
-		logger: &defaultLogger{},
+		logger: NewLogger(LogLevelNone),
 	}
 
 	err := conn.recv(context.Background(), false)

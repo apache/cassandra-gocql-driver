@@ -94,12 +94,12 @@ func (r *ring) currentHosts() map[string]*HostInfo {
 	return hosts
 }
 
-func (r *ring) addOrUpdate(host *HostInfo) *HostInfo {
-	if existingHost, ok := r.addHostIfMissing(host); ok {
+func (r *ring) addOrUpdate(host *HostInfo) (*HostInfo, bool) {
+	existingHost, ok := r.addHostIfMissing(host)
+	if ok {
 		existingHost.update(host)
-		host = existingHost
 	}
-	return host
+	return existingHost, ok
 }
 
 func (r *ring) addHostIfMissing(host *HostInfo) (*HostInfo, bool) {

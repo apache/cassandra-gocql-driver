@@ -610,7 +610,7 @@ func (s *Session) hostInfoFromMap(row map[string]interface{}, host *HostInfo) (*
 		// Not sure what the port field will be called until the JIRA issue is complete
 	}
 
-	ip, port := s.cfg.translateAddressPort(host.ConnectAddress(), host.port)
+	ip, port := s.cfg.translateAddressPort(host.ConnectAddress(), host.port, s.logger)
 	if !validIpAddr(ip) {
 		return nil, fmt.Errorf("invalid host address (before translation: %v:%v, after translation: %v:%v)", host.ConnectAddress(), host.port, ip.String(), port)
 	}
@@ -687,8 +687,8 @@ func (r *ringDescriber) getClusterPeerInfo(localHost *HostInfo) ([]*HostInfo, er
 			return nil, err
 		} else if !isValidPeer(host) {
 			// If it's not a valid peer
-			r.session.logger.Printf("Found invalid peer '%s' "+
-				"Likely due to a gossip or snitch issue, this host will be ignored", host)
+			r.session.logger.Warning("Found invalid peer "+
+				"likely due to a gossip or snitch issue, this host will be ignored.", newLogFieldStringer("host", host))
 			continue
 		}
 
@@ -760,6 +760,7 @@ func refreshRing(r *ringDescriber) error {
 		}
 
 		if host, ok := r.session.ring.addHostIfMissing(h); !ok {
+			r.session.logger.Info("Adding host.", newLogFieldIp("host_addr", h.ConnectAddress()), newLogFieldString("host_id", h.HostID()))
 			r.session.startPoolFill(h)
 		} else {
 			// host (by hostID) already exists; determine if IP has changed
@@ -778,6 +779,7 @@ func refreshRing(r *ringDescriber) error {
 				if _, alreadyExists := r.session.ring.addHostIfMissing(h); alreadyExists {
 					return fmt.Errorf("add new host=%s after removal: %w", h, ErrHostAlreadyExists)
 				}
+				r.session.logger.Info("Adding host with new IP after removing old host.", newLogFieldIp("host_addr", h.ConnectAddress()), newLogFieldString("host_id", h.HostID()))
 				// add new HostInfo (same hostID, new IP)
 				r.session.startPoolFill(h)
 			}
@@ -791,6 +793,7 @@ func refreshRing(r *ringDescriber) error {
 
 	r.session.metadata.setPartitioner(partitioner)
 	r.session.policy.SetPartitioner(partitioner)
+	r.session.logger.Info("Refreshed ring.", newLogFieldString("ring", ringString(r.session.ring.allHosts())))
 	return nil
 }
 

@@ -411,6 +411,7 @@ func newFramer(compressor Compressor, version byte, r *RegisteredTypes) *framer 
 
 type frame interface {
 	Header() frameHeader
+	String() string
 }
 
 func readHeader(r io.Reader, p []byte) (head frameHeader, err error) {

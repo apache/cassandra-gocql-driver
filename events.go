@@ -25,7 +25,10 @@
 package gocql
 
 import (
+	"fmt"
 	"net"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -39,10 +42,10 @@ type eventDebouncer struct {
 	callback func([]frame)
 	quit     chan struct{}
 
-	logger StdLogger
+	logger StructuredLogger
 }
 
-func newEventDebouncer(name string, eventHandler func([]frame), logger StdLogger) *eventDebouncer {
+func newEventDebouncer(name string, eventHandler func([]frame), logger StructuredLogger) *eventDebouncer {
 	e := &eventDebouncer{
 		name:     name,
 		quit:     make(chan struct{}),
@@ -100,7 +103,8 @@ func (e *eventDebouncer) debounce(frame frame) {
 	if len(e.events) < eventBufferSize {
 		e.events = append(e.events, frame)
 	} else {
-		e.logger.Printf("%s: buffer full, dropping event frame: %s", e.name, frame)
+		e.logger.Warning("Event buffer full, dropping event frame.",
+			newLogFieldString("event_name", e.name), newLogFieldStringer("frame", frame))
 	}
 
 	e.mu.Unlock()
@@ -109,13 +113,11 @@ func (e *eventDebouncer) debounce(frame frame) {
 func (s *Session) handleEvent(framer *framer) {
 	frame, err := framer.parseFrame()
 	if err != nil {
-		s.logger.Printf("gocql: unable to parse event frame: %v\n", err)
+		s.logger.Error("Unable to parse event frame.", newLogFieldError("err", err))
 		return
 	}
 
-	if gocqlDebug {
-		s.logger.Printf("gocql: handling frame: %v\n", frame)
-	}
+	s.logger.Debug("Handling event frame.", newLogFieldStringer("frame", frame))
 
 	switch f := frame.(type) {
 	case *schemaChangeKeyspace, *schemaChangeFunction,
@@ -125,7 +127,8 @@ func (s *Session) handleEvent(framer *framer) {
 	case *topologyChangeEventFrame, *statusChangeEventFrame:
 		s.nodeEvents.debounce(frame)
 	default:
-		s.logger.Printf("gocql: invalid event frame (%T): %v\n", f, f)
+		s.logger.Error("Invalid event frame.",
+			newLogFieldString("frame_type", fmt.Sprintf("%T", f)), newLogFieldStringer("frame", f))
 	}
 }
 
@@ -177,6 +180,8 @@ func (s *Session) handleNodeEvent(frames []frame) {
 	for _, frame := range frames {
 		switch f := frame.(type) {
 		case *topologyChangeEventFrame:
+			s.logger.Info("Received topology change event.",
+				newLogFieldString("frame", strings.Join([]string{f.change, "->", f.host.String(), ":", strconv.Itoa(f.port)}, "")))
 			topologyEventReceived = true
 		case *statusChangeEventFrame:
 			event, ok := sEvents[f.host.String()]
@@ -193,9 +198,8 @@ func (s *Session) handleNodeEvent(frames []frame) {
 	}
 
 	for _, f := range sEvents {
-		if gocqlDebug {
-			s.logger.Printf("gocql: dispatching status change event: %+v\n", f)
-		}
+		s.logger.Info("Dispatching status change event.",
+			newLogFieldString("frame", strings.Join([]string{f.change, "->", f.host.String(), ":", strconv.Itoa(f.port)}, "")))
 
 		// ignore events we received if they were disabled
 		// see https://github.com/apache/cassandra-gocql-driver/issues/1591
@@ -213,9 +217,8 @@ func (s *Session) handleNodeEvent(frames []frame) {
 }
 
 func (s *Session) handleNodeUp(eventIp net.IP, eventPort int) {
-	if gocqlDebug {
-		s.logger.Printf("gocql: Session.handleNodeUp: %s:%d\n", eventIp.String(), eventPort)
-	}
+	s.logger.Info("Node is UP.",
+		newLogFieldStringer("event_ip", eventIp), newLogFieldInt("event_port", eventPort))
 
 	host, ok := s.ring.getHostByIP(eventIp.String())
 	if !ok {
@@ -240,9 +243,8 @@ func (s *Session) startPoolFill(host *HostInfo) {
 }
 
 func (s *Session) handleNodeConnected(host *HostInfo) {
-	if gocqlDebug {
-		s.logger.Printf("gocql: Session.handleNodeConnected: %s:%d\n", host.ConnectAddress(), host.Port())
-	}
+	s.logger.Debug("Pool connected to node.",
+		newLogFieldIp("host_addr", host.ConnectAddress()), newLogFieldInt("port", host.Port()), newLogFieldString("host_id", host.HostID()))
 
 	host.setState(NodeUp)
 
@@ -252,9 +254,8 @@ func (s *Session) handleNodeConnected(host *HostInfo) {
 }
 
 func (s *Session) handleNodeDown(ip net.IP, port int) {
-	if gocqlDebug {
-		s.logger.Printf("gocql: Session.handleNodeDown: %s:%d\n", ip.String(), port)
-	}
+	s.logger.Warning("Node is DOWN.",
+		newLogFieldIp("host_addr", ip), newLogFieldInt("port", port))
 
 	host, ok := s.ring.getHostByIP(ip.String())
 	if ok {
