@@ -28,7 +28,7 @@ import (
 	"bytes"
 	"sync"
 
-	"github.com/gocql/gocql/internal/lru"
+	"github.com/apache/cassandra-gocql-driver/v2/internal/lru"
 )
 
 const defaultMaxPreparedStmts = 1000

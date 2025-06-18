@@ -32,7 +32,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gocql/gocql/internal/ccm"
+	"github.com/apache/cassandra-gocql-driver/v2/internal/ccm"
 )
 
 func TestEventDiscovery(t *testing.T) {

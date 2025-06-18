@@ -3,13 +3,13 @@ Apache Cassandra GoCQL Driver
 
 [!Join the chat at https://the-asf.slack.com/archives/C05LPRVNZV1](https://the-asf.slack.com/archives/C05LPRVNZV1)
 ![go build](https://github.com/apache/cassandra-gocql-driver/actions/workflows/main.yml/badge.svg)
-[![GoDoc](https://godoc.org/github.com/gocql/gocql?status.svg)](https://godoc.org/github.com/gocql/gocql)
+[![GoDoc](https://pkg.go.dev/github.com/apache/cassandra-gocql-driver/v2?status.svg)](https://pkg.go.dev/github.com/apache/cassandra-gocql-driver/v2)
 
 Package gocql implements a fast and robust Cassandra client for the
 Go programming language.
 
 Project Website: https://cassandra.apache.org<br>
-API documentation: https://godoc.org/github.com/gocql/gocql<br>
+API documentation: https://pkg.go.dev/github.com/apache/cassandra-gocql-driver/v2<br>
 Discussions: https://cassandra.apache.org/_/community.html#discussions
 
 Supported Versions
@@ -17,7 +17,7 @@ Supported Versions
 
 The following matrix shows the versions of Go and Cassandra that are tested with the integration test suite as part of the CI build:
 
-| Go/Cassandra | 4.0.x | 4.1.x | 
+| Go/Cassandra | 4.1.x | 5.0.x | 
 |--------------|-------|-------|
 | 1.22         | yes   | yes   |
 | 1.23         | yes   | yes   |
@@ -33,7 +33,7 @@ In general, the Cassandra community will focus on supporting the current and pre
 Installation
 ------------
 
-    go get github.com/gocql/gocql
+    go get github.com/apache/cassandra-gocql-driver/v2
 
 
 Features
@@ -115,7 +115,7 @@ statement.
 Example
 -------
 
-See [package documentation](https://pkg.go.dev/github.com/gocql/gocql#pkg-examples).
+See [package documentation](https://pkg.go.dev/github.com/apache/cassandra-gocql-driver/v2#pkg-examples).
 
 Data Binding
 ------------

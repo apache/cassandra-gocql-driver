@@ -29,7 +29,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Moved the Snappy compressor into its own separate package (CASSGO-33)
-
 - Move lz4 compressor to lz4 package within the gocql module (CASSGO-32)
 - Don't restrict server authenticator unless PasswordAuthentictor.AllowedAuthenticators is provided (CASSGO-19)
 - Detailed description for NumConns (CASSGO-3)
@@ -51,6 +50,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Changes to Query and Batch to make them safely reusable (CASSGO-22)
 - Change logger interface so it supports structured logging and log levels (CASSGO-9)
 - Bump go version in go.mod to 1.19 (CASSGO-34)
+- Change module name to github.com/apache/cassandra-gocql-driver/v2 (CASSGO-70)
 
 ### Fixed
 

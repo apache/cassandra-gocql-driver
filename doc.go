@@ -387,4 +387,4 @@
 // system_traces.events tables. NewTraceWriter returns an implementation of Tracer that writes the events to a writer.
 // Gathering trace information might be essential for debugging and optimizing queries, but writing traces has overhead,
 // so this feature should not be used on production systems with very high load unless you know what you are doing.
-package gocql // import "github.com/gocql/gocql"
+package gocql // import "github.com/apache/cassandra-gocql-driver/v2"

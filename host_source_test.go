@@ -453,7 +453,7 @@ func TestRefreshDebouncer_EventsAfterRefreshNow(t *testing.T) {
 	}
 }
 
-// https://github.com/gocql/gocql/issues/1752
+// https://github.com/apache/cassandra-gocql-driver/issues/1752
 func TestRefreshDebouncer_DeadlockOnStop(t *testing.T) {
 	// there's no way to guarantee this bug manifests because it depends on which `case` is picked from the `select`
 	// with 4 iterations of this test the deadlock would be hit pretty consistently

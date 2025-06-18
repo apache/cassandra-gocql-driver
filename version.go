@@ -33,7 +33,7 @@ const (
 	// current main package returned by runtime/debug below.  Also note the
 	// package name used here may change in a future (2.x) release; in that case
 	// this constant will be updated as well.
-	mainPackage = "github.com/gocql/gocql"
+	mainPackage = "github.com/apache/cassandra-gocql-driver/v2"
 )
 
 var driverName string
