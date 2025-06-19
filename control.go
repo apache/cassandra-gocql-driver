@@ -322,7 +322,12 @@ func (c *controlConn) setupConn(conn *Conn, sessionInit bool) error {
 	iter := conn.querySystemLocal(context.TODO())
 	host, err := c.session.hostInfoFromIter(iter, conn.host.connectAddress, conn.r.RemoteAddr().(*net.TCPAddr).Port)
 	if err != nil {
-		return err
+		// just cleanup
+		iter.Close()
+		return fmt.Errorf("could not retrieve control host info: %w", err)
+	}
+	if host == nil {
+		return errors.New("could not retrieve control host info: query returned 0 rows")
 	}
 
 	var exists bool

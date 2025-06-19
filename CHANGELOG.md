@@ -62,6 +62,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Don't panic in MapExecuteBatchCAS if no `[applied]` column is returned (CASSGO-42)
 - Fix deadlock in refresh debouncer stop (CASSGO-41)
 - Endless query execution fix (CASSGO-50)
+- Accept peers with empty rack (CASSGO-6)
 
 ## [1.7.0] - 2024-09-23
 

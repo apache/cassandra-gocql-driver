@@ -171,6 +171,7 @@ type HostInfo struct {
 	port             int
 	dataCenter       string
 	rack             string
+	missingRack      bool
 	hostId           string
 	workload         string
 	graph            bool
@@ -413,8 +414,9 @@ func (h *HostInfo) update(from *HostInfo) {
 	if h.dataCenter == "" {
 		h.dataCenter = from.dataCenter
 	}
-	if h.rack == "" {
+	if h.missingRack {
 		h.rack = from.rack
+		h.missingRack = from.missingRack
 	}
 	if h.hostId == "" {
 		h.hostId = from.hostId
@@ -530,7 +532,7 @@ func newHostInfoFromRow(s *Session, defaultAddr net.IP, defaultPort int, row map
 	const assertErrorMsg = "Assertion failed for %s, type was %T"
 	var ok bool
 
-	host := &HostInfo{connectAddress: defaultAddr, port: defaultPort}
+	host := &HostInfo{connectAddress: defaultAddr, port: defaultPort, missingRack: true}
 
 	// Process all fields from the row
 	for key, value := range row {
@@ -541,14 +543,30 @@ func newHostInfoFromRow(s *Session, defaultAddr net.IP, defaultPort int, row map
 				return nil, fmt.Errorf(assertErrorMsg, "data_center", value)
 			}
 		case "rack":
-			host.rack, ok = value.(string)
+			rack, ok := value.(*string)
 			if !ok {
-				return nil, fmt.Errorf(assertErrorMsg, "rack", value)
+				if rack, ok := value.(string); !ok {
+					return nil, fmt.Errorf(assertErrorMsg, "rack", value)
+				} else {
+					host.rack = rack
+					host.missingRack = false
+				}
+			} else if rack != nil {
+				host.rack = *rack
+				host.missingRack = false
 			}
 		case "host_id":
 			hostId, ok := value.(UUID)
 			if !ok {
-				return nil, fmt.Errorf(assertErrorMsg, "host_id", value)
+				if str, ok := value.(string); ok {
+					var err error
+					hostId, err = ParseUUID(str)
+					if err != nil {
+						return nil, fmt.Errorf("failed to parse host_id: %w", err)
+					}
+				} else {
+					return nil, fmt.Errorf(assertErrorMsg, "host_id", value)
+				}
 			}
 			host.hostId = hostId.String()
 		case "release_version":
@@ -560,7 +578,11 @@ func newHostInfoFromRow(s *Session, defaultAddr net.IP, defaultPort int, row map
 		case "peer":
 			ip, ok := value.(net.IP)
 			if !ok {
-				return nil, fmt.Errorf(assertErrorMsg, "peer", value)
+				if str, ok := value.(string); ok {
+					ip = net.ParseIP(str)
+				} else {
+					return nil, fmt.Errorf(assertErrorMsg, "peer", value)
+				}
 			}
 			host.peer = ip
 		case "cluster_name":
@@ -576,31 +598,51 @@ func newHostInfoFromRow(s *Session, defaultAddr net.IP, defaultPort int, row map
 		case "broadcast_address":
 			ip, ok := value.(net.IP)
 			if !ok {
-				return nil, fmt.Errorf(assertErrorMsg, "broadcast_address", value)
+				if str, ok := value.(string); ok {
+					ip = net.ParseIP(str)
+				} else {
+					return nil, fmt.Errorf(assertErrorMsg, "broadcast_address", value)
+				}
 			}
 			host.broadcastAddress = ip
 		case "preferred_ip":
 			ip, ok := value.(net.IP)
 			if !ok {
-				return nil, fmt.Errorf(assertErrorMsg, "preferred_ip", value)
+				if str, ok := value.(string); ok {
+					ip = net.ParseIP(str)
+				} else {
+					return nil, fmt.Errorf(assertErrorMsg, "preferred_ip", value)
+				}
 			}
 			host.preferredIP = ip
 		case "rpc_address":
 			ip, ok := value.(net.IP)
 			if !ok {
-				return nil, fmt.Errorf(assertErrorMsg, "rpc_address", value)
+				if str, ok := value.(string); ok {
+					ip = net.ParseIP(str)
+				} else {
+					return nil, fmt.Errorf(assertErrorMsg, "rpc_address", value)
+				}
 			}
 			host.rpcAddress = ip
 		case "native_address":
 			ip, ok := value.(net.IP)
 			if !ok {
-				return nil, fmt.Errorf(assertErrorMsg, "native_address", value)
+				if str, ok := value.(string); ok {
+					ip = net.ParseIP(str)
+				} else {
+					return nil, fmt.Errorf(assertErrorMsg, "native_address", value)
+				}
 			}
 			host.rpcAddress = ip
 		case "listen_address":
 			ip, ok := value.(net.IP)
 			if !ok {
-				return nil, fmt.Errorf(assertErrorMsg, "listen_address", value)
+				if str, ok := value.(string); ok {
+					ip = net.ParseIP(str)
+				} else {
+					return nil, fmt.Errorf(assertErrorMsg, "listen_address", value)
+				}
 			}
 			host.listenAddress = ip
 		case "native_port":
@@ -666,18 +708,23 @@ func newHostInfoFromRow(s *Session, defaultAddr net.IP, defaultPort int, row map
 	}
 }
 
+// this will return nil, nil if there were no rows left in the Iter
 func (s *Session) hostInfoFromIter(iter *Iter, connectAddress net.IP, defaultPort int) (*HostInfo, error) {
-	rows, err := iter.SliceMap()
-	if err != nil {
-		// TODO(zariel): make typed error
-		return nil, err
+	// TODO: switch this to a new iterator method once CASSGO-36 is solved
+	m := map[string]interface{}{
+		// we set rack to a double pointer so we can know if it's NULL or not since
+		// we need to be able to filter out NULL rack hosts but not empty string hosts
+		// see CASSGO-6
+		"rack": new(*string),
+	}
+	if !iter.MapScan(m) {
+		if err := iter.Close(); err != nil {
+			return nil, err
+		}
+		return nil, nil
 	}
 
-	if len(rows) == 0 {
-		return nil, errors.New("query returned 0 rows")
-	}
-
-	host, err := s.newHostInfoFromMap(connectAddress, defaultPort, rows[0])
+	host, err := s.newHostInfoFromMap(connectAddress, defaultPort, m)
 	if err != nil {
 		return nil, err
 	}
@@ -700,7 +747,12 @@ func (r *ringDescriber) getLocalHostInfo() (*HostInfo, error) {
 
 	host, err := r.session.hostInfoFromIter(iter, nil, r.session.cfg.Port)
 	if err != nil {
+		// just cleanup
+		iter.Close()
 		return nil, fmt.Errorf("could not retrieve local host info: %w", err)
+	}
+	if host == nil {
+		return nil, errors.New("could not retrieve local host info: query returned 0 rows")
 	}
 	return host, nil
 }
@@ -711,7 +763,6 @@ func (r *ringDescriber) getClusterPeerInfo(localHost *HostInfo) ([]*HostInfo, er
 		return nil, errNoControl
 	}
 
-	var peers []*HostInfo
 	iter := r.session.control.withConnHost(func(ch *connHost) *Iter {
 		return ch.conn.querySystemPeers(context.TODO(), localHost.version)
 	})
@@ -720,18 +771,25 @@ func (r *ringDescriber) getClusterPeerInfo(localHost *HostInfo) ([]*HostInfo, er
 		return nil, errNoControl
 	}
 
-	rows, err := iter.SliceMap()
-	if err != nil {
-		// TODO(zariel): make typed error
-		return nil, fmt.Errorf("unable to fetch peer host info: %s", err)
-	}
-
-	for _, row := range rows {
+	var peers []*HostInfo
+	for {
 		// extract all available info about the peer
-		host, err := r.session.newHostInfoFromMap(nil, r.session.cfg.Port, row)
+		host, err := r.session.hostInfoFromIter(iter, nil, r.session.cfg.Port)
 		if err != nil {
-			return nil, err
-		} else if !isValidPeer(host) {
+			// if the error came from the iterator then return it, otherwise ignore
+			// and warn
+			if iterErr := iter.Close(); iterErr != nil {
+				return nil, fmt.Errorf("unable to fetch peer host info: %s", iterErr)
+			}
+			// skip over peers that we couldn't parse
+			r.session.logger.Warning("Failed to parse peer this host will be ignored.", newLogFieldError("err", err))
+			continue
+		}
+		// if nil then none left
+		if host == nil {
+			break
+		}
+		if !isValidPeer(host) {
 			// If it's not a valid peer
 			r.session.logger.Warning("Found invalid peer "+
 				"likely due to a gossip or snitch issue, this host will be ignored.", newLogFieldStringer("host", host))
@@ -749,7 +807,7 @@ func isValidPeer(host *HostInfo) bool {
 	return !(len(host.RPCAddress()) == 0 ||
 		host.hostId == "" ||
 		host.dataCenter == "" ||
-		host.rack == "" ||
+		host.missingRack ||
 		len(host.tokens) == 0)
 }
 

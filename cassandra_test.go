@@ -4013,3 +4013,108 @@ func TestRoutingKeyCacheUsesOverriddenKeyspace(t *testing.T) {
 
 	session.Query("DROP KEYSPACE IF EXISTS gocql_test_routing_key_cache").Exec()
 }
+
+func TestHostInfoFromIter(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+
+	err := createTable(session, `CREATE TABLE IF NOT EXISTS gocql_test.system_peers(
+		peer inet PRIMARY KEY,
+		data_center text,
+		host_id uuid,
+		preferred_ip inet,
+		rack text,
+		release_version text,
+		rpc_address inet,
+		schema_version uuid,
+		tokens set<text>
+	)`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	id1 := MustRandomUUID()
+	err = session.Query(
+		"INSERT INTO gocql_test.system_peers (peer, data_center, host_id, rack, release_version, rpc_address, tokens) VALUES (?, ?, ?, ?, ?, ?, ?)",
+		net.ParseIP("10.0.0.1"),
+		"dc1",
+		id1,
+		"rack1",
+		"4.0.0",
+		net.ParseIP("10.0.0.2"),
+		[]string{"0", "1"},
+	).Exec()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	id2 := MustRandomUUID()
+	err = session.Query(
+		"INSERT INTO gocql_test.system_peers (peer, data_center, host_id, release_version, rpc_address, tokens) VALUES (?, ?, ?, ?, ?, ?)",
+		net.ParseIP("10.0.0.2"),
+		"dc2",
+		id2,
+		"4.0.0",
+		net.ParseIP("10.0.0.3"),
+		[]string{"0", "1"},
+	).Exec()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	iter := session.Query("SELECT * FROM gocql_test.system_peers WHERE data_center='dc1' ALLOW FILTERING").Iter()
+
+	h, err := session.hostInfoFromIter(iter, nil, 9042)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !isValidPeer(h) {
+		t.Errorf("expected %+v to be a valid peer", h)
+	}
+	if addr := h.ConnectAddressAndPort(); addr != "10.0.0.2:9042" {
+		t.Errorf("unexpected connect address: %s != '10.0.0.2:9042'", addr)
+	}
+	if h.HostID() != id1.String() {
+		t.Errorf("unexpected hostID %s != %s", h.HostID(), id1.String())
+	}
+	if h.Version().String() != "v4.0.0" {
+		t.Errorf("unexpected version %s != v4.0.0", h.Version().String())
+	}
+	if h.Rack() != "rack1" {
+		t.Errorf("unexpected rack %s != 'rack1'", h.Rack())
+	}
+	if h.DataCenter() != "dc1" {
+		t.Errorf("unexpected data center %s != 'dc1'", h.DataCenter())
+	}
+	if h.missingRack {
+		t.Errorf("unexpected missing rack")
+	}
+
+	iter = session.Query("SELECT * FROM gocql_test.system_peers WHERE data_center='dc2' ALLOW FILTERING").Iter()
+
+	h, err = session.hostInfoFromIter(iter, nil, 9042)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if isValidPeer(h) {
+		t.Errorf("expected %+v to be an invalid peer", h)
+	}
+	if addr := h.ConnectAddressAndPort(); addr != "10.0.0.3:9042" {
+		t.Errorf("unexpected connect address: %s != '10.0.0.3:9042'", addr)
+	}
+	if h.HostID() != id2.String() {
+		t.Errorf("unexpected hostID %s != %s", h.HostID(), id2.String())
+	}
+	if h.Version().String() != "v4.0.0" {
+		t.Errorf("unexpected version %s != v4.0.0", h.Version().String())
+	}
+	if h.Rack() != "" {
+		t.Errorf("unexpected rack %s != ''", h.Rack())
+	}
+	if h.DataCenter() != "dc2" {
+		t.Errorf("unexpected data center %s != 'dc2'", h.DataCenter())
+	}
+	if !h.missingRack {
+		t.Errorf("unexpected non-missing rack")
+	}
+}

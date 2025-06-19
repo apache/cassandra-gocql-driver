@@ -85,6 +85,153 @@ func TestCassVersionBefore(t *testing.T) {
 
 }
 
+func TestNewHostInfoFromRow(t *testing.T) {
+	id := MustRandomUUID()
+	row := map[string]interface{}{
+		"broadcast_address": "10.0.0.1",
+		"listen_address":    net.ParseIP("10.0.0.2"),
+		"rpc_address":       net.ParseIP("10.0.0.3"),
+		"data_center":       "dc",
+		"rack":              "",
+		"host_id":           id,
+		"release_version":   "4.0.0",
+		"native_port":       9042,
+		"tokens":            []string{"0", "1"},
+	}
+	s := &Session{}
+	h, err := newHostInfoFromRow(s, nil, 0, row)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !isValidPeer(h) {
+		t.Errorf("expected %+v to be a valid peer", h)
+	}
+	if addr := h.ConnectAddressAndPort(); addr != "10.0.0.3:9042" {
+		t.Errorf("unexpected connect address: %s != '10.0.0.3:9042'", addr)
+	}
+	if h.HostID() != id.String() {
+		t.Errorf("unexpected hostID %s != %s", h.HostID(), id.String())
+	}
+	if h.Version().String() != "v4.0.0" {
+		t.Errorf("unexpected version %s != v4.0.0", h.Version().String())
+	}
+	if h.Rack() != "" {
+		t.Errorf("unexpected rack %s != ''", h.Rack())
+	}
+	if h.DataCenter() != "dc" {
+		t.Errorf("unexpected data center %s != 'dc'", h.DataCenter())
+	}
+
+	row = map[string]interface{}{
+		"broadcast_address": "10.0.0.1",
+		"listen_address":    net.ParseIP("10.0.0.2"),
+		"preferred_ip":      "10.0.0.4",
+		"data_center":       "dc",
+		"rack":              "rack",
+		"host_id":           id,
+		"release_version":   "4.0.0",
+		"native_port":       9042,
+		"tokens":            []string{"0", "1"},
+	}
+	h, err = newHostInfoFromRow(s, nil, 0, row)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// missing rpc_address
+	if isValidPeer(h) {
+		t.Errorf("expected %+v to be an invalid peer", h)
+	}
+	if addr := h.ConnectAddressAndPort(); addr != "10.0.0.4:9042" {
+		t.Errorf("unexpected connect address: %s != '10.0.0.4:9042'", addr)
+	}
+	if h.Rack() != "rack" {
+		t.Errorf("unexpected rack %s != 'rack'", h.Rack())
+	}
+
+	row = map[string]interface{}{
+		"broadcast_address": "10.0.0.1",
+		"data_center":       "dc",
+		"rack":              "rack",
+		"host_id":           id,
+		"native_port":       9042,
+		"tokens":            []string{"0", "1"},
+	}
+	h, err = newHostInfoFromRow(s, nil, 0, row)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// missing rpc_address
+	if isValidPeer(h) {
+		t.Errorf("expected %+v to be an invalid peer", h)
+	}
+	if addr := h.ConnectAddressAndPort(); addr != "10.0.0.1:9042" {
+		t.Errorf("unexpected connect address: %s != '10.0.0.1:9042'", addr)
+	}
+
+	row = map[string]interface{}{
+		"rpc_address": "10.0.0.2",
+		"data_center": "dc",
+		"rack":        "rack",
+		"host_id":     id,
+		"tokens":      []string{"0", "1"},
+	}
+	s = &Session{
+		cfg: ClusterConfig{
+			AddressTranslator: AddressTranslatorFunc(func(addr net.IP, port int) (net.IP, int) {
+				if !addr.Equal(net.ParseIP("10.0.0.2")) {
+					t.Errorf("unexpected ip sent to translator: %s != '10.0.0.2'", addr.String())
+				}
+				if port != 9042 {
+					t.Errorf("unexpected port sent to translator: %d != 9042", port)
+				}
+				return net.ParseIP("10.0.0.5"), 9043
+			}),
+		},
+		logger: &defaultLogger{},
+	}
+	h, err = newHostInfoFromRow(s, nil, 9042, row)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !isValidPeer(h) {
+		t.Errorf("expected %+v to be a valid peer", h)
+	}
+	if addr := h.ConnectAddressAndPort(); addr != "10.0.0.5:9043" {
+		t.Errorf("unexpected connect address: %s != '10.0.0.5:9043'", addr)
+	}
+
+	// missing rack
+	row = map[string]interface{}{
+		"rpc_address": "10.0.0.2",
+		"data_center": "dc",
+		"host_id":     id,
+		"tokens":      []string{"0", "1"},
+	}
+	h, err = newHostInfoFromRow(nil, nil, 9042, row)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if isValidPeer(h) {
+		t.Errorf("expected %+v to be an invalid peer", h)
+	}
+	if h.Rack() != "" {
+		t.Errorf("unexpected rack %s != ''", h.Rack())
+	}
+
+	// inavlid ip
+	row = map[string]interface{}{
+		"rpc_address": net.ParseIP("0.0.0.0"),
+		"data_center": "dc",
+		"rack":        "rack",
+		"host_id":     id,
+		"tokens":      []string{"0", "1"},
+	}
+	_, err = newHostInfoFromRow(nil, nil, 9042, row)
+	if err == nil {
+		t.Error("expected invalid ip to error")
+	}
+}
+
 func TestIsValidPeer(t *testing.T) {
 	host := &HostInfo{
 		rpcAddress: net.ParseIP("0.0.0.0"),
@@ -99,6 +246,7 @@ func TestIsValidPeer(t *testing.T) {
 	}
 
 	host.rack = ""
+	host.missingRack = true
 	if isValidPeer(host) {
 		t.Errorf("expected %+v to NOT be a valid peer", host)
 	}
