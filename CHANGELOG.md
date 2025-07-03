@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Externally-defined type registration (CASSGO-43)
 - Add Query and Batch to ObservedQuery and ObservedBatch (CASSGO-73)
 - Add way to create HostInfo objects for testing purposes (CASSGO-71)
+- Add missing Context methods on Query and Batch (CASSGO-81)
 
 ### Changed
 
