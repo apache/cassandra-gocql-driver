@@ -124,6 +124,13 @@ func (v VectorType) Unmarshal(data []byte, value interface{}) error {
 	}
 	rv = rv.Elem()
 	t := rv.Type()
+	if t.Kind() == reflect.Interface {
+		if t.NumMethod() != 0 {
+			return unmarshalErrorf("can not unmarshal into non-empty interface %T", value)
+		}
+		t = reflect.TypeOf(v.Zero())
+	}
+
 	k := t.Kind()
 	switch k {
 	case reflect.Slice, reflect.Array:
@@ -143,6 +150,9 @@ func (v VectorType) Unmarshal(data []byte, value interface{}) error {
 			}
 		} else {
 			rv.Set(reflect.MakeSlice(t, v.Dimensions, v.Dimensions))
+			if rv.Kind() == reflect.Interface {
+				rv = rv.Elem()
+			}
 		}
 		elemSize := len(data) / v.Dimensions
 		for i := 0; i < v.Dimensions; i++ {
@@ -173,7 +183,7 @@ func (v VectorType) Unmarshal(data []byte, value interface{}) error {
 		}
 		return nil
 	}
-	return unmarshalErrorf("can not unmarshal %s into %T. Accepted types: slice, array.", v, value)
+	return unmarshalErrorf("can not unmarshal %s into %T. Accepted types: *slice, *array, *interface{}.", v, value)
 }
 
 // isVectorVariableLengthType determines if a type requires explicit length serialization within a vector.

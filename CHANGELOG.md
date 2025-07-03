@@ -64,6 +64,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fix deadlock in refresh debouncer stop (CASSGO-41)
 - Endless query execution fix (CASSGO-50)
 - Accept peers with empty rack (CASSGO-6)
+- Fix tinyint unmarshal regression (CASSGO-82)
+- Vector columns can't be used with SliceMap() (CASSGO-83)
 
 ## [1.7.0] - 2024-09-23
 

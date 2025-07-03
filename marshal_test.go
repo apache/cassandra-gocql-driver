@@ -1704,9 +1704,85 @@ func TestMarshalTime(t *testing.T) {
 			t.Errorf("marshalTest[%d]: %v", i, err)
 			continue
 		}
+		decoded, err := decBigInt(test.Data)
+		if err != nil {
+			t.Error(err)
+		}
 		if !bytes.Equal(data, test.Data) {
 			t.Errorf("marshalTest[%d]: expected %x (%v), got %x (%v) for time %s", i,
-				test.Data, decInt(test.Data), data, decInt(data), test.Value)
+				test.Data, decoded, data, decoded, test.Value)
+		}
+	}
+}
+
+func TestUnmarshalTimestamp(t *testing.T) {
+	var marshalTimestampTests = []struct {
+		Info  TypeInfo
+		Data  []byte
+		Value interface{}
+	}{
+		{
+			timestampTypeInfo{},
+			[]byte("\x00\x00\x01\x40\x77\x16\xe1\xb8"),
+			time.Date(2013, time.August, 13, 9, 52, 3, 0, time.UTC),
+		},
+		{
+			timestampTypeInfo{},
+			[]byte("\x00\x00\x01\x40\x77\x16\xe1\xb8"),
+			int64(1376387523000),
+		},
+		{
+			// 9223372036854 is the maximum time representable in ms since the epoch
+			// with int64 if using UnixNano to convert
+			timestampTypeInfo{},
+			[]byte("\x00\x00\x08\x63\x7b\xd0\x5a\xf6"),
+			time.Date(2262, time.April, 11, 23, 47, 16, 854775807, time.UTC),
+		},
+		{
+			// One nanosecond after causes overflow when using UnixNano
+			// Instead it should resolve to the same time in ms
+			timestampTypeInfo{},
+			[]byte("\x00\x00\x08\x63\x7b\xd0\x5a\xf6"),
+			time.Date(2262, time.April, 11, 23, 47, 16, 854775808, time.UTC),
+		},
+		{
+			// -9223372036855 is the minimum time representable in ms since the epoch
+			// with int64 if using UnixNano to convert
+			timestampTypeInfo{},
+			[]byte("\xff\xff\xf7\x9c\x84\x2f\xa5\x09"),
+			time.Date(1677, time.September, 21, 00, 12, 43, 145224192, time.UTC),
+		},
+		{
+			// One nanosecond earlier causes overflow when using UnixNano
+			// it should resolve to the same time in ms
+			timestampTypeInfo{},
+			[]byte("\xff\xff\xf7\x9c\x84\x2f\xa5\x09"),
+			time.Date(1677, time.September, 21, 00, 12, 43, 145224191, time.UTC),
+		},
+		{
+			// Store the zero time as a blank slice
+			timestampTypeInfo{},
+			[]byte{},
+			time.Time{},
+		},
+		{
+			// Store the zero time as a nil slice
+			timestampTypeInfo{},
+			[]byte(nil),
+			time.Time{},
+		},
+	}
+
+	for i, test := range marshalTimestampTests {
+		v := reflect.New(reflect.TypeOf(test.Value)).Interface()
+		err := Unmarshal(test.Info, test.Data, &v)
+		if err != nil {
+			t.Errorf("marshalTest[%d]: %v", i, err)
+			continue
+		}
+		if reflect.DeepEqual(v, test.Value) {
+			t.Errorf("marshalTest[%d]: expected %v, got %v", i,
+				test.Value, v)
 		}
 	}
 }
@@ -1761,6 +1837,12 @@ func TestMarshalTimestamp(t *testing.T) {
 			[]byte{},
 			time.Time{},
 		},
+		{
+			// Store the zero time as a nil slice
+			timestampTypeInfo{},
+			[]byte(nil),
+			time.Time{},
+		},
 	}
 
 	for i, test := range marshalTimestampTests {
@@ -1770,8 +1852,8 @@ func TestMarshalTimestamp(t *testing.T) {
 			continue
 		}
 		if !bytes.Equal(data, test.Data) {
-			t.Errorf("marshalTest[%d]: expected %x (%v), got %x (%v) for time %s", i,
-				test.Data, decBigInt(test.Data), data, decBigInt(data), test.Value)
+			t.Errorf("marshalTest[%d]: expected %x, got %x for time %s", i,
+				test.Data, data, test.Value)
 		}
 	}
 }
@@ -1897,23 +1979,22 @@ func TestMarshalTuple(t *testing.T) {
 		},
 	}
 
-	for _, tc := range testCases {
+	for i, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			data, err := Marshal(info, tc.value)
 			if err != nil {
-				t.Errorf("marshalTest: %v", err)
+				t.Errorf("marshalTest[%d]: %v", i, err)
 				return
 			}
-
 			if !bytes.Equal(data, tc.expected) {
-				t.Errorf("marshalTest: expected %x (%v), got %x (%v)",
-					tc.expected, decBigInt(tc.expected), data, decBigInt(data))
+				t.Errorf("marshalTest[%d]: expected %x, got %x",
+					i, tc.expected, data)
 				return
 			}
 
 			err = Unmarshal(info, data, tc.checkValue)
 			if err != nil {
-				t.Errorf("unmarshalTest: %v", err)
+				t.Errorf("marshalTest[%d]: %v", i, err)
 				return
 			}
 
@@ -2284,9 +2365,13 @@ func TestMarshalDate(t *testing.T) {
 			t.Errorf("marshalTest[%d]: %v", i, err)
 			continue
 		}
+		decoded, err := decInt(test.Data)
+		if err != nil {
+			t.Error(err)
+		}
 		if !bytes.Equal(data, test.Data) {
 			t.Errorf("marshalTest[%d]: expected %x (%v), got %x (%v) for time %s", i,
-				test.Data, decInt(test.Data), data, decInt(data), test.Value)
+				test.Data, decoded, data, decoded, test.Value)
 		}
 	}
 }
@@ -2323,9 +2408,13 @@ func TestLargeDate(t *testing.T) {
 			t.Errorf("largeDateTest[%d]: %v", i, err)
 			continue
 		}
+		decoded, err := decInt(test.Data)
+		if err != nil {
+			t.Error(err)
+		}
 		if !bytes.Equal(data, test.Data) {
 			t.Errorf("largeDateTest[%d]: expected %x (%v), got %x (%v) for time %s", i,
-				test.Data, decInt(test.Data), data, decInt(data), test.Value)
+				test.Data, decoded, data, decoded, test.Value)
 		}
 
 		var date time.Time
@@ -2379,8 +2468,8 @@ func TestMarshalDuration(t *testing.T) {
 			continue
 		}
 		if !bytes.Equal(data, test.Data) {
-			t.Errorf("marshalTest[%d]: expected %x (%v), got %x (%v) for time %s", i,
-				test.Data, decInt(test.Data), data, decInt(data), test.Value)
+			t.Errorf("marshalTest[%d]: expected %x, got %x for time %s", i,
+				test.Data, data, test.Value)
 		}
 	}
 }

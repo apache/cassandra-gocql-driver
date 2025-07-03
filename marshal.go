@@ -432,15 +432,19 @@ func (smallIntTypeInfo) Marshal(value interface{}) ([]byte, error) {
 
 // Unmarshal unmarshals the byte slice into the value.
 func (s smallIntTypeInfo) Unmarshal(data []byte, value interface{}) error {
+	decodedData, err := decShort(data)
+	if err != nil {
+		return unmarshalErrorf("%s", err.Error())
+	}
 	if iptr, ok := value.(*interface{}); ok && iptr != nil {
 		var v int16
-		if err := unmarshalIntlike(TypeSmallInt, int64(decShort(data)), data, &v); err != nil {
+		if err := unmarshalIntlike(TypeSmallInt, int64(decodedData), data, &v); err != nil {
 			return err
 		}
 		*iptr = v
 		return nil
 	}
-	return unmarshalIntlike(TypeSmallInt, int64(decShort(data)), data, value)
+	return unmarshalIntlike(TypeSmallInt, int64(decodedData), data, value)
 }
 
 type tinyIntTypeInfo struct{}
@@ -540,15 +544,19 @@ func (tinyIntTypeInfo) Marshal(value interface{}) ([]byte, error) {
 
 // Unmarshal unmarshals the byte slice into the value.
 func (t tinyIntTypeInfo) Unmarshal(data []byte, value interface{}) error {
+	decodedData, err := decTiny(data)
+	if err != nil {
+		return unmarshalErrorf("%s", err.Error())
+	}
 	if iptr, ok := value.(*interface{}); ok && iptr != nil {
 		var v int8
-		if err := unmarshalIntlike(TypeSmallInt, int64(decShort(data)), data, &v); err != nil {
+		if err := unmarshalIntlike(TypeTinyInt, int64(decodedData), data, &v); err != nil {
 			return err
 		}
 		*iptr = v
 		return nil
 	}
-	return unmarshalIntlike(TypeTinyInt, int64(decTiny(data)), data, value)
+	return unmarshalIntlike(TypeTinyInt, int64(decodedData), data, value)
 }
 
 type intTypeInfo struct{}
@@ -636,26 +644,34 @@ func (intTypeInfo) Marshal(value interface{}) ([]byte, error) {
 
 // Unmarshal unmarshals the byte slice into the value.
 func (i intTypeInfo) Unmarshal(data []byte, value interface{}) error {
+	decodedData, err := decInt(data)
+	if err != nil {
+		return unmarshalErrorf("%s", err.Error())
+	}
 	if iptr, ok := value.(*interface{}); ok && iptr != nil {
 		var v int
-		if err := unmarshalIntlike(TypeInt, int64(decInt(data)), data, &v); err != nil {
+		if err := unmarshalIntlike(TypeInt, int64(decodedData), data, &v); err != nil {
 			return err
 		}
 		*iptr = v
 		return nil
 	}
-	return unmarshalIntlike(TypeInt, int64(decInt(data)), data, value)
+	return unmarshalIntlike(TypeInt, int64(decodedData), data, value)
 }
 
 func encInt(x int32) []byte {
 	return []byte{byte(x >> 24), byte(x >> 16), byte(x >> 8), byte(x)}
 }
 
-func decInt(x []byte) int32 {
-	if len(x) != 4 {
-		return 0
+func decInt(x []byte) (int32, error) {
+	if x == nil || len(x) == 0 {
+		// len(x)==0 is to keep old behavior from 1.x (empty values can be in the DB and are different from NULL)
+		return 0, nil
 	}
-	return int32(x[0])<<24 | int32(x[1])<<16 | int32(x[2])<<8 | int32(x[3])
+	if len(x) != 4 {
+		return 0, fmt.Errorf("expected 4 bytes decoding int but got %v", len(x))
+	}
+	return int32(x[0])<<24 | int32(x[1])<<16 | int32(x[2])<<8 | int32(x[3]), nil
 }
 
 func encShort(x int16) []byte {
@@ -665,18 +681,26 @@ func encShort(x int16) []byte {
 	return p
 }
 
-func decShort(p []byte) int16 {
-	if len(p) != 2 {
-		return 0
+func decShort(p []byte) (int16, error) {
+	if p == nil || len(p) == 0 {
+		// len(p)==0 is to keep old behavior from 1.x (empty values can be in the DB and are different from NULL)
+		return 0, nil
 	}
-	return int16(p[0])<<8 | int16(p[1])
+	if len(p) != 2 {
+		return 0, fmt.Errorf("expected 2 bytes decoding short but got %v", len(p))
+	}
+	return int16(p[0])<<8 | int16(p[1]), nil
 }
 
-func decTiny(p []byte) int8 {
-	if len(p) != 1 {
-		return 0
+func decTiny(p []byte) (int8, error) {
+	if p == nil || len(p) == 0 {
+		// len(p)==0 is to keep old behavior from 1.x (empty values can be in the DB and are different from NULL)
+		return 0, nil
 	}
-	return int8(p[0])
+	if len(p) != 1 {
+		return 0, fmt.Errorf("expected 1 byte decoding tinyint but got %v", len(p))
+	}
+	return int8(p[0]), nil
 }
 
 type bigIntLikeTypeInfo struct {
@@ -774,15 +798,19 @@ func bytesToUint64(data []byte) (ret uint64) {
 
 // Unmarshal unmarshals the byte slice into the value.
 func (b bigIntLikeTypeInfo) Unmarshal(data []byte, value interface{}) error {
+	decodedData, err := decBigInt(data)
+	if err != nil {
+		return unmarshalErrorf("can not unmarshal bigint: %s", err.Error())
+	}
 	if iptr, ok := value.(*interface{}); ok && iptr != nil {
 		var v int64
-		if err := unmarshalIntlike(b.typ, decBigInt(data), data, &v); err != nil {
+		if err := unmarshalIntlike(b.typ, decodedData, data, &v); err != nil {
 			return err
 		}
 		*iptr = v
 		return nil
 	}
-	return unmarshalIntlike(b.typ, decBigInt(data), data, value)
+	return unmarshalIntlike(b.typ, decodedData, data, value)
 }
 
 type varintTypeInfo struct{}
@@ -1083,14 +1111,18 @@ func unmarshalIntlike(typ Type, int64Val int64, data []byte, value interface{}) 
 	return unmarshalErrorf("can not unmarshal int-like into %T. Accepted types: big.Int, int8, uint8, int16, uint16, int, uint, int32, uint32, int64, uint64, string, *interface{}.", value)
 }
 
-func decBigInt(data []byte) int64 {
+func decBigInt(data []byte) (int64, error) {
+	if data == nil || len(data) == 0 {
+		// len(data)==0 is to keep old behavior from 1.x (empty values can be in the DB and are different from NULL)
+		return 0, nil
+	}
 	if len(data) != 8 {
-		return 0
+		return 0, fmt.Errorf("expected 8 bytes, got %d", len(data))
 	}
 	return int64(data[0])<<56 | int64(data[1])<<48 |
 		int64(data[2])<<40 | int64(data[3])<<32 |
 		int64(data[4])<<24 | int64(data[5])<<16 |
-		int64(data[6])<<8 | int64(data[7])
+		int64(data[6])<<8 | int64(data[7]), nil
 }
 
 type booleanTypeInfo struct{}
@@ -1130,12 +1162,16 @@ func (b booleanTypeInfo) Marshal(value interface{}) ([]byte, error) {
 
 // Unmarshal unmarshals the byte slice into the value.
 func (b booleanTypeInfo) Unmarshal(data []byte, value interface{}) error {
+	decodedData, err := decBool(data)
+	if err != nil {
+		return unmarshalErrorf("can not unmarshal boolean: %s", err.Error())
+	}
 	switch v := value.(type) {
 	case *bool:
-		*v = decBool(data)
+		*v = decodedData
 		return nil
 	case *interface{}:
-		*v = decBool(data)
+		*v = decodedData
 		return nil
 	}
 	rv := reflect.ValueOf(value)
@@ -1145,7 +1181,7 @@ func (b booleanTypeInfo) Unmarshal(data []byte, value interface{}) error {
 	rv = rv.Elem()
 	switch rv.Type().Kind() {
 	case reflect.Bool:
-		rv.SetBool(decBool(data))
+		rv.SetBool(decodedData)
 		return nil
 	}
 	return unmarshalErrorf("can not unmarshal boolean into %T. Accepted types: *bool, *interface{}.", value)
@@ -1158,11 +1194,15 @@ func encBool(v bool) []byte {
 	return []byte{0}
 }
 
-func decBool(v []byte) bool {
-	if len(v) == 0 {
-		return false
+func decBool(v []byte) (bool, error) {
+	if v == nil || len(v) == 0 {
+		// len(v)==0 is to keep old behavior from 1.x (empty values can be in the DB and are different from NULL)
+		return false, nil
 	}
-	return v[0] != 0
+	if len(v) != 1 {
+		return false, fmt.Errorf("expected 1 byte, got %d", len(v))
+	}
+	return v[0] != 0, nil
 }
 
 type floatTypeInfo struct{}
@@ -1200,12 +1240,16 @@ func (floatTypeInfo) Marshal(value interface{}) ([]byte, error) {
 
 // Unmarshal unmarshals the byte slice into the value.
 func (floatTypeInfo) Unmarshal(data []byte, value interface{}) error {
+	decodedData, err := decInt(data)
+	if err != nil {
+		return err
+	}
 	switch v := value.(type) {
 	case *float32:
-		*v = math.Float32frombits(uint32(decInt(data)))
+		*v = math.Float32frombits(uint32(decodedData))
 		return nil
 	case *interface{}:
-		*v = math.Float32frombits(uint32(decInt(data)))
+		*v = math.Float32frombits(uint32(decodedData))
 		return nil
 	}
 	rv := reflect.ValueOf(value)
@@ -1215,7 +1259,7 @@ func (floatTypeInfo) Unmarshal(data []byte, value interface{}) error {
 	rv = rv.Elem()
 	switch rv.Type().Kind() {
 	case reflect.Float32:
-		rv.SetFloat(float64(math.Float32frombits(uint32(decInt(data)))))
+		rv.SetFloat(float64(math.Float32frombits(uint32(decodedData))))
 		return nil
 	}
 	return unmarshalErrorf("can not unmarshal float into %T. Accepted types: *float32, *interface{}, UnsetValue.", value)
@@ -1254,12 +1298,17 @@ func (doubleTypeInfo) Marshal(value interface{}) ([]byte, error) {
 
 // Unmarshal unmarshals the byte slice into the value.
 func (doubleTypeInfo) Unmarshal(data []byte, value interface{}) error {
+	decodedData, err := decBigInt(data)
+	if err != nil {
+		return unmarshalErrorf("can not unmarshal double: %s", err.Error())
+	}
+	decodedUint64 := uint64(decodedData)
 	switch v := value.(type) {
 	case *float64:
-		*v = math.Float64frombits(uint64(decBigInt(data)))
+		*v = math.Float64frombits(decodedUint64)
 		return nil
 	case *interface{}:
-		*v = math.Float64frombits(uint64(decBigInt(data)))
+		*v = math.Float64frombits(decodedUint64)
 		return nil
 	}
 	rv := reflect.ValueOf(value)
@@ -1269,7 +1318,7 @@ func (doubleTypeInfo) Unmarshal(data []byte, value interface{}) error {
 	rv = rv.Elem()
 	switch rv.Type().Kind() {
 	case reflect.Float64:
-		rv.SetFloat(math.Float64frombits(uint64(decBigInt(data))))
+		rv.SetFloat(math.Float64frombits(decodedUint64))
 		return nil
 	}
 	return unmarshalErrorf("can not unmarshal double into %T. Accepted types: *float64, *interface{}.", value)
@@ -1312,20 +1361,22 @@ func (decimalTypeInfo) Marshal(value interface{}) ([]byte, error) {
 
 // Unmarshal unmarshals the byte slice into the value.
 func (decimalTypeInfo) Unmarshal(data []byte, value interface{}) error {
+	if len(data) < 4 {
+		return unmarshalErrorf("inf.Dec needs at least 4 bytes, while value has only %d", len(data))
+	}
+
+	decodedData, err := decInt(data[0:4])
+	if err != nil {
+		return err
+	}
 	switch v := value.(type) {
 	case *inf.Dec:
-		if len(data) < 4 {
-			return unmarshalErrorf("inf.Dec needs at least 4 bytes, while value has only %d", len(data))
-		}
-		scale := decInt(data[0:4])
+		scale := decodedData
 		unscaled := decBigInt2C(data[4:], nil)
 		*v = *inf.NewDecBig(unscaled, inf.Scale(scale))
 		return nil
 	case *interface{}:
-		if len(data) < 4 {
-			return unmarshalErrorf("inf.Dec needs at least 4 bytes, while value has only %d", len(data))
-		}
-		scale := decInt(data[0:4])
+		scale := decodedData
 		unscaled := decBigInt2C(data[4:], nil)
 		*v = inf.NewDecBig(unscaled, inf.Scale(scale))
 		return nil
@@ -1414,16 +1465,20 @@ func (timestampTypeInfo) Marshal(value interface{}) ([]byte, error) {
 
 // Unmarshal unmarshals the byte slice into the value.
 func (timestampTypeInfo) Unmarshal(data []byte, value interface{}) error {
+	decodedData, err := decBigInt(data)
+	if err != nil {
+		return unmarshalErrorf("can not unmarshal timestamp: %s", err.Error())
+	}
 	switch v := value.(type) {
 	case *int64:
-		*v = decBigInt(data)
+		*v = decodedData
 		return nil
 	case *time.Time:
 		if len(data) == 0 {
 			*v = time.Time{}
 			return nil
 		}
-		x := decBigInt(data)
+		x := decodedData
 		sec := x / 1000
 		nsec := (x - sec*1000) * 1000000
 		*v = time.Unix(sec, nsec).In(time.UTC)
@@ -1433,7 +1488,7 @@ func (timestampTypeInfo) Unmarshal(data []byte, value interface{}) error {
 			*v = time.Time{}
 			return nil
 		}
-		x := decBigInt(data)
+		x := decodedData
 		sec := x / 1000
 		nsec := (x - sec*1000) * 1000000
 		*v = time.Unix(sec, nsec).In(time.UTC)
@@ -1447,7 +1502,7 @@ func (timestampTypeInfo) Unmarshal(data []byte, value interface{}) error {
 	rv = rv.Elem()
 	switch rv.Type().Kind() {
 	case reflect.Int64:
-		rv.SetInt(decBigInt(data))
+		rv.SetInt(decodedData)
 		return nil
 	}
 	return unmarshalErrorf("can not unmarshal timestamp into %T. Accepted types: *int64, *time.Time, *interface{}.", value)
@@ -1490,15 +1545,19 @@ func (timeTypeInfo) Marshal(value interface{}) ([]byte, error) {
 
 // Unmarshal unmarshals the byte slice into the value.
 func (timeTypeInfo) Unmarshal(data []byte, value interface{}) error {
+	decodedData, err := decBigInt(data)
+	if err != nil {
+		return unmarshalErrorf("can not unmarshal time: %s", err.Error())
+	}
 	switch v := value.(type) {
 	case *int64:
-		*v = decBigInt(data)
+		*v = decodedData
 		return nil
 	case *time.Duration:
-		*v = time.Duration(decBigInt(data))
+		*v = time.Duration(decodedData)
 		return nil
 	case *interface{}:
-		*v = time.Duration(decBigInt(data))
+		*v = time.Duration(decodedData)
 		return nil
 	}
 
@@ -1509,7 +1568,7 @@ func (timeTypeInfo) Unmarshal(data []byte, value interface{}) error {
 	rv = rv.Elem()
 	switch rv.Type().Kind() {
 	case reflect.Int64:
-		rv.SetInt(decBigInt(data))
+		rv.SetInt(decodedData)
 		return nil
 	}
 	return unmarshalErrorf("can not unmarshal time into %T. Accepted types: *int64, *time.Duration, *interface{}.", value)
@@ -2010,7 +2069,7 @@ func (c CollectionType) unmarshalListSet(data []byte, value interface{}) error {
 		}
 		return nil
 	}
-	return unmarshalErrorf("can not unmarshal collection into %T. Accepted types: *slice, *array.", value)
+	return unmarshalErrorf("can not unmarshal collection into %T. Accepted types: *slice, *array, *interface{}.", value)
 }
 
 type mapCQLType struct {
