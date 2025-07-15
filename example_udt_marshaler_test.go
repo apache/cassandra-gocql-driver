@@ -75,7 +75,7 @@ func ExampleUDTMarshaler() {
 		fieldB: 42,
 	}
 	err = session.Query("INSERT INTO example.my_udt_table (pk, value) VALUES (?, ?)",
-		1, value).WithContext(ctx).Exec()
+		1, value).ExecContext(ctx)
 	if err != nil {
 		log.Fatal(err)
 	}

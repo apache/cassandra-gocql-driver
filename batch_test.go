@@ -93,10 +93,10 @@ func TestBatch_WithNowInSeconds(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	b := session.NewBatch(LoggedBatch)
+	b := session.Batch(LoggedBatch)
 	b.WithNowInSeconds(0)
 	b.Query("INSERT INTO batch_now_in_seconds (id, val) VALUES (?, ?) USING TTL 20", 1, "val")
-	if err := session.ExecuteBatch(b); err != nil {
+	if err := b.Exec(); err != nil {
 		t.Fatal(err)
 	}
 
@@ -140,10 +140,10 @@ func TestBatch_SetKeyspace(t *testing.T) {
 	ids := []int{1, 2}
 	texts := []string{"val1", "val2"}
 
-	b := session.NewBatch(LoggedBatch).SetKeyspace("gocql_keyspace_override_test")
+	b := session.Batch(LoggedBatch).SetKeyspace("gocql_keyspace_override_test")
 	b.Query("INSERT INTO batch_keyspace(id, value) VALUES (?, ?)", ids[0], texts[0])
 	b.Query("INSERT INTO batch_keyspace(id, value) VALUES (?, ?)", ids[1], texts[1])
-	err = session.ExecuteBatch(b)
+	err = b.Exec()
 	if err != nil {
 		t.Fatal(err)
 	}

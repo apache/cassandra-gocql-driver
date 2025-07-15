@@ -72,8 +72,9 @@ func ExampleUDTUnmarshaler() {
 
 	ctx := context.Background()
 
+	// Read the UDT value back
 	var value MyUDTUnmarshaler
-	err = session.Query("SELECT value FROM example.my_udt_table WHERE pk = 1").WithContext(ctx).Scan(&value)
+	err = session.Query("SELECT value FROM example.my_udt_table WHERE pk = 1").ScanContext(ctx, &value)
 	if err != nil {
 		log.Fatal(err)
 	}

@@ -95,20 +95,20 @@ func Example_marshalerUnmarshaler() {
 		patch: 3,
 	}
 	err = session.Query("INSERT INTO example.my_marshaler_table (pk, value) VALUES (?, ?)",
-		1, value).WithContext(ctx).Exec()
+		1, value).ExecContext(ctx)
 	if err != nil {
 		log.Fatal(err)
 	}
 	var stringValue string
-	err = session.Query("SELECT value FROM example.my_marshaler_table WHERE pk = 1").WithContext(ctx).
-		Scan(&stringValue)
+	err = session.Query("SELECT value FROM example.my_marshaler_table WHERE pk = 1").
+		ScanContext(ctx, &stringValue)
 	if err != nil {
 		log.Fatal(err)
 	}
 	fmt.Println(stringValue)
 	var unmarshaledValue MyMarshaler
-	err = session.Query("SELECT value FROM example.my_marshaler_table WHERE pk = 1").WithContext(ctx).
-		Scan(&unmarshaledValue)
+	err = session.Query("SELECT value FROM example.my_marshaler_table WHERE pk = 1").
+		ScanContext(ctx, &unmarshaledValue)
 	if err != nil {
 		log.Fatal(err)
 	}

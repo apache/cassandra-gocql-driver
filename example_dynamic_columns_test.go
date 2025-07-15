@@ -56,7 +56,7 @@ func Example_dynamicColumns() {
 	defer session.Close()
 
 	printQuery := func(ctx context.Context, session *gocql.Session, stmt string, values ...interface{}) error {
-		iter := session.Query(stmt, values...).WithContext(ctx).Iter()
+		iter := session.Query(stmt, values...).IterContext(ctx)
 		fmt.Println(stmt)
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 1, ' ',
 			0)

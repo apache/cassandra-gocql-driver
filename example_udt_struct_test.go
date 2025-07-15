@@ -61,14 +61,14 @@ func Example_userDefinedTypesStruct() {
 		FieldB: 42,
 	}
 	err = session.Query("INSERT INTO example.my_udt_table (pk, value) VALUES (?, ?)",
-		1, value).WithContext(ctx).Exec()
+		1, value).ExecContext(ctx)
 	if err != nil {
 		log.Fatal(err)
 	}
 
+	// Read the UDT value back
 	var readValue MyUDT
-
-	err = session.Query("SELECT value FROM example.my_udt_table WHERE pk = 1").WithContext(ctx).Scan(&readValue)
+	err = session.Query("SELECT value FROM example.my_udt_table WHERE pk = 1").ScanContext(ctx, &readValue)
 	if err != nil {
 		log.Fatal(err)
 	}

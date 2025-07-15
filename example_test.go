@@ -52,7 +52,7 @@ func Example() {
 
 	// insert a tweet
 	if err := session.Query(`INSERT INTO tweet (timeline, id, text) VALUES (?, ?, ?)`,
-		"me", gocql.TimeUUID(), "hello world").WithContext(ctx).Exec(); err != nil {
+		"me", gocql.TimeUUID(), "hello world").ExecContext(ctx); err != nil {
 		log.Fatal(err)
 	}
 
@@ -63,7 +63,7 @@ func Example() {
 	 * the value 'me'. The secondary index that we created earlier will be
 	 * used for optimizing the search */
 	if err := session.Query(`SELECT id, text FROM tweet WHERE timeline = ? LIMIT 1`,
-		"me").WithContext(ctx).Consistency(gocql.One).Scan(&id, &text); err != nil {
+		"me").Consistency(gocql.One).ScanContext(ctx, &id, &text); err != nil {
 		log.Fatal(err)
 	}
 	fmt.Println("Tweet:", id, text)
@@ -71,7 +71,7 @@ func Example() {
 
 	// list all tweets
 	scanner := session.Query(`SELECT id, text FROM tweet WHERE timeline = ?`,
-		"me").WithContext(ctx).Iter().Scanner()
+		"me").IterContext(ctx).Scanner()
 	for scanner.Next() {
 		err = scanner.Scan(&id, &text)
 		if err != nil {

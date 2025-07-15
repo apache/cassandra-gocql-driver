@@ -3899,15 +3899,15 @@ func TestStmtCacheUsesOverriddenKeyspace(t *testing.T) {
 
 	// Inserting data via Batch to ensure that batches
 	// properly accounts for keyspace overriding
-	b1 := session.NewBatch(LoggedBatch)
+	b1 := session.Batch(LoggedBatch)
 	b1.Query(insertQuery, 1)
-	err = session.ExecuteBatch(b1)
+	err = b1.Exec()
 	require.NoError(t, err)
 
-	b2 := session.NewBatch(LoggedBatch)
+	b2 := session.Batch(LoggedBatch)
 	b2.SetKeyspace("gocql_test_stmt_cache")
 	b2.Query(insertQuery, 2)
-	err = session.ExecuteBatch(b2)
+	err = b2.Exec()
 	require.NoError(t, err)
 
 	var scannedID int

@@ -32,8 +32,8 @@ import (
 	gocql "github.com/apache/cassandra-gocql-driver/v2"
 )
 
-// ExampleSession_MapExecuteBatchCAS demonstrates how to execute a batch lightweight transaction.
-func ExampleSession_MapExecuteBatchCAS() {
+// ExampleBatch_MapExecCAS demonstrates how to execute a batch lightweight transaction.
+func ExampleBatch_MapExecCAS() {
 	/* The example assumes the following CQL was used to setup the keyspace:
 	create keyspace example with replication = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };
 	create table example.my_lwt_batch_table(pk text, ck text, version int, value text, PRIMARY KEY(pk, ck));
@@ -50,13 +50,13 @@ func ExampleSession_MapExecuteBatchCAS() {
 	ctx := context.Background()
 
 	err = session.Query("INSERT INTO example.my_lwt_batch_table (pk, ck, version, value) VALUES (?, ?, ?, ?)",
-		"pk1", "ck1", 1, "a").WithContext(ctx).Exec()
+		"pk1", "ck1", 1, "a").ExecContext(ctx)
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	err = session.Query("INSERT INTO example.my_lwt_batch_table (pk, ck, version, value) VALUES (?, ?, ?, ?)",
-		"pk1", "ck2", 1, "A").WithContext(ctx).Exec()
+		"pk1", "ck2", 1, "A").ExecContext(ctx)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -72,7 +72,7 @@ func ExampleSession_MapExecuteBatchCAS() {
 			Args: []interface{}{"B", "pk1", "ck2", ck2Version},
 		})
 		m := make(map[string]interface{})
-		applied, iter, err := b.WithContext(ctx).MapExecCAS(m)
+		applied, iter, err := b.MapExecCASContext(ctx, m)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -91,7 +91,7 @@ func ExampleSession_MapExecuteBatchCAS() {
 
 	printState := func() {
 		scanner := session.Query("SELECT ck, value FROM example.my_lwt_batch_table WHERE pk = ?", "pk1").
-			WithContext(ctx).Iter().Scanner()
+			IterContext(ctx).Scanner()
 		for scanner.Next() {
 			var ck, value string
 			err = scanner.Scan(&ck, &value)
