@@ -5,9 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [2.0.0] - Unreleased
+## [2.0.0]
 
 ### Removed
+
+#### 2.0.0-rc1
 
 - Drop support for old CQL protocol versions: 1 and 2 (CASSGO-75)
 - Cleanup of deprecated elements (CASSGO-12)
@@ -16,6 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - HostInfo.SetHostID is no longer exported (CASSGO-71)
 
 ### Added
+
+#### 2.0.0-rc1
 
 - Support vector type (CASSGO-11)
 - Allow SERIAL and LOCAL_SERIAL on SELECT statements (CASSGO-26)
@@ -28,6 +32,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add missing Context methods on Query and Batch (CASSGO-81)
 
 ### Changed
+
+#### 2.0.0
+
+- Remove release date from changelog and add 2.0.0-rc1 (CASSGO-86)
+
+#### 2.0.0-rc1
 
 - Moved the Snappy compressor into its own separate package (CASSGO-33)
 - Move lz4 compressor to lz4 package within the gocql module (CASSGO-32)
@@ -54,6 +64,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Change module name to github.com/apache/cassandra-gocql-driver/v2 (CASSGO-70)
 
 ### Fixed
+
+#### 2.0.0-rc1
 
 - Cassandra version unmarshal fix (CASSGO-49)
 - Retry policy now takes into account query idempotency (CASSGO-27)
