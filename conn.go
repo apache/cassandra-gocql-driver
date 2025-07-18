@@ -199,8 +199,6 @@ type Conn struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
-	timeouts int64
-
 	logger StructuredLogger
 }
 
@@ -750,12 +748,6 @@ func (c *Conn) releaseStream(call *callReq) {
 				Host: c.host,
 			})
 		})
-	}
-}
-
-func (c *Conn) handleTimeout() {
-	if atomic.AddInt64(&c.timeouts, 1) > 0 {
-		c.closeWithError(ErrTooManyTimeouts)
 	}
 }
 
@@ -1339,7 +1331,6 @@ func (c *Conn) execInternal(ctx context.Context, req frameBuilder, tracer Tracer
 		close(call.timeout)
 		c.logger.Debug("Request timed out on connection.",
 			newLogFieldString("host_id", c.host.HostID()), newLogFieldIp("addr", c.host.ConnectAddress()))
-		c.handleTimeout()
 		return nil, ErrTimeoutNoResponse
 	case <-ctxDone:
 		c.logger.Debug("Request failed because context elapsed out on connection.",
@@ -2004,9 +1995,13 @@ func (c *Conn) awaitSchemaAgreement(ctx context.Context) (err error) {
 }
 
 var (
-	ErrQueryArgLength    = errors.New("gocql: query argument length mismatch")
 	ErrTimeoutNoResponse = errors.New("gocql: no response received from cassandra within timeout period")
-	ErrTooManyTimeouts   = errors.New("gocql: too many query timeouts on the connection")
 	ErrConnectionClosed  = errors.New("gocql: connection closed waiting for response")
 	ErrNoStreams         = errors.New("gocql: no streams available on connection")
+
+	// Deprecated: TimeoutLimit was removed so this is never returned by the driver now
+	ErrTooManyTimeouts = errors.New("gocql: too many query timeouts on the connection")
+
+	// Deprecated: Never returned by the driver
+	ErrQueryArgLength = errors.New("gocql: query argument length mismatch")
 )
