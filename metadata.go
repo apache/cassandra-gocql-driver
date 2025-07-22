@@ -135,14 +135,28 @@ type MaterializedViewMetadata struct {
 	baseTableName string
 }
 
+// UserTypeMetadata represents metadata information about a Cassandra User Defined Type (UDT).
+// This Go struct holds descriptive information about a UDT that exists in the Cassandra schema,
+// including the type name, keyspace, field names, and field types. It is not the UDT itself,
+// but rather a representation of the UDT's schema structure for use within the gocql driver.
+//
+// A Cassandra User Defined Type is a custom data type that allows you to group related fields
+// together. This metadata struct provides the necessary information to marshal and unmarshal
+// values to and from the corresponding UDT in Cassandra.
+//
+// For type information used in marshaling/unmarshaling operations, see UDTTypeInfo.
+// Actual UDT values are typically represented as map[string]interface{}, Go structs with
+// cql tags, or types implementing UDTMarshaler/UDTUnmarshaler interfaces.
 type UserTypeMetadata struct {
-	Keyspace   string
-	Name       string
-	FieldNames []string
-	FieldTypes []TypeInfo
+	Keyspace   string     // The keyspace where the UDT is defined
+	Name       string     // The name of the User Defined Type
+	FieldNames []string   // Ordered list of field names in the UDT
+	FieldTypes []TypeInfo // Corresponding type information for each field
 }
 
-// the ordering of the column with regard to its comparator
+// ColumnOrder represents the ordering of a column with regard to its comparator.
+// It indicates whether the column is sorted in ascending or descending order.
+// Available values: ASC, DESC.
 type ColumnOrder bool
 
 const (
@@ -150,12 +164,17 @@ const (
 	DESC ColumnOrder = true
 )
 
+// ColumnIndexMetadata represents metadata for a column index in Cassandra.
+// It contains the index name, type, and configuration options.
 type ColumnIndexMetadata struct {
 	Name    string
 	Type    string
 	Options map[string]interface{}
 }
 
+// ColumnKind represents the kind of column in a Cassandra table.
+// It indicates whether the column is part of the partition key, clustering key, or a regular column.
+// Available values: ColumnUnkownKind, ColumnPartitionKey, ColumnClusteringKey, ColumnRegular, ColumnCompact, ColumnStatic.
 type ColumnKind int
 
 const (

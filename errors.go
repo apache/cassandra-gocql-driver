@@ -111,6 +111,7 @@ const (
 	ErrCodeUnprepared = 0x2500
 )
 
+// RequestError represents errors returned by Cassandra server.
 type RequestError interface {
 	Code() int
 	Message() string
@@ -140,6 +141,8 @@ func (e errorFrame) String() string {
 	return fmt.Sprintf("[error code=%x message=%q]", e.code, e.message)
 }
 
+// RequestErrUnavailable represents an unavailable error returned by Cassandra.
+// This error occurs when there are not enough nodes available to fulfill the request.
 type RequestErrUnavailable struct {
 	errorFrame
 	Consistency Consistency
@@ -151,8 +154,14 @@ func (e *RequestErrUnavailable) String() string {
 	return fmt.Sprintf("[request_error_unavailable consistency=%s required=%d alive=%d]", e.Consistency, e.Required, e.Alive)
 }
 
+// ErrorMap maps node IP addresses to their respective error codes for read/write failure responses.
+// Each entry represents a node that failed during the operation, with the key being the node's
+// IP address as a string and the value being the specific error code returned by that node.
 type ErrorMap map[string]uint16
 
+// RequestErrWriteTimeout represents a write timeout error returned by Cassandra.
+// This error occurs when a write request times out after the coordinator
+// has successfully written to some replicas but not enough to satisfy the required consistency level.
 type RequestErrWriteTimeout struct {
 	errorFrame
 	Consistency Consistency
@@ -161,6 +170,8 @@ type RequestErrWriteTimeout struct {
 	WriteType   string
 }
 
+// RequestErrWriteFailure represents a write failure error returned by Cassandra.
+// This error occurs when a write request fails on one or more replicas.
 type RequestErrWriteFailure struct {
 	errorFrame
 	Consistency Consistency
@@ -171,10 +182,15 @@ type RequestErrWriteFailure struct {
 	ErrorMap    ErrorMap
 }
 
+// RequestErrCDCWriteFailure represents a CDC write failure error returned by Cassandra.
+// This error occurs when a write to the Change Data Capture log fails.
 type RequestErrCDCWriteFailure struct {
 	errorFrame
 }
 
+// RequestErrReadTimeout represents a read timeout error returned by Cassandra.
+// This error occurs when a read request times out after the coordinator
+// has received some responses but not enough to satisfy the required consistency level.
 type RequestErrReadTimeout struct {
 	errorFrame
 	Consistency Consistency
@@ -183,17 +199,23 @@ type RequestErrReadTimeout struct {
 	DataPresent byte
 }
 
+// RequestErrAlreadyExists represents an "already exists" error returned by Cassandra.
+// This error occurs when attempting to create a keyspace or table that already exists.
 type RequestErrAlreadyExists struct {
 	errorFrame
 	Keyspace string
 	Table    string
 }
 
+// RequestErrUnprepared represents an "unprepared" error returned by Cassandra.
+// This error occurs when a prepared statement is no longer available on the server.
 type RequestErrUnprepared struct {
 	errorFrame
 	StatementId []byte
 }
 
+// RequestErrReadFailure represents a read failure error returned by Cassandra.
+// This error occurs when a read request fails on one or more replicas.
 type RequestErrReadFailure struct {
 	errorFrame
 	Consistency Consistency
@@ -204,6 +226,8 @@ type RequestErrReadFailure struct {
 	ErrorMap    ErrorMap
 }
 
+// RequestErrFunctionFailure represents a function failure error returned by Cassandra.
+// This error occurs when a user-defined function fails during execution.
 type RequestErrFunctionFailure struct {
 	errorFrame
 	Keyspace string

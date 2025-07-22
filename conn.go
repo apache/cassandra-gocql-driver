@@ -68,6 +68,7 @@ func JoinHostPort(addr string, port int) string {
 	return addr
 }
 
+// Authenticator handles authentication challenges and responses during connection setup.
 type Authenticator interface {
 	Challenge(req []byte) (resp []byte, auth Authenticator, err error)
 	Success(data []byte) error
@@ -132,6 +133,7 @@ type SslOptions struct {
 	EnableHostVerification bool
 }
 
+// ConnConfig contains configuration options for establishing connections to Cassandra nodes.
 type ConnConfig struct {
 	ProtoVersion   int
 	CQLVersion     string
@@ -150,6 +152,7 @@ type ConnConfig struct {
 	disableCoalesce bool
 }
 
+// ConnErrorHandler handles connection errors and state changes for connections.
 type ConnErrorHandler interface {
 	HandleError(conn *Conn, err error, closed bool)
 }

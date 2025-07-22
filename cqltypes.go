@@ -24,6 +24,7 @@
 
 package gocql
 
+// Duration represents a Cassandra duration type, which consists of months, days, and nanoseconds components.
 type Duration struct {
 	Months      int32
 	Days        int32

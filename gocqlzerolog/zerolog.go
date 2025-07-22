@@ -24,9 +24,14 @@ import (
 	gocql "github.com/apache/cassandra-gocql-driver/v2"
 )
 
+// DefaultName is the default logger name used when creating a new zerolog logger.
 const DefaultName = "gocql"
+
+// DefaultNameField is the default field name used to identify the logger in log entries.
 const DefaultNameField = "logger"
 
+// Logger represents a structured logger that integrates zerolog logging with gocql.
+// It extends gocql.StructuredLogger with access to the underlying zerolog logger.
 type Logger interface {
 	gocql.StructuredLogger
 	ZerologLogger() zerolog.Logger

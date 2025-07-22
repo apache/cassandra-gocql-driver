@@ -36,8 +36,12 @@ const (
 	mainPackage = "github.com/apache/cassandra-gocql-driver/v2"
 )
 
+// driverName contains the name of the gocql driver.
+// It is automatically populated during package initialization from build information.
 var driverName string
 
+// driverVersion contains the version of the gocql driver.
+// It is automatically populated during package initialization from build information.
 var driverVersion string
 
 func init() {

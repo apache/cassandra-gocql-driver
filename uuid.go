@@ -40,6 +40,9 @@ import (
 	"time"
 )
 
+// UUID represents a 16-byte Universally Unique Identifier as defined by RFC 4122.
+// It provides methods for generating, parsing, and manipulating UUIDs, with support
+// for both random (version 4) and time-based (version 1) UUIDs.
 type UUID [16]byte
 
 var hardwareAddr []byte

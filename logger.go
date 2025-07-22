@@ -183,6 +183,9 @@ func writeLogMsg(buf *bytes.Buffer, prefix string, msg string, fields []LogField
 	writeFields(buf, fields)
 }
 
+// LogLevel represents the level of logging to be performed.
+// Higher values indicate more verbose logging.
+// Available levels: LogLevelDebug, LogLevelInfo, LogLevelWarn, LogLevelError, LogLevelNone.
 type LogLevel int
 
 const (
@@ -212,6 +215,8 @@ func (recv LogLevel) String() string {
 	}
 }
 
+// LogField represents a structured log field with a name and value.
+// It is used to provide structured logging information.
 type LogField struct {
 	Name  string
 	Value LogFieldValue
@@ -277,7 +282,9 @@ type LogFieldValue struct {
 	any interface{}
 }
 
-// LogFieldValueType is the type of a LogFieldValue.
+// LogFieldValueType represents the type of a LogFieldValue.
+// It is used to determine how to interpret the value stored in LogFieldValue.
+// Available types: LogFieldTypeAny, LogFieldTypeBool, LogFieldTypeInt64, LogFieldTypeString.
 type LogFieldValueType int
 
 // It's important that LogFieldTypeAny is 0 so that a zero Value represents nil.

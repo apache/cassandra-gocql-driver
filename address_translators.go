@@ -36,6 +36,7 @@ type AddressTranslator interface {
 	Translate(addr net.IP, port int) (net.IP, int)
 }
 
+// AddressTranslatorFunc is a function type that implements AddressTranslator.
 type AddressTranslatorFunc func(addr net.IP, port int) (net.IP, int)
 
 func (fn AddressTranslatorFunc) Translate(addr net.IP, port int) (net.IP, int) {

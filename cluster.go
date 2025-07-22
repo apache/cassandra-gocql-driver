@@ -288,6 +288,11 @@ type ClusterConfig struct {
 	disableControlConn bool
 }
 
+// Dialer is the interface that wraps the DialContext method for establishing network connections to Cassandra nodes.
+//
+// This interface allows customization of how gocql establishes TCP connections, which is useful for:
+// connecting through proxies or load balancers, custom TLS configurations, custom timeouts/keep-alive
+// settings, service mesh integration, testing with mocked connections, and corporate network routing.
 type Dialer interface {
 	DialContext(ctx context.Context, network, addr string) (net.Conn, error)
 }
@@ -357,7 +362,10 @@ func (cfg *ClusterConfig) filterHost(host *HostInfo) bool {
 }
 
 var (
-	ErrNoHosts              = errors.New("no hosts provided")
+	// ErrNoHosts is returned when no hosts are provided to the cluster configuration.
+	ErrNoHosts = errors.New("no hosts provided")
+	// ErrNoConnectionsStarted is returned when no connections could be established during session creation.
 	ErrNoConnectionsStarted = errors.New("no connections were made when creating the session")
-	ErrHostQueryFailed      = errors.New("unable to populate Hosts")
+	// Deprecated: Never used or returned by the driver.
+	ErrHostQueryFailed = errors.New("unable to populate Hosts")
 )

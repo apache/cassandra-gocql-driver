@@ -60,6 +60,10 @@ func (v vectorCQLType) TypeInfoFromString(proto int, name string) (TypeInfo, err
 	}, nil
 }
 
+// VectorType represents a Cassandra vector type, which stores an array of values
+// with a fixed dimension. It's commonly used for machine learning applications and
+// similarity searches. The SubType defines the element type and Dimensions specifies
+// the fixed size of the vector.
 type VectorType struct {
 	SubType    TypeInfo
 	Dimensions int

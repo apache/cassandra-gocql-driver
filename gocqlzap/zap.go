@@ -24,8 +24,11 @@ import (
 	gocql "github.com/apache/cassandra-gocql-driver/v2"
 )
 
+// DefaultName is the default logger name used when creating a new zap logger.
 const DefaultName = "gocql"
 
+// Logger represents a structured logger that integrates zap logging with gocql.
+// It extends gocql.StructuredLogger with access to the underlying zap logger.
 type Logger interface {
 	gocql.StructuredLogger
 	ZapLogger() *zap.Logger

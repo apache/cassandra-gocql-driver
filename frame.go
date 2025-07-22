@@ -196,6 +196,9 @@ const (
 	flagBetaProtocol  byte = 0x10
 )
 
+// Consistency represents the consistency level for read and write operations.
+// Available levels: Any, One, Two, Three, Quorum, All, LocalQuorum, EachQuorum,
+// Serial, LocalSerial, LocalOne.
 type Consistency uint16
 
 // SerialConsistency is deprecated. Use Consistency instead.

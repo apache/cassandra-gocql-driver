@@ -427,6 +427,48 @@ func (s *Session) reconnectDownedHosts(intv time.Duration) {
 // Further details of the query may be tweaked using the resulting query
 // value before the query is executed. Query is automatically prepared
 // if it has not previously been executed.
+//
+// Supported Go to CQL type conversions for query parameters are as follows:
+//
+//	Go type (value)             | CQL type                    | Note
+//	string, []byte              | varchar, ascii, blob, text  |
+//	bool                        | boolean                     |
+//	integer types               | tinyint, smallint, int      |
+//	string                      | tinyint, smallint, int      | formatted as base 10 number
+//	integer types               | bigint, counter             |
+//	big.Int                     | bigint, counter             | according to cassandra bigint specification the big.Int value limited to int64 size(an eight-byte two's complement integer.)
+//	string                      | bigint, counter             | formatted as base 10 number
+//	float32                     | float                       |
+//	float64                     | double                      |
+//	inf.Dec                     | decimal                     |
+//	int64                       | time                        | nanoseconds since start of day
+//	time.Duration               | time                        | duration since start of day
+//	int64                       | timestamp                   | milliseconds since Unix epoch
+//	time.Time                   | timestamp                   |
+//	slice, array                | list, set                   |
+//	map[X]struct{}              | list, set                   |
+//	map[X]Y                     | map                         |
+//	gocql.UUID                  | uuid, timeuuid              |
+//	[16]byte                    | uuid, timeuuid              | raw UUID bytes
+//	[]byte                      | uuid, timeuuid              | raw UUID bytes, length must be 16 bytes
+//	string                      | uuid, timeuuid              | hex representation, see ParseUUID
+//	integer types               | varint                      |
+//	big.Int                     | varint                      |
+//	string                      | varint                      | value of number in decimal notation
+//	net.IP                      | inet                        |
+//	string                      | inet                        | IPv4 or IPv6 address string
+//	slice, array                | tuple                       |
+//	struct                      | tuple                       | fields are marshaled in order of declaration
+//	gocql.UDTMarshaler          | user-defined type           | MarshalUDT is called
+//	map[string]interface{}      | user-defined type           |
+//	struct                      | user-defined type           | struct fields' cql tags are used for column names
+//	int64                       | date                        | milliseconds since Unix epoch to start of day (in UTC)
+//	time.Time                   | date                        | start of day (in UTC)
+//	string                      | date                        | parsed using "2006-01-02" format
+//	int64                       | duration                    | duration in nanoseconds
+//	time.Duration               | duration                    |
+//	gocql.Duration              | duration                    |
+//	string                      | duration                    | parsed with time.ParseDuration
 func (s *Session) Query(stmt string, values ...interface{}) *Query {
 	qry := &Query{}
 	qry.session = s
@@ -437,6 +479,8 @@ func (s *Session) Query(stmt string, values ...interface{}) *Query {
 	return qry
 }
 
+// QueryInfo represents metadata information about a prepared query.
+// It contains the query ID, argument information, result information, and primary key columns.
 type QueryInfo struct {
 	Id          []byte
 	Args        []ColumnInfo
@@ -450,6 +494,8 @@ type QueryInfo struct {
 // values will be marshalled as part of the query execution.
 // During execution, the meta data of the prepared query will be routed to the
 // binding callback, which is responsible for producing the query argument values.
+//
+// For supported Go to CQL type conversions for query parameters, see Session.Query documentation.
 func (s *Session) Bind(stmt string, b func(q *QueryInfo) ([]interface{}, error)) *Query {
 	qry := &Query{}
 	qry.session = s
@@ -1206,6 +1252,8 @@ func (q *Query) Idempotent(value bool) *Query {
 
 // Bind sets query arguments of query. This can also be used to rebind new query arguments
 // to an existing query instance.
+//
+// For supported Go to CQL type conversions for query parameters, see Session.Query documentation.
 func (q *Query) Bind(v ...interface{}) *Query {
 	q.values = v
 	return q
@@ -1291,6 +1339,9 @@ func (q *Query) iterInternal(c *Conn, ctx context.Context) *Iter {
 // MapScan executes the query, copies the columns of the first selected
 // row into the map pointed at by m and discards the rest. If no rows
 // were selected, ErrNotFound is returned.
+//
+// Columns are automatically converted to Go types based on their CQL type.
+// See Iter.SliceMap for the complete CQL to Go type mapping table and examples.
 func (q *Query) MapScan(m map[string]interface{}) error {
 	return q.MapScanContext(q.context, m)
 }
@@ -1310,6 +1361,8 @@ func (q *Query) MapScanContext(ctx context.Context, m map[string]interface{}) er
 // Scan executes the query, copies the columns of the first selected
 // row into the values pointed at by dest and discards the rest. If no rows
 // were selected, ErrNotFound is returned.
+//
+// For supported CQL to Go type conversions, see Iter.Scan documentation.
 func (q *Query) Scan(dest ...interface{}) error {
 	return q.ScanContext(q.context, dest...)
 }
@@ -1317,6 +1370,8 @@ func (q *Query) Scan(dest ...interface{}) error {
 // ScanContext executes the query with the provided context, copies the columns of the first selected
 // row into the values pointed at by dest and discards the rest. If no rows
 // were selected, ErrNotFound is returned.
+//
+// For supported CQL to Go type conversions, see Iter.Scan documentation.
 func (q *Query) ScanContext(ctx context.Context, dest ...interface{}) error {
 	iter := q.IterContext(ctx)
 	if err := iter.checkErrAndNotFound(); err != nil {
@@ -1334,6 +1389,8 @@ func (q *Query) ScanContext(ctx context.Context, dest ...interface{}) error {
 // As for INSERT .. IF NOT EXISTS, previous values will be returned as if
 // SELECT * FROM. So using ScanCAS with INSERT is inherently prone to
 // column mismatching. Use MapScanCAS to capture them safely.
+//
+// For supported CQL to Go type conversions, see Iter.Scan documentation.
 func (q *Query) ScanCAS(dest ...interface{}) (applied bool, err error) {
 	return q.ScanCASContext(q.context, dest...)
 }
@@ -1346,6 +1403,8 @@ func (q *Query) ScanCAS(dest ...interface{}) (applied bool, err error) {
 // As for INSERT .. IF NOT EXISTS, previous values will be returned as if
 // SELECT * FROM. So using ScanCAS with INSERT is inherently prone to
 // column mismatching. Use MapScanCAS to capture them safely.
+//
+// For supported CQL to Go type conversions, see Iter.Scan documentation.
 func (q *Query) ScanCASContext(ctx context.Context, dest ...interface{}) (applied bool, err error) {
 	q.disableSkipMetadata = true
 	iter := q.IterContext(ctx)
@@ -1521,6 +1580,8 @@ type Scanner interface {
 	// when unmarshalling a column into the value in dest an error is returned and the row is invalidated
 	// until the next call to Next.
 	// Next must be called before calling Scan, if it is not an error is returned.
+	//
+	// For supported CQL to Go type conversions, see Iter.Scan documentation.
 	Scan(...interface{}) error
 
 	// Err returns the if there was one during iteration that resulted in iteration being unable to complete.
@@ -1645,6 +1706,68 @@ func (iter *Iter) readColumn() ([]byte, error) {
 // Scan returns true if the row was successfully unmarshaled or false if the
 // end of the result set was reached or if an error occurred. Close should
 // be called afterwards to retrieve any potential errors.
+//
+// Supported CQL to Go type conversions are as follows, other type combinations may be added in the future:
+//
+//	CQL Type                     | Go Type (dest)              | Note
+//	ascii, text, varchar         | *string                     |
+//	ascii, text, varchar         | *[]byte                     | non-nil buffer is reused
+//	bigint, counter              | *int64                      |
+//	bigint, counter              | *int, *int32, *int16, *int8 | with range checking
+//	bigint, counter              | *uint64, *uint32, *uint16   | with range checking
+//	bigint, counter              | *big.Int                    |
+//	bigint, counter              | *string                     | formatted as base 10 number
+//	blob                         | *[]byte                     | non-nil buffer is reused
+//	boolean                      | *bool                       |
+//	date                         | *time.Time                  | start of day in UTC
+//	date                         | *string                     | formatted as "2006-01-02"
+//	decimal                      | *inf.Dec                    |
+//	double                       | *float64                    |
+//	duration                     | *gocql.Duration             |
+//	duration                     | *time.Duration              | with range checking
+//	float                        | *float32                    |
+//	inet                         | *net.IP                     |
+//	inet                         | *string                     | IPv4 or IPv6 address string
+//	int                          | *int                        |
+//	int                          | *int32, *int16, *int8       | with range checking
+//	int                          | *uint32, *uint16, *uint8    | with range checking
+//	list<T>, set<T>              | *[]T                        |
+//	list<T>, set<T>              | *[N]T                       | array with compatible size
+//	map<K,V>                     | *map[K]V                    |
+//	smallint                     | *int16                      |
+//	smallint                     | *int, *int32, *int8         | with range checking
+//	smallint                     | *uint16, *uint8             | with range checking
+//	time                         | *time.Duration              | nanoseconds since start of day
+//	time                         | *int64                      | nanoseconds since start of day
+//	timestamp                    | *time.Time                  |
+//	timestamp                    | *int64                      | milliseconds since Unix epoch
+//	timeuuid                     | *gocql.UUID                 |
+//	timeuuid                     | *time.Time                  | timestamp of the UUID
+//	timeuuid                     | *string                     | hex representation
+//	timeuuid                     | *[]byte                     | 16-byte raw UUID
+//	tinyint                      | *int8                       |
+//	tinyint                      | *int, *int32, *int16        | with range checking
+//	tinyint                      | *uint8                      | with range checking
+//	tuple<T1,T2,...>             | *[]interface{}              |
+//	tuple<T1,T2,...>             | *[N]interface{}             | array with compatible size
+//	tuple<T1,T2,...>             | *struct                     | fields unmarshaled in declaration order
+//	user-defined types           | gocql.UDTUnmarshaler        | UnmarshalUDT is called
+//	user-defined types           | *map[string]interface{}     |
+//	user-defined types           | *struct                     | cql tag or field name matching
+//	uuid                         | *gocql.UUID                 |
+//	uuid                         | *string                     | hex representation
+//	uuid                         | *[]byte                     | 16-byte raw UUID
+//	varint                       | *big.Int                    |
+//	varint                       | *int64, *int32, *int16, *int8 | with range checking
+//	varint                       | *string                     | formatted as base 10 number
+//	vector<T,N>                  | *[]T                        |
+//	vector<T,N>                  | *[N]T                       | array with exact size match
+//
+// Important Notes:
+//   - NULL values are unmarshaled as zero values of the destination type
+//   - Use **Type (pointer to pointer) to distinguish NULL from zero values
+//   - Range checking prevents overflow when converting between numeric types
+//   - For SliceMap/MapScan type mappings, see Iter.SliceMap documentation
 func (iter *Iter) Scan(dest ...interface{}) bool {
 	if iter.err != nil {
 		return false
@@ -1894,7 +2017,9 @@ func (b *Batch) SpeculativeExecutionPolicy(sp SpeculativeExecutionPolicy) *Batch
 	return b
 }
 
-// Query adds the query to the batch operation
+// Query adds the query to the batch operation.
+//
+// For supported Go to CQL type conversions for query parameters, see Session.Query documentation.
 func (b *Batch) Query(stmt string, args ...interface{}) *Batch {
 	b.Entries = append(b.Entries, BatchEntry{Stmt: stmt, Args: args})
 	return b
@@ -1903,6 +2028,8 @@ func (b *Batch) Query(stmt string, args ...interface{}) *Batch {
 // Bind adds the query to the batch operation and correlates it with a binding callback
 // that will be invoked when the batch is executed. The binding callback allows the application
 // to define which query argument values will be marshalled as part of the batch execution.
+//
+// For supported Go to CQL type conversions for query parameters, see Session.Query documentation.
 func (b *Batch) Bind(stmt string, bind func(q *QueryInfo) ([]interface{}, error)) {
 	b.Entries = append(b.Entries, BatchEntry{Stmt: stmt, binding: bind})
 }
@@ -2025,6 +2152,8 @@ func (b *Batch) WithNowInSeconds(now int) *Batch {
 	return b
 }
 
+// BatchType represents the type of batch.
+// Available types: LoggedBatch, UnloggedBatch, CounterBatch.
 type BatchType byte
 
 const (
@@ -2033,6 +2162,8 @@ const (
 	CounterBatch  BatchType = 2
 )
 
+// BatchEntry represents a single statement within a batch operation.
+// It contains the statement, arguments, and execution metadata.
 type BatchEntry struct {
 	Stmt       string
 	Args       []interface{}
@@ -2040,6 +2171,8 @@ type BatchEntry struct {
 	binding    func(q *QueryInfo) ([]interface{}, error)
 }
 
+// ColumnInfo represents metadata about a column in a query result.
+// It contains the keyspace, table, column name, and type information.
 type ColumnInfo struct {
 	Keyspace string
 	Table    string
@@ -2263,6 +2396,7 @@ type ConnectObserver interface {
 	ObserveConnect(ObservedConnect)
 }
 
+// Deprecated: Unused
 type Error struct {
 	Code    int
 	Message string
@@ -2285,12 +2419,14 @@ var (
 	ErrNoMetadata           = errors.New("no metadata available")
 )
 
+// ErrProtocol represents a protocol-level error.
 type ErrProtocol struct{ error }
 
+// NewErrProtocol creates a new protocol error with the specified format and arguments.
 func NewErrProtocol(format string, args ...interface{}) error {
 	return ErrProtocol{fmt.Errorf(format, args...)}
 }
 
 // BatchSizeMaximum is the maximum number of statements a batch operation can have.
-// This limit is set by cassandra and could change in the future.
+// This limit is set by Cassandra and could change in the future.
 const BatchSizeMaximum = 65535

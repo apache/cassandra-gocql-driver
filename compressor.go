@@ -24,6 +24,9 @@
 
 package gocql
 
+// Compressor defines the interface for frame compression and decompression.
+// Implementations provide compression algorithms like Snappy and LZ4 that can be used
+// to reduce network traffic between the driver and Cassandra nodes.
 type Compressor interface {
 	Name() string
 

@@ -47,6 +47,7 @@ var (
 )
 
 var (
+	// Deprecated: Never used or returned by the driver.
 	ErrorUDTUnavailable = errors.New("UDT are not available on protocols less than 3, please update config")
 )
 
@@ -69,49 +70,7 @@ type Unmarshaler interface {
 // If value implements Marshaler, its MarshalCQL method is called to marshal the data.
 // If value is a pointer, the pointed-to value is marshaled.
 //
-// Supported conversions are as follows, other type combinations may be added in the future:
-//
-//	CQL type                    | Go type (value)    | Note
-//	varchar, ascii, blob, text  | string, []byte     |
-//	boolean                     | bool               |
-//	tinyint, smallint, int      | integer types      |
-//	tinyint, smallint, int      | string             | formatted as base 10 number
-//	bigint, counter             | integer types      |
-//	bigint, counter             | big.Int            | according to cassandra bigint specification the big.Int value limited to int64 size(an eight-byte two's complement integer.)
-//	bigint, counter             | string             | formatted as base 10 number
-//	float                       | float32            |
-//	double                      | float64            |
-//	decimal                     | inf.Dec            |
-//	time                        | int64              | nanoseconds since start of day
-//	time                        | time.Duration      | duration since start of day
-//	timestamp                   | int64              | milliseconds since Unix epoch
-//	timestamp                   | time.Time          |
-//	list, set                   | slice, array       |
-//	list, set                   | map[X]struct{}     |
-//	map                         | map[X]Y            |
-//	uuid, timeuuid              | gocql.UUID         |
-//	uuid, timeuuid              | [16]byte           | raw UUID bytes
-//	uuid, timeuuid              | []byte             | raw UUID bytes, length must be 16 bytes
-//	uuid, timeuuid              | string             | hex representation, see ParseUUID
-//	varint                      | integer types      |
-//	varint                      | big.Int            |
-//	varint                      | string             | value of number in decimal notation
-//	inet                        | net.IP             |
-//	inet                        | string             | IPv4 or IPv6 address string
-//	tuple                       | slice, array       |
-//	tuple                       | struct             | fields are marshaled in order of declaration
-//	user-defined type           | gocql.UDTMarshaler | MarshalUDT is called
-//	user-defined type           | map[string]interface{} |
-//	user-defined type           | struct             | struct fields' cql tags are used for column names
-//	date                        | int64              | milliseconds since Unix epoch to start of day (in UTC)
-//	date                        | time.Time          | start of day (in UTC)
-//	date                        | string             | parsed using "2006-01-02" format
-//	duration                    | int64              | duration in nanoseconds
-//	duration                    | time.Duration      |
-//	duration                    | gocql.Duration     |
-//	duration                    | string             | parsed with time.ParseDuration
-//
-// The marshal/unmarshal error provides a list of supported types when an unsupported type is attempted.
+// For supported Go to CQL type conversions, see Session.Query documentation.
 func Marshal(info TypeInfo, value interface{}) ([]byte, error) {
 	if valueRef := reflect.ValueOf(value); valueRef.Kind() == reflect.Ptr {
 		if valueRef.IsNil() {
@@ -139,38 +98,7 @@ func Marshal(info TypeInfo, value interface{}) ([]byte, error) {
 // If value is a pointer to pointer, it is set to nil if the CQL value is
 // null. Otherwise, nulls are unmarshalled as zero value.
 //
-// Supported conversions are as follows, other type combinations may be added in the future:
-//
-//	CQL type                                | Go type (value)         | Note
-//	varchar, ascii, blob, text              | *string                 |
-//	varchar, ascii, blob, text              | *[]byte                 | non-nil buffer is reused
-//	bool                                    | *bool                   |
-//	tinyint, smallint, int, bigint, counter | *integer types          |
-//	tinyint, smallint, int, bigint, counter | *big.Int                |
-//	tinyint, smallint, int, bigint, counter | *string                 | formatted as base 10 number
-//	float                                   | *float32                |
-//	double                                  | *float64                |
-//	decimal                                 | *inf.Dec                |
-//	time                                    | *int64                  | nanoseconds since start of day
-//	time                                    | *time.Duration          |
-//	timestamp                               | *int64                  | milliseconds since Unix epoch
-//	timestamp                               | *time.Time              |
-//	list, set                               | *slice, *array          |
-//	map                                     | *map[X]Y                |
-//	uuid, timeuuid                          | *string                 | see UUID.String
-//	uuid, timeuuid                          | *[]byte                 | raw UUID bytes
-//	uuid, timeuuid                          | *gocql.UUID             |
-//	timeuuid                                | *time.Time              | timestamp of the UUID
-//	inet                                    | *net.IP                 |
-//	inet                                    | *string                 | IPv4 or IPv6 address string
-//	tuple                                   | *slice, *array          |
-//	tuple                                   | *struct                 | struct fields are set in order of declaration
-//	user-defined types                      | gocql.UDTUnmarshaler    | UnmarshalUDT is called
-//	user-defined types                      | *map[string]interface{} |
-//	user-defined types                      | *struct                 | cql tag is used to determine field name
-//	date                                    | *time.Time              | time of beginning of the day (in UTC)
-//	date                                    | *string                 | formatted with 2006-01-02 format
-//	duration                                | *gocql.Duration         |
+// For supported CQL to Go type conversions, see Iter.Scan documentation.
 func Unmarshal(info TypeInfo, data []byte, value interface{}) error {
 	if v, ok := value.(Unmarshaler); ok {
 		return v.UnmarshalCQL(info, data)
@@ -1866,6 +1794,8 @@ func (t listSetCQLType) TypeInfoFromString(proto int, name string) (TypeInfo, er
 	}, nil
 }
 
+// CollectionType represents type information for Cassandra collection types (list, set, map).
+// It provides marshaling and unmarshaling for collection types.
 type CollectionType struct {
 	typ  Type
 	Key  TypeInfo // only used for TypeMap
@@ -2542,7 +2472,8 @@ func (t tupleCQLType) TypeInfoFromString(proto int, name string) (TypeInfo, erro
 	}, nil
 }
 
-// TODO: move to types.go
+// TupleTypeInfo represents type information for Cassandra tuple types.
+// It contains information about the element types in the tuple.
 type TupleTypeInfo struct {
 	Elems []TypeInfo
 }
@@ -2882,11 +2813,15 @@ func (u udtCQLType) TypeInfoFromString(proto int, name string) (TypeInfo, error)
 	return ti, nil
 }
 
+// UDTField represents a field in a User Defined Type.
+// It contains the field name and its type information.
 type UDTField struct {
 	Name string
 	Type TypeInfo
 }
 
+// UDTTypeInfo represents type information for Cassandra User Defined Types (UDT).
+// It contains the keyspace, type name, and field definitions.
 type UDTTypeInfo struct {
 	Keyspace string
 	Name     string
@@ -3102,6 +3037,7 @@ func (udt UDTTypeInfo) Unmarshal(data []byte, value interface{}) error {
 	return nil
 }
 
+// MarshalError represents an error that occurred during marshaling.
 type MarshalError string
 
 func (m MarshalError) Error() string {
@@ -3112,6 +3048,7 @@ func marshalErrorf(format string, args ...interface{}) MarshalError {
 	return MarshalError(fmt.Sprintf(format, args...))
 }
 
+// UnmarshalError represents an error that occurred during unmarshaling.
 type UnmarshalError string
 
 func (m UnmarshalError) Error() string {

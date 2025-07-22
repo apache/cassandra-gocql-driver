@@ -622,6 +622,10 @@ var GlobalTypes = func() *RegisteredTypes {
 }()
 
 // Type is the identifier of a Cassandra internal datatype.
+// Available types include: TypeCustom, TypeAscii, TypeBigInt, TypeBlob, TypeBoolean, TypeCounter,
+// TypeDecimal, TypeDouble, TypeFloat, TypeInt, TypeText, TypeTimestamp, TypeUUID, TypeVarchar,
+// TypeVarint, TypeTimeUUID, TypeInet, TypeDate, TypeTime, TypeSmallInt, TypeTinyInt, TypeDuration,
+// TypeList, TypeMap, TypeSet, TypeUDT, TypeTuple.
 type Type int
 
 const (
