@@ -36,6 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add missing Context methods on Query and Batch (CASSGO-81)
 - Update example and test code for 2.0 release (CASSGO-80)
 - Add API docs for 2.0 release (CASSGO-78)
+- Update documentation for 2.0 (readme, upgrade guide, pkg.go.dev) (CASSGO-79)
 
 ### Changed
 

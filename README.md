@@ -35,6 +35,8 @@ Installation
 
     go get github.com/apache/cassandra-gocql-driver/v2
 
+**Note:** Version `2.0.0` introduces breaking changes. See the [upgrade guide](https://github.com/apache/cassandra-gocql-driver/blob/trunk/UPGRADE_GUIDE.md) for upgrade instructions from `1.x`.
+
 
 Features
 --------
@@ -53,18 +55,29 @@ Features
   * Each connection can execute up to n concurrent queries (whereby n is the limit set by the protocol version the client chooses to use)
   * Optional automatic discovery of nodes
   * Policy based connection pool with token aware and round-robin policy implementations
+  * Support for host-targeted queries with Query.SetHostID()
 * Support for password authentication
 * Iteration over paged results with configurable page size
 * Support for TLS/SSL
-* Optional frame compression (using snappy)
+* Optional frame compression (Snappy and LZ4 available in separate packages)
+* Structured logging support with dedicated packages for popular loggers (Zap, Zerolog)
 * Automatic query preparation
 * Support for query tracing
-* Support for Cassandra 2.1+ [binary protocol version 3](https://github.com/apache/cassandra/blob/trunk/doc/native_protocol_v3.spec)
-  * Support for up to 32768 streams
-  * Support for tuple types
-  * Support for client side timestamps by default
-  * Support for UDTs via a custom marshaller or struct tags
-* Support for Cassandra 3.0+ [binary protocol version 4](https://github.com/apache/cassandra/blob/trunk/doc/native_protocol_v4.spec)
+* Support for Cassandra 2.1+ through 5.0+ with native protocol versions 3, 4, and 5:
+  * **Protocol 3** (Cassandra 2.1+):
+    * Support for up to 32768 streams
+    * Support for tuple types
+    * Support for client side timestamps by default
+    * Support for UDTs via a custom marshaller or struct tags
+  * **Protocol 4** (Cassandra 3.0+):
+    * All Protocol 3 features
+    * Enhanced performance and efficiency
+  * **Protocol 5** (Cassandra 4.0+):
+    * All previous protocol features
+    * Support for per-query keyspace override (Query.SetKeyspace(), Batch.SetKeyspace())
+    * Support for per-query custom timestamps (Query.WithNowInSeconds(), Batch.WithNowInSeconds())
+  * **Cassandra 5.0+ specific**:
+    * Support for vector types for vector search capabilities
 * An API to access the schema metadata of a given keyspace
 
 Performance
