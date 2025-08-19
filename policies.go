@@ -49,7 +49,6 @@ func (c *cowHostList) String() string {
 }
 
 func (c *cowHostList) get() []*HostInfo {
-	// TODO(zariel): should we replace this with []*HostInfo?
 	l, ok := c.list.Load().(*[]*HostInfo)
 	if !ok {
 		return nil
