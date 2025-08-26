@@ -65,6 +65,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+#### 2.0.0
+
+- Do not set beta protocol flag when using v5 (CASSGO-88)
+
 #### 2.0.0-rc1
 
 - Cassandra version unmarshal fix (CASSGO-49)

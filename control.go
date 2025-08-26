@@ -204,13 +204,34 @@ func shuffleHosts(hosts []*HostInfo) []*HostInfo {
 
 // this is going to be version dependant and a nightmare to maintain :(
 var protocolSupportRe = regexp.MustCompile(`the lowest supported version is \d+ and the greatest is (\d+)$`)
+var betaProtocolRe = regexp.MustCompile(`Beta version of the protocol used \(.*\), but USE_BETA flag is unset`)
 
 func parseProtocolFromError(err error) int {
+	errStr := err.Error()
+
+	var errProtocol ErrProtocol
+	if errors.As(err, &errProtocol) {
+		err = errProtocol.error
+	}
+
 	// I really wish this had the actual info in the error frame...
-	matches := protocolSupportRe.FindAllStringSubmatch(err.Error(), -1)
+	matches := betaProtocolRe.FindAllStringSubmatch(errStr, -1)
+	if len(matches) == 1 {
+		var protoErr *protocolError
+		if errors.As(err, &protoErr) {
+			version := protoErr.frame.Header().version.version()
+			if version > 0 {
+				return int(version - 1)
+			}
+		}
+		return 0
+	}
+
+	matches = protocolSupportRe.FindAllStringSubmatch(errStr, -1)
 	if len(matches) != 1 || len(matches[0]) != 2 {
-		if verr, ok := err.(*protocolError); ok {
-			return int(verr.frame.Header().version.version())
+		var protoErr *protocolError
+		if errors.As(err, &protoErr) {
+			return int(protoErr.frame.Header().version.version())
 		}
 		return 0
 	}
@@ -223,11 +244,13 @@ func parseProtocolFromError(err error) int {
 	return max
 }
 
+const highestProtocolVersionSupported = 5
+
 func (c *controlConn) discoverProtocol(hosts []*HostInfo) (int, error) {
 	hosts = shuffleHosts(hosts)
 
 	connCfg := *c.session.connCfg
-	connCfg.ProtoVersion = 5 // TODO: define maxProtocol
+	connCfg.ProtoVersion = highestProtocolVersionSupported
 
 	handler := connErrorHandlerFn(func(c *Conn, err error, closed bool) {
 		// we should never get here, but if we do it means we connected to a

@@ -1317,7 +1317,21 @@ func (c *Conn) execInternal(ctx context.Context, req frameBuilder, tracer Tracer
 		defer c.releaseStream(call)
 
 		if v := resp.framer.header.version.version(); v != c.version {
-			return nil, NewErrProtocol("unexpected protocol version in response: got %d expected %d", v, c.version)
+			errProtocol := NewErrProtocol("unexpected protocol version in response: got %d expected %d", v, c.version)
+			responseFrame, err := resp.framer.parseFrame()
+			if err != nil {
+				c.logger.Warning("Framer error while attempting to parse potential protocol error.",
+					newLogFieldError("err", err))
+				return nil, errProtocol
+			}
+			//goland:noinspection GoTypeAssertionOnErrors
+			errFrame, isErrFrame := responseFrame.(errorFrame)
+			if !isErrFrame || errFrame.Code() != ErrCodeProtocol {
+				return nil, errProtocol
+			}
+			return nil, NewErrProtocol("%w", &protocolError{
+				errFrame,
+			})
 		}
 
 		return resp.framer, nil

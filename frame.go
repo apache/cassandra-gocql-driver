@@ -393,9 +393,6 @@ func newFramer(compressor Compressor, version byte, r *RegisteredTypes) *framer 
 	if compressor != nil {
 		flags |= flagCompress
 	}
-	if version == protoVersion5 {
-		flags |= flagBetaProtocol
-	}
 
 	version &= protoVersionMask
 
