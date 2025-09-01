@@ -38,7 +38,7 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/gocql/gocql/internal/lru"
+	"github.com/maypok86/otter/v2"
 )
 
 // Session is the interface used by users to interact with the database.
@@ -54,7 +54,7 @@ type Session struct {
 	cons                Consistency
 	pageSize            int
 	prefetch            float64
-	routingKeyInfoCache routingKeyInfoLRU
+	routingKeyInfoCache *otter.Cache[string, *routingKeyInfo]
 	schemaDescriber     *schemaDescriber
 	trace               Tracer
 	queryObserver       QueryObserver
@@ -64,7 +64,7 @@ type Session struct {
 	streamObserver      StreamObserver
 	hostSource          *ringDescriber
 	ringRefresher       *refreshDebouncer
-	stmtsLRU            *preparedLRU
+	stmtsLRU            *otter.Cache[string, *preparedStatment]
 
 	connCfg *ConnConfig
 
@@ -152,7 +152,7 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 		prefetch:        0.25,
 		cfg:             cfg,
 		pageSize:        cfg.PageSize,
-		stmtsLRU:        &preparedLRU{lru: lru.New(cfg.MaxPreparedStmts)},
+		stmtsLRU:        NewPreparedLRU(cfg.MaxPreparedStmts),
 		connectObserver: cfg.ConnectObserver,
 		ctx:             ctx,
 		cancel:          cancel,
@@ -164,7 +164,7 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 	s.nodeEvents = newEventDebouncer("NodeEvents", s.handleNodeEvent, s.logger)
 	s.schemaEvents = newEventDebouncer("SchemaEvents", s.handleSchemaEvent, s.logger)
 
-	s.routingKeyInfoCache.lru = lru.New(cfg.MaxRoutingKeyInfo)
+	s.routingKeyInfoCache = NewRoutingKeyInfoLRU(cfg.MaxRoutingKeyInfo)
 
 	s.hostSource = &ringDescriber{session: s}
 	s.ringRefresher = newRefreshDebouncer(ringRefreshDebounceTime, func() error { return refreshRing(s.hostSource) })
@@ -593,138 +593,95 @@ func (s *Session) getConn() *Conn {
 
 // returns routing key indexes and type info
 func (s *Session) routingKeyInfo(ctx context.Context, stmt string) (*routingKeyInfo, error) {
-	s.routingKeyInfoCache.mu.Lock()
-
-	entry, cached := s.routingKeyInfoCache.lru.Get(stmt)
-	if cached {
-		// done accessing the cache
-		s.routingKeyInfoCache.mu.Unlock()
-		// the entry is an inflight struct similar to that used by
-		// Conn to prepare statements
-		inflight := entry.(*inflightCachedEntry)
-
-		// wait for any inflight work
-		inflight.wg.Wait()
-
-		if inflight.err != nil {
-			return nil, inflight.err
+	loader := otter.LoaderFunc[string, *routingKeyInfo](func(ctx context.Context, key string) (*routingKeyInfo, error) {
+		conn := s.getConn()
+		if conn == nil {
+			return nil, errors.New("gocql: unable to fetch prepared info: no connection available")
 		}
 
-		key, _ := inflight.value.(*routingKeyInfo)
-
-		return key, nil
-	}
-
-	// create a new inflight entry while the data is created
-	inflight := new(inflightCachedEntry)
-	inflight.wg.Add(1)
-	defer inflight.wg.Done()
-	s.routingKeyInfoCache.lru.Add(stmt, inflight)
-	s.routingKeyInfoCache.mu.Unlock()
-
-	var (
-		info         *preparedStatment
-		partitionKey []*ColumnMetadata
-	)
-
-	conn := s.getConn()
-	if conn == nil {
-		// TODO: better error?
-		inflight.err = errors.New("gocql: unable to fetch prepared info: no connection available")
-		return nil, inflight.err
-	}
-
-	// get the query info for the statement
-	info, inflight.err = conn.prepareStatement(ctx, stmt, nil)
-	if inflight.err != nil {
-		// don't cache this error
-		s.routingKeyInfoCache.Remove(stmt)
-		return nil, inflight.err
-	}
-
-	// TODO: it would be nice to mark hosts here but as we are not using the policies
-	// to fetch hosts we cant
-
-	if info.request.colCount == 0 {
-		// no arguments, no routing key, and no error
-		return nil, nil
-	}
-
-	table := info.request.table
-	keyspace := info.request.keyspace
-
-	if len(info.request.pkeyColumns) > 0 {
-		// proto v4 dont need to calculate primary key columns
-		types := make([]TypeInfo, len(info.request.pkeyColumns))
-		for i, col := range info.request.pkeyColumns {
-			types[i] = info.request.columns[col].TypeInfo
+		// get the query info for the statement
+		info, err := conn.prepareStatement(ctx, key, nil)
+		if err != nil {
+			return nil, err
 		}
 
+		// TODO: it would be nice to mark hosts here but as we are not using the policies
+		// to fetch hosts we cant
+
+		if info.request.colCount == 0 {
+			// no arguments, no routing key, and no error
+			return nil, nil
+		}
+
+		table := info.request.table
+		keyspace := info.request.keyspace
+
+		if len(info.request.pkeyColumns) > 0 {
+			// proto v4 dont need to calculate primary key columns
+			types := make([]TypeInfo, len(info.request.pkeyColumns))
+			for i, col := range info.request.pkeyColumns {
+				types[i] = info.request.columns[col].TypeInfo
+			}
+
+			routingKeyInfo := &routingKeyInfo{
+				indexes:  info.request.pkeyColumns,
+				types:    types,
+				keyspace: keyspace,
+				table:    table,
+			}
+
+			return routingKeyInfo, nil
+		}
+
+		var keyspaceMetadata *KeyspaceMetadata
+		keyspaceMetadata, err = s.KeyspaceMetadata(info.request.columns[0].Keyspace)
+		if err != nil {
+			return nil, err
+		}
+
+		tableMetadata, found := keyspaceMetadata.Tables[table]
+		if !found {
+			// unlikely that the statement could be prepared and the metadata for
+			// the table couldn't be found, but this may indicate either a bug
+			// in the metadata code, or that the table was just dropped.
+			return nil, ErrNoMetadata
+		}
+
+		partitionKey := tableMetadata.PartitionKey
+
+		size := len(partitionKey)
 		routingKeyInfo := &routingKeyInfo{
-			indexes:  info.request.pkeyColumns,
-			types:    types,
+			indexes:  make([]int, size),
+			types:    make([]TypeInfo, size),
 			keyspace: keyspace,
 			table:    table,
 		}
 
-		inflight.value = routingKeyInfo
-		return routingKeyInfo, nil
-	}
+		for keyIndex, keyColumn := range partitionKey {
+			// set an indicator for checking if the mapping is missing
+			routingKeyInfo.indexes[keyIndex] = -1
 
-	var keyspaceMetadata *KeyspaceMetadata
-	keyspaceMetadata, inflight.err = s.KeyspaceMetadata(info.request.columns[0].Keyspace)
-	if inflight.err != nil {
-		// don't cache this error
-		s.routingKeyInfoCache.Remove(stmt)
-		return nil, inflight.err
-	}
+			// find the column in the query info
+			for argIndex, boundColumn := range info.request.columns {
+				if keyColumn.Name == boundColumn.Name {
+					// there may be many such bound columns, pick the first
+					routingKeyInfo.indexes[keyIndex] = argIndex
+					routingKeyInfo.types[keyIndex] = boundColumn.TypeInfo
+					break
+				}
+			}
 
-	tableMetadata, found := keyspaceMetadata.Tables[table]
-	if !found {
-		// unlikely that the statement could be prepared and the metadata for
-		// the table couldn't be found, but this may indicate either a bug
-		// in the metadata code, or that the table was just dropped.
-		inflight.err = ErrNoMetadata
-		// don't cache this error
-		s.routingKeyInfoCache.Remove(stmt)
-		return nil, inflight.err
-	}
-
-	partitionKey = tableMetadata.PartitionKey
-
-	size := len(partitionKey)
-	routingKeyInfo := &routingKeyInfo{
-		indexes:  make([]int, size),
-		types:    make([]TypeInfo, size),
-		keyspace: keyspace,
-		table:    table,
-	}
-
-	for keyIndex, keyColumn := range partitionKey {
-		// set an indicator for checking if the mapping is missing
-		routingKeyInfo.indexes[keyIndex] = -1
-
-		// find the column in the query info
-		for argIndex, boundColumn := range info.request.columns {
-			if keyColumn.Name == boundColumn.Name {
-				// there may be many such bound columns, pick the first
-				routingKeyInfo.indexes[keyIndex] = argIndex
-				routingKeyInfo.types[keyIndex] = boundColumn.TypeInfo
-				break
+			if routingKeyInfo.indexes[keyIndex] == -1 {
+				// missing a routing key column mapping
+				// no routing key, and no error
+				return nil, nil
 			}
 		}
 
-		if routingKeyInfo.indexes[keyIndex] == -1 {
-			// missing a routing key column mapping
-			// no routing key, and no error
-			return nil, nil
-		}
-	}
+		return routingKeyInfo, nil
+	})
 
-	// cache this result
-	inflight.value = routingKeyInfo
-
-	return routingKeyInfo, nil
+	return s.routingKeyInfoCache.Get(ctx, stmt, loader)
 }
 
 func (b *Batch) execute(ctx context.Context, conn *Conn) *Iter {
@@ -2068,10 +2025,11 @@ func (c ColumnInfo) String() string {
 	return fmt.Sprintf("[column keyspace=%s table=%s name=%s type=%v]", c.Keyspace, c.Table, c.Name, c.TypeInfo)
 }
 
-// routing key indexes LRU cache
-type routingKeyInfoLRU struct {
-	lru *lru.Cache
-	mu  sync.Mutex
+func NewRoutingKeyInfoLRU(size int) *otter.Cache[string, *routingKeyInfo] {
+	return otter.Must(&otter.Options[string, *routingKeyInfo]{
+		InitialCapacity: size,
+		MaximumSize:     size,
+	})
 }
 
 type routingKeyInfo struct {
@@ -2083,29 +2041,6 @@ type routingKeyInfo struct {
 
 func (r *routingKeyInfo) String() string {
 	return fmt.Sprintf("routing key index=%v types=%v", r.indexes, r.types)
-}
-
-func (r *routingKeyInfoLRU) Remove(key string) {
-	r.mu.Lock()
-	r.lru.Remove(key)
-	r.mu.Unlock()
-}
-
-// Max adjusts the maximum size of the cache and cleans up the oldest records if
-// the new max is lower than the previous value. Not concurrency safe.
-func (r *routingKeyInfoLRU) Max(max int) {
-	r.mu.Lock()
-	for r.lru.Len() > max {
-		r.lru.RemoveOldest()
-	}
-	r.lru.MaxEntries = max
-	r.mu.Unlock()
-}
-
-type inflightCachedEntry struct {
-	wg    sync.WaitGroup
-	err   error
-	value interface{}
 }
 
 // Tracer is the interface implemented by query tracers. Tracers have the

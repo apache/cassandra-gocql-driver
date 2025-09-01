@@ -39,8 +39,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/gocql/gocql/internal/lru"
 	"github.com/gocql/gocql/internal/streams"
+	"github.com/maypok86/otter/v2"
 )
 
 var (
@@ -1236,78 +1236,50 @@ type inflightPrepare struct {
 }
 
 func (c *Conn) prepareStatement(ctx context.Context, stmt string, tracer Tracer) (*preparedStatment, error) {
-	stmtCacheKey := c.session.stmtsLRU.keyFor(c.host.HostID(), c.currentKeyspace, stmt)
-	flight, ok := c.session.stmtsLRU.execIfMissing(stmtCacheKey, func(lru *lru.Cache) *inflightPrepare {
-		flight := &inflightPrepare{
-			done: make(chan struct{}),
+	loader := otter.LoaderFunc[string, *preparedStatment](func(ctx context.Context, key string) (*preparedStatment, error) {
+		prep := &writePrepareFrame{
+			statement: stmt,
 		}
-		lru.Add(stmtCacheKey, flight)
-		return flight
+		if c.version > protoVersion4 {
+			prep.keyspace = c.currentKeyspace
+		}
+
+		framer, err := c.exec(c.ctx, prep, tracer)
+		if err != nil {
+			return nil, err
+		}
+
+		frame, err := framer.parseFrame()
+		if err != nil {
+			return nil, err
+		}
+
+		// TODO(zariel): tidy this up, simplify handling of frame parsing so its not duplicated
+		// everytime we need to parse a frame.
+		if len(framer.traceID) > 0 && tracer != nil {
+			tracer.Trace(framer.traceID)
+		}
+
+		switch x := frame.(type) {
+		case *resultPreparedFrame:
+			return &preparedStatment{
+				// defensively copy as we will recycle the underlying buffer after we
+				// return.
+				id: copyBytes(x.preparedID),
+				// the type info's should _not_ have a reference to the framers read buffer,
+				// therefore we can just copy them directly.
+				request:  x.reqMeta,
+				response: x.respMeta,
+			}, nil
+		case error:
+			return nil, x
+		default:
+			return nil, NewErrProtocol("Unknown type in response to prepare frame: %s", x)
+		}
 	})
+	stmtCacheKey := keyForPreparedStatement(c.host.HostID(), c.currentKeyspace, stmt)
 
-	if !ok {
-		go func() {
-			defer close(flight.done)
-
-			prep := &writePrepareFrame{
-				statement: stmt,
-			}
-			if c.version > protoVersion4 {
-				prep.keyspace = c.currentKeyspace
-			}
-
-			// we won the race to do the load, if our context is canceled we shouldnt
-			// stop the load as other callers are waiting for it but this caller should get
-			// their context cancelled error.
-			framer, err := c.exec(c.ctx, prep, tracer)
-			if err != nil {
-				flight.err = err
-				c.session.stmtsLRU.remove(stmtCacheKey)
-				return
-			}
-
-			frame, err := framer.parseFrame()
-			if err != nil {
-				flight.err = err
-				c.session.stmtsLRU.remove(stmtCacheKey)
-				return
-			}
-
-			// TODO(zariel): tidy this up, simplify handling of frame parsing so its not duplicated
-			// everytime we need to parse a frame.
-			if len(framer.traceID) > 0 && tracer != nil {
-				tracer.Trace(framer.traceID)
-			}
-
-			switch x := frame.(type) {
-			case *resultPreparedFrame:
-				flight.preparedStatment = &preparedStatment{
-					// defensively copy as we will recycle the underlying buffer after we
-					// return.
-					id: copyBytes(x.preparedID),
-					// the type info's should _not_ have a reference to the framers read buffer,
-					// therefore we can just copy them directly.
-					request:  x.reqMeta,
-					response: x.respMeta,
-				}
-			case error:
-				flight.err = x
-			default:
-				flight.err = NewErrProtocol("Unknown type in response to prepare frame: %s", x)
-			}
-
-			if flight.err != nil {
-				c.session.stmtsLRU.remove(stmtCacheKey)
-			}
-		}()
-	}
-
-	select {
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	case <-flight.done:
-		return flight.preparedStatment, flight.err
-	}
+	return c.session.stmtsLRU.Get(ctx, stmtCacheKey, loader)
 }
 
 func marshalQueryValue(typ TypeInfo, value interface{}, dst *queryValues) error {
@@ -1477,8 +1449,8 @@ func (c *Conn) executeQuery(ctx context.Context, qry *Query) *Iter {
 		// is not consistent with regards to its schema.
 		return iter
 	case *RequestErrUnprepared:
-		stmtCacheKey := c.session.stmtsLRU.keyFor(c.host.HostID(), c.currentKeyspace, qry.stmt)
-		c.session.stmtsLRU.evictPreparedID(stmtCacheKey, x.StatementId)
+		stmtCacheKey := keyForPreparedStatement(c.host.HostID(), c.currentKeyspace, qry.stmt)
+		c.session.stmtsLRU.Invalidate(stmtCacheKey)
 		return c.executeQuery(ctx, qry)
 	case error:
 		return &Iter{err: x, framer: framer}
@@ -1623,8 +1595,8 @@ func (c *Conn) executeBatch(ctx context.Context, batch *Batch) *Iter {
 	case *RequestErrUnprepared:
 		stmt, found := stmts[string(x.StatementId)]
 		if found {
-			key := c.session.stmtsLRU.keyFor(c.host.HostID(), c.currentKeyspace, stmt)
-			c.session.stmtsLRU.evictPreparedID(key, x.StatementId)
+			key := keyForPreparedStatement(c.host.HostID(), c.currentKeyspace, stmt)
+			c.session.stmtsLRU.Invalidate(key)
 		}
 		return c.executeBatch(ctx, batch)
 	case *resultRowsFrame:
