@@ -53,16 +53,17 @@ func (s LZ4Compressor) AppendCompressedWithLength(dst, src []byte) ([]byte, erro
 	maxLength := lz4.CompressBlockBound(len(src))
 	oldDstLen := len(dst)
 	dst = grow(dst, maxLength+dataLengthSize)
+	slicedDst := sliceDest(dst, oldDstLen)
 
 	var compressor lz4.Compressor
-	n, err := compressor.CompressBlock(src, dst[oldDstLen+dataLengthSize:])
+	n, err := compressor.CompressBlock(src, slicedDst[dataLengthSize:])
 	// According to lz4.CompressBlock doc, it doesn't fail as long as the dst
 	// buffer length is at least lz4.CompressBlockBound(len(data))) bytes, but
 	// we check for error anyway just to be thorough.
 	if err != nil {
 		return nil, err
 	}
-	binary.BigEndian.PutUint32(dst[oldDstLen:oldDstLen+dataLengthSize], uint32(len(src)))
+	binary.BigEndian.PutUint32(slicedDst[:dataLengthSize], uint32(len(src)))
 	return dst[:oldDstLen+n+dataLengthSize], nil
 }
 
@@ -76,7 +77,8 @@ func (s LZ4Compressor) AppendDecompressedWithLength(dst, src []byte) ([]byte, er
 	}
 	oldDstLen := len(dst)
 	dst = grow(dst, int(uncompressedLength))
-	n, err := lz4.UncompressBlock(src[dataLengthSize:], dst[oldDstLen:])
+	slicedDst := sliceDest(dst, oldDstLen)
+	n, err := lz4.UncompressBlock(src[dataLengthSize:], slicedDst)
 	return dst[:oldDstLen+n], err
 
 }
@@ -85,9 +87,10 @@ func (s LZ4Compressor) AppendCompressed(dst, src []byte) ([]byte, error) {
 	maxLength := lz4.CompressBlockBound(len(src))
 	oldDstLen := len(dst)
 	dst = grow(dst, maxLength)
+	slicedDst := sliceDest(dst, oldDstLen)
 
 	var compressor lz4.Compressor
-	n, err := compressor.CompressBlock(src, dst[oldDstLen:])
+	n, err := compressor.CompressBlock(src, slicedDst)
 	if err != nil {
 		return nil, err
 	}
@@ -101,7 +104,8 @@ func (s LZ4Compressor) AppendDecompressed(dst, src []byte, uncompressedLength ui
 	}
 	oldDstLen := len(dst)
 	dst = grow(dst, int(uncompressedLength))
-	n, err := lz4.UncompressBlock(src, dst[oldDstLen:])
+	slicedDst := sliceDest(dst, oldDstLen)
+	n, err := lz4.UncompressBlock(src, slicedDst)
 	return dst[:oldDstLen+n], err
 }
 
@@ -110,8 +114,18 @@ func grow(b []byte, n int) []byte {
 	oldLen := len(b)
 	if cap(b)-oldLen < n {
 		newBuf := make([]byte, oldLen+n)
-		copy(newBuf, b)
-		b = newBuf
+		if oldLen > 0 {
+			copy(newBuf, b)
+		}
+		return newBuf
 	}
 	return b[:oldLen+n]
+}
+
+func sliceDest(dst []byte, oldDstLen int) []byte {
+	if oldDstLen > 0 {
+		return dst[oldDstLen:]
+	} else {
+		return dst
+	}
 }
