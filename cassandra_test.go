@@ -2068,7 +2068,7 @@ func TestQueryStats(t *testing.T) {
 			t.Fatal("expected at least 1 attempt, but got 0")
 		}
 		if iter.Latency() <= 0 {
-			t.Fatalf("expected latency to be greater than 0, but got %v instead.", iter.Latency())
+			t.Fatalf("expected latency to be > 0, but got %v instead.", iter.Latency())
 		}
 	}
 }

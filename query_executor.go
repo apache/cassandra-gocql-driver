@@ -334,14 +334,15 @@ func newQueryOptions(q *Query, ctx context.Context) *queryOptions {
 }
 
 type internalQuery struct {
-	originalQuery *Query
-	qryOpts       *queryOptions
-	pageState     []byte
-	metrics       *queryMetrics
-	conn          *Conn
-	consistency   uint32
-	session       *Session
-	routingInfo   *queryRoutingInfo
+	originalQuery      *Query
+	qryOpts            *queryOptions
+	pageState          []byte
+	conn               *Conn
+	consistency        uint32
+	session            *Session
+	routingInfo        *queryRoutingInfo
+	metrics            *queryMetrics
+	hostMetricsManager hostMetricsManager
 }
 
 func newInternalQuery(q *Query, ctx context.Context) *internalQuery {
@@ -351,15 +352,22 @@ func newInternalQuery(q *Query, ctx context.Context) *internalQuery {
 		newPageState = make([]byte, len(pageState))
 		copy(newPageState, pageState)
 	}
+	var hostMetricsMgr hostMetricsManager
+	if q.observer != nil {
+		hostMetricsMgr = newHostMetricsManager()
+	} else {
+		hostMetricsMgr = emptyHostMetricsManager
+	}
 	return &internalQuery{
-		originalQuery: q,
-		qryOpts:       newQueryOptions(q, ctx),
-		metrics:       &queryMetrics{m: make(map[string]*hostMetrics)},
-		consistency:   uint32(q.initialConsistency),
-		pageState:     newPageState,
-		conn:          nil,
-		session:       q.session,
-		routingInfo:   &queryRoutingInfo{},
+		originalQuery:      q,
+		qryOpts:            newQueryOptions(q, ctx),
+		metrics:            &queryMetrics{},
+		hostMetricsManager: hostMetricsMgr,
+		consistency:        uint32(q.initialConsistency),
+		pageState:          newPageState,
+		conn:               nil,
+		session:            q.session,
+		routingInfo:        &queryRoutingInfo{},
 	}
 }
 
@@ -370,9 +378,10 @@ func (q *internalQuery) Attempts() int {
 
 func (q *internalQuery) attempt(keyspace string, end, start time.Time, iter *Iter, host *HostInfo) {
 	latency := end.Sub(start)
-	attempt, metricsForHost := q.metrics.attempt(1, latency, host, q.qryOpts.observer != nil)
+	attempt := q.metrics.attempt(latency)
 
 	if q.qryOpts.observer != nil {
+		metricsForHost := q.hostMetricsManager.attempt(latency, host)
 		q.qryOpts.observer.ObserveQuery(q.qryOpts.context, ObservedQuery{
 			Keyspace:  keyspace,
 			Statement: q.qryOpts.stmt,
@@ -546,22 +555,30 @@ func newBatchOptions(b *Batch, ctx context.Context) *batchOptions {
 }
 
 type internalBatch struct {
-	originalBatch *Batch
-	batchOpts     *batchOptions
-	metrics       *queryMetrics
-	consistency   uint32
-	routingInfo   *queryRoutingInfo
-	session       *Session
+	originalBatch      *Batch
+	batchOpts          *batchOptions
+	consistency        uint32
+	routingInfo        *queryRoutingInfo
+	session            *Session
+	metrics            *queryMetrics
+	hostMetricsManager hostMetricsManager
 }
 
 func newInternalBatch(batch *Batch, ctx context.Context) *internalBatch {
+	var hostMetricsMgr hostMetricsManager
+	if batch.observer != nil {
+		hostMetricsMgr = newHostMetricsManager()
+	} else {
+		hostMetricsMgr = emptyHostMetricsManager
+	}
 	return &internalBatch{
-		originalBatch: batch,
-		batchOpts:     newBatchOptions(batch, ctx),
-		metrics:       &queryMetrics{m: make(map[string]*hostMetrics)},
-		routingInfo:   &queryRoutingInfo{},
-		session:       batch.session,
-		consistency:   uint32(batch.GetConsistency()),
+		originalBatch:      batch,
+		batchOpts:          newBatchOptions(batch, ctx),
+		routingInfo:        &queryRoutingInfo{},
+		session:            batch.session,
+		consistency:        uint32(batch.GetConsistency()),
+		metrics:            &queryMetrics{},
+		hostMetricsManager: hostMetricsMgr,
 	}
 }
 
@@ -572,11 +589,13 @@ func (b *internalBatch) Attempts() int {
 
 func (b *internalBatch) attempt(keyspace string, end, start time.Time, iter *Iter, host *HostInfo) {
 	latency := end.Sub(start)
-	attempt, metricsForHost := b.metrics.attempt(1, latency, host, b.batchOpts.observer != nil)
+	attempt := b.metrics.attempt(latency)
 
 	if b.batchOpts.observer == nil {
 		return
 	}
+
+	metricsForHost := b.hostMetricsManager.attempt(latency, host)
 
 	statements := make([]string, len(b.batchOpts.entries))
 	values := make([][]interface{}, len(b.batchOpts.entries))

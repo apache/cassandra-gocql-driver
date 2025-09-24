@@ -389,7 +389,7 @@ func (s *Session) AwaitSchemaAgreement(ctx context.Context) error {
 		return errNoControl
 	}
 	return s.control.withConn(func(conn *Conn) *Iter {
-		return newErrIter(conn.awaitSchemaAgreement(ctx), newQueryMetrics(), "", nil, nil)
+		return newErrIter(conn.awaitSchemaAgreement(ctx), &queryMetrics{}, "", nil, nil)
 	}).err
 }
 
@@ -861,40 +861,48 @@ type hostMetrics struct {
 }
 
 type queryMetrics struct {
+	totalAttempts int64
+	totalLatency  int64
+}
+
+func (qm *queryMetrics) attempt(addLatency time.Duration) int {
+	atomic.AddInt64(&qm.totalLatency, addLatency.Nanoseconds())
+	return int(atomic.AddInt64(&qm.totalAttempts, 1) - 1)
+}
+
+func (qm *queryMetrics) attempts() int {
+	return int(atomic.LoadInt64(&qm.totalAttempts))
+}
+
+func (qm *queryMetrics) latency() int64 {
+	attempts := atomic.LoadInt64(&qm.totalAttempts)
+	if attempts == 0 {
+		return atomic.LoadInt64(&qm.totalLatency)
+	}
+	return atomic.LoadInt64(&qm.totalLatency) / attempts
+}
+
+type hostMetricsManager interface {
+	attempt(addLatency time.Duration, host *HostInfo) *hostMetrics
+}
+
+type hostMetricsManagerImpl struct {
 	l sync.RWMutex
 	m map[string]*hostMetrics
-	// totalAttempts is total number of attempts.
-	// Equal to sum of all hostMetrics' Attempts.
-	totalAttempts int
 }
 
-func newQueryMetrics() *queryMetrics {
-	return &queryMetrics{m: make(map[string]*hostMetrics)}
+func newHostMetricsManager() *hostMetricsManagerImpl {
+	return &hostMetricsManagerImpl{m: make(map[string]*hostMetrics)}
 }
 
-// preFilledQueryMetrics initializes new queryMetrics based on per-host supplied data.
-func preFilledQueryMetrics(m map[string]*hostMetrics) *queryMetrics {
-	qm := &queryMetrics{m: m}
-	for _, hm := range qm.m {
-		qm.totalAttempts += hm.Attempts
-	}
-	return qm
-}
-
-// hostMetrics returns a snapshot of metrics for given host.
-// If the metrics for host don't exist, they are created.
-func (qm *queryMetrics) hostMetrics(host *HostInfo) *hostMetrics {
-	qm.l.Lock()
-	metrics := qm.hostMetricsLocked(host)
-	copied := new(hostMetrics)
-	*copied = *metrics
-	qm.l.Unlock()
-	return copied
+// preFilledHostMetricsMetricsManager initializes new hostMetrics based on per-host supplied data.
+func preFilledHostMetricsMetricsManager(m map[string]*hostMetrics) *hostMetricsManagerImpl {
+	return &hostMetricsManagerImpl{m: m}
 }
 
 // hostMetricsLocked gets or creates host metrics for given host.
 // It must be called only while holding qm.l lock.
-func (qm *queryMetrics) hostMetricsLocked(host *HostInfo) *hostMetrics {
+func (qm *hostMetricsManagerImpl) hostMetricsLocked(host *HostInfo) *hostMetrics {
 	metrics, exists := qm.m[host.ConnectAddress().String()]
 	if !exists {
 		// if the host is not in the map, it means it's been accessed for the first time
@@ -905,53 +913,22 @@ func (qm *queryMetrics) hostMetricsLocked(host *HostInfo) *hostMetrics {
 	return metrics
 }
 
-// attempts returns the number of times the query was executed.
-func (qm *queryMetrics) attempts() int {
+func (qm *hostMetricsManagerImpl) attempt(addLatency time.Duration, host *HostInfo) *hostMetrics {
 	qm.l.Lock()
-	attempts := qm.totalAttempts
-	qm.l.Unlock()
-	return attempts
-}
-
-func (qm *queryMetrics) latency() int64 {
-	qm.l.Lock()
-	var (
-		attempts int
-		latency  int64
-	)
-	for _, metric := range qm.m {
-		attempts += metric.Attempts
-		latency += metric.TotalLatency
-	}
-	qm.l.Unlock()
-	if attempts > 0 {
-		return latency / int64(attempts)
-	}
-	return 0
-}
-
-// attempt adds given number of attempts and latency for given host.
-// It returns previous total attempts.
-// If needsHostMetrics is true, a copy of updated hostMetrics is returned.
-func (qm *queryMetrics) attempt(addAttempts int, addLatency time.Duration,
-	host *HostInfo, needsHostMetrics bool) (int, *hostMetrics) {
-	qm.l.Lock()
-
-	totalAttempts := qm.totalAttempts
-	qm.totalAttempts += addAttempts
-
 	updateHostMetrics := qm.hostMetricsLocked(host)
-	updateHostMetrics.Attempts += addAttempts
+	updateHostMetrics.Attempts += 1
 	updateHostMetrics.TotalLatency += addLatency.Nanoseconds()
-
-	var hostMetricsCopy *hostMetrics
-	if needsHostMetrics {
-		hostMetricsCopy = new(hostMetrics)
-		*hostMetricsCopy = *updateHostMetrics
-	}
-
 	qm.l.Unlock()
-	return totalAttempts, hostMetricsCopy
+	return updateHostMetrics
+}
+
+var emptyHostMetricsManager = &emptyHostMetricsManagerImpl{}
+
+type emptyHostMetricsManagerImpl struct {
+}
+
+func (qm *emptyHostMetricsManagerImpl) attempt(_ time.Duration, _ *HostInfo) *hostMetrics {
+	return nil
 }
 
 // Query represents a CQL statement that can be executed.
@@ -1297,7 +1274,7 @@ func (q *Query) Iter() *Iter {
 // over all results.
 func (q *Query) IterContext(ctx context.Context) *Iter {
 	if isUseStatement(q.stmt) {
-		return newErrIter(ErrUseStmt, newQueryMetrics(), q.Keyspace(), nil, q.getKeyspace)
+		return newErrIter(ErrUseStmt, &queryMetrics{}, q.Keyspace(), nil, q.getKeyspace)
 	}
 
 	internalQry := newInternalQuery(q, ctx)

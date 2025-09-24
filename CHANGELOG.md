@@ -19,6 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+#### 2.0.0
+
+- Don't collect host metrics if a query/batch observer is not provided (CASSGO-90)
+
 #### 2.0.0-rc1
 
 - Support vector type (CASSGO-11)

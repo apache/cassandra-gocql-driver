@@ -450,28 +450,28 @@ func TestQueryMultinodeWithMetrics(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected error")
 	}
+	totalLatency := int64(0)
+	totalAttempts := int64(0)
 
 	for i, ip := range addresses {
 		host := &HostInfo{connectAddress: net.ParseIP(ip)}
-		queryMetric := iter.metrics.hostMetrics(host)
 		observedMetrics := observer.GetMetrics(host)
-
 		requests := int(atomic.LoadInt64(&nodes[i].nKillReq))
-		hostAttempts := queryMetric.Attempts
-		if requests != hostAttempts {
-			t.Fatalf("expected requests %v to match query attempts %v", requests, hostAttempts)
+
+		if requests != observedMetrics.Attempts {
+			t.Fatalf("expected observed attempts %v to match server requests %v on host %v", observedMetrics.Attempts, requests, ip)
 		}
 
-		if hostAttempts != observedMetrics.Attempts {
-			t.Fatalf("expected observed attempts %v to match query attempts %v on host %v", observedMetrics.Attempts, hostAttempts, ip)
-		}
-
-		hostLatency := queryMetric.TotalLatency
 		observedLatency := observedMetrics.TotalLatency
-		if hostLatency != observedLatency {
-			t.Fatalf("expected observed latency %v to match query latency %v on host %v", observedLatency, hostLatency, ip)
-		}
+		totalLatency += observedLatency
+		totalAttempts += int64(observedMetrics.Attempts)
 	}
+
+	observedLatency := totalLatency / totalAttempts
+	if observedLatency != iter.Latency() {
+		t.Fatalf("expected observed latency %v (%v/%v) to match query latency %v", observedLatency, totalLatency, totalAttempts, iter.Latency())
+	}
+
 	// the query will only be attempted once, but is being retried
 	attempts := iter.Attempts()
 	if attempts != rt.NumRetries {

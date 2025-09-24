@@ -1665,7 +1665,12 @@ func (c *Conn) executeQuery(ctx context.Context, q *internalQuery) *Iter {
 			newQry := new(internalQuery)
 			*newQry = *q
 			newQry.pageState = copyBytes(x.meta.pagingState)
-			newQry.metrics = &queryMetrics{m: make(map[string]*hostMetrics)}
+			newQry.metrics = &queryMetrics{}
+			if newQry.qryOpts.observer != nil {
+				newQry.hostMetricsManager = newHostMetricsManager()
+			} else {
+				newQry.hostMetricsManager = emptyHostMetricsManager
+			}
 
 			iter.next = &nextIter{
 				q:   newQry,
