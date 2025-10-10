@@ -1333,7 +1333,12 @@ func (q *Query) iterInternal(c *Conn, ctx context.Context) *Iter {
 	internalQry := newInternalQuery(q, ctx)
 	internalQry.conn = c
 
-	return c.executeQuery(internalQry.Context(), internalQry)
+	iter := c.executeQuery(internalQry.Context(), internalQry)
+	if iter != nil {
+		// set iter.host so that the caller can retrieve the connect address which should be preferable (if valid) for the local host
+		iter.host = c.host
+	}
+	return iter
 }
 
 // MapScan executes the query, copies the columns of the first selected

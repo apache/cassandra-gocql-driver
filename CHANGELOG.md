@@ -76,6 +76,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Driver closes connection when timeout occurs (CASSGO-87)
 - Do not set beta protocol flag when using v5 (CASSGO-88)
+- Driver is using system table ip addresses over the connection address (CASSGO-91)
 
 #### 2.0.0-rc1
 

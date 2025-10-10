@@ -343,7 +343,7 @@ type connHost struct {
 func (c *controlConn) setupConn(conn *Conn, sessionInit bool) error {
 	// we need up-to-date host info for the filterHost call below
 	iter := conn.querySystemLocal(context.TODO())
-	host, err := c.session.hostInfoFromIter(iter, conn.host.connectAddress, conn.r.RemoteAddr().(*net.TCPAddr).Port)
+	host, err := c.session.hostInfoFromIter(iter, conn.host.ConnectAddress(), conn.r.RemoteAddr().(*net.TCPAddr).Port)
 	if err != nil {
 		// just cleanup
 		iter.Close()

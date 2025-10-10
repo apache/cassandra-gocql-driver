@@ -267,6 +267,13 @@ func (h *HostInfo) ConnectAddress() net.IP {
 	return addr
 }
 
+// actualConnectAddress can be used to access the connectAddress field with the lock (mu).
+func (h *HostInfo) actualConnectAddress() net.IP {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return h.connectAddress
+}
+
 func (h *HostInfo) BroadcastAddress() net.IP {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
@@ -680,16 +687,10 @@ func newHostInfoFromRow(s *Session, defaultAddr net.IP, defaultPort int, row map
 		}
 	}
 
-	// Determine the connect address from available addresses
-	if validIpAddr(host.rpcAddress) {
-		host.connectAddress = host.rpcAddress
-	} else if validIpAddr(host.preferredIP) {
-		host.connectAddress = host.preferredIP
-	} else if validIpAddr(host.broadcastAddress) {
-		host.connectAddress = host.broadcastAddress
-	} else if validIpAddr(host.peer) {
-		host.connectAddress = host.peer
-	}
+	// this ensures that connectAddress gets a valid IP starting with host.connectAddress and if it's not valid
+	// then falls back to an address read from the system table
+	// it is important that a system table address is not picked up UNLESS connectAddress is nil or not valid
+	host.connectAddress, _ = host.connectAddressLocked()
 
 	if s != nil && s.cfg.AddressTranslator != nil {
 		ip, port := s.cfg.translateAddressPort(host.ConnectAddress(), host.port, s.logger)
@@ -745,7 +746,8 @@ func (r *ringDescriber) getLocalHostInfo() (*HostInfo, error) {
 		return nil, errNoControl
 	}
 
-	host, err := r.session.hostInfoFromIter(iter, nil, r.session.cfg.Port)
+	// keep connect address for local host, ignore address from system.local
+	host, err := r.session.hostInfoFromIter(iter, iter.host.actualConnectAddress(), r.session.cfg.Port)
 	if err != nil {
 		// just cleanup
 		iter.Close()
@@ -873,7 +875,7 @@ func refreshRing(r *ringDescriber) error {
 			if !ok {
 				return fmt.Errorf("get existing host=%s from prevHosts: %w", h, ErrCannotFindHost)
 			}
-			if h.connectAddress.Equal(existing.connectAddress) && h.nodeToNodeAddress().Equal(existing.nodeToNodeAddress()) {
+			if h.actualConnectAddress().Equal(existing.actualConnectAddress()) && h.nodeToNodeAddress().Equal(existing.nodeToNodeAddress()) {
 				// no host IP change
 				host.update(h)
 			} else {
