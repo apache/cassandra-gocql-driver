@@ -89,14 +89,15 @@ func connConfig(cfg *ClusterConfig) (*ConnConfig, error) {
 	}
 
 	return &ConnConfig{
-		ProtoVersion:   cfg.ProtoVersion,
-		CQLVersion:     cfg.CQLVersion,
-		Timeout:        cfg.Timeout,
-		ConnectTimeout: cfg.ConnectTimeout,
-		Compressor:     cfg.Compressor,
-		Authenticator:  cfg.Authenticator,
-		Keepalive:      cfg.SocketKeepalive,
-		tlsConfig:      tlsConfig,
+		ProtoVersion:    cfg.ProtoVersion,
+		CQLVersion:      cfg.CQLVersion,
+		Timeout:         cfg.Timeout,
+		ConnectTimeout:  cfg.ConnectTimeout,
+		ConnMaxLifetime: cfg.ConnMaxLifetime,
+		Compressor:      cfg.Compressor,
+		Authenticator:   cfg.Authenticator,
+		Keepalive:       cfg.SocketKeepalive,
+		tlsConfig:       tlsConfig,
 	}, nil
 }
 
@@ -314,15 +315,32 @@ func (pool *hostConnPool) Pick() *Conn {
 	var (
 		leastBusyConn    *Conn
 		streamsAvailable int
+		expiredConns     []*Conn
 	)
 
 	// find the conn which has the most available streams, this is racy
 	for i := 0; i < size; i++ {
 		conn := pool.conns[(pos+i)%size]
+
+		// Check if connection has exceeded its max lifetime
+		if conn.IsExpired() {
+			expiredConns = append(expiredConns, conn)
+			continue
+		}
+
 		if streams := conn.AvailableStreams(); streams > streamsAvailable {
 			leastBusyConn = conn
 			streamsAvailable = streams
 		}
+	}
+
+	// Close expired connections asynchronously
+	if len(expiredConns) > 0 {
+		go func() {
+			for _, conn := range expiredConns {
+				conn.Close()
+			}
+		}()
 	}
 
 	return leastBusyConn

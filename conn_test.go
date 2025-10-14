@@ -960,3 +960,90 @@ func (srv *TestServer) readFrame(conn net.Conn) (*framer, error) {
 
 	return framer, nil
 }
+
+func TestConnMaxLifetime(t *testing.T) {
+	// Test that ConnMaxLifetime is properly set in ConnConfig
+	cluster := NewCluster("127.0.0.1")
+	cluster.ConnMaxLifetime = 5 * time.Minute
+
+	connCfg, err := connConfig(cluster)
+	if err != nil {
+		t.Fatalf("Failed to create ConnConfig: %v", err)
+	}
+
+	if connCfg.ConnMaxLifetime != 5*time.Minute {
+		t.Errorf("Expected ConnMaxLifetime to be 5m, got %v", connCfg.ConnMaxLifetime)
+	}
+}
+
+func TestConnIsExpired(t *testing.T) {
+	tests := []struct {
+		name            string
+		connMaxLifetime time.Duration
+		connAge         time.Duration
+		expectedExpired bool
+	}{
+		{
+			name:            "No max lifetime set",
+			connMaxLifetime: 0,
+			connAge:         10 * time.Minute,
+			expectedExpired: false,
+		},
+		{
+			name:            "Connection not expired",
+			connMaxLifetime: 10 * time.Minute,
+			connAge:         5 * time.Minute,
+			expectedExpired: false,
+		},
+		{
+			name:            "Connection expired",
+			connMaxLifetime: 5 * time.Minute,
+			connAge:         10 * time.Minute,
+			expectedExpired: true,
+		},
+		{
+			name:            "Connection just under lifetime",
+			connMaxLifetime: 10 * time.Minute,
+			connAge:         9*time.Minute + 59*time.Second,
+			expectedExpired: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			conn := &Conn{
+				cfg: &ConnConfig{
+					ConnMaxLifetime: tt.connMaxLifetime,
+				},
+				createdAt: time.Now().Add(-tt.connAge),
+			}
+
+			if got := conn.IsExpired(); got != tt.expectedExpired {
+				t.Errorf("IsExpired() = %v, want %v", got, tt.expectedExpired)
+			}
+		})
+	}
+}
+
+func TestConnIsExpiredJustExpired(t *testing.T) {
+	// Test a connection that expires just after the max lifetime
+	conn := &Conn{
+		cfg: &ConnConfig{
+			ConnMaxLifetime: 100 * time.Millisecond,
+		},
+		createdAt: time.Now(),
+	}
+
+	// Connection should not be expired immediately
+	if conn.IsExpired() {
+		t.Error("Connection should not be expired immediately after creation")
+	}
+
+	// Wait for the connection to expire
+	time.Sleep(150 * time.Millisecond)
+
+	// Connection should now be expired
+	if !conn.IsExpired() {
+		t.Error("Connection should be expired after max lifetime")
+	}
+}

@@ -92,14 +92,15 @@ type SslOptions struct {
 }
 
 type ConnConfig struct {
-	ProtoVersion   int
-	CQLVersion     string
-	Timeout        time.Duration
-	ConnectTimeout time.Duration
-	Compressor     Compressor
-	Authenticator  Authenticator
-	Keepalive      time.Duration
-	tlsConfig      *tls.Config
+	ProtoVersion    int
+	CQLVersion      string
+	Timeout         time.Duration
+	ConnectTimeout  time.Duration
+	ConnMaxLifetime time.Duration
+	Compressor      Compressor
+	Authenticator   Authenticator
+	Keepalive       time.Duration
+	tlsConfig       *tls.Config
 }
 
 type ConnErrorHandler interface {
@@ -147,8 +148,9 @@ type Conn struct {
 
 	session *Session
 
-	closed int32
-	quit   chan struct{}
+	closed    int32
+	quit      chan struct{}
+	createdAt time.Time
 
 	timeouts int64
 }
@@ -205,6 +207,7 @@ func (s *Session) dial(host *HostInfo, cfg *ConnConfig, errorHandler ConnErrorHa
 		streams:       streams.New(cfg.ProtoVersion),
 		host:          host,
 		frameObserver: s.frameObserver,
+		createdAt:     time.Now(),
 	}
 
 	if cfg.Keepalive > 0 {
@@ -421,6 +424,15 @@ func (c *Conn) close() error {
 
 func (c *Conn) Close() {
 	c.closeWithError(nil)
+}
+
+// IsExpired returns true if the connection has exceeded its maximum lifetime.
+// Returns false if ConnMaxLifetime is not set (zero value).
+func (c *Conn) IsExpired() bool {
+	if c.cfg.ConnMaxLifetime <= 0 {
+		return false
+	}
+	return time.Since(c.createdAt) > c.cfg.ConnMaxLifetime
 }
 
 // Serve starts the stream multiplexer for this connection, which is required
