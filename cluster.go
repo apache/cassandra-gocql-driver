@@ -352,8 +352,8 @@ func (cfg *ClusterConfig) translateAddressPort(addr net.IP, port int, logger Str
 	}
 	newAddr, newPort := cfg.AddressTranslator.Translate(addr, port)
 	logger.Debug("Translating address.",
-		newLogFieldIp("old_addr", addr), newLogFieldInt("old_port", port),
-		newLogFieldIp("new_addr", newAddr), newLogFieldInt("new_port", newPort))
+		NewLogFieldIP("old_addr", addr), NewLogFieldInt("old_port", port),
+		NewLogFieldIP("new_addr", newAddr), NewLogFieldInt("new_port", newPort))
 	return newAddr, newPort
 }
 

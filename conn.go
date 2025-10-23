@@ -709,7 +709,7 @@ func (c *Conn) processFrame(ctx context.Context, r io.Reader) error {
 	delete(c.calls, head.stream)
 	c.mu.Unlock()
 	if call == nil || !ok {
-		c.logger.Warning("Received response for stream which has no handler.", newLogFieldString("header", head.String()))
+		c.logger.Warning("Received response for stream which has no handler.", NewLogFieldString("header", head.String()))
 		return c.discardFrame(r, head)
 	} else if head.stream != call.streamID {
 		panic(fmt.Sprintf("call has incorrect streamID: got %d expected %d", call.streamID, head.stream))
@@ -1316,7 +1316,7 @@ func (c *Conn) execInternal(ctx context.Context, req frameBuilder, tracer Tracer
 			responseFrame, err := resp.framer.parseFrame()
 			if err != nil {
 				c.logger.Warning("Framer error while attempting to parse potential protocol error.",
-					newLogFieldError("err", err))
+					NewLogFieldError("err", err))
 				return nil, errProtocol
 			}
 			//goland:noinspection GoTypeAssertionOnErrors
@@ -1333,17 +1333,17 @@ func (c *Conn) execInternal(ctx context.Context, req frameBuilder, tracer Tracer
 	case <-timeoutCh:
 		close(call.timeout)
 		c.logger.Debug("Request timed out on connection.",
-			newLogFieldString("host_id", c.host.HostID()), newLogFieldIp("addr", c.host.ConnectAddress()))
+			NewLogFieldString("host_id", c.host.HostID()), NewLogFieldIP("addr", c.host.ConnectAddress()))
 		return nil, ErrTimeoutNoResponse
 	case <-ctxDone:
 		c.logger.Debug("Request failed because context elapsed out on connection.",
-			newLogFieldString("host_id", c.host.HostID()), newLogFieldIp("addr", c.host.ConnectAddress()),
-			newLogFieldError("ctx_err", ctx.Err()))
+			NewLogFieldString("host_id", c.host.HostID()), NewLogFieldIP("addr", c.host.ConnectAddress()),
+			NewLogFieldError("ctx_err", ctx.Err()))
 		close(call.timeout)
 		return nil, ctx.Err()
 	case <-c.ctx.Done():
 		c.logger.Debug("Request failed because connection closed.",
-			newLogFieldString("host_id", c.host.HostID()), newLogFieldIp("addr", c.host.ConnectAddress()))
+			NewLogFieldString("host_id", c.host.HostID()), NewLogFieldIP("addr", c.host.ConnectAddress()))
 		close(call.timeout)
 		return nil, ErrConnectionClosed
 	}
@@ -1698,7 +1698,7 @@ func (c *Conn) executeQuery(ctx context.Context, q *internalQuery) *Iter {
 		iter.framer = framer
 		if err := c.awaitSchemaAgreement(ctx); err != nil {
 			// TODO: should have this behind a flag
-			c.logger.Warning("Error while awaiting for schema agreement after a schema change event.", newLogFieldError("err", err))
+			c.logger.Warning("Error while awaiting for schema agreement after a schema change event.", NewLogFieldError("err", err))
 		}
 		// dont return an error from this, might be a good idea to give a warning
 		// though. The impact of this returning an error would be that the cluster
@@ -1956,7 +1956,7 @@ func (c *Conn) awaitSchemaAgreement(ctx context.Context) (err error) {
 				goto cont
 			}
 			if !isValidPeer(host) || host.schemaVersion == "" {
-				c.logger.Warning("Invalid peer or peer with empty schema_version.", newLogFieldIp("peer", host.ConnectAddress()))
+				c.logger.Warning("Invalid peer or peer with empty schema_version.", NewLogFieldIP("peer", host.ConnectAddress()))
 				continue
 			}
 

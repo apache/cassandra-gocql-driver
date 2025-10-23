@@ -356,13 +356,13 @@ func (o *testQueryObserver) ObserveQuery(ctx context.Context, q ObservedQuery) {
 	host := q.Host.ConnectAddress().String()
 	o.metrics[host] = q.Metrics
 	o.logger.Debug("Observed query.",
-		newLogFieldString("stmt", q.Statement),
-		newLogFieldInt("rows", q.Rows),
-		newLogFieldString("duration", q.End.Sub(q.Start).String()),
-		newLogFieldString("host", host),
-		newLogFieldInt("attempts", q.Metrics.Attempts),
-		newLogFieldString("latency", strconv.FormatInt(q.Metrics.TotalLatency, 10)),
-		newLogFieldError("err", q.Err))
+		NewLogFieldString("stmt", q.Statement),
+		NewLogFieldInt("rows", q.Rows),
+		NewLogFieldString("duration", q.End.Sub(q.Start).String()),
+		NewLogFieldString("host", host),
+		NewLogFieldInt("attempts", q.Metrics.Attempts),
+		NewLogFieldString("latency", strconv.FormatInt(q.Metrics.TotalLatency, 10)),
+		NewLogFieldError("err", q.Err))
 }
 
 func (o *testQueryObserver) GetMetrics(host *HostInfo) *hostMetrics {

@@ -304,9 +304,19 @@ type HostTierer interface {
 type HostSelectionPolicy interface {
 	HostStateNotifier
 	SetPartitioner
+
+	// KeyspaceChanged is called when the driver receives a keyspace change event.
 	KeyspaceChanged(KeyspaceUpdateEvent)
+
+	// Init is called automatically during session creation so the policy can store
+	// a reference to the attached session. Notably the session is not usable yet
+	// when it's passed to this method.
 	Init(*Session)
+
+	// IsLocal should return true if the given Host is considered "local" by some
+	// criteria. "Local" hosts are preferred over non-local hosts.
 	IsLocal(host *HostInfo) bool
+
 	// Pick returns an iteration function over selected hosts.
 	// Multiple attempts of a single query execution won't call the returned NextHost function concurrently,
 	// so it's safe to have internal state without additional synchronization as long as every call to Pick returns
@@ -576,7 +586,7 @@ func (m *clusterMeta) resetTokenRing(partitioner string, hosts []*HostInfo, logg
 	// create a new token ring
 	tokenRing, err := newTokenRing(partitioner, hosts)
 	if err != nil {
-		logger.Warning("Unable to update the token ring due to error.", newLogFieldError("err", err))
+		logger.Warning("Unable to update the token ring due to error.", NewLogFieldError("err", err))
 		return
 	}
 

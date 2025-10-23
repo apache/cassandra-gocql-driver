@@ -105,7 +105,7 @@ func (c *controlConn) heartBeat() {
 
 		resp, err := c.writeFrame(&writeOptionsFrame{})
 		if err != nil {
-			c.session.logger.Debug("Control connection failed to send heartbeat.", newLogFieldError("err", err))
+			c.session.logger.Debug("Control connection failed to send heartbeat.", NewLogFieldError("err", err))
 			goto reconn
 		}
 
@@ -115,10 +115,10 @@ func (c *controlConn) heartBeat() {
 			sleepTime = 5 * time.Second
 			continue
 		case error:
-			c.session.logger.Debug("Control connection heartbeat failed.", newLogFieldError("err", actualResp))
+			c.session.logger.Debug("Control connection heartbeat failed.", NewLogFieldError("err", actualResp))
 			goto reconn
 		default:
-			c.session.logger.Error("Unknown frame in response to options.", newLogFieldString("frame_type", fmt.Sprintf("%T", resp)))
+			c.session.logger.Error("Unknown frame in response to options.", NewLogFieldString("frame_type", fmt.Sprintf("%T", resp)))
 		}
 
 	reconn:
@@ -270,18 +270,18 @@ func (c *controlConn) discoverProtocol(hosts []*HostInfo) (int, error) {
 
 		if err == nil {
 			c.session.logger.Debug("Discovered protocol version using host.",
-				newLogFieldInt("protocol_version", connCfg.ProtoVersion), newLogFieldIp("host_addr", host.ConnectAddress()), newLogFieldString("host_id", host.HostID()))
+				NewLogFieldInt("protocol_version", connCfg.ProtoVersion), NewLogFieldIP("host_addr", host.ConnectAddress()), NewLogFieldString("host_id", host.HostID()))
 			return connCfg.ProtoVersion, nil
 		}
 
 		if proto := parseProtocolFromError(err); proto > 0 {
 			c.session.logger.Debug("Discovered protocol version using host after parsing protocol error.",
-				newLogFieldInt("protocol_version", proto), newLogFieldIp("host_addr", host.ConnectAddress()), newLogFieldString("host_id", host.HostID()))
+				NewLogFieldInt("protocol_version", proto), NewLogFieldIP("host_addr", host.ConnectAddress()), NewLogFieldString("host_id", host.HostID()))
 			return proto, nil
 		}
 
 		c.session.logger.Debug("Failed to discover protocol version using host.",
-			newLogFieldIp("host_addr", host.ConnectAddress()), newLogFieldString("host_id", host.HostID()), newLogFieldError("err", err))
+			NewLogFieldIP("host_addr", host.ConnectAddress()), NewLogFieldString("host_id", host.HostID()), NewLogFieldError("err", err))
 	}
 
 	return 0, err
@@ -305,10 +305,10 @@ func (c *controlConn) connect(hosts []*HostInfo, sessionInit bool) error {
 		conn, err = c.session.dial(c.session.ctx, host, &cfg, c)
 		if err != nil {
 			c.session.logger.Info("Control connection failed to establish a connection to host.",
-				newLogFieldIp("host_addr", host.ConnectAddress()),
-				newLogFieldInt("port", host.Port()),
-				newLogFieldString("host_id", host.HostID()),
-				newLogFieldError("err", err))
+				NewLogFieldIP("host_addr", host.ConnectAddress()),
+				NewLogFieldInt("port", host.Port()),
+				NewLogFieldString("host_id", host.HostID()),
+				NewLogFieldError("err", err))
 			continue
 		}
 		err = c.setupConn(conn, sessionInit)
@@ -316,10 +316,10 @@ func (c *controlConn) connect(hosts []*HostInfo, sessionInit bool) error {
 			break
 		}
 		c.session.logger.Info("Control connection setup failed after connecting to host.",
-			newLogFieldIp("host_addr", host.ConnectAddress()),
-			newLogFieldInt("port", host.Port()),
-			newLogFieldString("host_id", host.HostID()),
-			newLogFieldError("err", err))
+			NewLogFieldIP("host_addr", host.ConnectAddress()),
+			NewLogFieldInt("port", host.Port()),
+			NewLogFieldString("host_id", host.HostID()),
+			NewLogFieldError("err", err))
 		conn.Close()
 		conn = nil
 	}
@@ -368,7 +368,7 @@ func (c *controlConn) setupConn(conn *Conn, sessionInit bool) error {
 			msg = "Added control host (session initialization)."
 		}
 		logHelper(c.session.logger, logLevel, msg,
-			newLogFieldIp("host_addr", host.ConnectAddress()), newLogFieldString("host_id", host.HostID()))
+			NewLogFieldIP("host_addr", host.ConnectAddress()), NewLogFieldString("host_id", host.HostID()))
 	}
 
 	if err := c.registerEvents(conn); err != nil {
@@ -383,7 +383,7 @@ func (c *controlConn) setupConn(conn *Conn, sessionInit bool) error {
 	c.conn.Store(ch)
 
 	c.session.logger.Info("Control connection connected to host.",
-		newLogFieldIp("host_addr", host.ConnectAddress()), newLogFieldString("host_id", host.HostID()))
+		NewLogFieldIP("host_addr", host.ConnectAddress()), NewLogFieldString("host_id", host.HostID()))
 
 	if c.session.initialized() {
 		// We connected to control conn, so add the connect the host in pool as well.
@@ -445,14 +445,14 @@ func (c *controlConn) reconnect() {
 
 	if err != nil {
 		c.session.logger.Error("Unable to reconnect control connection.",
-			newLogFieldError("err", err))
+			NewLogFieldError("err", err))
 		return
 	}
 
 	err = c.session.refreshRing()
 	if err != nil {
 		c.session.logger.Warning("Unable to refresh ring.",
-			newLogFieldError("err", err))
+			NewLogFieldError("err", err))
 	}
 }
 
@@ -482,7 +482,7 @@ func (c *controlConn) attemptReconnect() (*Conn, error) {
 		return conn, err
 	}
 
-	c.session.logger.Error("Unable to connect to any ring node, control connection falling back to initial contact points.", newLogFieldError("err", err))
+	c.session.logger.Error("Unable to connect to any ring node, control connection falling back to initial contact points.", NewLogFieldError("err", err))
 	// Fallback to initial contact points, as it may be the case that all known initialHosts
 	// changed their IPs while keeping the same hostname(s).
 	initialHosts, resolvErr := addrsToHosts(c.session.cfg.Hosts, c.session.cfg.Port, c.session.logger)
@@ -500,10 +500,10 @@ func (c *controlConn) attemptReconnectToAnyOfHosts(hosts []*HostInfo) (*Conn, er
 		conn, err = c.session.connect(c.session.ctx, host, c)
 		if err != nil {
 			c.session.logger.Info("During reconnection, control connection failed to establish a connection to host.",
-				newLogFieldIp("host_addr", host.ConnectAddress()),
-				newLogFieldInt("port", host.Port()),
-				newLogFieldString("host_id", host.HostID()),
-				newLogFieldError("err", err))
+				NewLogFieldIP("host_addr", host.ConnectAddress()),
+				NewLogFieldInt("port", host.Port()),
+				NewLogFieldString("host_id", host.HostID()),
+				NewLogFieldError("err", err))
 			continue
 		}
 		err = c.setupConn(conn, false)
@@ -511,10 +511,10 @@ func (c *controlConn) attemptReconnectToAnyOfHosts(hosts []*HostInfo) (*Conn, er
 			break
 		}
 		c.session.logger.Info("During reconnection, control connection setup failed after connecting to host.",
-			newLogFieldIp("host_addr", host.ConnectAddress()),
-			newLogFieldInt("port", host.Port()),
-			newLogFieldString("host_id", host.HostID()),
-			newLogFieldError("err", err))
+			NewLogFieldIP("host_addr", host.ConnectAddress()),
+			NewLogFieldInt("port", host.Port()),
+			NewLogFieldString("host_id", host.HostID()),
+			NewLogFieldError("err", err))
 		conn.Close()
 		conn = nil
 	}
@@ -535,9 +535,9 @@ func (c *controlConn) HandleError(conn *Conn, err error, closed bool) {
 	}
 
 	c.session.logger.Warning("Control connection error.",
-		newLogFieldIp("host_addr", conn.host.ConnectAddress()),
-		newLogFieldString("host_id", conn.host.HostID()),
-		newLogFieldError("err", err))
+		NewLogFieldIP("host_addr", conn.host.ConnectAddress()),
+		NewLogFieldString("host_id", conn.host.HostID()),
+		NewLogFieldError("err", err))
 
 	c.reconnect()
 }
@@ -602,7 +602,7 @@ func (c *controlConn) query(statement string, values ...interface{}) (iter *Iter
 
 		if iter.err != nil {
 			c.session.logger.Warning("Error executing control connection statement.",
-				newLogFieldString("statement", statement), newLogFieldError("err", iter.err))
+				NewLogFieldString("statement", statement), NewLogFieldError("err", iter.err))
 		}
 
 		qry.metrics.attempt(0)

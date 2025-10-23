@@ -96,7 +96,7 @@ func getStrategy(ks *KeyspaceMetadata, logger StructuredLogger) placementStrateg
 		rf, err := getReplicationFactorFromOpts(ks.StrategyOptions["replication_factor"])
 		if err != nil {
 			logger.Warning("Failed to parse replication factor of keyspace configured with SimpleStrategy.",
-				newLogFieldString("keyspace", ks.Name), newLogFieldError("err", err))
+				NewLogFieldString("keyspace", ks.Name), NewLogFieldError("err", err))
 			return nil
 		}
 		return &simpleStrategy{rf: rf}
@@ -110,7 +110,7 @@ func getStrategy(ks *KeyspaceMetadata, logger StructuredLogger) placementStrateg
 			rf, err := getReplicationFactorFromOpts(rf)
 			if err != nil {
 				logger.Warning("Failed to parse replication factors of keyspace configured with NetworkTopologyStrategy.",
-					newLogFieldString("keyspace", ks.Name), newLogFieldString("dc", dc), newLogFieldError("err", err))
+					NewLogFieldString("keyspace", ks.Name), NewLogFieldString("dc", dc), NewLogFieldError("err", err))
 				// skip DC if the rf is invalid/unsupported, so that we can at least work with other working DCs.
 				continue
 			}
@@ -122,7 +122,7 @@ func getStrategy(ks *KeyspaceMetadata, logger StructuredLogger) placementStrateg
 		return nil
 	default:
 		logger.Warning("Failed to parse replication factor of keyspace due to unknown strategy class.",
-			newLogFieldString("keyspace", ks.Name), newLogFieldString("strategy_class", ks.StrategyClass))
+			NewLogFieldString("keyspace", ks.Name), NewLogFieldString("strategy_class", ks.StrategyClass))
 		return nil
 	}
 }

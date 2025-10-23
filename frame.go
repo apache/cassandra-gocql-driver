@@ -1046,12 +1046,11 @@ func (f *framer) readTypeInfo() (TypeInfo, error) {
 type preparedMetadata struct {
 	resultMetadata
 
-	// proto v4+
-	pkeyColumns []int
-
-	keyspace string
-
-	table string
+	// pkeyColumns is only present in protocol v4+
+	pkeyColumns         []int
+	supportsPKeyColumns bool
+	keyspace            string
+	table               string
 }
 
 func (r preparedMetadata) String() string {
@@ -1090,6 +1089,7 @@ func (f *framer) parsePreparedMetadata() (preparedMetadata, error) {
 			pkeys[i] = int(c)
 		}
 		meta.pkeyColumns = pkeys
+		meta.supportsPKeyColumns = true
 	}
 
 	if meta.flags&flagHasMorePages == flagHasMorePages {

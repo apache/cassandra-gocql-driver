@@ -51,21 +51,21 @@ import (
 // and automatically sets a default consistency level on all operations
 // that do not have a consistency level set.
 type Session struct {
-	cons                Consistency
-	pageSize            int
-	prefetch            float64
-	routingKeyInfoCache routingKeyInfoLRU
-	schemaDescriber     *schemaDescriber
-	trace               Tracer
-	queryObserver       QueryObserver
-	batchObserver       BatchObserver
-	connectObserver     ConnectObserver
-	frameObserver       FrameHeaderObserver
-	streamObserver      StreamObserver
-	hostSource          *ringDescriber
-	ringRefresher       *refreshDebouncer
-	stmtsLRU            *preparedLRU
-	types               *RegisteredTypes
+	cons                 Consistency
+	pageSize             int
+	prefetch             float64
+	routingMetadataCache routingKeyInfoLRU
+	schemaDescriber      *schemaDescriber
+	trace                Tracer
+	queryObserver        QueryObserver
+	batchObserver        BatchObserver
+	connectObserver      ConnectObserver
+	frameObserver        FrameHeaderObserver
+	streamObserver       StreamObserver
+	hostSource           *ringDescriber
+	ringRefresher        *refreshDebouncer
+	stmtsLRU             *preparedLRU
+	types                *RegisteredTypes
 
 	connCfg *ConnConfig
 
@@ -111,7 +111,7 @@ func addrsToHosts(addrs []string, defaultPort int, logger StructuredLogger) ([]*
 		if err != nil {
 			// Try other hosts if unable to resolve DNS name
 			if _, ok := err.(*net.DNSError); ok {
-				logger.Error("DNS error.", newLogFieldError("err", err))
+				logger.Error("DNS error.", NewLogFieldError("err", err))
 				continue
 			}
 			return nil, err
@@ -167,23 +167,10 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 	s.nodeEvents = newEventDebouncer("NodeEvents", s.handleNodeEvent, s.logger)
 	s.schemaEvents = newEventDebouncer("SchemaEvents", s.handleSchemaEvent, s.logger)
 
-	s.routingKeyInfoCache.lru = lru.New(cfg.MaxRoutingKeyInfo)
+	s.routingMetadataCache.lru = lru.New(cfg.MaxRoutingKeyInfo)
 
 	s.hostSource = &ringDescriber{session: s}
 	s.ringRefresher = newRefreshDebouncer(ringRefreshDebounceTime, func() error { return refreshRing(s.hostSource) })
-
-	if cfg.PoolConfig.HostSelectionPolicy == nil {
-		cfg.PoolConfig.HostSelectionPolicy = RoundRobinHostPolicy()
-	}
-	s.pool = cfg.PoolConfig.buildPool(s)
-
-	s.policy = cfg.PoolConfig.HostSelectionPolicy
-	s.policy.Init(s)
-
-	s.executor = &queryExecutor{
-		pool:   s.pool,
-		policy: cfg.PoolConfig.HostSelectionPolicy,
-	}
 
 	s.queryObserver = cfg.QueryObserver
 	s.batchObserver = cfg.BatchObserver
@@ -198,6 +185,20 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 		return nil, fmt.Errorf("gocql: unable to create session: %v", err)
 	}
 	s.connCfg = connCfg
+
+	if cfg.PoolConfig.HostSelectionPolicy == nil {
+		cfg.PoolConfig.HostSelectionPolicy = RoundRobinHostPolicy()
+	}
+	s.pool = cfg.PoolConfig.buildPool(s)
+	s.policy = cfg.PoolConfig.HostSelectionPolicy
+
+	// set the executor here in case the policy needs to execute queries in Init
+	s.executor = &queryExecutor{
+		pool:   s.pool,
+		policy: cfg.PoolConfig.HostSelectionPolicy,
+	}
+
+	s.policy.Init(s)
 
 	if err := s.init(); err != nil {
 		s.Close()
@@ -234,7 +235,7 @@ func (s *Session) init() error {
 			// TODO(zariel): we really only need this in 1 place
 			s.cfg.ProtoVersion = proto
 			s.connCfg.ProtoVersion = proto
-			s.logger.Info("Discovered protocol version.", newLogFieldInt("protocol_version", proto))
+			s.logger.Info("Discovered protocol version.", NewLogFieldInt("protocol_version", proto))
 		}
 
 		if err := s.control.connect(hosts, true); err != nil {
@@ -256,7 +257,7 @@ func (s *Session) init() error {
 			}
 
 			hosts = filteredHosts
-			s.logger.Info("Refreshed ring.", newLogFieldString("ring", ringString(hosts)))
+			s.logger.Info("Refreshed ring.", NewLogFieldString("ring", ringString(hosts)))
 		} else {
 			s.logger.Info("Not performing a ring refresh because DisableInitialHostLookup is true.")
 		}
@@ -295,7 +296,7 @@ func (s *Session) init() error {
 		}
 		if !exists {
 			s.logger.Info("Adding host (session initialization).",
-				newLogFieldIp("host_addr", host.ConnectAddress()), newLogFieldString("host_id", host.HostID()))
+				NewLogFieldIP("host_addr", host.ConnectAddress()), NewLogFieldString("host_id", host.HostID()))
 		}
 
 		atomic.AddInt64(&left, 1)
@@ -404,16 +405,16 @@ func (s *Session) reconnectDownedHosts(intv time.Duration) {
 			hosts := s.ring.allHosts()
 
 			// Print session.ring for debug.
-			s.logger.Debug("Logging current ring state.", newLogFieldString("ring", ringString(hosts)))
+			s.logger.Debug("Logging current ring state.", NewLogFieldString("ring", ringString(hosts)))
 
 			for _, h := range hosts {
 				if h.IsUp() {
 					continue
 				}
 				s.logger.Debug("Reconnecting to downed host.",
-					newLogFieldIp("host_addr", h.ConnectAddress()),
-					newLogFieldInt("host_port", h.Port()),
-					newLogFieldString("host_id", h.HostID()))
+					NewLogFieldIP("host_addr", h.ConnectAddress()),
+					NewLogFieldInt("host_port", h.Port()),
+					NewLogFieldString("host_id", h.HostID()))
 				// we let the pool call handleNodeConnected to change the host state
 				s.pool.addHost(h)
 			}
@@ -578,7 +579,7 @@ func (s *Session) executeQuery(qry *internalQuery) (it *Iter) {
 }
 
 func (s *Session) removeHost(h *HostInfo) {
-	s.logger.Warning("Removing host.", newLogFieldIp("host_addr", h.ConnectAddress()), newLogFieldString("host_id", h.HostID()))
+	s.logger.Warning("Removing host.", NewLogFieldIP("host_addr", h.ConnectAddress()), NewLogFieldString("host_id", h.HostID()))
 	s.policy.RemoveHost(h)
 	hostID := h.HostID()
 	s.pool.removeHost(hostID)
@@ -599,6 +600,7 @@ func (s *Session) KeyspaceMetadata(keyspace string) (*KeyspaceMetadata, error) {
 
 func (s *Session) getConn() *Conn {
 	hosts := s.ring.allHosts()
+
 	for _, host := range hosts {
 		if !host.IsUp() {
 			continue
@@ -615,23 +617,22 @@ func (s *Session) getConn() *Conn {
 	return nil
 }
 
-// Returns routing key indexes and type info.
+// Returns statement metadata for the purposes of generating a routing key.
 // If keyspace == "" it uses the keyspace which is specified in Cluster.Keyspace
-func (s *Session) routingKeyInfo(ctx context.Context, stmt string, keyspace string) (*routingKeyInfo, error) {
+func (s *Session) routingStatementMetadata(ctx context.Context, stmt string, keyspace string) (*StatementMetadata, error) {
 	if keyspace == "" {
 		keyspace = s.cfg.Keyspace
 	}
 
-	routingKeyInfoCacheKey := keyspace + stmt
-
-	s.routingKeyInfoCache.mu.Lock()
+	key := keyspace + stmt
+	s.routingMetadataCache.mu.Lock()
 
 	// Using here keyspace + stmt as a cache key because
 	// the query keyspace could be overridden via SetKeyspace
-	entry, cached := s.routingKeyInfoCache.lru.Get(routingKeyInfoCacheKey)
+	entry, cached := s.routingMetadataCache.lru.Get(key)
 	if cached {
 		// done accessing the cache
-		s.routingKeyInfoCache.mu.Unlock()
+		s.routingMetadataCache.mu.Unlock()
 		// the entry is an inflight struct similar to that used by
 		// Conn to prepare statements
 		inflight := entry.(*inflightCachedEntry)
@@ -643,7 +644,7 @@ func (s *Session) routingKeyInfo(ctx context.Context, stmt string, keyspace stri
 			return nil, inflight.err
 		}
 
-		key, _ := inflight.value.(*routingKeyInfo)
+		key, _ := inflight.value.(*StatementMetadata)
 
 		return key, nil
 	}
@@ -652,114 +653,113 @@ func (s *Session) routingKeyInfo(ctx context.Context, stmt string, keyspace stri
 	inflight := new(inflightCachedEntry)
 	inflight.wg.Add(1)
 	defer inflight.wg.Done()
-	s.routingKeyInfoCache.lru.Add(routingKeyInfoCacheKey, inflight)
-	s.routingKeyInfoCache.mu.Unlock()
+	s.routingMetadataCache.lru.Add(key, inflight)
+	s.routingMetadataCache.mu.Unlock()
 
-	var (
-		info         *preparedStatment
-		partitionKey []*ColumnMetadata
-	)
+	var meta StatementMetadata
+	meta, inflight.err = s.StatementMetadata(ctx, stmt, keyspace)
+	if inflight.err != nil {
+		// don't cache this error
+		s.routingMetadataCache.Remove(key)
+		return nil, inflight.err
+	}
+
+	inflight.value = &meta
+
+	return &meta, nil
+}
+
+// StatementMetadata represents various metadata about a statement.
+type StatementMetadata struct {
+	// Keyspace is the keyspace of the table for the statement.
+	Keyspace string
+
+	// Table is the table of the statement.
+	Table string
+
+	// BindColumns are columns bound to the statement.
+	BindColumns []ColumnInfo
+
+	// PKBindColumnIndexes are the indexes of the BindColumns that correspond to
+	// partition key columns. If this is empty then one or more columns in the
+	// partition key were not bound to the statement.
+	PKBindColumnIndexes []int
+
+	// ResultColumns are the columns that are returned by the statement.
+	ResultColumns []ColumnInfo
+}
+
+// StatementMetadata returns metadata for a statement. If keyspace is empty,
+// the session's keyspace is used.
+func (s *Session) StatementMetadata(ctx context.Context, stmt, keyspace string) (StatementMetadata, error) {
+	if keyspace == "" {
+		keyspace = s.cfg.Keyspace
+	}
 
 	conn := s.getConn()
 	if conn == nil {
-		// TODO: better error?
-		inflight.err = errors.New("gocql: unable to fetch prepared info: no connection available")
-		return nil, inflight.err
+		return StatementMetadata{}, ErrNoConnections
 	}
 
 	// get the query info for the statement
-	info, inflight.err = conn.prepareStatement(ctx, stmt, nil, keyspace)
-	if inflight.err != nil {
-		// don't cache this error
-		s.routingKeyInfoCache.Remove(stmt)
-		return nil, inflight.err
+	info, err := conn.prepareStatement(ctx, stmt, nil, keyspace)
+	if err != nil {
+		// TODO: it would be nice to mark hosts here but as we are not using the policies
+		// to fetch hosts we cant and we can't use the policies because they might
+		// require token awareness which requires this method
+		return StatementMetadata{}, err
 	}
 
-	// TODO: it would be nice to mark hosts here but as we are not using the policies
-	// to fetch hosts we cant
-
-	if info.request.colCount == 0 {
-		// no arguments, no routing key, and no error
-		return nil, nil
-	}
-
-	table := info.request.table
 	if info.request.keyspace != "" {
 		keyspace = info.request.keyspace
 	}
 
-	if len(info.request.pkeyColumns) > 0 {
-		// proto v4 dont need to calculate primary key columns
-		types := make([]TypeInfo, len(info.request.pkeyColumns))
-		for i, col := range info.request.pkeyColumns {
-			types[i] = info.request.columns[col].TypeInfo
+	meta := StatementMetadata{
+		Keyspace:            keyspace,
+		Table:               info.request.table,
+		BindColumns:         info.request.columns,
+		PKBindColumnIndexes: info.request.pkeyColumns,
+		ResultColumns:       info.response.columns,
+	}
+
+	// if it is protocol < v4 then we need to calculate the routing key info
+	if !info.request.supportsPKeyColumns && len(info.request.columns) > 0 {
+		keyspaceMetadata, err := s.KeyspaceMetadata(meta.Keyspace)
+		if err != nil {
+			// don't cache this error
+			return StatementMetadata{}, err
 		}
 
-		routingKeyInfo := &routingKeyInfo{
-			indexes:  info.request.pkeyColumns,
-			types:    types,
-			keyspace: keyspace,
-			table:    table,
+		tableMetadata, found := keyspaceMetadata.Tables[meta.Table]
+		if !found {
+			// unlikely that the statement could be prepared and the metadata for
+			// the table couldn't be found, but this may indicate either a bug
+			// in the metadata code, or that the table was just dropped.
+			return StatementMetadata{}, ErrNoMetadata
 		}
 
-		inflight.value = routingKeyInfo
-		return routingKeyInfo, nil
-	}
+		meta.PKBindColumnIndexes = make([]int, len(tableMetadata.PartitionKey))
+		for keyIndex, keyColumn := range tableMetadata.PartitionKey {
+			// set an indicator for checking if the mapping is missing
+			meta.PKBindColumnIndexes[keyIndex] = -1
 
-	var keyspaceMetadata *KeyspaceMetadata
-	keyspaceMetadata, inflight.err = s.KeyspaceMetadata(info.request.columns[0].Keyspace)
-	if inflight.err != nil {
-		// don't cache this error
-		s.routingKeyInfoCache.Remove(stmt)
-		return nil, inflight.err
-	}
+			// find the column in the query info
+			for colIndex, boundColumn := range info.request.columns {
+				if keyColumn.Name == boundColumn.Name {
+					// there may be many such bound columns, pick the first
+					meta.PKBindColumnIndexes[keyIndex] = colIndex
+					break
+				}
+			}
 
-	tableMetadata, found := keyspaceMetadata.Tables[table]
-	if !found {
-		// unlikely that the statement could be prepared and the metadata for
-		// the table couldn't be found, but this may indicate either a bug
-		// in the metadata code, or that the table was just dropped.
-		inflight.err = ErrNoMetadata
-		// don't cache this error
-		s.routingKeyInfoCache.Remove(stmt)
-		return nil, inflight.err
-	}
-
-	partitionKey = tableMetadata.PartitionKey
-
-	size := len(partitionKey)
-	routingKeyInfo := &routingKeyInfo{
-		indexes:  make([]int, size),
-		types:    make([]TypeInfo, size),
-		keyspace: keyspace,
-		table:    table,
-	}
-
-	for keyIndex, keyColumn := range partitionKey {
-		// set an indicator for checking if the mapping is missing
-		routingKeyInfo.indexes[keyIndex] = -1
-
-		// find the column in the query info
-		for argIndex, boundColumn := range info.request.columns {
-			if keyColumn.Name == boundColumn.Name {
-				// there may be many such bound columns, pick the first
-				routingKeyInfo.indexes[keyIndex] = argIndex
-				routingKeyInfo.types[keyIndex] = boundColumn.TypeInfo
+			if meta.PKBindColumnIndexes[keyIndex] == -1 {
+				// the partition key column is not bound to the statement
+				meta.PKBindColumnIndexes = nil
 				break
 			}
 		}
-
-		if routingKeyInfo.indexes[keyIndex] == -1 {
-			// missing a routing key column mapping
-			// no routing key, and no error
-			return nil, nil
-		}
 	}
-
-	// cache this result
-	inflight.value = routingKeyInfo
-
-	return routingKeyInfo, nil
+	return meta, nil
 }
 
 // Exec executes a batch operation and returns nil if successful
@@ -2102,16 +2102,20 @@ func (b *Batch) WithTimestamp(timestamp int64) *Batch {
 	return b
 }
 
-func createRoutingKey(routingKeyInfo *routingKeyInfo, values []interface{}) ([]byte, error) {
-	if routingKeyInfo == nil {
+func createRoutingKey(meta *StatementMetadata, values []interface{}) ([]byte, error) {
+	if meta == nil || len(meta.PKBindColumnIndexes) == 0 {
 		return nil, nil
 	}
 
-	if len(routingKeyInfo.indexes) == 1 {
+	if len(values) != len(meta.BindColumns) {
+		return nil, errors.New("gocql: number of values does not match the number of bind columns")
+	}
+
+	if len(meta.PKBindColumnIndexes) == 1 {
 		// single column routing key
 		routingKey, err := Marshal(
-			routingKeyInfo.types[0],
-			values[routingKeyInfo.indexes[0]],
+			meta.BindColumns[meta.PKBindColumnIndexes[0]].TypeInfo,
+			values[meta.PKBindColumnIndexes[0]],
 		)
 		if err != nil {
 			return nil, err
@@ -2121,22 +2125,23 @@ func createRoutingKey(routingKeyInfo *routingKeyInfo, values []interface{}) ([]b
 
 	// composite routing key
 	buf := bytes.NewBuffer(make([]byte, 0, 256))
-	for i := range routingKeyInfo.indexes {
+	lenBuf := make([]byte, 2)
+	for i := range meta.PKBindColumnIndexes {
 		encoded, err := Marshal(
-			routingKeyInfo.types[i],
-			values[routingKeyInfo.indexes[i]],
+			meta.BindColumns[meta.PKBindColumnIndexes[i]].TypeInfo,
+			values[meta.PKBindColumnIndexes[i]],
 		)
 		if err != nil {
 			return nil, err
 		}
-		lenBuf := []byte{0x00, 0x00}
+		// first write the length of the encoded value as a 16-bit big endian integer
 		binary.BigEndian.PutUint16(lenBuf, uint16(len(encoded)))
 		buf.Write(lenBuf)
+		// then write the encoded value and a null byte to separate the values
 		buf.Write(encoded)
 		buf.WriteByte(0x00)
 	}
-	routingKey := buf.Bytes()
-	return routingKey, nil
+	return buf.Bytes(), nil
 }
 
 // SetKeyspace will enable keyspace flag on the query.
@@ -2193,17 +2198,6 @@ func (c ColumnInfo) String() string {
 type routingKeyInfoLRU struct {
 	lru *lru.Cache
 	mu  sync.Mutex
-}
-
-type routingKeyInfo struct {
-	indexes  []int
-	types    []TypeInfo
-	keyspace string
-	table    string
-}
-
-func (r *routingKeyInfo) String() string {
-	return fmt.Sprintf("routing key index=%v types=%v", r.indexes, r.types)
 }
 
 func (r *routingKeyInfoLRU) Remove(key string) {

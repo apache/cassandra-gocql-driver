@@ -2794,66 +2794,62 @@ func TestKeyspaceMetadata(t *testing.T) {
 }
 
 // Integration test of the routing key calculation
-func TestRoutingKey(t *testing.T) {
+func TestRoutingStatementMetadata(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 
-	if err := createTable(session, "CREATE TABLE gocql_test.test_single_routing_key (first_id int, second_id int, PRIMARY KEY (first_id, second_id))"); err != nil {
+	if err := createTable(session, "CREATE TABLE gocql_test.test_single_routing_key (first_id int, second_id varchar, PRIMARY KEY (first_id, second_id))"); err != nil {
 		t.Fatalf("failed to create table with error '%v'", err)
 	}
-	if err := createTable(session, "CREATE TABLE gocql_test.test_composite_routing_key (first_id int, second_id int, PRIMARY KEY ((first_id, second_id)))"); err != nil {
+	if err := createTable(session, "CREATE TABLE gocql_test.test_composite_routing_key (first_id int, second_id varchar, PRIMARY KEY ((first_id, second_id)))"); err != nil {
 		t.Fatalf("failed to create table with error '%v'", err)
 	}
 
-	routingKeyInfo, err := session.routingKeyInfo(context.Background(), "SELECT * FROM test_single_routing_key WHERE second_id=? AND first_id=?", "")
+	meta, err := session.routingStatementMetadata(context.Background(), "SELECT * FROM test_single_routing_key WHERE second_id=? AND first_id=?", "")
 	if err != nil {
-		t.Fatalf("failed to get routing key info due to error: %v", err)
+		t.Fatalf("failed to get routing statement metadata due to error: %v", err)
 	}
-	if routingKeyInfo == nil {
-		t.Fatal("Expected routing key info, but was nil")
+	if meta == nil {
+		t.Fatal("Expected routing statement metadata, but was nil")
 	}
-	if len(routingKeyInfo.indexes) != 1 {
-		t.Fatalf("Expected routing key indexes length to be 1 but was %d", len(routingKeyInfo.indexes))
+	if len(meta.PKBindColumnIndexes) != 1 {
+		t.Fatalf("Expected routing statement metadata PKBindColumnIndexes length to be 1 but was %d", len(meta.PKBindColumnIndexes))
 	}
-	if routingKeyInfo.indexes[0] != 1 {
-		t.Errorf("Expected routing key index[0] to be 1 but was %d", routingKeyInfo.indexes[0])
+	if meta.PKBindColumnIndexes[0] != 1 {
+		t.Errorf("Expected routing statement metadata PKBindColumnIndexes[0] to be 1 but was %d", meta.PKBindColumnIndexes[0])
 	}
-	if len(routingKeyInfo.types) != 1 {
-		t.Fatalf("Expected routing key types length to be 1 but was %d", len(routingKeyInfo.types))
+	if len(meta.BindColumns) != 2 {
+		t.Fatalf("Expected routing statement metadata BindColumns length to be 2 but was %d", len(meta.BindColumns))
 	}
-	if routingKeyInfo.types[0] == nil {
-		t.Fatal("Expected routing key types[0] to be non-nil")
+	if meta.BindColumns[0].TypeInfo.Type() != TypeVarchar {
+		t.Fatalf("Expected routing statement metadata BindColumns[0].TypeInfo.Type to be %v but was %v", TypeVarchar, meta.BindColumns[0].TypeInfo.Type())
 	}
-	if routingKeyInfo.types[0].Type() != TypeInt {
-		t.Fatalf("Expected routing key types[0].Type to be %v but was %v", TypeInt, routingKeyInfo.types[0].Type())
+	if meta.BindColumns[1].TypeInfo.Type() != TypeInt {
+		t.Fatalf("Expected routing statement metadata BindColumns[1].TypeInfo.Type to be %v but was %v", TypeInt, meta.BindColumns[1].TypeInfo.Type())
+	}
+	if len(meta.ResultColumns) != 2 {
+		t.Fatalf("Expected routing statement metadata ResultColumns length to be 2 but was %d", len(meta.ResultColumns))
+	}
+	if meta.ResultColumns[0].Name != "first_id" {
+		t.Fatalf("Expected routing statement metadata ResultColumns[0].Name to be %v but was %v", "first_id", meta.ResultColumns[0].Name)
+	}
+	if meta.ResultColumns[0].TypeInfo.Type() != TypeInt {
+		t.Fatalf("Expected routing statement metadata ResultColumns[0].TypeInfo.Type to be %v but was %v", TypeInt, meta.ResultColumns[0].TypeInfo.Type())
+	}
+	if meta.ResultColumns[1].Name != "second_id" {
+		t.Fatalf("Expected routing statement metadata ResultColumns[1].Name to be %v but was %v", "second_id", meta.ResultColumns[1].Name)
+	}
+	if meta.ResultColumns[1].TypeInfo.Type() != TypeVarchar {
+		t.Fatalf("Expected routing statement metadata ResultColumns[1].TypeInfo.Type to be %v but was %v", TypeVarchar, meta.ResultColumns[1].TypeInfo.Type())
 	}
 
 	// verify the cache is working
-	routingKeyInfo, err = session.routingKeyInfo(context.Background(), "SELECT * FROM test_single_routing_key WHERE second_id=? AND first_id=?", "")
-	if err != nil {
-		t.Fatalf("failed to get routing key info due to error: %v", err)
-	}
-	if len(routingKeyInfo.indexes) != 1 {
-		t.Fatalf("Expected routing key indexes length to be 1 but was %d", len(routingKeyInfo.indexes))
-	}
-	if routingKeyInfo.indexes[0] != 1 {
-		t.Errorf("Expected routing key index[0] to be 1 but was %d", routingKeyInfo.indexes[0])
-	}
-	if len(routingKeyInfo.types) != 1 {
-		t.Fatalf("Expected routing key types length to be 1 but was %d", len(routingKeyInfo.types))
-	}
-	if routingKeyInfo.types[0] == nil {
-		t.Fatal("Expected routing key types[0] to be non-nil")
-	}
-	if routingKeyInfo.types[0].Type() != TypeInt {
-		t.Fatalf("Expected routing key types[0] to be %v but was %v", TypeInt, routingKeyInfo.types[0].Type())
-	}
-	cacheSize := session.routingKeyInfoCache.lru.Len()
+	cacheSize := session.routingMetadataCache.lru.Len()
 	if cacheSize != 1 {
 		t.Errorf("Expected cache size to be 1 but was %d", cacheSize)
 	}
 
-	query := newInternalQuery(session.Query("SELECT * FROM test_single_routing_key WHERE second_id=? AND first_id=?", 1, 2), nil)
+	query := newInternalQuery(session.Query("SELECT * FROM test_single_routing_key WHERE second_id=? AND first_id=?", "1", 2), nil)
 	routingKey, err := query.GetRoutingKey()
 	if err != nil {
 		t.Fatalf("Failed to get routing key due to error: %v", err)
@@ -2863,50 +2859,59 @@ func TestRoutingKey(t *testing.T) {
 		t.Errorf("Expected routing key %v but was %v", expectedRoutingKey, routingKey)
 	}
 
-	routingKeyInfo, err = session.routingKeyInfo(context.Background(), "SELECT * FROM test_composite_routing_key WHERE second_id=? AND first_id=?", "")
+	meta, err = session.routingStatementMetadata(context.Background(), "SELECT * FROM test_composite_routing_key WHERE second_id=? AND first_id=?", "")
 	if err != nil {
-		t.Fatalf("failed to get routing key info due to error: %v", err)
+		t.Fatalf("failed to get routing statement metadata due to error: %v", err)
 	}
-	if routingKeyInfo == nil {
-		t.Fatal("Expected routing key info, but was nil")
+	if meta == nil {
+		t.Fatal("Expected routing statement metadata, but was nil")
 	}
-	if len(routingKeyInfo.indexes) != 2 {
-		t.Fatalf("Expected routing key indexes length to be 2 but was %d", len(routingKeyInfo.indexes))
+	if len(meta.PKBindColumnIndexes) != 2 {
+		t.Fatalf("Expected routing statement metadata PKBindColumnIndexes length to be 2 but was %d", len(meta.PKBindColumnIndexes))
 	}
-	if routingKeyInfo.indexes[0] != 1 {
-		t.Errorf("Expected routing key index[0] to be 1 but was %d", routingKeyInfo.indexes[0])
+	if meta.PKBindColumnIndexes[0] != 1 {
+		t.Errorf("Expected routing statement metadata PKBindColumnIndexes[0] to be 1 but was %d", meta.PKBindColumnIndexes[0])
 	}
-	if routingKeyInfo.indexes[1] != 0 {
-		t.Errorf("Expected routing key index[1] to be 0 but was %d", routingKeyInfo.indexes[1])
+	if meta.PKBindColumnIndexes[1] != 0 {
+		t.Errorf("Expected routing statement metadata PKBindColumnIndexes[1] to be 0 but was %d", meta.PKBindColumnIndexes[1])
 	}
-	if len(routingKeyInfo.types) != 2 {
-		t.Fatalf("Expected routing key types length to be 1 but was %d", len(routingKeyInfo.types))
+	if len(meta.BindColumns) != 2 {
+		t.Fatalf("Expected routing statement metadata BindColumns length to be 2 but was %d", len(meta.BindColumns))
 	}
-	if routingKeyInfo.types[0] == nil {
-		t.Fatal("Expected routing key types[0] to be non-nil")
+	if meta.BindColumns[0].TypeInfo.Type() != TypeVarchar {
+		t.Fatalf("Expected routing statement metadata BindColumns[0].TypeInfo.Type to be %v but was %v", TypeVarchar, meta.BindColumns[0].TypeInfo.Type())
 	}
-	if routingKeyInfo.types[0].Type() != TypeInt {
-		t.Fatalf("Expected routing key types[0] to be %v but was %v", TypeInt, routingKeyInfo.types[0].Type())
+	if meta.BindColumns[1].TypeInfo.Type() != TypeInt {
+		t.Fatalf("Expected routing statement metadata BindColumns[1].TypeInfo.Type to be %v but was %v", TypeInt, meta.BindColumns[1].TypeInfo.Type())
 	}
-	if routingKeyInfo.types[1] == nil {
-		t.Fatal("Expected routing key types[1] to be non-nil")
+	if len(meta.ResultColumns) != 2 {
+		t.Fatalf("Expected routing statement metadata ResultColumns length to be 2 but was %d", len(meta.ResultColumns))
 	}
-	if routingKeyInfo.types[1].Type() != TypeInt {
-		t.Fatalf("Expected routing key types[0] to be %v but was %v", TypeInt, routingKeyInfo.types[1].Type())
+	if meta.ResultColumns[0].Name != "first_id" {
+		t.Fatalf("Expected routing statement metadata ResultColumns[0].Name to be %v but was %v", "first_id", meta.ResultColumns[0].Name)
+	}
+	if meta.ResultColumns[0].TypeInfo.Type() != TypeInt {
+		t.Fatalf("Expected routing statement metadata ResultColumns[0].TypeInfo.Type to be %v but was %v", TypeInt, meta.ResultColumns[0].TypeInfo.Type())
+	}
+	if meta.ResultColumns[1].Name != "second_id" {
+		t.Fatalf("Expected routing statement metadata ResultColumns[1].Name to be %v but was %v", "second_id", meta.ResultColumns[1].Name)
+	}
+	if meta.ResultColumns[1].TypeInfo.Type() != TypeVarchar {
+		t.Fatalf("Expected routing statement metadata ResultColumns[1].TypeInfo.Type to be %v but was %v", TypeVarchar, meta.ResultColumns[1].TypeInfo.Type())
 	}
 
-	query = newInternalQuery(session.Query("SELECT * FROM test_composite_routing_key WHERE second_id=? AND first_id=?", 1, 2), nil)
+	query = newInternalQuery(session.Query("SELECT * FROM test_composite_routing_key WHERE second_id=? AND first_id=?", "1", 2), nil)
 	routingKey, err = query.GetRoutingKey()
 	if err != nil {
 		t.Fatalf("Failed to get routing key due to error: %v", err)
 	}
-	expectedRoutingKey = []byte{0, 4, 0, 0, 0, 2, 0, 0, 4, 0, 0, 0, 1, 0}
+	expectedRoutingKey = []byte{0, 4, 0, 0, 0, 2, 0, 0, 1, 49, 0}
 	if !reflect.DeepEqual(expectedRoutingKey, routingKey) {
 		t.Errorf("Expected routing key %v but was %v", expectedRoutingKey, routingKey)
 	}
 
 	// verify the cache is working
-	cacheSize = session.routingKeyInfoCache.lru.Len()
+	cacheSize = session.routingMetadataCache.lru.Len()
 	if cacheSize != 2 {
 		t.Errorf("Expected cache size to be 2 but was %d", cacheSize)
 	}
@@ -3956,17 +3961,17 @@ func TestRoutingKeyCacheUsesOverriddenKeyspace(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	getRoutingKeyInfo := func(key string) *routingKeyInfo {
+	getStatementMetadata := func(key string) *StatementMetadata {
 		t.Helper()
-		session.routingKeyInfoCache.mu.Lock()
-		value, ok := session.routingKeyInfoCache.lru.Get(key)
+		session.routingMetadataCache.mu.Lock()
+		value, ok := session.routingMetadataCache.lru.Get(key)
 		if !ok {
 			t.Fatalf("routing key not found in cache for key %v", key)
 		}
-		session.routingKeyInfoCache.mu.Unlock()
+		session.routingMetadataCache.mu.Unlock()
 
 		inflight := value.(*inflightCachedEntry)
-		return inflight.value.(*routingKeyInfo)
+		return inflight.value.(*StatementMetadata)
 	}
 
 	const insertQuery = "INSERT INTO routing_key_cache_uses_overridden_ks (id) VALUES (?)"
@@ -3979,8 +3984,8 @@ func TestRoutingKeyCacheUsesOverriddenKeyspace(t *testing.T) {
 	require.NoError(t, err)
 
 	// Ensuring that the cache contains the query with default ks
-	routingKeyInfo1 := getRoutingKeyInfo("gocql_test" + b1.Entries[0].Stmt)
-	require.Equal(t, "gocql_test", routingKeyInfo1.keyspace)
+	meta1 := getStatementMetadata("gocql_test" + b1.Entries[0].Stmt)
+	require.Equal(t, "gocql_test", meta1.Keyspace)
 
 	// Running batch in gocql_test_routing_key_cache ks
 	b2 := session.Batch(LoggedBatch)
@@ -3991,8 +3996,8 @@ func TestRoutingKeyCacheUsesOverriddenKeyspace(t *testing.T) {
 	require.NoError(t, err)
 
 	// Ensuring that the cache contains the query with gocql_test_routing_key_cache ks
-	routingKeyInfo2 := getRoutingKeyInfo("gocql_test_routing_key_cache" + b2.Entries[0].Stmt)
-	require.Equal(t, "gocql_test_routing_key_cache", routingKeyInfo2.keyspace)
+	meta2 := getStatementMetadata("gocql_test_routing_key_cache" + b2.Entries[0].Stmt)
+	require.Equal(t, "gocql_test_routing_key_cache", meta2.Keyspace)
 
 	const selectStmt = "SELECT * FROM routing_key_cache_uses_overridden_ks WHERE id=?"
 
