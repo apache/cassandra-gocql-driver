@@ -60,15 +60,14 @@ func (iter *Iter) RowData() (RowData, error) {
 
 	for _, column := range iter.Columns() {
 		if c, ok := column.TypeInfo.(TupleTypeInfo); !ok {
-			val := c.Zero()
+			val := reflect.New(reflect.TypeOf(column.TypeInfo.Zero()))
 			columns = append(columns, column.Name)
-			values = append(values, &val)
+			values = append(values, val.Interface())
 		} else {
 			for i, elem := range c.Elems {
 				columns = append(columns, TupleColumnName(column.Name, i))
-				var val interface{}
-				val = elem.Zero()
-				values = append(values, &val)
+				val := reflect.New(reflect.TypeOf(elem.Zero()))
+				values = append(values, val.Interface())
 			}
 		}
 	}

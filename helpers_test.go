@@ -259,3 +259,50 @@ func TestGetCassandraTypeInfo(t *testing.T) {
 		})
 	}
 }
+
+func TestIter_RowData(t *testing.T) {
+	iter := &Iter{
+		meta: resultMetadata{
+			columns: []ColumnInfo{
+				{Name: "id", TypeInfo: intTypeInfo{}},
+				{Name: "name", TypeInfo: varcharLikeTypeInfo{typ: TypeText}},
+				{Name: "coords", TypeInfo: TupleTypeInfo{
+					Elems: []TypeInfo{
+						floatTypeInfo{},
+						floatTypeInfo{},
+					},
+				}},
+				{Name: "active", TypeInfo: booleanTypeInfo{}},
+			},
+		},
+	}
+
+	rowData, err := iter.RowData()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	expectedColumns := []string{"id", "name", "coords[0]", "coords[1]", "active"}
+	if !reflect.DeepEqual(rowData.Columns, expectedColumns) {
+		t.Fatalf("expected columns %v got %v", expectedColumns, rowData.Columns)
+	}
+
+	if len(rowData.Values) != len(expectedColumns) {
+		t.Fatalf("expected %d values got %d", len(expectedColumns), len(rowData.Values))
+	}
+
+	expectedTypes := []reflect.Type{
+		reflect.TypeOf((*int)(nil)),
+		reflect.TypeOf((*string)(nil)),
+		reflect.TypeOf((*float32)(nil)),
+		reflect.TypeOf((*float32)(nil)),
+		reflect.TypeOf((*bool)(nil)),
+	}
+
+	for i, val := range rowData.Values {
+		gotType := reflect.TypeOf(val)
+		if gotType != expectedTypes[i] {
+			t.Fatalf("value[%d]: expected type %v got %v", i, expectedTypes[i], gotType)
+		}
+	}
+}

@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Prevent panic with queries during session init (CASSGO-92)
+- Return correct values from RowData (CASSGO-95)
 
 ## [2.0.0]
 
