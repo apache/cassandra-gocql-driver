@@ -34,6 +34,8 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/apache/cassandra-gocql-driver/v2/lz4"
+	"github.com/apache/cassandra-gocql-driver/v2/snappy"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -834,5 +836,60 @@ func BenchmarkFramerReadCol_Set(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		framer.buf = buf
 		_ = framer.readCol(&col, nil, true, "", "")
+	}
+}
+
+func Test_newFrame_compressionFlag(t *testing.T) {
+	tests := []struct {
+		name          string
+		protoVersion  protoVersion
+		compressor    Compressor
+		expectedFlags byte
+	}{
+		{
+			name:          "proto3-nil-compressor",
+			protoVersion:  protoVersion3,
+			compressor:    nil,
+			expectedFlags: 0, // no flags
+		},
+		{
+			name:          "proto3-snappy-compressor",
+			protoVersion:  protoVersion3,
+			compressor:    snappy.SnappyCompressor{},
+			expectedFlags: 0b1, // compressions is enabled
+		},
+		{
+			name:          "proto4-nil-compressor",
+			protoVersion:  protoVersion4,
+			compressor:    nil,
+			expectedFlags: 0,
+		},
+		{
+			name:          "proto4-snappy-compressor",
+			protoVersion:  protoVersion4,
+			compressor:    snappy.SnappyCompressor{},
+			expectedFlags: 0b1,
+		},
+		{
+			name:          "proto5-nil-compressor",
+			protoVersion:  protoVersion5,
+			compressor:    nil,
+			expectedFlags: 0,
+		},
+		{
+			// In protocol v5 compression happens on the segment level (v5 new frame format). The body of the frame (envelope)
+			// is not compressed, so we don't have to set compression flag in the frame header
+			name:          "proto5-lz4-compressor-no-compression-flag",
+			protoVersion:  protoVersion5,
+			compressor:    lz4.LZ4Compressor{},
+			expectedFlags: 0,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			f := newFramer(test.compressor, byte(test.protoVersion), GlobalTypes)
+			require.Equal(t, test.expectedFlags, f.flags)
+		})
 	}
 }
