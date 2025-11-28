@@ -32,7 +32,6 @@ import (
 	"math/rand"
 	"net"
 	"os"
-	"regexp"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -202,55 +201,8 @@ func shuffleHosts(hosts []*HostInfo) []*HostInfo {
 	return shuffled
 }
 
-// this is going to be version dependant and a nightmare to maintain :(
-var protocolSupportRe = regexp.MustCompile(`the lowest supported version is \d+ and the greatest is (\d+)$`)
-var betaProtocolRe = regexp.MustCompile(`Beta version of the protocol used \(.*\), but USE_BETA flag is unset`)
-
-func parseProtocolFromError(err error) int {
-	errStr := err.Error()
-
-	var errProtocol ErrProtocol
-	if errors.As(err, &errProtocol) {
-		err = errProtocol.error
-	}
-
-	// I really wish this had the actual info in the error frame...
-	matches := betaProtocolRe.FindAllStringSubmatch(errStr, -1)
-	if len(matches) == 1 {
-		var protoErr *protocolError
-		if errors.As(err, &protoErr) {
-			version := protoErr.frame.Header().version.version()
-			if version > 0 {
-				return int(version - 1)
-			}
-		}
-		return 0
-	}
-
-	matches = protocolSupportRe.FindAllStringSubmatch(errStr, -1)
-	if len(matches) != 1 || len(matches[0]) != 2 {
-		var protoErr *protocolError
-		if errors.As(err, &protoErr) {
-			return int(protoErr.frame.Header().version.version())
-		}
-		return 0
-	}
-
-	max, err := strconv.Atoi(matches[0][1])
-	if err != nil {
-		return 0
-	}
-
-	return max
-}
-
-const highestProtocolVersionSupported = 5
-
 func (c *controlConn) discoverProtocol(hosts []*HostInfo) (int, error) {
 	hosts = shuffleHosts(hosts)
-
-	connCfg := *c.session.connCfg
-	connCfg.ProtoVersion = highestProtocolVersionSupported
 
 	handler := connErrorHandlerFn(func(c *Conn, err error, closed bool) {
 		// we should never get here, but if we do it means we connected to a
@@ -261,30 +213,56 @@ func (c *controlConn) discoverProtocol(hosts []*HostInfo) (int, error) {
 	})
 
 	var err error
+	var proto int
 	for _, host := range hosts {
-		var conn *Conn
-		conn, err = c.session.dial(c.session.ctx, host, &connCfg, handler)
+		proto, err = c.tryProtocolVersionsForHost(host, handler)
+		if err == nil {
+			return proto, nil
+		}
+
+		c.session.logger.Debug("Failed to discover protocol version for host.",
+			NewLogFieldIP("host_addr", host.ConnectAddress()),
+			NewLogFieldError("err", err))
+	}
+
+	return 0, err
+}
+
+func (c *controlConn) tryProtocolVersionsForHost(host *HostInfo, handler ConnErrorHandler) (int, error) {
+	connCfg := *c.session.connCfg
+
+	var triedVersions []int
+
+	for proto := highestProtocolVersionSupported; proto >= lowestProtocolVersionSupported; proto-- {
+		connCfg.ProtoVersion = proto
+
+		conn, err := c.session.dial(c.session.ctx, host, &connCfg, handler)
 		if conn != nil {
 			conn.Close()
 		}
 
 		if err == nil {
-			c.session.logger.Debug("Discovered protocol version using host.",
-				NewLogFieldInt("protocol_version", connCfg.ProtoVersion), NewLogFieldIP("host_addr", host.ConnectAddress()), NewLogFieldString("host_id", host.HostID()))
-			return connCfg.ProtoVersion, nil
-		}
-
-		if proto := parseProtocolFromError(err); proto > 0 {
-			c.session.logger.Debug("Discovered protocol version using host after parsing protocol error.",
-				NewLogFieldInt("protocol_version", proto), NewLogFieldIP("host_addr", host.ConnectAddress()), NewLogFieldString("host_id", host.HostID()))
 			return proto, nil
 		}
 
-		c.session.logger.Debug("Failed to discover protocol version using host.",
-			NewLogFieldIP("host_addr", host.ConnectAddress()), NewLogFieldString("host_id", host.HostID()), NewLogFieldError("err", err))
+		var unsupportedErr *unsupportedProtocolVersionError
+		if errors.As(err, &unsupportedErr) {
+			// the host does not support this protocol version, try a lower version
+			c.session.logger.Debug("Failed to connect to host during protocol negotiation.",
+				NewLogFieldIP("host_addr", host.ConnectAddress()),
+				NewLogFieldInt("proto_version", proto),
+				NewLogFieldError("err", err))
+			triedVersions = append(triedVersions, connCfg.ProtoVersion)
+			continue
+		}
+
+		c.session.logger.Debug("Error connecting to host during protocol negotiation.",
+			NewLogFieldIP("host_addr", host.ConnectAddress()),
+			NewLogFieldError("err", err))
+		return 0, err
 	}
 
-	return 0, err
+	return 0, fmt.Errorf("gocql: failed to discover protocol version for host %s, tried versions: %v", host.ConnectAddress(), triedVersions)
 }
 
 func (c *controlConn) connect(hosts []*HostInfo, sessionInit bool) error {

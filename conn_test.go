@@ -1054,6 +1054,9 @@ type newTestServerOpts struct {
 	addr     string
 	protocol uint8
 	recvHook func(*framer)
+
+	customRequestHandler       func(srv *TestServer, reqFrame, respFrame *framer) error
+	dontFailOnProtocolMismatch bool
 }
 
 func (nts newTestServerOpts) newServer(t testing.TB, ctx context.Context) *TestServer {
@@ -1078,6 +1081,9 @@ func (nts newTestServerOpts) newServer(t testing.TB, ctx context.Context) *TestS
 		cancel:     cancel,
 
 		onRecv: nts.recvHook,
+
+		customRequestHandler:       nts.customRequestHandler,
+		dontFailOnProtocolMismatch: nts.dontFailOnProtocolMismatch,
 	}
 
 	go srv.closeWatch()
@@ -1142,6 +1148,10 @@ type TestServer struct {
 
 	// onRecv is a hook point for tests, called in receive loop.
 	onRecv func(*framer)
+
+	// customRequestHandler allows overriding the default request handling for testing purposes.
+	customRequestHandler       func(srv *TestServer, reqFrame, respFrame *framer) error
+	dontFailOnProtocolMismatch bool
 }
 
 func (srv *TestServer) closeWatch() {
@@ -1162,9 +1172,26 @@ func (srv *TestServer) serve() {
 		}
 
 		go func(conn net.Conn) {
+			var startupCompleted bool
+			var useProtoV5 bool
+
 			defer conn.Close()
 			for !srv.isClosed() {
-				framer, err := srv.readFrame(conn)
+				var reader io.Reader = conn
+
+				if useProtoV5 && startupCompleted {
+					frame, _, err := readUncompressedSegment(conn)
+					if err != nil {
+						if errors.Is(err, io.EOF) {
+							return
+						}
+						srv.errorLocked(err)
+						return
+					}
+					reader = bytes.NewReader(frame)
+				}
+
+				framer, err := srv.readFrame(reader)
 				if err != nil {
 					if err == io.EOF {
 						return
@@ -1177,7 +1204,7 @@ func (srv *TestServer) serve() {
 					srv.onRecv(framer)
 				}
 
-				go srv.process(conn, framer)
+				srv.process(conn, framer, &useProtoV5, &startupCompleted)
 			}
 		}(conn)
 	}
@@ -1215,13 +1242,22 @@ func (srv *TestServer) errorLocked(err interface{}) {
 	srv.t.Error(err)
 }
 
-func (srv *TestServer) process(conn net.Conn, reqFrame *framer) {
+func (srv *TestServer) process(conn net.Conn, reqFrame *framer, useProtoV5, startupCompleted *bool) {
 	head := reqFrame.header
 	if head == nil {
 		srv.errorLocked("process frame with a nil header")
 		return
 	}
-	respFrame := newFramer(nil, reqFrame.proto, GlobalTypes)
+	respFrame := newFramer(nil, byte(head.version), GlobalTypes)
+
+	if srv.customRequestHandler != nil {
+		if err := srv.customRequestHandler(srv, reqFrame, respFrame); err != nil {
+			srv.errorLocked(err)
+			return
+		}
+		// Dont like this but...
+		goto finish
+	}
 
 	switch head.op {
 	case opStartup:
@@ -1412,26 +1448,46 @@ func (srv *TestServer) process(conn net.Conn, reqFrame *framer) {
 		respFrame.writeString("not supported")
 	}
 
-	respFrame.buf[0] = srv.protocol | 0x80
+finish:
+
+	respFrame.buf[0] |= 0x80
 
 	if err := respFrame.finish(); err != nil {
 		srv.errorLocked(err)
 	}
 
-	if err := respFrame.writeTo(conn); err != nil {
-		srv.errorLocked(err)
+	if *useProtoV5 && *startupCompleted {
+		segment, err := newUncompressedSegment(respFrame.buf, true)
+		if err == nil {
+			_, err = conn.Write(segment)
+		}
+		if err != nil {
+			srv.errorLocked(err)
+			return
+		}
+	} else {
+		if err := respFrame.writeTo(conn); err != nil {
+			srv.errorLocked(err)
+		}
+
+		if reqFrame.header.op == opStartup {
+			*startupCompleted = true
+			if head.version == protoVersion5 {
+				*useProtoV5 = true
+			}
+		}
 	}
 }
 
-func (srv *TestServer) readFrame(conn net.Conn) (*framer, error) {
+func (srv *TestServer) readFrame(reader io.Reader) (*framer, error) {
 	buf := make([]byte, srv.headerSize)
-	head, err := readHeader(conn, buf)
+	head, err := readHeader(reader, buf)
 	if err != nil {
 		return nil, err
 	}
 	framer := newFramer(nil, srv.protocol, GlobalTypes)
 
-	err = framer.readFrame(conn, &head)
+	err = framer.readFrame(reader, &head)
 	if err != nil {
 		return nil, err
 	}
@@ -1439,7 +1495,7 @@ func (srv *TestServer) readFrame(conn net.Conn) (*framer, error) {
 	// should be a request frame
 	if head.version.response() {
 		return nil, fmt.Errorf("expected to read a request frame got version: %v", head.version)
-	} else if head.version.version() != srv.protocol {
+	} else if !srv.dontFailOnProtocolMismatch && head.version.version() != srv.protocol {
 		return nil, fmt.Errorf("expected to read protocol version 0x%x got 0x%x", srv.protocol, head.version.version())
 	}
 

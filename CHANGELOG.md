@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Prevent panic with queries during session init (CASSGO-92)
 - Return correct values from RowData (CASSGO-95)
 - Prevent setting a compression flag in a frame header when native proto v5 is being used (CASSGO-98)
+- Use protocol downgrading approach during protocol negotiation (CASSGO-97)
 
 ## [2.0.0]
 

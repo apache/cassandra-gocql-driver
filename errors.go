@@ -244,3 +244,13 @@ type RequestErrCASWriteUnknown struct {
 	Received    int
 	BlockFor    int
 }
+
+type unsupportedProtocolVersionError struct {
+	hostInfo *HostInfo
+	version  protoVersion
+	err      error
+}
+
+func (e unsupportedProtocolVersionError) Error() string {
+	return fmt.Sprintf("unsupported protocol version %d for host %s", e.version, e.hostInfo.ConnectAddress())
+}

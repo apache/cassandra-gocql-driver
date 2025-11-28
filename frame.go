@@ -65,11 +65,12 @@ func NamedValue(name string, value interface{}) interface{} {
 const (
 	protoDirectionMask = 0x80
 	protoVersionMask   = 0x7F
-	protoVersion1      = 0x01
-	protoVersion2      = 0x02
 	protoVersion3      = 0x03
 	protoVersion4      = 0x04
 	protoVersion5      = 0x05
+
+	lowestProtocolVersionSupported  = protoVersion3
+	highestProtocolVersionSupported = protoVersion5
 
 	maxFrameSize = 256 * 1024 * 1024
 
@@ -422,7 +423,7 @@ func readHeader(r io.Reader, p []byte) (head frameHeader, err error) {
 
 	version := p[0] & protoVersionMask
 
-	if version < protoVersion3 || version > protoVersion5 {
+	if version < lowestProtocolVersionSupported || version > highestProtocolVersionSupported {
 		return frameHeader{}, fmt.Errorf("gocql: unsupported protocol response version: %d", version)
 	}
 
@@ -2367,6 +2368,14 @@ func (f *framer) writeStringMap(m map[string]string) {
 	for k, v := range m {
 		f.writeString(k)
 		f.writeString(v)
+	}
+}
+
+func (f *framer) writeStringMultiMap(m map[string][]string) {
+	f.writeShort(uint16(len(m)))
+	for k, v := range m {
+		f.writeString(k)
+		f.writeStringList(v)
 	}
 }
 

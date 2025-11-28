@@ -378,6 +378,13 @@ func (s *startupCoordinator) setupConn(ctx context.Context) error {
 	select {
 	case err := <-startupErr:
 		if err != nil {
+			if s.checkProtocolRelatedError(err) {
+				return &unsupportedProtocolVersionError{
+					err:      err,
+					hostInfo: s.conn.host,
+					version:  protoVersion(s.conn.version),
+				}
+			}
 			return err
 		}
 	case <-ctx.Done():
@@ -385,6 +392,38 @@ func (s *startupCoordinator) setupConn(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// Checks if the error is protocol related and should be retried during startup.
+// It returns the frame that caused the error and whether the error should be retried.
+func (s *startupCoordinator) checkProtocolRelatedError(err error) bool {
+	var unwrappedFrame frame
+
+	var protocolErr *protocolError
+	if !errors.As(err, &protocolErr) {
+		var errFrame errorFrame
+		if !errors.As(err, &errFrame) {
+			return false
+		} else {
+			unwrappedFrame = errFrame
+		}
+	} else {
+		unwrappedFrame = protocolErr.frame
+	}
+
+	switch frame := unwrappedFrame.(type) {
+	case *supportedFrame:
+		// We can receive a supportedFrame wrapped in protocolError from Conn.recv if the host responds to a 0 stream id.
+		// If we receive a supportedFrame then we know that the host is not compatible with the protocol version, but it is reachable, so we can retry
+		return true
+	case errorFrame:
+		// If we receive an errorFrame with codes ErrCodeProtocol or ErrCodeServer,
+		// then we should try to downgrade a protocol version, so do not skip the host
+		return frame.code == ErrCodeProtocol || frame.code == ErrCodeServer
+	default:
+		// In any other case we should not retry as it means the host is not reachable or some other error happened
+		return false
+	}
 }
 
 func (s *startupCoordinator) write(ctx context.Context, frame frameBuilder, startupCompleted *atomic.Bool) (frame, error) {
@@ -408,12 +447,14 @@ func (s *startupCoordinator) options(ctx context.Context, startupCompleted *atom
 		return err
 	}
 
-	supported, ok := frame.(*supportedFrame)
-	if !ok {
-		return NewErrProtocol("Unknown type of response to startup frame: %T", frame)
+	switch frame := frame.(type) {
+	case *supportedFrame:
+		return s.startup(ctx, frame.supported, startupCompleted)
+	case error:
+		return frame
+	default:
+		return NewErrProtocol("Unknown type of response to startup frame: %T (frame=%s)", frame, frame.String())
 	}
-
-	return s.startup(ctx, supported.supported, startupCompleted)
 }
 
 func (s *startupCoordinator) startup(ctx context.Context, supported map[string][]string, startupCompleted *atomic.Bool) error {
