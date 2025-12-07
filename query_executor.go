@@ -61,6 +61,7 @@ type internalRequest interface {
 	attempt(keyspace string, end, start time.Time, iter *Iter, host *HostInfo)
 	retryPolicy() RetryPolicy
 	speculativeExecutionPolicy() SpeculativeExecutionPolicy
+	speculativeExecutionStarted() // Used to update speculative execution count
 	getQueryMetrics() *queryMetrics
 	getRoutingInfo() *queryRoutingInfo
 	getKeyspaceFunc() func() string
@@ -91,6 +92,8 @@ func (q *queryExecutor) speculate(ctx context.Context, qry internalRequest, sp S
 	for i := 0; i < sp.Attempts(); i++ {
 		select {
 		case <-ticker.C:
+			// Increment speculative count in metrics so it's available to the observer
+			qry.speculativeExecutionStarted()
 			go q.run(ctx, qry, hostIter, results)
 		case <-ctx.Done():
 			return newErrIter(ctx.Err(), qry.getQueryMetrics(), qry.Keyspace(), qry.getRoutingInfo(), qry.getKeyspaceFunc())
@@ -383,17 +386,18 @@ func (q *internalQuery) attempt(keyspace string, end, start time.Time, iter *Ite
 	if q.qryOpts.observer != nil {
 		metricsForHost := q.hostMetricsManager.attempt(latency, host)
 		q.qryOpts.observer.ObserveQuery(q.qryOpts.context, ObservedQuery{
-			Keyspace:  keyspace,
-			Statement: q.qryOpts.stmt,
-			Values:    q.qryOpts.values,
-			Start:     start,
-			End:       end,
-			Rows:      iter.numRows,
-			Host:      host,
-			Metrics:   metricsForHost,
-			Err:       iter.err,
-			Attempt:   attempt,
-			Query:     q.originalQuery,
+			Keyspace:              keyspace,
+			Statement:             q.qryOpts.stmt,
+			Values:                q.qryOpts.values,
+			Start:                 start,
+			End:                   end,
+			Rows:                  iter.numRows,
+			Host:                  host,
+			Metrics:               metricsForHost,
+			Err:                   iter.err,
+			Attempt:               attempt,
+			Query:                 q.originalQuery,
+			SpeculativeExecutions: q.metrics.speculativeExecutions(),
 		})
 	}
 }
@@ -408,6 +412,10 @@ func (q *internalQuery) retryPolicy() RetryPolicy {
 
 func (q *internalQuery) speculativeExecutionPolicy() SpeculativeExecutionPolicy {
 	return q.qryOpts.spec
+}
+
+func (q *internalQuery) speculativeExecutionStarted() {
+	q.metrics.speculativeExecution()
 }
 
 func (q *internalQuery) GetRoutingKey() ([]byte, error) {
@@ -612,11 +620,12 @@ func (b *internalBatch) attempt(keyspace string, end, start time.Time, iter *Ite
 		Start:      start,
 		End:        end,
 		// Rows not used in batch observations // TODO - might be able to support it when using BatchCAS
-		Host:    host,
-		Metrics: metricsForHost,
-		Err:     iter.err,
-		Attempt: attempt,
-		Batch:   b.originalBatch,
+		Host:                  host,
+		Metrics:               metricsForHost,
+		Err:                   iter.err,
+		Attempt:               attempt,
+		Batch:                 b.originalBatch,
+		SpeculativeExecutions: b.metrics.speculativeExecutions(),
 	})
 }
 
@@ -626,6 +635,10 @@ func (b *internalBatch) retryPolicy() RetryPolicy {
 
 func (b *internalBatch) speculativeExecutionPolicy() SpeculativeExecutionPolicy {
 	return b.batchOpts.spec
+}
+
+func (b *internalBatch) speculativeExecutionStarted() {
+	b.metrics.speculativeExecution()
 }
 
 func (b *internalBatch) GetRoutingKey() ([]byte, error) {
