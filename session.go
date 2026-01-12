@@ -1272,6 +1272,15 @@ func (q *Query) SerialConsistency(cons Consistency) *Query {
 	return q
 }
 
+// GetSerialConsistency returns the currently configured serial consistency level
+// for the query. If the serial consistency level has not been set, it returns nil.
+func (q *Query) GetSerialConsistency() *Consistency {
+	if !q.serialCons.isSerial() {
+		return nil
+	}
+	return &q.serialCons
+}
+
 // PageState sets the paging state for the query to resume paging from a specific
 // point in time. Setting this will disable to query paging for this query, and
 // must be used for all subsequent pages.
@@ -2077,6 +2086,15 @@ func (b *Batch) SerialConsistency(cons Consistency) *Batch {
 	}
 	b.serialCons = cons
 	return b
+}
+
+// GetSerialConsistency returns the currently configured serial consistency level
+// for the batch. If the serial consistency level has not been set, it returns nil.
+func (b *Batch) GetSerialConsistency() *Consistency {
+	if !b.serialCons.isSerial() {
+		return nil
+	}
+	return &b.serialCons
 }
 
 // DefaultTimestamp will enable the with default timestamp flag on the query.
