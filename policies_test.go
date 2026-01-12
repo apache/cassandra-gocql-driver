@@ -72,7 +72,7 @@ func TestRoundRobbin(t *testing.T) {
 // round-robin host selection policy fallback.
 func TestHostPolicy_TokenAware_SimpleStrategy(t *testing.T) {
 	const keyspace = "myKeyspace"
-	policy := TokenAwareHostPolicy(RoundRobinHostPolicy())
+	policy := TokenAwareHostPolicy(RoundRobinHostPolicy(), DoNotShuffleReplicas())
 	policyInternal := policy.(*tokenAwareHostPolicy)
 	policyInternal.getKeyspaceName = func() string { return keyspace }
 	policyInternal.getKeyspaceMetadata = func(ks string) (*KeyspaceMetadata, error) {

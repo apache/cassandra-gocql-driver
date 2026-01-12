@@ -344,7 +344,7 @@
 //	cluster := gocql.NewCluster("192.168.1.1", "192.168.1.2", "192.168.1.3")
 //	cluster.PoolConfig.HostSelectionPolicy = gocql.TokenAwareHostPolicy(gocql.DCAwareRoundRobinPolicy("dc1"))
 //
-// Note that [TokenAwareHostPolicy] can take options such as [ShuffleReplicas] and [NonLocalReplicasFallback].
+// Note that [TokenAwareHostPolicy] can take options such as [ShuffleReplicas], [DoNotShuffleReplicas] and [NonLocalReplicasFallback].
 //
 // We recommend running with a token aware host policy in production for maximum performance.
 //

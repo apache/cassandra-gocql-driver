@@ -380,9 +380,21 @@ func (r *roundRobinHostPolicy) HostDown(host *HostInfo) {
 	r.RemoveHost(host)
 }
 
+// ShuffleReplicas returns an option function to enable shuffling of replicas in token-aware host selection.
+// When enabled, the set of replicas for a partition key will be traversed in randomized order.
 func ShuffleReplicas() func(*tokenAwareHostPolicy) {
 	return func(t *tokenAwareHostPolicy) {
 		t.shuffleReplicas = true
+		t.shuffleDecisionExplicit = true
+	}
+}
+
+// DoNotShuffleReplicas returns an option function to disable shuffling of replicas in token-aware host selection.
+// When disabled, replicas are traversed in their natural (token ring) order.
+func DoNotShuffleReplicas() func(*tokenAwareHostPolicy) {
+	return func(t *tokenAwareHostPolicy) {
+		t.shuffleReplicas = false
+		t.shuffleDecisionExplicit = true
 	}
 }
 
@@ -396,6 +408,19 @@ func NonLocalReplicasFallback() func(policy *tokenAwareHostPolicy) {
 	return func(t *tokenAwareHostPolicy) {
 		t.nonLocalReplicasFallback = true
 	}
+}
+
+// ShuffledTokenAwareHostPolicy is a token aware host selection policy that shuffles replicas.
+func ShuffledTokenAwareHostPolicy(fallback HostSelectionPolicy, opts ...func(*tokenAwareHostPolicy)) HostSelectionPolicy {
+	p := &tokenAwareHostPolicy{
+		fallback:                fallback,
+		shuffleReplicas:         true,
+		shuffleDecisionExplicit: true,
+	}
+	for _, opt := range opts {
+		opt(p)
+	}
+	return p
 }
 
 // TokenAwareHostPolicy is a token aware host selection policy, where hosts are
@@ -426,6 +451,7 @@ type tokenAwareHostPolicy struct {
 
 	shuffleReplicas          bool
 	nonLocalReplicasFallback bool
+	shuffleDecisionExplicit  bool
 
 	// mu protects writes to hosts, partitioner, metadata.
 	// reads can be unlocked as long as they are not used for updating state later.
@@ -448,6 +474,9 @@ func (t *tokenAwareHostPolicy) Init(s *Session) {
 	t.getKeyspaceMetadata = s.KeyspaceMetadata
 	t.getKeyspaceName = func() string { return s.cfg.Keyspace }
 	t.logger = s.logger
+	if !t.shuffleDecisionExplicit {
+		t.logger.Warning("By default, token aware policy doesn't shuffle the replicas which isn't recommended. If this is intentional, use the DoNotShuffleReplicas option to make this warning go away (e.g. TokenAwareHostPolicy(fallbackpolicy, DoNotShuffleReplicas))")
+	}
 }
 
 func (t *tokenAwareHostPolicy) IsLocal(host *HostInfo) bool {
