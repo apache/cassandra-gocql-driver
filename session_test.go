@@ -108,6 +108,15 @@ func TestQueryBasicAPI(t *testing.T) {
 		t.Fatalf("expected Query.GetConsistency to return 'All', got '%s'", qry.GetConsistency())
 	}
 
+	if sc, ok := qry.GetSerialConsistency(); ok {
+		t.Fatalf("expected Query.GetSerialConsistency to return false when not set, got '%s'", sc)
+	}
+
+	qry.SerialConsistency(Serial)
+	if sc, ok := qry.GetSerialConsistency(); !ok || sc != Serial {
+		t.Fatalf("expected Query.GetSerialConsistency to return 'Serial', got '%v' (ok=%v)", sc, ok)
+	}
+
 	trace := &traceWriter{}
 	qry.Trace(trace)
 	if qry.trace != trace {
@@ -192,6 +201,16 @@ func TestBatchBasicAPI(t *testing.T) {
 	b.Cons = One
 	if b.GetConsistency() != One {
 		t.Fatalf("expected batch.GetConsistency() to return 'One', got '%s'", b.GetConsistency())
+	}
+
+	// Test Serial Consistency
+	if sc, ok := b.GetSerialConsistency(); ok {
+		t.Fatalf("expected batch.GetSerialConsistency() to return false when not set, got '%s'", sc)
+	}
+
+	b.SerialConsistency(Serial)
+	if sc, ok := b.GetSerialConsistency(); !ok || sc != Serial {
+		t.Fatalf("expected batch.GetSerialConsistency() to return 'Serial', got '%v' (ok=%v)", sc, ok)
 	}
 
 	trace := &traceWriter{}

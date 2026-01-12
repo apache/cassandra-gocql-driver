@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Introduced configurable schema metadata caching modes to control what metadata is cached (CASSGO-107)
 - Support for session ready, host state, topology change and schema changes custom listeners (CASSGO-101)
 - Add Session.AllKeyspaceMetadata() (CASSGO-109)
+- Add GetSerialConsistency method to Query and Batch (CASSGO-103)
 
 ### Fixed
 
