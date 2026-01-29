@@ -359,8 +359,14 @@ func compileMetadata(
 	}
 	keyspace.Aggregates = make(map[string]*AggregateMetadata, len(aggregates))
 	for i, _ := range aggregates {
-		aggregates[i].FinalFunc = *keyspace.Functions[aggregates[i].finalFunc]
-		aggregates[i].StateFunc = *keyspace.Functions[aggregates[i].stateFunc]
+		finalFunc := keyspace.Functions[aggregates[i].finalFunc]
+		if finalFunc != nil {
+			aggregates[i].FinalFunc = *finalFunc
+		}
+		stateFunc := keyspace.Functions[aggregates[i].stateFunc]
+		if stateFunc != nil {
+			aggregates[i].StateFunc = *stateFunc
+		}
 		keyspace.Aggregates[aggregates[i].Name] = &aggregates[i]
 	}
 	keyspace.UserTypes = make(map[string]*UserTypeMetadata, len(uTypes))

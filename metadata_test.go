@@ -34,6 +34,8 @@ package gocql
 import (
 	"strconv"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 // Tests V1 and V2 metadata "compilation" from example data which might be returned
@@ -595,4 +597,162 @@ func assertParseNonCompositeTypes(
 			t.Errorf("%s: Expected to not parse Key, but was %+v", context, collection.Key)
 		}
 	}
+}
+
+func TestCompileMetadataWithFunctions(t *testing.T) {
+	session := &Session{
+		cfg: ClusterConfig{
+			ProtoVersion: protoVersion5,
+			Logger:       NewLogger(LogLevelInfo),
+		},
+		types: GlobalTypes.Copy(),
+	}
+
+	keyspace := &KeyspaceMetadata{
+		Name: "test_keyspace",
+	}
+
+	functions := []FunctionMetadata{
+		{
+			Keyspace:          "test_keyspace",
+			Name:              "test_func",
+			ArgumentTypes:     []TypeInfo{intTypeInfo{}},
+			ArgumentNames:     []string{"arg1"},
+			Body:              "return arg1 + 1;",
+			CalledOnNullInput: false,
+		},
+		{
+			Keyspace:          "test_keyspace",
+			Name:              "test_func_no_args",
+			ArgumentTypes:     []TypeInfo{},
+			ArgumentNames:     []string{},
+			Body:              "return 1;",
+			CalledOnNullInput: false,
+		},
+		{
+			Keyspace:          "test_keyspace",
+			Name:              "test_func_null_input",
+			ArgumentTypes:     []TypeInfo{intTypeInfo{}},
+			ArgumentNames:     []string{"arg1"},
+			Body:              "if (arg1 == null) return 0; else return arg1;",
+			CalledOnNullInput: true,
+		},
+	}
+
+	compileMetadata(session, keyspace, nil, nil, functions, nil, nil, nil)
+
+	require.Len(t, keyspace.Functions, 3, "Expected to have 3 functions")
+	require.Contains(t, keyspace.Functions, "test_func")
+	require.Contains(t, keyspace.Functions, "test_func_no_args")
+	require.Contains(t, keyspace.Functions, "test_func_null_input")
+
+	testFunc := keyspace.Functions["test_func"]
+	require.Equal(t, "test_func", testFunc.Name)
+	require.Len(t, testFunc.ArgumentTypes, 1)
+	require.Equal(t, TypeInt, testFunc.ArgumentTypes[0].Type())
+	require.Len(t, testFunc.ArgumentNames, 1)
+	require.Equal(t, "arg1", testFunc.ArgumentNames[0])
+	require.Equal(t, "return arg1 + 1;", testFunc.Body)
+	require.False(t, testFunc.CalledOnNullInput)
+
+	testFuncNoArgs := keyspace.Functions["test_func_no_args"]
+	require.Equal(t, "test_func_no_args", testFuncNoArgs.Name)
+	require.Empty(t, testFuncNoArgs.ArgumentTypes)
+	require.Empty(t, testFuncNoArgs.ArgumentNames)
+	require.Equal(t, "return 1;", testFuncNoArgs.Body)
+	require.False(t, testFuncNoArgs.CalledOnNullInput)
+
+	testFuncNullInput := keyspace.Functions["test_func_null_input"]
+	require.Equal(t, "test_func_null_input", testFuncNullInput.Name)
+	require.Len(t, testFuncNullInput.ArgumentTypes, 1)
+	require.Equal(t, TypeInt, testFuncNullInput.ArgumentTypes[0].Type())
+	require.Len(t, testFuncNullInput.ArgumentNames, 1)
+	require.Equal(t, "arg1", testFuncNullInput.ArgumentNames[0])
+	require.Equal(t, "if (arg1 == null) return 0; else return arg1;", testFuncNullInput.Body)
+	require.True(t, testFuncNullInput.CalledOnNullInput)
+}
+
+func TestCompileMetadataWithAggregates(t *testing.T) {
+	session := &Session{
+		cfg: ClusterConfig{
+			ProtoVersion: protoVersion5,
+			Logger:       NewLogger(LogLevelInfo),
+		},
+		types: GlobalTypes.Copy(),
+	}
+
+	keyspace := &KeyspaceMetadata{
+		Name: "test_keyspace",
+	}
+
+	functions := []FunctionMetadata{
+		{
+			Keyspace:          "test_keyspace",
+			Name:              "test_state_func",
+			ArgumentTypes:     []TypeInfo{intTypeInfo{}},
+			ArgumentNames:     []string{"arg1"},
+			Body:              "return arg1 + 1;",
+			CalledOnNullInput: false,
+		},
+		{
+			Keyspace:          "test_keyspace",
+			Name:              "test_final_func",
+			ArgumentTypes:     []TypeInfo{floatTypeInfo{}},
+			ArgumentNames:     []string{"arg1"},
+			Body:              "return arg1 + 1;",
+			CalledOnNullInput: false,
+		},
+	}
+
+	aggregates := []AggregateMetadata{
+		{
+			Keyspace: "test_keyspace",
+			Name:     "test_agg",
+			ArgumentTypes: []TypeInfo{
+				intTypeInfo{},
+			},
+			InitCond:   "0",
+			StateFunc:  functions[0],
+			FinalFunc:  functions[1],
+			ReturnType: intTypeInfo{},
+			StateType:  intTypeInfo{},
+			stateFunc:  "test_state_func",
+			finalFunc:  "test_final_func",
+		},
+		{
+			Keyspace: "test_keyspace",
+			Name:     "test_agg_no_final_func",
+			ArgumentTypes: []TypeInfo{
+				doubleTypeInfo{},
+			},
+			InitCond:   "0",
+			StateFunc:  functions[0],
+			ReturnType: doubleTypeInfo{},
+			StateType:  doubleTypeInfo{},
+			stateFunc:  "test_state_func",
+			finalFunc:  "",
+		},
+	}
+
+	compileMetadata(session, keyspace, nil, nil, functions, aggregates, nil, nil)
+
+	require.Len(t, keyspace.Aggregates, 2, "Expected to have 2 aggregates")
+	require.Contains(t, keyspace.Aggregates, "test_agg")
+	require.Contains(t, keyspace.Aggregates, "test_agg_no_final_func")
+
+	testAgg := keyspace.Aggregates["test_agg"]
+	require.Equal(t, "test_agg", testAgg.Name)
+	require.Len(t, testAgg.ArgumentTypes, 1)
+	require.Equal(t, TypeInt, testAgg.ArgumentTypes[0].Type())
+	require.Equal(t, "0", testAgg.InitCond)
+	require.Equal(t, TypeInt, testAgg.ReturnType.Type())
+	require.Equal(t, TypeInt, testAgg.StateType.Type())
+
+	testAggNoFinalFunc := keyspace.Aggregates["test_agg_no_final_func"]
+	require.Equal(t, "test_agg_no_final_func", testAggNoFinalFunc.Name)
+	require.Len(t, testAggNoFinalFunc.ArgumentTypes, 1)
+	require.Equal(t, TypeDouble, testAggNoFinalFunc.ArgumentTypes[0].Type())
+	require.Equal(t, "0", testAggNoFinalFunc.InitCond)
+	require.Equal(t, TypeDouble, testAggNoFinalFunc.ReturnType.Type())
+	require.Equal(t, TypeDouble, testAggNoFinalFunc.StateType.Type())
 }
