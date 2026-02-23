@@ -2229,6 +2229,9 @@ func (f *framer) readBytesMap() (map[string][]byte, error) {
 
 func (f *framer) readStringMultiMap() (map[string][]string, error) {
 	size, err := f.readShort()
+	if err != nil {
+		return nil, err
+	}
 	m := make(map[string][]string, size)
 	var k string
 	for i := 0; i < int(size); i++ {
