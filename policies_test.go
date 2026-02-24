@@ -32,8 +32,6 @@
 package gocql
 
 import (
-	"errors"
-	"fmt"
 	"net"
 	"sort"
 	"strings"
@@ -75,10 +73,23 @@ func TestHostPolicy_TokenAware_SimpleStrategy(t *testing.T) {
 	policy := TokenAwareHostPolicy(RoundRobinHostPolicy())
 	policyInternal := policy.(*tokenAwareHostPolicy)
 	policyInternal.getKeyspaceName = func() string { return keyspace }
-	policyInternal.getKeyspaceMetadata = func(ks string) (*KeyspaceMetadata, error) {
-		return nil, errors.New("not initalized")
+	keyspaceMeta := &KeyspaceMetadata{
+		Name:          keyspace,
+		StrategyClass: "SimpleStrategy",
+		StrategyOptions: map[string]interface{}{
+			"class":              "SimpleStrategy",
+			"replication_factor": 2,
+		},
 	}
-
+	strategy := getStrategy(keyspaceMeta, nopLoggerSingleton)
+	keyspaceMeta.placementStrategy = strategy
+	policyInternal.getSchemaMeta = func() *schemaMeta {
+		return &schemaMeta{
+			keyspaceMeta: map[string]*KeyspaceMetadata{
+				keyspace: keyspaceMeta,
+			},
+		}
+	}
 	query := &Query{}
 	query.getKeyspace = func() string { return keyspace }
 
@@ -104,25 +115,10 @@ func TestHostPolicy_TokenAware_SimpleStrategy(t *testing.T) {
 
 	policy.SetPartitioner("OrderedPartitioner")
 
-	policyInternal.getKeyspaceMetadata = func(keyspaceName string) (*KeyspaceMetadata, error) {
-		if keyspaceName != keyspace {
-			return nil, fmt.Errorf("unknown keyspace: %s", keyspaceName)
-		}
-		return &KeyspaceMetadata{
-			Name:          keyspace,
-			StrategyClass: "SimpleStrategy",
-			StrategyOptions: map[string]interface{}{
-				"class":              "SimpleStrategy",
-				"replication_factor": 2,
-			},
-		}, nil
-	}
-	policy.KeyspaceChanged(KeyspaceUpdateEvent{Keyspace: keyspace})
-
 	// The SimpleStrategy above should generate the following replicas.
 	// It's handy to have as reference here.
 	assertDeepEqual(t, "replicas", map[string]tokenRingReplicas{
-		"myKeyspace": {
+		strategy.strategyKey(): {
 			{orderedToken("00"), []*HostInfo{hosts[0], hosts[1]}},
 			{orderedToken("25"), []*HostInfo{hosts[1], hosts[2]}},
 			{orderedToken("50"), []*HostInfo{hosts[2], hosts[3]}},
@@ -170,9 +166,6 @@ func TestHostPolicy_TokenAware_NilHostInfo(t *testing.T) {
 	policy := TokenAwareHostPolicy(RoundRobinHostPolicy())
 	policyInternal := policy.(*tokenAwareHostPolicy)
 	policyInternal.getKeyspaceName = func() string { return "myKeyspace" }
-	policyInternal.getKeyspaceMetadata = func(ks string) (*KeyspaceMetadata, error) {
-		return nil, errors.New("not initialized")
-	}
 
 	hosts := [...]*HostInfo{
 		{connectAddress: net.IPv4(10, 0, 0, 0), tokens: []string{"00"}},
@@ -460,9 +453,6 @@ func TestHostPolicy_TokenAware(t *testing.T) {
 	policy := TokenAwareHostPolicy(DCAwareRoundRobinPolicy("local"))
 	policyInternal := policy.(*tokenAwareHostPolicy)
 	policyInternal.getKeyspaceName = func() string { return keyspace }
-	policyInternal.getKeyspaceMetadata = func(ks string) (*KeyspaceMetadata, error) {
-		return nil, errors.New("not initialized")
-	}
 
 	query := &Query{}
 	query.getKeyspace = func() string { return keyspace }
@@ -506,29 +496,32 @@ func TestHostPolicy_TokenAware(t *testing.T) {
 		t.Fatal("expected to get host from fallback got nil")
 	}
 
-	policy.SetPartitioner("OrderedPartitioner")
-
-	policyInternal.getKeyspaceMetadata = func(keyspaceName string) (*KeyspaceMetadata, error) {
-		if keyspaceName != keyspace {
-			return nil, fmt.Errorf("unknown keyspace: %s", keyspaceName)
-		}
-		return &KeyspaceMetadata{
-			Name:          keyspace,
-			StrategyClass: "NetworkTopologyStrategy",
-			StrategyOptions: map[string]interface{}{
-				"class":   "NetworkTopologyStrategy",
-				"local":   1,
-				"remote1": 1,
-				"remote2": 1,
-			},
-		}, nil
+	keyspaceMeta := &KeyspaceMetadata{
+		Name:          keyspace,
+		StrategyClass: "NetworkTopologyStrategy",
+		StrategyOptions: map[string]interface{}{
+			"class":   "NetworkTopologyStrategy",
+			"local":   1,
+			"remote1": 1,
+			"remote2": 1,
+		},
 	}
-	policy.KeyspaceChanged(KeyspaceUpdateEvent{Keyspace: "myKeyspace"})
+	strategy := getStrategy(keyspaceMeta, nopLoggerSingleton)
+	keyspaceMeta.placementStrategy = strategy
+	policyInternal.getSchemaMeta = func() *schemaMeta {
+		return &schemaMeta{
+			keyspaceMeta: map[string]*KeyspaceMetadata{
+				keyspace: keyspaceMeta,
+			},
+		}
+	}
+
+	policy.SetPartitioner("OrderedPartitioner")
 
 	// The NetworkTopologyStrategy above should generate the following replicas.
 	// It's handy to have as reference here.
 	assertDeepEqual(t, "replicas", map[string]tokenRingReplicas{
-		"myKeyspace": {
+		strategy.strategyKey(): {
 			{orderedToken("05"), []*HostInfo{hosts[0], hosts[1], hosts[2]}},
 			{orderedToken("10"), []*HostInfo{hosts[1], hosts[2], hosts[3]}},
 			{orderedToken("15"), []*HostInfo{hosts[2], hosts[3], hosts[4]}},
@@ -562,9 +555,6 @@ func TestHostPolicy_TokenAware_NetworkStrategy(t *testing.T) {
 	policy := TokenAwareHostPolicy(DCAwareRoundRobinPolicy("local"), NonLocalReplicasFallback())
 	policyInternal := policy.(*tokenAwareHostPolicy)
 	policyInternal.getKeyspaceName = func() string { return keyspace }
-	policyInternal.getKeyspaceMetadata = func(ks string) (*KeyspaceMetadata, error) {
-		return nil, errors.New("not initialized")
-	}
 
 	query := &Query{}
 	query.getKeyspace = func() string { return keyspace }
@@ -597,29 +587,32 @@ func TestHostPolicy_TokenAware_NetworkStrategy(t *testing.T) {
 		policy.AddHost(host)
 	}
 
-	policy.SetPartitioner("OrderedPartitioner")
-
-	policyInternal.getKeyspaceMetadata = func(keyspaceName string) (*KeyspaceMetadata, error) {
-		if keyspaceName != keyspace {
-			return nil, fmt.Errorf("unknown keyspace: %s", keyspaceName)
-		}
-		return &KeyspaceMetadata{
-			Name:          keyspace,
-			StrategyClass: "NetworkTopologyStrategy",
-			StrategyOptions: map[string]interface{}{
-				"class":   "NetworkTopologyStrategy",
-				"local":   2,
-				"remote1": 2,
-				"remote2": 2,
-			},
-		}, nil
+	keyspaceMeta := &KeyspaceMetadata{
+		Name:          keyspace,
+		StrategyClass: "NetworkTopologyStrategy",
+		StrategyOptions: map[string]interface{}{
+			"class":   "NetworkTopologyStrategy",
+			"local":   2,
+			"remote1": 2,
+			"remote2": 2,
+		},
 	}
-	policy.KeyspaceChanged(KeyspaceUpdateEvent{Keyspace: keyspace})
+	strategy := getStrategy(keyspaceMeta, nopLoggerSingleton)
+	keyspaceMeta.placementStrategy = strategy
+	policyInternal.getSchemaMeta = func() *schemaMeta {
+		return &schemaMeta{
+			keyspaceMeta: map[string]*KeyspaceMetadata{
+				keyspace: keyspaceMeta,
+			},
+		}
+	}
+
+	policy.SetPartitioner("OrderedPartitioner")
 
 	// The NetworkTopologyStrategy above should generate the following replicas.
 	// It's handy to have as reference here.
 	assertDeepEqual(t, "replicas", map[string]tokenRingReplicas{
-		keyspace: {
+		strategy.strategyKey(): {
 			{orderedToken("05"), []*HostInfo{hosts[0], hosts[1], hosts[2], hosts[3], hosts[4], hosts[5]}},
 			{orderedToken("10"), []*HostInfo{hosts[1], hosts[2], hosts[3], hosts[4], hosts[5], hosts[6]}},
 			{orderedToken("15"), []*HostInfo{hosts[2], hosts[3], hosts[4], hosts[5], hosts[6], hosts[7]}},
@@ -685,9 +678,6 @@ func TestHostPolicy_TokenAware_RackAware(t *testing.T) {
 
 	policyInternal := policy.(*tokenAwareHostPolicy)
 	policyInternal.getKeyspaceName = func() string { return keyspace }
-	policyInternal.getKeyspaceMetadata = func(ks string) (*KeyspaceMetadata, error) {
-		return nil, errors.New("not initialized")
-	}
 
 	policyWithFallbackInternal := policyWithFallback.(*tokenAwareHostPolicy)
 	policyWithFallbackInternal.getKeyspaceName = policyInternal.getKeyspaceName
@@ -736,31 +726,33 @@ func TestHostPolicy_TokenAware_RackAware(t *testing.T) {
 		t.Fatal("expected to get host from fallback got nil")
 	}
 
+	keyspaceMeta := &KeyspaceMetadata{
+		Name:          keyspace,
+		StrategyClass: "NetworkTopologyStrategy",
+		StrategyOptions: map[string]interface{}{
+			"class":  "NetworkTopologyStrategy",
+			"local":  2,
+			"remote": 2,
+		},
+	}
+	strategy := getStrategy(keyspaceMeta, nopLoggerSingleton)
+	keyspaceMeta.placementStrategy = strategy
+	policyInternal.getSchemaMeta = func() *schemaMeta {
+		return &schemaMeta{
+			keyspaceMeta: map[string]*KeyspaceMetadata{
+				keyspace: keyspaceMeta,
+			},
+		}
+	}
+	policyWithFallbackInternal.getSchemaMeta = policyInternal.getSchemaMeta
+
 	policy.SetPartitioner("OrderedPartitioner")
 	policyWithFallback.SetPartitioner("OrderedPartitioner")
-
-	policyInternal.getKeyspaceMetadata = func(keyspaceName string) (*KeyspaceMetadata, error) {
-		if keyspaceName != keyspace {
-			return nil, fmt.Errorf("unknown keyspace: %s", keyspaceName)
-		}
-		return &KeyspaceMetadata{
-			Name:          keyspace,
-			StrategyClass: "NetworkTopologyStrategy",
-			StrategyOptions: map[string]interface{}{
-				"class":  "NetworkTopologyStrategy",
-				"local":  2,
-				"remote": 2,
-			},
-		}, nil
-	}
-	policyWithFallbackInternal.getKeyspaceMetadata = policyInternal.getKeyspaceMetadata
-	policy.KeyspaceChanged(KeyspaceUpdateEvent{Keyspace: "myKeyspace"})
-	policyWithFallback.KeyspaceChanged(KeyspaceUpdateEvent{Keyspace: "myKeyspace"})
 
 	// The NetworkTopologyStrategy above should generate the following replicas.
 	// It's handy to have as reference here.
 	assertDeepEqual(t, "replicas", map[string]tokenRingReplicas{
-		"myKeyspace": {
+		strategy.strategyKey(): {
 			{orderedToken("05"), []*HostInfo{hosts[0], hosts[1], hosts[2], hosts[3]}},
 			{orderedToken("10"), []*HostInfo{hosts[1], hosts[2], hosts[3], hosts[4]}},
 			{orderedToken("15"), []*HostInfo{hosts[2], hosts[3], hosts[4], hosts[5]}},
@@ -808,4 +800,302 @@ func TestHostPolicy_TokenAware_RackAware(t *testing.T) {
 	// then the 6 hosts from the other DC
 	expectHosts(t, "non-local DC", iter, "0", "1", "4", "5", "8", "9")
 	expectNoMoreHosts(t, iter)
+}
+
+// TestHostPolicy_TokenAware_MultiKeyspace tests that token-aware routing works
+// for queries to keyspaces other than the session's default keyspace.
+func TestHostPolicy_TokenAware_MultiKeyspace(t *testing.T) {
+	const sessionKeyspace = "ks1"
+	const otherKeyspace = "ks2"
+
+	policy := TokenAwareHostPolicy(RoundRobinHostPolicy())
+	policyInternal := policy.(*tokenAwareHostPolicy)
+	createKeyspaceMeta := func(name string) *KeyspaceMetadata {
+		ksMeta := &KeyspaceMetadata{
+			Name:          name,
+			StrategyClass: "SimpleStrategy",
+			StrategyOptions: map[string]interface{}{
+				"class":              "SimpleStrategy",
+				"replication_factor": 2,
+			},
+		}
+		ksMeta.placementStrategy = getStrategy(ksMeta, nopLoggerSingleton)
+		return ksMeta
+	}
+
+	sessionKeyspaceMeta := createKeyspaceMeta(sessionKeyspace)
+	otherKeyspaceMeta := createKeyspaceMeta(otherKeyspace)
+	policyInternal.getSchemaMeta = func() *schemaMeta {
+		return &schemaMeta{
+			keyspaceMeta: map[string]*KeyspaceMetadata{
+				sessionKeyspace: sessionKeyspaceMeta,
+				otherKeyspace:   otherKeyspaceMeta,
+			},
+		}
+	}
+
+	policy.SetPartitioner("OrderedPartitioner")
+
+	// Add hosts with tokens
+	hosts := [...]*HostInfo{
+		{hostId: "0", connectAddress: net.IPv4(10, 0, 0, 1), tokens: []string{"00"}},
+		{hostId: "1", connectAddress: net.IPv4(10, 0, 0, 2), tokens: []string{"25"}},
+		{hostId: "2", connectAddress: net.IPv4(10, 0, 0, 3), tokens: []string{"50"}},
+		{hostId: "3", connectAddress: net.IPv4(10, 0, 0, 4), tokens: []string{"75"}},
+	}
+	for _, host := range &hosts {
+		policy.AddHost(host)
+	}
+
+	// Verify both keyspaces are populated after SetPartitioner
+	meta := policyInternal.getMetadataReadOnly()
+	if meta.replicas[sessionKeyspaceMeta.placementStrategy.strategyKey()] == nil {
+		t.Fatalf("session keyspace %s not in replica map", sessionKeyspace)
+	}
+	if meta.replicas[otherKeyspaceMeta.placementStrategy.strategyKey()] == nil {
+		t.Fatalf("other keyspace %s not in replica map", otherKeyspace)
+	}
+
+	t.Run("SessionKeyspace", func(t *testing.T) {
+		query := &Query{}
+		query.getKeyspace = func() string { return sessionKeyspace }
+		query.RoutingKey([]byte("20"))
+
+		iter := policy.Pick(newInternalQuery(query, nil))
+
+		// Should get token-aware hosts (token "20" → host with token "25")
+		expectHosts(t, "session keyspace token-aware", iter, "1", "2")
+		// Then fallback to remaining hosts
+		expectHosts(t, "session keyspace fallback", iter, "0", "3")
+		expectNoMoreHosts(t, iter)
+	})
+
+	t.Run("OtherKeyspace", func(t *testing.T) {
+		query := &Query{}
+		query.getKeyspace = func() string { return otherKeyspace }
+		query.RoutingKey([]byte("60"))
+
+		iter := policy.Pick(newInternalQuery(query, nil))
+
+		// Should get token-aware hosts for otherKeyspace
+		// token "60" → host with token "75"
+		expectHosts(t, "other keyspace token-aware", iter, "3", "0")
+		// Then fallback to remaining hosts
+		expectHosts(t, "other keyspace fallback", iter, "1", "2")
+		expectNoMoreHosts(t, iter)
+	})
+}
+
+// TestHostPolicy_TokenAware_MultiKeyspace_WithShuffleReplicas tests that
+// ShuffleReplicas option works correctly with proactively populated keyspaces.
+func TestHostPolicy_TokenAware_MultiKeyspace_WithShuffleReplicas(t *testing.T) {
+	const sessionKeyspace = "ks1"
+	const otherKeyspace = "ks2"
+
+	policy := TokenAwareHostPolicy(RoundRobinHostPolicy(), ShuffleReplicas())
+	policyInternal := policy.(*tokenAwareHostPolicy)
+
+	createKeyspaceMeta := func(name string) *KeyspaceMetadata {
+		ksMeta := &KeyspaceMetadata{
+			Name:          name,
+			StrategyClass: "SimpleStrategy",
+			StrategyOptions: map[string]interface{}{
+				"class":              "SimpleStrategy",
+				"replication_factor": 2,
+			},
+		}
+		ksMeta.placementStrategy = getStrategy(ksMeta, nopLoggerSingleton)
+		return ksMeta
+	}
+
+	sessionKeyspaceMeta := createKeyspaceMeta(sessionKeyspace)
+	otherKeyspaceMeta := createKeyspaceMeta(otherKeyspace)
+	policyInternal.getSchemaMeta = func() *schemaMeta {
+		return &schemaMeta{
+			keyspaceMeta: map[string]*KeyspaceMetadata{
+				sessionKeyspace: sessionKeyspaceMeta,
+				otherKeyspace:   otherKeyspaceMeta,
+			},
+		}
+	}
+
+	hosts := [...]*HostInfo{
+		{hostId: "0", connectAddress: net.IPv4(10, 0, 0, 1), tokens: []string{"00"}},
+		{hostId: "1", connectAddress: net.IPv4(10, 0, 0, 2), tokens: []string{"25"}},
+		{hostId: "2", connectAddress: net.IPv4(10, 0, 0, 3), tokens: []string{"50"}},
+		{hostId: "3", connectAddress: net.IPv4(10, 0, 0, 4), tokens: []string{"75"}},
+	}
+	for _, host := range &hosts {
+		policy.AddHost(host)
+	}
+	policy.SetPartitioner("OrderedPartitioner")
+
+	// Query other keyspace with shuffle replicas enabled
+	query := &Query{}
+	query.getKeyspace = func() string { return otherKeyspace }
+	query.RoutingKey([]byte("20"))
+
+	// Execute Pick multiple times and collect first hosts
+	firstHosts := make(map[string]int)
+	for i := 0; i < 100; i++ {
+		iter := policy.Pick(newInternalQuery(query, nil))
+		host := iter()
+		if host != nil {
+			firstHosts[host.Info().HostID()]++
+		}
+	}
+
+	// With ShuffleReplicas, we should see distribution across replicas
+	// (not always the same host)
+	if len(firstHosts) < 2 {
+		t.Errorf("expected distribution across replicas with ShuffleReplicas, got only %d unique first hosts", len(firstHosts))
+	}
+}
+
+// TestHostPolicy_TokenAware_TopologyChangeUpdatesAllKeyspaces verifies that
+// when hosts are added or removed, replica maps are updated for ALL keyspaces,
+// not just the session keyspace.
+func TestHostPolicy_TokenAware_TopologyChangeUpdatesAllKeyspaces(t *testing.T) {
+	const sessionKeyspace = "ks1"
+	const otherKeyspace = "ks2"
+
+	policy := TokenAwareHostPolicy(RoundRobinHostPolicy())
+	policyInternal := policy.(*tokenAwareHostPolicy)
+
+	createKeyspaceMeta := func(name string) *KeyspaceMetadata {
+		ksMeta := &KeyspaceMetadata{
+			Name:          name,
+			StrategyClass: "SimpleStrategy",
+			StrategyOptions: map[string]interface{}{
+				"class":              "SimpleStrategy",
+				"replication_factor": 2,
+			},
+		}
+		ksMeta.placementStrategy = getStrategy(ksMeta, nopLoggerSingleton)
+		return ksMeta
+	}
+
+	sessionKeyspaceMeta := createKeyspaceMeta(sessionKeyspace)
+	otherKeyspaceMeta := createKeyspaceMeta(otherKeyspace)
+	policyInternal.getSchemaMeta = func() *schemaMeta {
+		return &schemaMeta{
+			keyspaceMeta: map[string]*KeyspaceMetadata{
+				sessionKeyspace: sessionKeyspaceMeta,
+				otherKeyspace:   otherKeyspaceMeta,
+			},
+		}
+	}
+
+	// Initial topology: 3 hosts
+	initialHosts := []*HostInfo{
+		{hostId: "0", connectAddress: net.IPv4(10, 0, 0, 1), tokens: []string{"00"}},
+		{hostId: "1", connectAddress: net.IPv4(10, 0, 0, 2), tokens: []string{"33"}},
+		{hostId: "2", connectAddress: net.IPv4(10, 0, 0, 3), tokens: []string{"66"}},
+	}
+	for _, host := range initialHosts {
+		policy.AddHost(host)
+	}
+	policy.SetPartitioner("OrderedPartitioner")
+
+	// Verify both keyspaces are in replica map
+	meta := policyInternal.getMetadataReadOnly()
+	if meta.replicas[sessionKeyspaceMeta.placementStrategy.strategyKey()] == nil {
+		t.Fatalf("session keyspace %s not in replica map", sessionKeyspace)
+	}
+	if meta.replicas[otherKeyspaceMeta.placementStrategy.strategyKey()] == nil {
+		t.Fatalf("other keyspace %s not in replica map", otherKeyspace)
+	}
+
+	// Test: Add a new host (topology change)
+	t.Run("AddHost", func(t *testing.T) {
+		newHost := &HostInfo{
+			hostId:         "3",
+			connectAddress: net.IPv4(10, 0, 0, 4),
+			tokens:         []string{"99"},
+		}
+		policy.AddHost(newHost)
+
+		// Verify: Get updated metadata
+		metaAfterAdd := policyInternal.getMetadataReadOnly()
+
+		// Check session keyspace was updated
+		updatedSessionReplicas := metaAfterAdd.replicas[sessionKeyspaceMeta.placementStrategy.strategyKey()]
+		if updatedSessionReplicas == nil {
+			t.Fatal("session keyspace replica map is nil after AddHost")
+		}
+
+		// Check other keyspace was updated
+		updatedOtherReplicas := metaAfterAdd.replicas[otherKeyspaceMeta.placementStrategy.strategyKey()]
+		if updatedOtherReplicas == nil {
+			t.Fatal("other keyspace replica map is nil after AddHost")
+		}
+
+		//Verify replica maps include new host
+		// For session keyspace
+		sessionHasNewHost := false
+		for _, ht := range updatedSessionReplicas {
+			for _, host := range ht.hosts {
+				if host.HostID() == "3" {
+					sessionHasNewHost = true
+					break
+				}
+			}
+		}
+		if !sessionHasNewHost {
+			t.Error("session keyspace replica map does not include new host")
+		}
+
+		// For other keyspace
+		otherHasNewHost := false
+		for _, ht := range updatedOtherReplicas {
+			for _, host := range ht.hosts {
+				if host.HostID() == "3" {
+					otherHasNewHost = true
+					break
+				}
+			}
+		}
+		if !otherHasNewHost {
+			t.Error("other keyspace replica map does not include new host - replica map is STALE after topology change!")
+		}
+	})
+
+	// Test: Remove host
+	t.Run("RemoveHost", func(t *testing.T) {
+		// Remove one of the original hosts
+		hostToRemove := initialHosts[0]
+		policy.RemoveHost(hostToRemove)
+
+		metaAfterRemove := policyInternal.getMetadataReadOnly()
+
+		// Verify session keyspace updated
+		sessionReplicasAfterRemove := metaAfterRemove.replicas[sessionKeyspaceMeta.placementStrategy.strategyKey()]
+		sessionStillHasHost := false
+		for _, ht := range sessionReplicasAfterRemove {
+			for _, host := range ht.hosts {
+				if host.HostID() == "0" {
+					sessionStillHasHost = true
+					break
+				}
+			}
+		}
+		if sessionStillHasHost {
+			t.Error("session keyspace still has removed host in replica map")
+		}
+
+		// Verify other keyspace updated
+		otherReplicasAfterRemove := metaAfterRemove.replicas[otherKeyspaceMeta.placementStrategy.strategyKey()]
+		otherStillHasHost := false
+		for _, ht := range otherReplicasAfterRemove {
+			for _, host := range ht.hosts {
+				if host.HostID() == "0" {
+					otherStillHasHost = true
+					break
+				}
+			}
+		}
+		if otherStillHasHost {
+			t.Error("other keyspace still has removed host in replica map - STALE after topology change!")
+		}
+	})
 }

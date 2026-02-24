@@ -139,6 +139,11 @@ func createCluster(opts ...func(*ClusterConfig)) *ClusterConfig {
 }
 
 func createKeyspace(tb testing.TB, cluster *ClusterConfig, keyspace string) {
+	createKeyspaceWithRF(tb, cluster, keyspace, *flagRF)
+}
+
+// createKeyspaceWithRF creates a keyspace with a specific replication factor
+func createKeyspaceWithRF(tb testing.TB, cluster *ClusterConfig, keyspace string, rf int) {
 	// TODO: tb.Helper()
 	c := *cluster
 	c.Keyspace = "system"
@@ -158,7 +163,7 @@ func createKeyspace(tb testing.TB, cluster *ClusterConfig, keyspace string) {
 	WITH replication = {
 		'class' : 'SimpleStrategy',
 		'replication_factor' : %d
-	}`, keyspace, *flagRF))
+	}`, keyspace, rf))
 
 	if err != nil {
 		panic(fmt.Sprintf("unable to create keyspace: %v", err))

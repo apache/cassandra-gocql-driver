@@ -48,7 +48,7 @@ func TestPlacementStrategy_SimpleStrategy(t *testing.T) {
 
 	hosts := []*HostInfo{host0, host25, host50, host75}
 
-	strat := &simpleStrategy{rf: 2}
+	strat := newSimpleStrategy(2)
 	tokenReplicas := strat.replicaMap(&tokenRing{hosts: hosts, tokens: tokens})
 	if len(tokenReplicas) != len(tokens) {
 		t.Fatalf("expected replica map to have %d items but has %d", len(tokens), len(tokenReplicas))
@@ -89,34 +89,28 @@ func TestPlacementStrategy_NetworkStrategy(t *testing.T) {
 	}{
 		{
 			name: "full",
-			strat: &networkTopology{
-				dcs: map[string]int{
-					"dc1": 1,
-					"dc2": 2,
-					"dc3": 3,
-				},
-			},
+			strat: newNetworkTopology(map[string]int{
+				"dc1": 1,
+				"dc2": 2,
+				"dc3": 3,
+			}),
 			expectedReplicaMapSize: hostsPerDC * totalDCs,
 		},
 		{
 			name: "missing",
-			strat: &networkTopology{
-				dcs: map[string]int{
-					"dc2": 2,
-					"dc3": 3,
-				},
-			},
+			strat: newNetworkTopology(map[string]int{
+				"dc2": 2,
+				"dc3": 3,
+			}),
 			expectedReplicaMapSize: hostsPerDC * 2,
 		},
 		{
 			name: "zero",
-			strat: &networkTopology{
-				dcs: map[string]int{
-					"dc1": 0,
-					"dc2": 2,
-					"dc3": 3,
-				},
-			},
+			strat: newNetworkTopology(map[string]int{
+				"dc1": 0,
+				"dc2": 2,
+				"dc3": 3,
+			}),
 			expectedReplicaMapSize: hostsPerDC * 2,
 		},
 	}

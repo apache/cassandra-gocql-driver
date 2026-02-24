@@ -79,8 +79,7 @@ type Session struct {
 	control *controlConn
 
 	// event handlers
-	nodeEvents   *eventDebouncer
-	schemaEvents *eventDebouncer
+	nodeEvents *eventDebouncer
 
 	// ring metadata
 	useSystemSchema           bool
@@ -162,10 +161,11 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 		s.types = cfg.RegisteredTypes.Copy()
 	}
 
-	s.schemaDescriber = newSchemaDescriber(s)
+	s.schemaDescriber = newSchemaDescriber(s, newRefreshDebouncer(schemaRefreshDebounceTime, func() error {
+		return refreshSchemas(s)
+	}))
 
 	s.nodeEvents = newEventDebouncer("NodeEvents", s.handleNodeEvent, s.logger)
-	s.schemaEvents = newEventDebouncer("SchemaEvents", s.handleSchemaEvent, s.logger)
 
 	s.routingMetadataCache.lru = lru.New(cfg.MaxRoutingKeyInfo)
 
@@ -367,8 +367,14 @@ func (s *Session) init() error {
 
 	// Invoke KeyspaceChanged to let the policy cache the session keyspace
 	// parameters. This is used by tokenAwareHostPolicy to discover replicas.
-	if !s.cfg.disableControlConn && s.cfg.Keyspace != "" {
-		s.policy.KeyspaceChanged(KeyspaceUpdateEvent{Keyspace: s.cfg.Keyspace})
+	if !s.cfg.disableControlConn && s.schemaDescriber != nil {
+		err := s.schemaDescriber.refreshSchemaMetadata()
+		if err != nil {
+			s.logger.Warning("Failed to initialize schema metadata. "+
+				"Token-aware routing will fall back to the configured fallback policy. "+
+				"Attempts to retrieve keyspace metadata will fail with ErrKeyspaceDoesNotExist until schema refresh succeeds.",
+				NewLogFieldError("err", err))
+		}
 	}
 
 	s.sessionStateMu.Lock()
@@ -522,16 +528,16 @@ func (s *Session) Close() {
 		s.pool.Close()
 	}
 
+	if s.schemaDescriber != nil {
+		s.schemaDescriber.schemaRefresher.stop()
+	}
+
 	if s.control != nil {
 		s.control.close()
 	}
 
 	if s.nodeEvents != nil {
 		s.nodeEvents.stop()
-	}
-
-	if s.schemaEvents != nil {
-		s.schemaEvents.stop()
 	}
 
 	if s.ringRefresher != nil {

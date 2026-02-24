@@ -122,38 +122,13 @@ func (s *Session) handleEvent(framer *framer) {
 	switch f := frame.(type) {
 	case *schemaChangeKeyspace, *schemaChangeFunction,
 		*schemaChangeTable, *schemaChangeAggregate, *schemaChangeType:
-
-		s.schemaEvents.debounce(frame)
+		s.schemaDescriber.debounceRefreshSchemaMetadata()
 	case *topologyChangeEventFrame, *statusChangeEventFrame:
 		s.nodeEvents.debounce(frame)
 	default:
 		s.logger.Error("Invalid event frame.",
 			NewLogFieldString("frame_type", fmt.Sprintf("%T", f)), NewLogFieldStringer("frame", f))
 	}
-}
-
-func (s *Session) handleSchemaEvent(frames []frame) {
-	// TODO: debounce events
-	for _, frame := range frames {
-		switch f := frame.(type) {
-		case *schemaChangeKeyspace:
-			s.schemaDescriber.clearSchema(f.keyspace)
-			s.handleKeyspaceChange(f.keyspace, f.change)
-		case *schemaChangeTable:
-			s.schemaDescriber.clearSchema(f.keyspace)
-		case *schemaChangeAggregate:
-			s.schemaDescriber.clearSchema(f.keyspace)
-		case *schemaChangeFunction:
-			s.schemaDescriber.clearSchema(f.keyspace)
-		case *schemaChangeType:
-			s.schemaDescriber.clearSchema(f.keyspace)
-		}
-	}
-}
-
-func (s *Session) handleKeyspaceChange(keyspace, change string) {
-	s.control.awaitSchemaAgreement()
-	s.policy.KeyspaceChanged(KeyspaceUpdateEvent{Keyspace: keyspace, Change: change})
 }
 
 // handleNodeEvent handles inbound status and topology change events.

@@ -364,6 +364,13 @@ func (c *controlConn) setupConn(conn *Conn, sessionInit bool) error {
 		NewLogFieldIP("host_addr", host.ConnectAddress()), NewLogFieldString("host_id", host.HostID()))
 
 	if c.session.initialized() {
+		refreshErr := c.session.schemaDescriber.refreshSchemaMetadata()
+		if refreshErr != nil {
+			c.session.logger.Warning("Failed to refresh schema metadata after reconnecting. "+
+				"Schema might be stale or missing, causing token-aware routing to fall back to the configured fallback policy. "+
+				"Keyspace metadata queries might fail with ErrKeyspaceDoesNotExist until schema refresh succeeds.",
+				NewLogFieldError("err", refreshErr))
+		}
 		// We connected to control conn, so add the connect the host in pool as well.
 		// Notify session we can start trying to connect to the node.
 		// We can't start the fill before the session is initialized, otherwise the fill would interfere
@@ -596,6 +603,12 @@ func (c *controlConn) query(statement string, values ...interface{}) (iter *Iter
 func (c *controlConn) awaitSchemaAgreement() error {
 	return c.withConn(func(conn *Conn) *Iter {
 		return newErrIter(conn.awaitSchemaAgreement(context.TODO()), &queryMetrics{}, "", nil, nil)
+	}).err
+}
+
+func (c *controlConn) awaitSchemaAgreementWithTimeout(timeout time.Duration) error {
+	return c.withConn(func(conn *Conn) *Iter {
+		return newErrIter(conn.awaitSchemaAgreementWithTimeout(context.TODO(), timeout), &queryMetrics{}, "", nil, nil)
 	}).err
 }
 

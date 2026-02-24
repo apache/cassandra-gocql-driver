@@ -2230,12 +2230,21 @@ func TestEmptyTimestamp(t *testing.T) {
 	}
 }
 
-// Integration test of just querying for data from the system.schema_keyspace table where the keyspace DOES exist.
+// Integration test of querying for data from the system.schema_keyspace table for single and all the keyspaces.
 func TestGetKeyspaceMetadata(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
+	t.Run("SingleKeyspace", func(t *testing.T) {
+		keyspaceMetadata, err := getKeyspaceMetadata(session, "gocql_test")
+		assertGetKeyspaceMetadata(t, keyspaceMetadata, err)
+	})
+	t.Run("AllKeyspaces", func(t *testing.T) {
+		keyspacesMetadata, err := getAllKeyspaceMetadata(session)
+		assertGetKeyspaceMetadata(t, keyspacesMetadata["gocql_test"], err)
+	})
+}
 
-	keyspaceMetadata, err := getKeyspaceMetadata(session, "gocql_test")
+func assertGetKeyspaceMetadata(t *testing.T, keyspaceMetadata *KeyspaceMetadata, err error) {
 	if err != nil {
 		t.Fatalf("failed to query the keyspace metadata with err: %v", err)
 	}
@@ -2276,16 +2285,25 @@ func TestGetKeyspaceMetadataFails(t *testing.T) {
 	}
 }
 
-// Integration test of just querying for data from the system.schema_columnfamilies table
-func TestGetTableMetadata(t *testing.T) {
+// Integration test of querying for table data from the system.schema_columnfamilies table for single keyspace and all keyspaces
+func TestGetAllTableMetadata(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
-
 	if err := createTable(session, "CREATE TABLE gocql_test.test_table_metadata (first_id int, second_id int, third_id int, PRIMARY KEY (first_id, second_id))"); err != nil {
 		t.Fatalf("failed to create table with error '%v'", err)
 	}
+	t.Run("SingleKeyspace", func(t *testing.T) {
+		tables, err := getTableMetadata(session, "gocql_test")
+		assertGetTableMetadata(t, session, tables, err)
+	})
+	t.Run("AllKeyspaces", func(t *testing.T) {
+		tables, err := getAllTablesMetadata(session)
+		assertGetTableMetadata(t, session, tables["gocql_test"], err)
+	})
+}
 
-	tables, err := getTableMetadata(session, "gocql_test")
+func assertGetTableMetadata(t *testing.T, session *Session, tables []TableMetadata, err error) {
+
 	if err != nil {
 		t.Fatalf("failed to query the table metadata with err: %v", err)
 	}
@@ -2360,7 +2378,18 @@ func TestGetColumnMetadata(t *testing.T) {
 		t.Fatalf("failed to create index with err: %v", err)
 	}
 
-	columns, err := getColumnMetadata(session, "gocql_test")
+	t.Run("SingleKeyspace", func(t *testing.T) {
+		columns, err := getColumnMetadata(session, "gocql_test")
+		assertGetColumnMetadata(t, session, columns, err)
+	})
+
+	t.Run("AllKeyspaces", func(t *testing.T) {
+		columns, err := getAllColumnMetadata(session)
+		assertGetColumnMetadata(t, session, columns["gocql_test"], err)
+	})
+}
+
+func assertGetColumnMetadata(t *testing.T, session *Session, columns []ColumnMetadata, err error) {
 	if err != nil {
 		t.Fatalf("failed to query column metadata with err: %v", err)
 	}
@@ -2457,8 +2486,17 @@ func TestMaterializedViewMetadata(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 	createMaterializedViews(t, session)
+	t.Run("SingleKeyspace", func(t *testing.T) {
+		materializedViews, err := getMaterializedViewsMetadata(session, "gocql_test")
+		assertMaterializedViewMetadata(t, materializedViews, err)
+	})
+	t.Run("AllKeyspaces", func(t *testing.T) {
+		materializedViews, err := getAllMaterializedViewsMetadata(session)
+		assertMaterializedViewMetadata(t, materializedViews["gocql_test"], err)
+	})
+}
 
-	materializedViews, err := getMaterializedViewsMetadata(session, "gocql_test")
+func assertMaterializedViewMetadata(t *testing.T, materializedViews []MaterializedViewMetadata, err error) {
 	if err != nil {
 		t.Fatalf("failed to query view metadata with err: %v", err)
 	}
@@ -2542,8 +2580,17 @@ func TestAggregateMetadata(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 	createAggregate(t, session)
+	t.Run("SingleKeyspace", func(t *testing.T) {
+		aggregates, err := getAggregatesMetadata(session, "gocql_test")
+		assertAggregateMetadata(t, aggregates, err)
+	})
+	t.Run("AllKeyspaces", func(t *testing.T) {
+		aggregates, err := getAllAggregatesMetadata(session)
+		assertAggregateMetadata(t, aggregates["gocql_test"], err)
+	})
+}
 
-	aggregates, err := getAggregatesMetadata(session, "gocql_test")
+func assertAggregateMetadata(t *testing.T, aggregates []AggregateMetadata, err error) {
 	if err != nil {
 		t.Fatalf("failed to query aggregate metadata with err: %v", err)
 	}
@@ -2590,8 +2637,18 @@ func TestFunctionMetadata(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 	createFunctions(t, session)
+	t.Run("SingleKeyspace", func(t *testing.T) {
+		functions, err := getFunctionsMetadata(session, "gocql_test")
+		assertFunctionMetadata(t, functions, err)
+	})
+	t.Run("AllKeyspaces", func(t *testing.T) {
+		functions, err := getAllFunctionsMetadata(session)
+		assertFunctionMetadata(t, functions["gocql_test"], err)
+	})
 
-	functions, err := getFunctionsMetadata(session, "gocql_test")
+}
+
+func assertFunctionMetadata(t *testing.T, functions []FunctionMetadata, err error) {
 	if err != nil {
 		t.Fatalf("failed to query function metadata with err: %v", err)
 	}
@@ -2661,8 +2718,31 @@ func TestFunctionMetadata(t *testing.T) {
 	}
 }
 
-// Integration test of querying and composition the keyspace metadata
+// Integration test of querying keyspace metadata with different MetadataCacheMode settings
 func TestKeyspaceMetadata(t *testing.T) {
+	testCases := []struct {
+		name      string
+		cacheMode MetadataCacheMode
+		// When true, expect full metadata (tables, aggregates, views, types)
+		// When false, only expect keyspace-level metadata
+		expectFullMetadata bool
+	}{
+		{
+			name:               "Full",
+			cacheMode:          Full,
+			expectFullMetadata: true,
+		},
+		{
+			name:               "KeyspaceOnly",
+			cacheMode:          KeyspaceOnly,
+			expectFullMetadata: false,
+		},
+		{
+			name:               "Disabled",
+			cacheMode:          Disabled,
+			expectFullMetadata: true,
+		},
+	}
 	session := createSession(t)
 	defer session.Close()
 
@@ -2677,119 +2757,156 @@ func TestKeyspaceMetadata(t *testing.T) {
 		t.Fatalf("failed to create index with err: %v", err)
 	}
 
-	keyspaceMetadata, err := session.KeyspaceMetadata("gocql_test")
-	if err != nil {
-		t.Fatalf("failed to query keyspace metadata with err: %v", err)
-	}
-	if keyspaceMetadata == nil {
-		t.Fatal("expected the keyspace metadata to not be nil, but it was nil")
-	}
-	if keyspaceMetadata.Name != session.cfg.Keyspace {
-		t.Fatalf("Expected the keyspace name to be %s but was %s", session.cfg.Keyspace, keyspaceMetadata.Name)
-	}
-	if len(keyspaceMetadata.Tables) == 0 {
-		t.Errorf("Expected tables but there were none")
-	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			session := createSession(t, func(config *ClusterConfig) {
+				config.MetadataCacheMode = tc.cacheMode
+			})
+			defer session.Close()
+			// Query keyspace metadata
+			keyspaceMetadata, err := session.KeyspaceMetadata("gocql_test")
+			if err != nil {
+				t.Fatalf("failed to query keyspace metadata with err: %v", err)
+			}
+			if keyspaceMetadata == nil {
+				t.Fatal("expected the keyspace metadata to not be nil, but it was nil")
+			}
+			if keyspaceMetadata.Name != session.cfg.Keyspace {
+				t.Fatalf("Expected the keyspace name to be %s but was %s", session.cfg.Keyspace, keyspaceMetadata.Name)
+			}
+			// When cache mode is Disabled, verify that the cache is empty
+			if tc.cacheMode == Disabled {
+				cachedMeta := session.schemaDescriber.getSchemaMetaForRead()
+				if cachedMeta != nil && len(cachedMeta.keyspaceMeta) > 0 {
+					t.Errorf("Expected empty cache in Disabled mode, but found %d keyspaces cached", len(cachedMeta.keyspaceMeta))
+				}
+			}
 
-	tableMetadata, found := keyspaceMetadata.Tables["test_metadata"]
-	if !found {
-		t.Fatalf("failed to find the test_metadata table metadata")
-	}
+			if tc.expectFullMetadata {
+				if len(keyspaceMetadata.Tables) == 0 {
+					t.Errorf("Expected tables but there were none")
+				}
 
-	if len(tableMetadata.PartitionKey) != 1 {
-		t.Errorf("expected partition key length of 1, but was %d", len(tableMetadata.PartitionKey))
-	}
-	for i, column := range tableMetadata.PartitionKey {
-		if column == nil {
-			t.Errorf("partition key column metadata at index %d was nil", i)
-		}
-	}
-	if tableMetadata.PartitionKey[0].Name != "first_id" {
-		t.Errorf("Expected the first partition key column to be 'first_id' but was '%s'", tableMetadata.PartitionKey[0].Name)
-	}
-	if len(tableMetadata.ClusteringColumns) != 1 {
-		t.Fatalf("expected clustering columns length of 1, but was %d", len(tableMetadata.ClusteringColumns))
-	}
-	for i, column := range tableMetadata.ClusteringColumns {
-		if column == nil {
-			t.Fatalf("clustering column metadata at index %d was nil", i)
-		}
-	}
-	if tableMetadata.ClusteringColumns[0].Name != "second_id" {
-		t.Errorf("Expected the first clustering column to be 'second_id' but was '%s'", tableMetadata.ClusteringColumns[0].Name)
-	}
-	thirdColumn, found := tableMetadata.Columns["third_id"]
-	if !found {
-		t.Fatalf("Expected a column definition for 'third_id'")
-	}
-	if !session.useSystemSchema && thirdColumn.Index.Name != "index_metadata" {
-		// TODO(zariel): scan index info from system_schema
-		t.Errorf("Expected column index named 'index_metadata' but was '%s'", thirdColumn.Index.Name)
-	}
+				tableMetadata, found := keyspaceMetadata.Tables["test_metadata"]
+				if !found {
+					t.Fatalf("failed to find the test_metadata table metadata")
+				}
 
-	aggregate, found := keyspaceMetadata.Aggregates["average"]
-	if !found {
-		t.Fatal("failed to find the aggregate 'average' in metadata")
-	}
-	if aggregate.FinalFunc.Name != "avgfinal" {
-		t.Fatalf("expected final function %s, but got %s", "avgFinal", aggregate.FinalFunc.Name)
-	}
-	if aggregate.StateFunc.Name != "avgstate" {
-		t.Fatalf("expected state function %s, but got %s", "avgstate", aggregate.StateFunc.Name)
-	}
-	aggregate, found = keyspaceMetadata.Aggregates["average2"]
-	if !found {
-		t.Fatal("failed to find the aggregate 'average2' in metadata")
-	}
-	if aggregate.FinalFunc.Name != "avgfinal" {
-		t.Fatalf("expected final function %s, but got %s", "avgFinal", aggregate.FinalFunc.Name)
-	}
-	if aggregate.StateFunc.Name != "avgstate" {
-		t.Fatalf("expected state function %s, but got %s", "avgstate", aggregate.StateFunc.Name)
-	}
-	_, found = keyspaceMetadata.UserTypes["basicview"]
-	if !found {
-		t.Fatal("failed to find the types in metadata")
-	}
-	textType := TypeText
-	if flagCassVersion.Before(3, 0, 0) {
-		textType = TypeVarchar
-	}
-	expectedType := UserTypeMetadata{
-		Keyspace:   "gocql_test",
-		Name:       "basicview",
-		FieldNames: []string{"birthday", "nationality", "weight", "height"},
-		FieldTypes: []TypeInfo{
-			timestampTypeInfo{},
-			varcharLikeTypeInfo{
-				typ: textType,
-			},
-			varcharLikeTypeInfo{
-				typ: textType,
-			},
-			varcharLikeTypeInfo{
-				typ: textType,
-			},
-		},
-	}
-	if !reflect.DeepEqual(*keyspaceMetadata.UserTypes["basicview"], expectedType) {
-		t.Fatalf("type is %#v, but expected %#v", keyspaceMetadata.UserTypes["basicview"], expectedType)
-	}
-	if flagCassVersion.Major >= 3 {
-		materializedView, found := keyspaceMetadata.MaterializedViews["view_view"]
-		if !found {
-			t.Fatal("failed to find materialized view view_view in metadata")
-		}
-		if materializedView.BaseTable.Name != "view_table" {
-			t.Fatalf("expected name: %s, materialized view base table name: %s", "view_table", materializedView.BaseTable.Name)
-		}
-		materializedView, found = keyspaceMetadata.MaterializedViews["view_view2"]
-		if !found {
-			t.Fatal("failed to find materialized view view_view2 in metadata")
-		}
-		if materializedView.BaseTable.Name != "view_table2" {
-			t.Fatalf("expected name: %s, materialized view base table name: %s", "view_table2", materializedView.BaseTable.Name)
-		}
+				if len(tableMetadata.PartitionKey) != 1 {
+					t.Errorf("expected partition key length of 1, but was %d", len(tableMetadata.PartitionKey))
+				}
+				for i, column := range tableMetadata.PartitionKey {
+					if column == nil {
+						t.Errorf("partition key column metadata at index %d was nil", i)
+					}
+				}
+				if tableMetadata.PartitionKey[0].Name != "first_id" {
+					t.Errorf("Expected the first partition key column to be 'first_id' but was '%s'", tableMetadata.PartitionKey[0].Name)
+				}
+				if len(tableMetadata.ClusteringColumns) != 1 {
+					t.Fatalf("expected clustering columns length of 1, but was %d", len(tableMetadata.ClusteringColumns))
+				}
+				for i, column := range tableMetadata.ClusteringColumns {
+					if column == nil {
+						t.Fatalf("clustering column metadata at index %d was nil", i)
+					}
+				}
+				if tableMetadata.ClusteringColumns[0].Name != "second_id" {
+					t.Errorf("Expected the first clustering column to be 'second_id' but was '%s'", tableMetadata.ClusteringColumns[0].Name)
+				}
+				thirdColumn, found := tableMetadata.Columns["third_id"]
+				if !found {
+					t.Fatalf("Expected a column definition for 'third_id'")
+				}
+				if !session.useSystemSchema && thirdColumn.Index.Name != "index_metadata" {
+					// TODO(zariel): scan index info from system_schema
+					t.Errorf("Expected column index named 'index_metadata' but was '%s'", thirdColumn.Index.Name)
+				}
+
+				aggregate, found := keyspaceMetadata.Aggregates["average"]
+				if !found {
+					t.Fatal("failed to find the aggregate 'average' in metadata")
+				}
+				if aggregate.FinalFunc.Name != "avgfinal" {
+					t.Fatalf("expected final function %s, but got %s", "avgFinal", aggregate.FinalFunc.Name)
+				}
+				if aggregate.StateFunc.Name != "avgstate" {
+					t.Fatalf("expected state function %s, but got %s", "avgstate", aggregate.StateFunc.Name)
+				}
+				aggregate, found = keyspaceMetadata.Aggregates["average2"]
+				if !found {
+					t.Fatal("failed to find the aggregate 'average2' in metadata")
+				}
+				if aggregate.FinalFunc.Name != "avgfinal" {
+					t.Fatalf("expected final function %s, but got %s", "avgFinal", aggregate.FinalFunc.Name)
+				}
+				if aggregate.StateFunc.Name != "avgstate" {
+					t.Fatalf("expected state function %s, but got %s", "avgstate", aggregate.StateFunc.Name)
+				}
+				_, found = keyspaceMetadata.UserTypes["basicview"]
+				if !found {
+					t.Fatal("failed to find the types in metadata")
+				}
+				textType := TypeText
+				if flagCassVersion.Before(3, 0, 0) {
+					textType = TypeVarchar
+				}
+				expectedType := UserTypeMetadata{
+					Keyspace:   "gocql_test",
+					Name:       "basicview",
+					FieldNames: []string{"birthday", "nationality", "weight", "height"},
+					FieldTypes: []TypeInfo{
+						timestampTypeInfo{},
+						varcharLikeTypeInfo{
+							typ: textType,
+						},
+						varcharLikeTypeInfo{
+							typ: textType,
+						},
+						varcharLikeTypeInfo{
+							typ: textType,
+						},
+					},
+				}
+				if !reflect.DeepEqual(*keyspaceMetadata.UserTypes["basicview"], expectedType) {
+					t.Fatalf("type is %#v, but expected %#v", keyspaceMetadata.UserTypes["basicview"], expectedType)
+				}
+				if flagCassVersion.Major >= 3 {
+					materializedView, found := keyspaceMetadata.MaterializedViews["view_view"]
+					if !found {
+						t.Fatal("failed to find materialized view view_view in metadata")
+					}
+					if materializedView.BaseTable.Name != "view_table" {
+						t.Fatalf("expected name: %s, materialized view base table name: %s", "view_table", materializedView.BaseTable.Name)
+					}
+					materializedView, found = keyspaceMetadata.MaterializedViews["view_view2"]
+					if !found {
+						t.Fatal("failed to find materialized view view_view2 in metadata")
+					}
+					if materializedView.BaseTable.Name != "view_table2" {
+						t.Fatalf("expected name: %s, materialized view base table name: %s", "view_table2", materializedView.BaseTable.Name)
+					}
+				}
+			} else {
+				// KeyspaceOnly mode should only return keyspace metadata
+				// Tables, Functions, Aggregates, MaterializedViews, UserTypes should be nil
+				if keyspaceMetadata.Tables != nil {
+					t.Errorf("Expected no tables in KeyspaceOnly mode, but got %d tables", len(keyspaceMetadata.Tables))
+				}
+				if keyspaceMetadata.Aggregates != nil {
+					t.Errorf("Expected no aggregates in KeyspaceOnly mode, but got %d aggregates", len(keyspaceMetadata.Aggregates))
+				}
+				if keyspaceMetadata.Functions != nil {
+					t.Errorf("Expected no functions in KeyspaceOnly mode, but got %d functions", len(keyspaceMetadata.Functions))
+				}
+				if keyspaceMetadata.UserTypes != nil {
+					t.Errorf("Expected no user types in KeyspaceOnly mode, but got %d types", len(keyspaceMetadata.UserTypes))
+				}
+				if keyspaceMetadata.MaterializedViews != nil {
+					t.Errorf("Expected no materialized views in KeyspaceOnly mode, but got %d views", len(keyspaceMetadata.MaterializedViews))
+				}
+			}
+		})
 	}
 }
 
@@ -2920,14 +3037,16 @@ func TestRoutingStatementMetadata(t *testing.T) {
 // Integration test of the token-aware policy-based connection pool
 func TestTokenAwareConnPool(t *testing.T) {
 	cluster := createCluster()
-	cluster.PoolConfig.HostSelectionPolicy = TokenAwareHostPolicy(RoundRobinHostPolicy())
+	// Create a dedicated keyspace with RF=1 for deterministic token-aware routing
+	createKeyspaceWithRF(t, cluster, "test_token_aware_ks", 1)
 
+	cluster.PoolConfig.HostSelectionPolicy = TokenAwareHostPolicy(RoundRobinHostPolicy())
+	cluster.Logger = NewLogger(LogLevelDebug)
 	// force metadata query to page
 	cluster.PageSize = 1
 
 	session := createSessionFromCluster(cluster, t)
 	defer session.Close()
-
 	expectedPoolSize := cluster.NumConns * len(session.ring.allHosts())
 
 	// wait for pool to fill
@@ -2943,25 +3062,180 @@ func TestTokenAwareConnPool(t *testing.T) {
 	}
 
 	// add another cf so there are two pages when fetching table metadata from our keyspace
-	if err := createTable(session, "CREATE TABLE gocql_test.test_token_aware_other_cf (id int, data text, PRIMARY KEY (id))"); err != nil {
-		t.Fatalf("failed to create test_token_aware table with err: %v", err)
+	if err := createTable(session, "CREATE TABLE test_token_aware_ks.test_token_aware_other_cf (id int, data text, PRIMARY KEY (id))"); err != nil {
+		t.Fatalf("failed to create test_token_aware_other_cf table with err: %v", err)
 	}
 
-	if err := createTable(session, "CREATE TABLE gocql_test.test_token_aware (id int, data text, PRIMARY KEY (id))"); err != nil {
+	if err := createTable(session, "CREATE TABLE test_token_aware_ks.test_token_aware (id int, data text, PRIMARY KEY (id))"); err != nil {
 		t.Fatalf("failed to create test_token_aware table with err: %v", err)
 	}
-	query := session.Query("INSERT INTO test_token_aware (id, data) VALUES (?,?)", 42, "8 * 6 =")
+	query := session.Query("INSERT INTO test_token_aware_ks.test_token_aware (id, data) VALUES (?,?)", 42, "8 * 6 =")
 	if err := query.Exec(); err != nil {
 		t.Fatalf("failed to insert with err: %v", err)
 	}
 
-	query = session.Query("SELECT data FROM test_token_aware where id = ?", 42).Consistency(One)
-	var data string
-	if err := query.Scan(&data); err != nil {
-		t.Error(err)
+	// Verify token-aware routing using tracing: queries with the same partition key should
+	// consistently go to the same coordinator with no hops to other nodes
+	type traceCapture struct {
+		coordinator string
+		sources     []string
 	}
 
-	// TODO add verification that the query went to the correct host
+	var coordinators []string
+	var allSources [][]string
+	var data string
+
+	// Execute the same query 5 times with the same partition key
+	for i := 0; i < 5; i++ {
+		var capturedTrace traceCapture
+		queryNum := i + 1
+		tracer := newTestTracer(session, func(coordinator string, sources []string, err error) {
+			if err != nil {
+				t.Fatalf("query %d: failed to collect trace data: %v", queryNum, err)
+			}
+			capturedTrace.coordinator = coordinator
+			capturedTrace.sources = sources
+		})
+
+		query = session.Query("SELECT data FROM test_token_aware_ks.test_token_aware where id = ?", 42).
+			Consistency(One).
+			Trace(tracer)
+		if err := query.Scan(&data); err != nil {
+			t.Errorf("query %d failed: %v", queryNum, err)
+		}
+
+		coordinators = append(coordinators, capturedTrace.coordinator)
+		allSources = append(allSources, capturedTrace.sources)
+	}
+
+	if len(coordinators) != 5 {
+		t.Fatalf("expected 5 traced queries, got %d", len(coordinators))
+	}
+
+	// Verify all queries went to the same coordinator
+	firstCoordinator := coordinators[0]
+	for i, coord := range coordinators {
+		if coord != firstCoordinator {
+			t.Errorf("Token-aware routing failed: query %d went to coordinator %s, but query 1 went to %s",
+				i+1, coord, firstCoordinator)
+		}
+	}
+
+	// Verify no hops for any query (all trace events should originate from the coordinator)
+	for queryNum, sources := range allSources {
+		coordinator := coordinators[queryNum]
+		for eventNum, source := range sources {
+			if source != coordinator {
+				t.Errorf("Query %d trace event %d came from %s, but coordinator is %s (indicates query was forwarded)",
+					queryNum+1, eventNum+1, source, coordinator)
+			}
+		}
+	}
+}
+
+// testTracer is a custom tracer for testing that captures coordinator and event sources
+type testTracer struct {
+	session     *Session
+	onTrace     func(coordinator string, sources []string, err error)
+	maxAttempts int           // Number of retry attempts (default: 5)
+	retryDelay  time.Duration // Delay between retries (default: 400ms)
+}
+
+// newTestTracer creates a new testTracer with default retry settings
+func newTestTracer(session *Session, onTrace func(coordinator string, sources []string, err error)) *testTracer {
+	return &testTracer{
+		session:     session,
+		onTrace:     onTrace,
+		maxAttempts: 5,
+		retryDelay:  400 * time.Millisecond,
+	}
+}
+
+func (t *testTracer) Trace(traceId []byte) {
+	var (
+		coordinator string
+		duration    int
+	)
+
+	// Use configured retry parameters, or defaults if not set
+	maxAttempts := t.maxAttempts
+	if maxAttempts == 0 {
+		maxAttempts = 5 // default
+	}
+	retryDelay := t.retryDelay
+	if retryDelay == 0 {
+		retryDelay = 400 * time.Millisecond // default
+	}
+
+	var found bool
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		iter := t.session.control.query(`SELECT coordinator, duration
+				FROM system_traces.sessions
+				WHERE session_id = ?`, traceId)
+
+		// Scan returns true if a row was found
+		found = iter.Scan(&coordinator, &duration)
+		if err := iter.Close(); err != nil {
+			if t.onTrace != nil {
+				t.onTrace("", nil, fmt.Errorf("failed to query trace sessions: %w", err))
+			}
+			return
+		}
+
+		// If we got a row with duration > 0, the trace is complete and all events are published
+		if found && duration > 0 {
+			break
+		}
+
+		// If not the last attempt, wait before retrying
+		if attempt < maxAttempts {
+			t.session.logger.Debug("Trace data not ready, retrying after delay",
+				NewLogFieldString("retryDelay", retryDelay.String()),
+				NewLogFieldInt("attempt", attempt),
+				NewLogFieldInt("maxAttempts", maxAttempts),
+				NewLogFieldBool("found", found),
+				NewLogFieldInt("duration", duration))
+			time.Sleep(retryDelay)
+		}
+	}
+
+	// If we still didn't find complete trace data after all attempts, call callback with error
+	if !found || duration == 0 {
+		if t.onTrace != nil {
+			t.onTrace("", nil, fmt.Errorf("trace data not available after %d attempts (found=%v, duration=%d)", maxAttempts, found, duration))
+		}
+		return
+	}
+
+	var sources []string
+	iter := t.session.control.query(`SELECT *
+			FROM system_traces.events
+			WHERE session_id = ?`, traceId)
+
+	results, err := iter.SliceMap()
+	if err != nil {
+		if t.onTrace != nil {
+			t.onTrace("", nil, fmt.Errorf("failed to read trace events: %w", err))
+		}
+		return
+	}
+
+	t.session.logger.Debug("Got trace events.", NewLogFieldString("results", fmt.Sprintf("%s", results)))
+
+	for _, row := range results {
+		sources = append(sources, row["source"].(net.IP).String())
+	}
+
+	if err := iter.Close(); err != nil {
+		if t.onTrace != nil {
+			t.onTrace("", nil, fmt.Errorf("failed to read trace events: %w", err))
+		}
+		return
+	}
+
+	if t.onTrace != nil {
+		t.onTrace(coordinator, sources, nil)
+	}
 }
 
 func TestNegativeStream(t *testing.T) {

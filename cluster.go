@@ -42,6 +42,36 @@ type PoolConfig struct {
 	HostSelectionPolicy HostSelectionPolicy
 }
 
+// MetadataCacheMode controls how the driver reads and caches schema metadata from Cassandra system tables.
+// This affects the behavior of Session.KeyspaceMetadata and token-aware host selection policies.
+//
+// See the individual mode constants (Full, KeyspaceOnly, Disabled) for detailed behavior of each mode.
+type MetadataCacheMode int
+
+const (
+	// Full mode reads and caches all schema metadata including keyspaces, tables, columns,
+	// functions, aggregates, user-defined types, and materialized views.
+	//
+	// Token-aware routing works normally (if TokenAwareHostPolicy is used) with full replica information.
+	// Session.KeyspaceMetadata returns cached metadata without querying system tables.
+	Full MetadataCacheMode = iota
+
+	// KeyspaceOnly mode reads and caches only keyspace metadata (replication strategy and options).
+	// This enables token-aware routing (if TokenAwareHostPolicy is used) without the overhead of caching detailed schema information.
+	//
+	// Token-aware routing works normally (if TokenAwareHostPolicy is used) with full replica information.
+	// Session.KeyspaceMetadata returns cached keyspace metadata, but Tables, Functions, Aggregates,
+	// MaterializedViews, and UserTypes fields will be nil.
+	KeyspaceOnly
+
+	// Disabled mode completely disables schema metadata caching.
+	//
+	// Token-aware routing falls back to the configured fallback policy (e.g., RoundRobinHostPolicy,
+	// DCAwareRoundRobinPolicy) since replica information is not available.
+	// Session.KeyspaceMetadata queries system tables on every call instead of using a cache.
+	Disabled
+)
+
 func (p PoolConfig) buildPool(session *Session) *policyConnPool {
 	return newPolicyConnPool(session)
 }
@@ -286,6 +316,8 @@ type ClusterConfig struct {
 
 	// internal config for testing
 	disableControlConn bool
+
+	MetadataCacheMode MetadataCacheMode
 }
 
 // Dialer is the interface that wraps the DialContext method for establishing network connections to Cassandra nodes.
@@ -325,6 +357,7 @@ func NewCluster(hosts ...string) *ClusterConfig {
 		ReconnectionPolicy:     &ConstantReconnectionPolicy{MaxRetries: 3, Interval: 1 * time.Second},
 		WriteCoalesceWaitTime:  200 * time.Microsecond,
 		NextPagePrefetch:       0.25,
+		MetadataCacheMode:      Full,
 	}
 	return cfg
 }

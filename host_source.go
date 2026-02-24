@@ -907,6 +907,10 @@ const (
 	ringRefreshDebounceTime = 1 * time.Second
 )
 
+const (
+	schemaRefreshDebounceTime = 1 * time.Second
+)
+
 // debounces requests to call a refresh function (currently used for ring refresh). It also supports triggering a refresh immediately.
 type refreshDebouncer struct {
 	mu           sync.Mutex

@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Session.StatementMetadata (CASSGO-92)
 - NewLogFieldIP, NewLogFieldError, NewLogFieldStringer, NewLogFieldString, NewLogFieldInt, NewLogFieldBool (CASSGO-92)
+- Introduced configurable schema metadata caching modes to control what metadata is cached (CASSGO-107)
 
 ### Fixed
 
@@ -20,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Use protocol downgrading approach during protocol negotiation (CASSGO-97)
 - Prevent panic iin compileMetadata() when final func is not defined for an aggregate (CASSGO-105)
 - Framer drops error silently (CASSGO-108)
+- TokenAwareHostPolicy now populates replica maps for non-default keyspaces (CASSGO-104)
 
 ## [2.0.0]
 

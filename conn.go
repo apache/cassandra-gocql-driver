@@ -1972,13 +1972,17 @@ func (c *Conn) querySystemLocal(ctx context.Context) *Iter {
 }
 
 func (c *Conn) awaitSchemaAgreement(ctx context.Context) (err error) {
+	return c.awaitSchemaAgreementWithTimeout(ctx, c.session.cfg.MaxWaitSchemaAgreement)
+}
+
+func (c *Conn) awaitSchemaAgreementWithTimeout(ctx context.Context, timeout time.Duration) (err error) {
 	const localSchemas = "SELECT schema_version FROM system.local WHERE key='local'"
 
 	var versions map[string]struct{}
 	var schemaVersion string
 	var rows []map[string]interface{}
 
-	endDeadline := time.Now().Add(c.session.cfg.MaxWaitSchemaAgreement)
+	endDeadline := time.Now().Add(timeout)
 
 	for time.Now().Before(endDeadline) {
 		iter := c.querySystemPeers(ctx, c.host.version)
