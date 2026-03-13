@@ -12,6 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Session.StatementMetadata (CASSGO-92)
 - NewLogFieldIP, NewLogFieldError, NewLogFieldStringer, NewLogFieldString, NewLogFieldInt, NewLogFieldBool (CASSGO-92)
 - Introduced configurable schema metadata caching modes to control what metadata is cached (CASSGO-107)
+- Support for session ready, host state, topology change and schema changes custom listeners (CASSGO-101)
+- Add Session.AllKeyspaceMetadata() (CASSGO-109)
 
 ### Fixed
 

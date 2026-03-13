@@ -30,6 +30,8 @@ package gocql
 import (
 	"reflect"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestGetCassandraTypeInfo_Set(t *testing.T) {
@@ -304,5 +306,75 @@ func TestIter_RowData(t *testing.T) {
 		if gotType != expectedTypes[i] {
 			t.Fatalf("value[%d]: expected type %v got %v", i, expectedTypes[i], gotType)
 		}
+	}
+}
+
+func TestStringsSlicesEqual(t *testing.T) {
+	tests := []struct {
+		name string
+		a    []string
+		b    []string
+		want bool
+	}{
+		{
+			name: "empty",
+			a:    []string{},
+			b:    []string{},
+			want: true,
+		},
+		{
+			name: "nil",
+			a:    nil,
+			b:    nil,
+			want: true,
+		},
+		{
+			name: "a nil, b empty",
+			a:    nil,
+			b:    []string{},
+			want: false,
+		},
+		{
+			name: "nil a",
+			a:    nil,
+			b:    []string{"a", "b", "c"},
+			want: false,
+		},
+		{
+			name: "nil b",
+			a:    []string{"a", "b", "c"},
+			b:    nil,
+			want: false,
+		},
+		{
+			name: "equal",
+			a:    []string{"a", "b", "c"},
+			b:    []string{"a", "b", "c"},
+			want: true,
+		},
+		{
+			name: "not equal",
+			a:    []string{"a", "b", "c"},
+			b:    []string{"a", "b", "d"},
+			want: false,
+		},
+		{
+			name: "not equal length len(a) < len(b)",
+			a:    []string{"a", "b", "c"},
+			b:    []string{"a", "b"},
+			want: false,
+		},
+		{
+			name: "not equal length len(a) > len(b)",
+			a:    []string{"a", "b"},
+			b:    []string{"a", "b", "c"},
+			want: false,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			equals := stringsSlicesEqual(test.a, test.b)
+			require.Equal(t, test.want, equals)
+		})
 	}
 }

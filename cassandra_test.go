@@ -2602,11 +2602,13 @@ func assertAggregateMetadata(t *testing.T, aggregates []AggregateMetadata, err e
 	}
 
 	expectedAggregrate := AggregateMetadata{
-		Keyspace:      "gocql_test",
-		Name:          "average",
-		ArgumentTypes: []TypeInfo{intTypeInfo{}},
-		InitCond:      "(0, 0)",
-		ReturnType:    doubleTypeInfo{},
+		Keyspace:         "gocql_test",
+		Name:             "average",
+		ArgumentTypes:    []TypeInfo{intTypeInfo{}},
+		argumentTypesRaw: []string{"int"},
+		InitCond:         "(0, 0)",
+		ReturnType:       doubleTypeInfo{},
+		returnTypeRaw:    "double",
 		StateType: TupleTypeInfo{
 			Elems: []TypeInfo{
 				intTypeInfo{},
@@ -2615,8 +2617,9 @@ func assertAggregateMetadata(t *testing.T, aggregates []AggregateMetadata, err e
 				},
 			},
 		},
-		stateFunc: "avgstate",
-		finalFunc: "avgfinal",
+		stateTypeRaw: "frozen<tuple<int, bigint>>",
+		stateFunc:    "avgstate",
+		finalFunc:    "avgfinal",
 	}
 
 	// In this case cassandra is returning a blob
@@ -2676,7 +2679,8 @@ func assertFunctionMetadata(t *testing.T, functions []FunctionMetadata, err erro
 			},
 			intTypeInfo{},
 		},
-		ArgumentNames: []string{"state", "val"},
+		argumentTypesRaw: []string{"frozen<tuple<int, bigint>>", "int"},
+		ArgumentNames:    []string{"state", "val"},
 		ReturnType: TupleTypeInfo{
 			Elems: []TypeInfo{
 				intTypeInfo{},
@@ -2685,6 +2689,7 @@ func assertFunctionMetadata(t *testing.T, functions []FunctionMetadata, err erro
 				},
 			},
 		},
+		returnTypeRaw:     "frozen<tuple<int, bigint>>",
 		CalledOnNullInput: true,
 		Language:          "java",
 		Body:              avgStateBody,
@@ -2707,8 +2712,10 @@ func assertFunctionMetadata(t *testing.T, functions []FunctionMetadata, err erro
 				},
 			},
 		},
+		argumentTypesRaw:  []string{"frozen<tuple<int, bigint>>"},
 		ArgumentNames:     []string{"state"},
 		ReturnType:        doubleTypeInfo{},
+		returnTypeRaw:     "double",
 		CalledOnNullInput: true,
 		Language:          "java",
 		Body:              finalStateBody,
@@ -2760,9 +2767,10 @@ func TestKeyspaceMetadata(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			session := createSession(t, func(config *ClusterConfig) {
-				config.MetadataCacheMode = tc.cacheMode
+				config.Metadata.CacheMode = tc.cacheMode
 			})
 			defer session.Close()
+
 			// Query keyspace metadata
 			keyspaceMetadata, err := session.KeyspaceMetadata("gocql_test")
 			if err != nil {
@@ -2774,6 +2782,47 @@ func TestKeyspaceMetadata(t *testing.T) {
 			if keyspaceMetadata.Name != session.cfg.Keyspace {
 				t.Fatalf("Expected the keyspace name to be %s but was %s", session.cfg.Keyspace, keyspaceMetadata.Name)
 			}
+
+			// Also test AllKeyspaceMetadata
+			allKeyspaces, err := session.AllKeyspaceMetadata()
+			if err != nil {
+				t.Fatalf("failed to query all keyspace metadata with err: %v", err)
+			}
+			if allKeyspaces == nil {
+				t.Fatal("expected all keyspaces metadata to not be nil, but it was nil")
+			}
+			allKeyspaceMetadata, found := allKeyspaces["gocql_test"]
+			if !found {
+				t.Fatal("expected to find gocql_test in all keyspaces metadata")
+			}
+			if allKeyspaceMetadata.Name != session.cfg.Keyspace {
+				t.Fatalf("Expected the keyspace name in all keyspaces to be %s but was %s", session.cfg.Keyspace, allKeyspaceMetadata.Name)
+			}
+
+			// Verify that both methods return equivalent metadata
+			if keyspaceMetadata.Name != allKeyspaceMetadata.Name {
+				t.Errorf("KeyspaceMetadata and AllKeyspaceMetadata returned different keyspace names: %s vs %s",
+					keyspaceMetadata.Name, allKeyspaceMetadata.Name)
+			}
+
+			// Verify table counts match
+			if len(keyspaceMetadata.Tables) != len(allKeyspaceMetadata.Tables) {
+				t.Errorf("KeyspaceMetadata and AllKeyspaceMetadata returned different table counts: %d vs %d",
+					len(keyspaceMetadata.Tables), len(allKeyspaceMetadata.Tables))
+			}
+
+			// Verify aggregate counts match
+			if len(keyspaceMetadata.Aggregates) != len(allKeyspaceMetadata.Aggregates) {
+				t.Errorf("KeyspaceMetadata and AllKeyspaceMetadata returned different aggregate counts: %d vs %d",
+					len(keyspaceMetadata.Aggregates), len(allKeyspaceMetadata.Aggregates))
+			}
+
+			// Verify user type counts match
+			if len(keyspaceMetadata.UserTypes) != len(allKeyspaceMetadata.UserTypes) {
+				t.Errorf("KeyspaceMetadata and AllKeyspaceMetadata returned different user type counts: %d vs %d",
+					len(keyspaceMetadata.UserTypes), len(allKeyspaceMetadata.UserTypes))
+			}
+
 			// When cache mode is Disabled, verify that the cache is empty
 			if tc.cacheMode == Disabled {
 				cachedMeta := session.schemaDescriber.getSchemaMetaForRead()
@@ -2867,6 +2916,7 @@ func TestKeyspaceMetadata(t *testing.T) {
 							typ: textType,
 						},
 					},
+					fieldTypesRaw: []string{"timestamp", "text", "text", "text"},
 				}
 				if !reflect.DeepEqual(*keyspaceMetadata.UserTypes["basicview"], expectedType) {
 					t.Fatalf("type is %#v, but expected %#v", keyspaceMetadata.UserTypes["basicview"], expectedType)
@@ -3183,7 +3233,7 @@ func (t *testTracer) Trace(traceId []byte) {
 		}
 
 		// If we got a row with duration > 0, the trace is complete and all events are published
-		if found && duration > 0 {
+		if found && duration > 0 && coordinator != "" {
 			break
 		}
 
@@ -4396,4 +4446,32 @@ func TestHostInfoFromIter(t *testing.T) {
 	if !h.missingRack {
 		t.Errorf("unexpected non-missing rack")
 	}
+}
+
+type mockSessionReadyListener struct {
+	readyCount int
+	gotSession *Session
+}
+
+func (l *mockSessionReadyListener) OnSessionReady(session *Session) {
+	l.readyCount++
+	l.gotSession = session
+}
+
+func TestSessionReadyEvent(t *testing.T) {
+	listener := &mockSessionReadyListener{}
+
+	// Don't use createSession helper because it creates session twice,
+	// once for creating test keyspace and once for the session itself
+	cluster := createCluster()
+	cluster.Metadata.SessionReadyListener = listener
+	session, err := cluster.CreateSession()
+	require.NoError(t, err)
+	defer session.Close()
+
+	require.Eventually(t, func() bool {
+		return listener.readyCount == 1
+	}, time.Second*5, time.Millisecond*100, "Expected session ready event to be received")
+	require.Equal(t, 1, listener.readyCount)
+	require.Equal(t, session, listener.gotSession)
 }

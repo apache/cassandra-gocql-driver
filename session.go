@@ -81,6 +81,15 @@ type Session struct {
 	// event handlers
 	nodeEvents *eventDebouncer
 
+	// host state and topology change listeners
+	hostListeners internalHostListeners
+
+	// schema change listeners
+	schemaListeners internalSchemaListeners
+
+	// session ready listeners
+	sessionReadyListeners internalSessionReadyListener
+
 	// ring metadata
 	useSystemSchema           bool
 	hasAggregatesAndFunctions bool
@@ -177,6 +186,33 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 	s.connectObserver = cfg.ConnectObserver
 	s.frameObserver = cfg.FrameHeaderObserver
 	s.streamObserver = cfg.StreamObserver
+
+	// Propogate node status, topology and schema change listeners
+	s.hostListeners = newInternalHostStateListeners(
+		s,
+		cfg.Metadata.HostListener.HostStateChangeListener,
+		cfg.Metadata.HostListener.TopologyChangeListener,
+	)
+
+	// Propogate schema change listeners
+	s.schemaListeners = newInternalSchemaChangeListeners(
+		cfg.Metadata.SchemaListener.KeyspaceChangeListener,
+		cfg.Metadata.SchemaListener.TableChangeListener,
+		cfg.Metadata.SchemaListener.UserTypeChangeListener,
+		cfg.Metadata.SchemaListener.FunctionChangeListener,
+		cfg.Metadata.SchemaListener.AggregateChangeListener,
+	)
+
+	if cfg.Metadata.CacheMode == Disabled && s.schemaListeners.hasSchemaChangeListeners() {
+		return nil, errors.New("Schema change listeners are not supported in Disabled metadata cache mode")
+	}
+
+	if cfg.Metadata.CacheMode == KeyspaceOnly && s.schemaListeners.hasNonKeyspaceSchemaChangeListeners() {
+		return nil, errors.New("Schema change listeners are not supported in KeyspaceOnly metadata cache mode")
+	}
+
+	// Propogate session ready listener
+	s.sessionReadyListeners = newInternalSessionReadyListener(cfg.Metadata.SessionReadyListener)
 
 	//Check the TLS Config before trying to connect to anything external
 	connCfg, err := connConfig(&s.cfg)
@@ -380,6 +416,8 @@ func (s *Session) init() error {
 	s.sessionStateMu.Lock()
 	s.isInitialized = true
 	s.sessionStateMu.Unlock()
+
+	s.sessionReadyListeners.OnSessionReady(s)
 
 	s.logger.Info("Session initialized successfully.")
 	return nil
@@ -593,6 +631,10 @@ func (s *Session) removeHost(h *HostInfo) {
 }
 
 // KeyspaceMetadata returns the schema metadata for the keyspace specified. Returns an error if the keyspace does not exist.
+// If MetadataConfig.CacheMode is Disabled this method will query the system tables,
+// otherwise it will retrieve the metadata from the driver's cache.
+//
+// Check AllKeyspaceMetadata if you're interested in retrieving the metadata for all keyspaces instead.
 func (s *Session) KeyspaceMetadata(keyspace string) (*KeyspaceMetadata, error) {
 	// fail fast
 	if s.Closed() {
@@ -602,6 +644,20 @@ func (s *Session) KeyspaceMetadata(keyspace string) (*KeyspaceMetadata, error) {
 	}
 
 	return s.schemaDescriber.getSchema(keyspace)
+}
+
+// AllKeyspaceMetadata returns the schema metadata for all keyspaces.
+// If MetadataConfig.CacheMode is Disabled this method will query the system tables,
+// otherwise it will retrieve the metadata from the driver's cache.
+//
+// Check KeyspaceMetadata if you're interested in retrieving the metadata for a single keyspace by name instead.
+func (s *Session) AllKeyspaceMetadata() (map[string]*KeyspaceMetadata, error) {
+	// fail fast
+	if s.Closed() {
+		return nil, ErrSessionClosed
+	}
+
+	return s.schemaDescriber.getAllSchema()
 }
 
 func (s *Session) getConn() *Conn {

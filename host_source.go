@@ -859,6 +859,7 @@ func refreshRing(r *ringDescriber) error {
 	}
 
 	prevHosts := r.session.ring.currentHosts()
+	hostStateListener := r.session.hostListeners
 
 	for _, h := range hosts {
 		if r.session.cfg.filterHost(h) {
@@ -868,6 +869,7 @@ func refreshRing(r *ringDescriber) error {
 		if host, ok := r.session.ring.addHostIfMissing(h); !ok {
 			r.session.logger.Info("Adding host.", NewLogFieldIP("host_addr", h.ConnectAddress()), NewLogFieldString("host_id", h.HostID()))
 			r.session.startPoolFill(h)
+			hostStateListener.OnNewHost(NewHostEvent{Host: h})
 		} else {
 			// host (by hostID) already exists; determine if IP has changed
 			newHostID := h.HostID()
@@ -882,12 +884,14 @@ func refreshRing(r *ringDescriber) error {
 				// host IP has changed
 				// remove old HostInfo (w/old IP)
 				r.session.removeHost(existing)
+				hostStateListener.OnRemovedHost(RemovedHostEvent{Host: existing})
 				if _, alreadyExists := r.session.ring.addHostIfMissing(h); alreadyExists {
 					return fmt.Errorf("add new host=%s after removal: %w", h, ErrHostAlreadyExists)
 				}
 				r.session.logger.Info("Adding host with new IP after removing old host.", NewLogFieldIP("host_addr", h.ConnectAddress()), NewLogFieldString("host_id", h.HostID()))
 				// add new HostInfo (same hostID, new IP)
 				r.session.startPoolFill(h)
+				hostStateListener.OnNewHost(NewHostEvent{Host: h})
 			}
 		}
 		delete(prevHosts, h.HostID())
@@ -895,11 +899,13 @@ func refreshRing(r *ringDescriber) error {
 
 	for _, host := range prevHosts {
 		r.session.removeHost(host)
+		hostStateListener.OnRemovedHost(RemovedHostEvent{Host: host})
 	}
 
 	r.session.metadata.setPartitioner(partitioner)
 	r.session.policy.SetPartitioner(partitioner)
 	r.session.logger.Info("Refreshed ring.", NewLogFieldString("ring", ringString(r.session.ring.allHosts())))
+
 	return nil
 }
 

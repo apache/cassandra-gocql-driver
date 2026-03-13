@@ -267,3 +267,42 @@ func ringString(hosts []*HostInfo) string {
 	}
 	return buf.String()
 }
+
+// stringsSlicesEqual compares two slices of strings. It doesn't ignore case and order.
+// It returns false if:
+// - slices are not the same length
+// - one slice is nil and the other is not
+// - corresponding elements are not equal
+func stringsSlicesEqual(a, b []string) bool {
+	if a == nil && b == nil {
+		return true
+	}
+
+	if a == nil || b == nil {
+		return false
+	}
+
+	if len(a) != len(b) {
+		return false
+	}
+
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// compareMapStringInterface compares two maps map[string]interface{} for equality.
+func compareMapStringInterface(mapA, mapB map[string]interface{}) bool {
+	if len(mapA) != len(mapB) {
+		return false
+	}
+	for k, v := range mapA {
+		if v != mapB[k] {
+			return false
+		}
+	}
+	return true
+}

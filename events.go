@@ -179,11 +179,11 @@ func (s *Session) handleNodeEvent(frames []frame) {
 		// ignore events we received if they were disabled
 		// see https://github.com/apache/cassandra-gocql-driver/issues/1591
 		switch f.change {
-		case "UP":
+		case nodeStateChangeUp:
 			if !s.cfg.Events.DisableNodeStatusEvents {
 				s.handleNodeUp(f.host, f.port)
 			}
-		case "DOWN":
+		case nodeStateChangeDown:
 			if !s.cfg.Events.DisableNodeStatusEvents {
 				s.handleNodeDown(f.host, f.port)
 			}
@@ -225,6 +225,7 @@ func (s *Session) handleNodeConnected(host *HostInfo) {
 
 	if !s.cfg.filterHost(host) {
 		s.policy.HostUp(host)
+		s.hostListeners.OnHostUp(HostUpEvent{Host: host})
 	}
 }
 
@@ -242,5 +243,11 @@ func (s *Session) handleNodeDown(ip net.IP, port int) {
 		s.policy.HostDown(host)
 		hostID := host.HostID()
 		s.pool.removeHost(hostID)
+		s.hostListeners.OnHostDown(HostDownEvent{Host: host})
 	}
 }
+
+const (
+	nodeStateChangeUp   = "UP"
+	nodeStateChangeDown = "DOWN"
+)

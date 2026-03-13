@@ -30,10 +30,10 @@ package ccm
 import (
 	"bufio"
 	"bytes"
-	"errors"
 	"fmt"
 	"os/exec"
 	"runtime"
+	"strconv"
 	"strings"
 )
 
@@ -48,12 +48,13 @@ func execCmd(args ...string) (*bytes.Buffer, error) {
 	cmd.Stdout = stdout
 	cmd.Stderr = &bytes.Buffer{}
 	if err := cmd.Run(); err != nil {
-		return nil, errors.New(cmd.Stderr.(*bytes.Buffer).String())
+		return nil, fmt.Errorf("Failed to execute command: [ %s ], err: %w, stderr: %s", cmd.String(), err, cmd.Stderr.(*bytes.Buffer).String())
 	}
 
 	return stdout, nil
 }
 
+// Starts nodes that are not up, and waits for them to be up before returning
 func AllUp() error {
 	status, err := Status()
 	if err != nil {
@@ -71,6 +72,12 @@ func AllUp() error {
 	return nil
 }
 
+// Runs ccm start --wait-for-binary-proto
+func StartAll() error {
+	_, err := execCmd("start", "--wait-for-binary-proto")
+	return err
+}
+
 func NodeUp(node string) error {
 	args := []string{node, "start", "--wait-for-binary-proto"}
 	if runtime.GOOS == "windows" {
@@ -82,6 +89,21 @@ func NodeUp(node string) error {
 
 func NodeDown(node string) error {
 	_, err := execCmd(node, "stop")
+	return err
+}
+
+func AddNode(name, ip string, jmxPort int) error {
+	_, err := execCmd("add", name, "-i", ip, "-j", strconv.Itoa(jmxPort), "-d", "datacenter1")
+	return err
+}
+
+func DecommissionNode(node string) error {
+	_, err := execCmd(node, "decommission")
+	return err
+}
+
+func RemoveNode(node string) error {
+	_, err := execCmd(node, "remove")
 	return err
 }
 
@@ -162,6 +184,10 @@ func Status() (map[string]Host, error) {
 				host.State = NodeStateUp
 			case "DOWN":
 				host.State = NodeStateDown
+			case "DOWN (Not initialized)":
+				host.State = NodeStateDown
+				// could be more specific and have a separate state for this, but for our purposes its just down
+				// and this is the only other state we know of that ccm produces
 			default:
 				return nil, fmt.Errorf("unknown node state from ccm: %q", nodeState)
 			}
@@ -199,4 +225,49 @@ func Status() (map[string]Host, error) {
 	}
 
 	return nodes, nil
+}
+
+func Hosts() ([]Host, error) {
+	status, err := Status()
+	if err != nil {
+		return nil, err
+	}
+
+	hosts := make([]Host, 0, len(status))
+	for _, host := range status {
+		hosts = append(hosts, host)
+	}
+
+	return hosts, nil
+}
+
+type ClusterInfo struct {
+	Hosts []Host
+}
+
+func (c *ClusterInfo) HostAddrs() []string {
+	addrs := make([]string, 0, len(c.Hosts))
+	for _, host := range c.Hosts {
+		addrs = append(addrs, host.Addr)
+	}
+	return addrs
+}
+
+// CurrentClusterInfo returns the current cluster information by running ccm status -v.
+// It assumes that name of each node in the cluster starts with "node" prefix (e.g. node1, node2, etc)
+func CurrentClusterInfo() (*ClusterInfo, error) {
+	hosts, err := Hosts()
+	if err != nil {
+		return nil, err
+	}
+
+	if len(hosts) < 1 {
+		return nil, fmt.Errorf("no nodes in cluster")
+	}
+
+	cluster := &ClusterInfo{
+		Hosts: hosts,
+	}
+
+	return cluster, nil
 }
