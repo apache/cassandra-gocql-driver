@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Support for session ready, host state, topology change and schema changes custom listeners (CASSGO-101)
 - Add Session.AllKeyspaceMetadata() (CASSGO-109)
 
+### Changed
+
+- Bump Go version support from 1.22 and 1.23 to 1.25 and 1.26 (CASSGO-110)
+
 ### Fixed
 
 - Prevent panic with queries during session init (CASSGO-92)

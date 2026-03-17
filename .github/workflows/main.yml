@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        go: [ '1.22', '1.23' ]
+        go: [ '1.25', '1.26' ]
     steps:
       - uses: actions/checkout@v3
       - uses: actions/setup-go@v4
@@ -33,7 +33,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        go: [ '1.22', '1.23' ]
+        go: [ '1.25', '1.26' ]
         cassandra_version: [ '4.1.6', '5.0.3' ]
         auth: [ "false" ]
         compressor: [ "no-compression", "snappy", "lz4" ]
@@ -99,7 +99,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        go: [ '1.22', '1.23' ]
+        go: [ '1.25', '1.26' ]
         cassandra_version: [ '4.0.13' ]
         compressor: [ "no-compression", "snappy", "lz4" ]
         tags: [ "integration" ]
