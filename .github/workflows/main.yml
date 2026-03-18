@@ -15,8 +15,8 @@ jobs:
       matrix:
         go: [ '1.25', '1.26' ]
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-go@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
         with:
           go-version: ${{ matrix.go }}
       - name: Run linting
@@ -43,26 +43,26 @@ jobs:
           - proto_version: "5"
             compressor: "snappy"
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version: ${{ matrix.go }}
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.10'
           cache: 'pip'
           cache-dependency-path: Makefile
 
       - name: Set up cache for SDKMAN
-        uses: actions/cache@v3
+        uses: actions/cache@v5
         with:
           path: ~/.sdkman
           key: ${{ runner.os }}-sdkman
 
       - name: Set up cache for CCM
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.ccm/repository
           key: ${{ runner.os }}-ccm-${{ matrix.cassandra_version }}
@@ -108,25 +108,25 @@ jobs:
           - proto_version: "5"
             compressor: "snappy"
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-go@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
         with:
           go-version: ${{ matrix.go }}
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.10'
           cache: 'pip'
           cache-dependency-path: Makefile
 
       - name: Set up cache for SDKMAN
-        uses: actions/cache@v3
+        uses: actions/cache@v5
         with:
           path: ~/.sdkman
           key: ${{ runner.os }}-sdkman
 
       - name: Set up cache for CCM
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.ccm/repository
           key: ${{ runner.os }}-ccm-${{ matrix.cassandra_version }}
