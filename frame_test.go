@@ -893,3 +893,257 @@ func Test_newFrame_compressionFlag(t *testing.T) {
 		})
 	}
 }
+
+func newErrorFrameForTest(code int, msg string) *framer {
+	f := newFramer(nil, protoVersion4, GlobalTypes)
+	f.header = &frameHeader{
+		version: protoVersion4 | protoDirectionMask,
+		stream:  1,
+		op:      opError,
+	}
+	f.writeInt(int32(code))
+	f.writeString(msg)
+	return f
+}
+
+func TestParseErrorFrameDedicatedTypes(t *testing.T) {
+	tests := []struct {
+		name    string
+		code    int
+		msg     string
+		assertT func(*testing.T, frame)
+	}{
+		{
+			name: "overloaded",
+			code: ErrCodeOverloaded,
+			msg:  "coordinator overloaded",
+			assertT: func(t *testing.T, got frame) {
+				reqErr, ok := got.(*RequestErrOverloaded)
+				if !ok {
+					t.Fatalf("expected *RequestErrOverloaded, got %T", got)
+				}
+				if reqErr.Code() != ErrCodeOverloaded {
+					t.Fatalf("expected code %x, got %x", ErrCodeOverloaded, reqErr.Code())
+				}
+				if reqErr.Message() != "coordinator overloaded" {
+					t.Fatalf("expected message %q, got %q", "coordinator overloaded", reqErr.Message())
+				}
+				if reqErr.Error() != "coordinator overloaded" {
+					t.Fatalf("expected error string %q, got %q", "coordinator overloaded", reqErr.Error())
+				}
+				if reqErr.Header().op != opError {
+					t.Fatalf("expected op %v, got %v", opError, reqErr.Header().op)
+				}
+			},
+		},
+		{
+			name: "bootstrapping",
+			code: ErrCodeBootstrapping,
+			msg:  "node is bootstrapping",
+			assertT: func(t *testing.T, got frame) {
+				reqErr, ok := got.(*RequestErrBootstrapping)
+				if !ok {
+					t.Fatalf("expected *RequestErrBootstrapping, got %T", got)
+				}
+				if reqErr.Code() != ErrCodeBootstrapping {
+					t.Fatalf("expected code %x, got %x", ErrCodeBootstrapping, reqErr.Code())
+				}
+				if reqErr.Message() != "node is bootstrapping" {
+					t.Fatalf("expected message %q, got %q", "node is bootstrapping", reqErr.Message())
+				}
+				if reqErr.Error() != "node is bootstrapping" {
+					t.Fatalf("expected error string %q, got %q", "node is bootstrapping", reqErr.Error())
+				}
+				if reqErr.Header().op != opError {
+					t.Fatalf("expected op %v, got %v", opError, reqErr.Header().op)
+				}
+			},
+		},
+		{
+			name: "invalid",
+			code: ErrCodeInvalid,
+			msg:  "invalid query",
+			assertT: func(t *testing.T, got frame) {
+				reqErr, ok := got.(*RequestErrInvalid)
+				if !ok {
+					t.Fatalf("expected *RequestErrInvalid, got %T", got)
+				}
+				if reqErr.Code() != ErrCodeInvalid {
+					t.Fatalf("expected code %x, got %x", ErrCodeInvalid, reqErr.Code())
+				}
+				if reqErr.Message() != "invalid query" {
+					t.Fatalf("expected message %q, got %q", "invalid query", reqErr.Message())
+				}
+				if reqErr.Error() != "invalid query" {
+					t.Fatalf("expected error string %q, got %q", "invalid query", reqErr.Error())
+				}
+				if reqErr.Header().op != opError {
+					t.Fatalf("expected op %v, got %v", opError, reqErr.Header().op)
+				}
+			},
+		},
+		{
+			name: "config",
+			code: ErrCodeConfig,
+			msg:  "configuration error",
+			assertT: func(t *testing.T, got frame) {
+				reqErr, ok := got.(*RequestErrConfig)
+				if !ok {
+					t.Fatalf("expected *RequestErrConfig, got %T", got)
+				}
+				if reqErr.Code() != ErrCodeConfig {
+					t.Fatalf("expected code %x, got %x", ErrCodeConfig, reqErr.Code())
+				}
+				if reqErr.Message() != "configuration error" {
+					t.Fatalf("expected message %q, got %q", "configuration error", reqErr.Message())
+				}
+				if reqErr.Error() != "configuration error" {
+					t.Fatalf("expected error string %q, got %q", "configuration error", reqErr.Error())
+				}
+				if reqErr.Header().op != opError {
+					t.Fatalf("expected op %v, got %v", opError, reqErr.Header().op)
+				}
+			},
+		},
+		{
+			name: "credentials",
+			code: ErrCodeCredentials,
+			msg:  "bad credentials",
+			assertT: func(t *testing.T, got frame) {
+				reqErr, ok := got.(*RequestErrCredentials)
+				if !ok {
+					t.Fatalf("expected *RequestErrCredentials, got %T", got)
+				}
+				if reqErr.Code() != ErrCodeCredentials {
+					t.Fatalf("expected code %x, got %x", ErrCodeCredentials, reqErr.Code())
+				}
+				if reqErr.Message() != "bad credentials" {
+					t.Fatalf("expected message %q, got %q", "bad credentials", reqErr.Message())
+				}
+				if reqErr.Error() != "bad credentials" {
+					t.Fatalf("expected error string %q, got %q", "bad credentials", reqErr.Error())
+				}
+				if reqErr.Header().op != opError {
+					t.Fatalf("expected op %v, got %v", opError, reqErr.Header().op)
+				}
+			},
+		},
+		{
+			name: "syntax",
+			code: ErrCodeSyntax,
+			msg:  "syntax error",
+			assertT: func(t *testing.T, got frame) {
+				reqErr, ok := got.(*RequestErrSyntax)
+				if !ok {
+					t.Fatalf("expected *RequestErrSyntax, got %T", got)
+				}
+				if reqErr.Code() != ErrCodeSyntax {
+					t.Fatalf("expected code %x, got %x", ErrCodeSyntax, reqErr.Code())
+				}
+				if reqErr.Message() != "syntax error" {
+					t.Fatalf("expected message %q, got %q", "syntax error", reqErr.Message())
+				}
+				if reqErr.Error() != "syntax error" {
+					t.Fatalf("expected error string %q, got %q", "syntax error", reqErr.Error())
+				}
+				if reqErr.Header().op != opError {
+					t.Fatalf("expected op %v, got %v", opError, reqErr.Header().op)
+				}
+			},
+		},
+		{
+			name: "truncate",
+			code: ErrCodeTruncate,
+			msg:  "truncation error",
+			assertT: func(t *testing.T, got frame) {
+				reqErr, ok := got.(*RequestErrTruncate)
+				if !ok {
+					t.Fatalf("expected *RequestErrTruncate, got %T", got)
+				}
+				if reqErr.Code() != ErrCodeTruncate {
+					t.Fatalf("expected code %x, got %x", ErrCodeTruncate, reqErr.Code())
+				}
+				if reqErr.Message() != "truncation error" {
+					t.Fatalf("expected message %q, got %q", "truncation error", reqErr.Message())
+				}
+				if reqErr.Error() != "truncation error" {
+					t.Fatalf("expected error string %q, got %q", "truncation error", reqErr.Error())
+				}
+				if reqErr.Header().op != opError {
+					t.Fatalf("expected op %v, got %v", opError, reqErr.Header().op)
+				}
+			},
+		},
+		{
+			name: "unauthorized",
+			code: ErrCodeUnauthorized,
+			msg:  "unauthorized",
+			assertT: func(t *testing.T, got frame) {
+				reqErr, ok := got.(*RequestErrUnauthorized)
+				if !ok {
+					t.Fatalf("expected *RequestErrUnauthorized, got %T", got)
+				}
+				if reqErr.Code() != ErrCodeUnauthorized {
+					t.Fatalf("expected code %x, got %x", ErrCodeUnauthorized, reqErr.Code())
+				}
+				if reqErr.Message() != "unauthorized" {
+					t.Fatalf("expected message %q, got %q", "unauthorized", reqErr.Message())
+				}
+				if reqErr.Error() != "unauthorized" {
+					t.Fatalf("expected error string %q, got %q", "unauthorized", reqErr.Error())
+				}
+				if reqErr.Header().op != opError {
+					t.Fatalf("expected op %v, got %v", opError, reqErr.Header().op)
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := newErrorFrameForTest(tt.code, tt.msg)
+
+			got, err := f.parseErrorFrame()
+			if err != nil {
+				t.Fatalf("parseErrorFrame returned error: %v", err)
+			}
+
+			tt.assertT(t, got)
+		})
+	}
+}
+
+func TestParseErrorFrameAllGenericCodes(t *testing.T) {
+	codes := []struct {
+		name string
+		code int
+	}{
+		{"overloaded", ErrCodeOverloaded},
+		{"bootstrapping", ErrCodeBootstrapping},
+		{"invalid", ErrCodeInvalid},
+		{"config", ErrCodeConfig},
+		{"credentials", ErrCodeCredentials},
+		{"syntax", ErrCodeSyntax},
+		{"truncate", ErrCodeTruncate},
+		{"unauthorized", ErrCodeUnauthorized},
+	}
+
+	for _, tc := range codes {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newErrorFrameForTest(tc.code, "test message")
+
+			got, err := f.parseErrorFrame()
+			if err != nil {
+				t.Fatalf("parseErrorFrame returned error: %v", err)
+			}
+
+			reqErr, ok := got.(RequestError)
+			if !ok {
+				t.Fatalf("expected RequestError, got %T", got)
+			}
+			if reqErr.Code() != tc.code {
+				t.Fatalf("expected code %x, got %x", tc.code, reqErr.Code())
+			}
+		})
+	}
+}

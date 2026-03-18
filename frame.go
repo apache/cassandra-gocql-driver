@@ -759,10 +759,24 @@ func (f *framer) parseErrorFrame() (frame, error) {
 			return nil, err
 		}
 		return res, nil
-	case ErrCodeInvalid, ErrCodeBootstrapping, ErrCodeConfig, ErrCodeCredentials, ErrCodeOverloaded,
-		ErrCodeProtocol, ErrCodeServer, ErrCodeSyntax, ErrCodeTruncate, ErrCodeUnauthorized:
-		// TODO(zariel): we should have some distinct types for these errors
+	case ErrCodeOverloaded:
+		return &RequestErrOverloaded{errorFrame: errD}, nil
+	case ErrCodeBootstrapping:
+		return &RequestErrBootstrapping{errorFrame: errD}, nil
+	case ErrCodeInvalid:
+		return &RequestErrInvalid{errorFrame: errD}, nil
+	case ErrCodeConfig:
+		return &RequestErrConfig{errorFrame: errD}, nil
+	case ErrCodeCredentials:
+		return &RequestErrCredentials{errorFrame: errD}, nil
+	case ErrCodeServer, ErrCodeProtocol:
 		return errD, nil
+	case ErrCodeSyntax:
+		return &RequestErrSyntax{errorFrame: errD}, nil
+	case ErrCodeTruncate:
+		return &RequestErrTruncate{errorFrame: errD}, nil
+	case ErrCodeUnauthorized:
+		return &RequestErrUnauthorized{errorFrame: errD}, nil
 	default:
 		return nil, fmt.Errorf("unknown error code: 0x%x", errD.code)
 	}

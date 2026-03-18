@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Support for session ready, host state, topology change and schema changes custom listeners (CASSGO-101)
 - Add Session.AllKeyspaceMetadata() (CASSGO-109)
 - Add GetSerialConsistency method to Query and Batch (CASSGO-103)
+- Add RequestErrOverloaded, RequestErrBootstrapping, RequestErrInvalid, RequestErrConfig, RequestErrCredentials, RequestErrSyntax, RequestErrTruncate, RequestErrUnauthorized for dedicated error handling (CASSGO-113)
 
 ### Changed
 
