@@ -393,14 +393,14 @@ func TestSchemaListenersMux_OnlyTargetCategoryReceivesEvents(t *testing.T) {
 
 func TestHostListenersMux_HostStatus(t *testing.T) {
 	t.Run("no listeners", func(t *testing.T) {
-		mux := &HostListenersMux{}
+		mux := HostListenersMux{}
 		mux.OnHostUp(HostUpEvent{Host: &HostInfo{hostId: "h1"}})
 		mux.OnHostDown(HostDownEvent{Host: &HostInfo{hostId: "h1"}})
 	})
 
 	t.Run("single listener", func(t *testing.T) {
 		l := &mockHostStatusChangeListener{}
-		mux := &HostListenersMux{
+		mux := HostListenersMux{
 			HostStateChangeListeners: []HostStatusChangeListener{l},
 		}
 
@@ -415,7 +415,7 @@ func TestHostListenersMux_HostStatus(t *testing.T) {
 		l1 := &mockHostStatusChangeListener{}
 		l2 := &mockHostStatusChangeListener{}
 		l3 := &mockHostStatusChangeListener{}
-		mux := &HostListenersMux{
+		mux := HostListenersMux{
 			HostStateChangeListeners: []HostStatusChangeListener{l1, l2, l3},
 		}
 
@@ -431,14 +431,14 @@ func TestHostListenersMux_HostStatus(t *testing.T) {
 
 func TestHostListenersMux_Topology(t *testing.T) {
 	t.Run("no listeners", func(t *testing.T) {
-		mux := &HostListenersMux{}
+		mux := HostListenersMux{}
 		mux.OnNewHost(NewHostEvent{Host: &HostInfo{hostId: "h1"}})
 		mux.OnRemovedHost(RemovedHostEvent{Host: &HostInfo{hostId: "h1"}})
 	})
 
 	t.Run("single listener", func(t *testing.T) {
 		l := &mockTopologyChangeListener{}
-		mux := &HostListenersMux{
+		mux := HostListenersMux{
 			TopologyChangeListeners: []TopologyChangeListener{l},
 		}
 
@@ -453,7 +453,7 @@ func TestHostListenersMux_Topology(t *testing.T) {
 		l1 := &mockTopologyChangeListener{}
 		l2 := &mockTopologyChangeListener{}
 		l3 := &mockTopologyChangeListener{}
-		mux := &HostListenersMux{
+		mux := HostListenersMux{
 			TopologyChangeListeners: []TopologyChangeListener{l1, l2, l3},
 		}
 
@@ -471,7 +471,7 @@ func TestHostListenersMux_OnlyTargetCategoryReceivesEvents(t *testing.T) {
 	statusListener := &mockHostStatusChangeListener{}
 	topoListener := &mockTopologyChangeListener{}
 
-	mux := &HostListenersMux{
+	mux := HostListenersMux{
 		HostStateChangeListeners: []HostStatusChangeListener{statusListener},
 		TopologyChangeListeners:  []TopologyChangeListener{topoListener},
 	}

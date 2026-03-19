@@ -4475,3 +4475,145 @@ func TestSessionReadyEvent(t *testing.T) {
 	require.Equal(t, 1, listener.readyCount)
 	require.Equal(t, session, listener.gotSession)
 }
+
+func TestNewSession_SchemaListenersValidation(t *testing.T) {
+	// No better way to test this rather than creating a session and checking the error
+	tests := []struct {
+		name       string
+		metadata   MetadataConfig
+		shouldFail bool
+	}{
+		{
+			name: "KeyspaceOnly metadata cache mode with schema change listeners",
+			metadata: MetadataConfig{
+				CacheMode: KeyspaceOnly,
+				SchemaListener: SchemaListenersConfig{
+					KeyspaceChangeListener: &schemaChangesTestListener{},
+				},
+			},
+			shouldFail: false,
+		},
+		{
+			name: "KeyspaceOnly metadata cache mode with non-keyspace schema change listeners",
+			metadata: MetadataConfig{
+				CacheMode: KeyspaceOnly,
+				SchemaListener: SchemaListenersConfig{
+					TableChangeListener:     &schemaChangesTestListener{},
+					UserTypeChangeListener:  &schemaChangesTestListener{},
+					FunctionChangeListener:  &schemaChangesTestListener{},
+					AggregateChangeListener: &schemaChangesTestListener{},
+				},
+			},
+			shouldFail: true,
+		},
+		{
+			name: "KeyspaceOnly metadata cache mode with both keyspace and non-keyspace schema change listeners",
+			metadata: MetadataConfig{
+				CacheMode: KeyspaceOnly,
+				SchemaListener: SchemaListenersConfig{
+					KeyspaceChangeListener:  &schemaChangesTestListener{},
+					TableChangeListener:     &schemaChangesTestListener{},
+					UserTypeChangeListener:  &schemaChangesTestListener{},
+					FunctionChangeListener:  &schemaChangesTestListener{},
+					AggregateChangeListener: &schemaChangesTestListener{},
+				},
+			},
+			shouldFail: true,
+		},
+		{
+			name: "Disabled metadata cache mode with no schema change listeners",
+			metadata: MetadataConfig{
+				CacheMode: Disabled,
+			},
+			shouldFail: false,
+		},
+		{
+			name: "Disabled metadata cache mode with keyspace change listener",
+			metadata: MetadataConfig{
+				CacheMode: Disabled,
+				SchemaListener: SchemaListenersConfig{
+					KeyspaceChangeListener: &schemaChangesTestListener{},
+				},
+			},
+			shouldFail: true,
+		},
+		{
+			name: "Disabled metadata cache mode with non-keyspace schema change listeners",
+			metadata: MetadataConfig{
+				CacheMode: Disabled,
+				SchemaListener: SchemaListenersConfig{
+					TableChangeListener:     &schemaChangesTestListener{},
+					UserTypeChangeListener:  &schemaChangesTestListener{},
+					FunctionChangeListener:  &schemaChangesTestListener{},
+					AggregateChangeListener: &schemaChangesTestListener{},
+				},
+			},
+			shouldFail: true,
+		},
+		{
+			name: "Disabled metadata cache mode with all schema change listeners",
+			metadata: MetadataConfig{
+				CacheMode: Disabled,
+				SchemaListener: SchemaListenersConfig{
+					KeyspaceChangeListener:  &schemaChangesTestListener{},
+					TableChangeListener:     &schemaChangesTestListener{},
+					UserTypeChangeListener:  &schemaChangesTestListener{},
+					FunctionChangeListener:  &schemaChangesTestListener{},
+					AggregateChangeListener: &schemaChangesTestListener{},
+				},
+			},
+			shouldFail: true,
+		},
+		{
+			name: "Full metadata cache mode with keyspace change listener",
+			metadata: MetadataConfig{
+				CacheMode: Full,
+				SchemaListener: SchemaListenersConfig{
+					KeyspaceChangeListener: &schemaChangesTestListener{},
+				},
+			},
+			shouldFail: false,
+		},
+		{
+			name: "Full metadata cache mode with non-keyspace schema change listeners",
+			metadata: MetadataConfig{
+				CacheMode: Full,
+				SchemaListener: SchemaListenersConfig{
+					TableChangeListener:     &schemaChangesTestListener{},
+					UserTypeChangeListener:  &schemaChangesTestListener{},
+					FunctionChangeListener:  &schemaChangesTestListener{},
+					AggregateChangeListener: &schemaChangesTestListener{},
+				},
+			},
+			shouldFail: false,
+		},
+		{
+			name: "Full metadata cache mode with all schema change listeners",
+			metadata: MetadataConfig{
+				CacheMode: Full,
+				SchemaListener: SchemaListenersConfig{
+					KeyspaceChangeListener:  &schemaChangesTestListener{},
+					TableChangeListener:     &schemaChangesTestListener{},
+					UserTypeChangeListener:  &schemaChangesTestListener{},
+					FunctionChangeListener:  &schemaChangesTestListener{},
+					AggregateChangeListener: &schemaChangesTestListener{},
+				},
+			},
+			shouldFail: false,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			cluster := createCluster()
+			cluster.Metadata = test.metadata
+			session, err := cluster.CreateSession()
+			if test.shouldFail {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+				session.Close()
+			}
+		})
+	}
+}

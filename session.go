@@ -187,14 +187,14 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 	s.frameObserver = cfg.FrameHeaderObserver
 	s.streamObserver = cfg.StreamObserver
 
-	// Propogate node status, topology and schema change listeners
+	// Propagate node status, topology and schema change listeners
 	s.hostListeners = newInternalHostStateListeners(
 		s,
 		cfg.Metadata.HostListener.HostStateChangeListener,
 		cfg.Metadata.HostListener.TopologyChangeListener,
 	)
 
-	// Propogate schema change listeners
+	// Propagate schema change listeners
 	s.schemaListeners = newInternalSchemaChangeListeners(
 		cfg.Metadata.SchemaListener.KeyspaceChangeListener,
 		cfg.Metadata.SchemaListener.TableChangeListener,
@@ -211,7 +211,7 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 		return nil, errors.New("Schema change listeners are not supported in KeyspaceOnly metadata cache mode")
 	}
 
-	// Propogate session ready listener
+	// Propagate session ready listener
 	s.sessionReadyListeners = newInternalSessionReadyListener(cfg.Metadata.SessionReadyListener)
 
 	//Check the TLS Config before trying to connect to anything external

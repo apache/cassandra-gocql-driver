@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add options to shuffle replicas for token-aware policy and log warning when the default behavior is used (CASSGO-106)
 - Bump Go version support from 1.22 and 1.23 to 1.25 and 1.26 (CASSGO-110)
 - Upgraded Github actions dependencies versions (CASSGO-111)
+- Fix a couple of issues related to CASSGO-101 (CASSGO-114)
 
 ### Fixed
 

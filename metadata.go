@@ -2574,10 +2574,10 @@ func handleSchemaAggregateChanges(session *Session, oldKeyspace, newKeyspace *Ke
 		}
 	}
 
-	session.logger.Debug("Computed schema table change events",
-		NewLogFieldInt("created_table_events_count", len(createdEvents)),
-		NewLogFieldInt("updated_table_events_count", len(updatedEvents)),
-		NewLogFieldInt("dropped_table_events_count", len(droppedEvents)),
+	session.logger.Debug("Computed schema aggregate change events",
+		NewLogFieldInt("created_aggregate_events_count", len(createdEvents)),
+		NewLogFieldInt("updated_aggregate_events_count", len(updatedEvents)),
+		NewLogFieldInt("dropped_aggregate_events_count", len(droppedEvents)),
 	)
 
 	for _, updatedEvent := range updatedEvents {
@@ -2619,9 +2619,9 @@ func handleSchemaUserTypeChanges(session *Session, oldKeyspace, newKeyspace *Key
 	}
 
 	session.logger.Debug("Computed schema user type change events",
-		NewLogFieldInt("created_table_events_count", len(createdEvents)),
-		NewLogFieldInt("updated_table_events_count", len(updatedEvents)),
-		NewLogFieldInt("dropped_table_events_count", len(droppedEvents)),
+		NewLogFieldInt("created_user_type_events_count", len(createdEvents)),
+		NewLogFieldInt("updated_user_type_events_count", len(updatedEvents)),
+		NewLogFieldInt("dropped_user_type_events_count", len(droppedEvents)),
 	)
 
 	for _, updatedEvent := range updatedEvents {
@@ -2663,9 +2663,9 @@ func handleSchemaFunctionChanges(session *Session, oldKeyspace, newKeyspace *Key
 	}
 
 	session.logger.Debug("Computed schema function change events",
-		NewLogFieldInt("created_table_events_count", len(createdEvents)),
-		NewLogFieldInt("updated_table_events_count", len(updatedEvents)),
-		NewLogFieldInt("dropped_table_events_count", len(droppedEvents)),
+		NewLogFieldInt("created_function_events_count", len(createdEvents)),
+		NewLogFieldInt("updated_function_events_count", len(updatedEvents)),
+		NewLogFieldInt("dropped_function_events_count", len(droppedEvents)),
 	)
 
 	for _, updatedEvent := range updatedEvents {

@@ -266,25 +266,25 @@ type HostListenersMux struct {
 	TopologyChangeListeners  []TopologyChangeListener
 }
 
-func (mux *HostListenersMux) OnHostUp(event HostUpEvent) {
+func (mux HostListenersMux) OnHostUp(event HostUpEvent) {
 	for _, listener := range mux.HostStateChangeListeners {
 		listener.OnHostUp(event)
 	}
 }
 
-func (mux *HostListenersMux) OnHostDown(event HostDownEvent) {
+func (mux HostListenersMux) OnHostDown(event HostDownEvent) {
 	for _, listener := range mux.HostStateChangeListeners {
 		listener.OnHostDown(event)
 	}
 }
 
-func (mux *HostListenersMux) OnNewHost(event NewHostEvent) {
+func (mux HostListenersMux) OnNewHost(event NewHostEvent) {
 	for _, listener := range mux.TopologyChangeListeners {
 		listener.OnNewHost(event)
 	}
 }
 
-func (mux *HostListenersMux) OnRemovedHost(event RemovedHostEvent) {
+func (mux HostListenersMux) OnRemovedHost(event RemovedHostEvent) {
 	for _, listener := range mux.TopologyChangeListeners {
 		listener.OnRemovedHost(event)
 	}
@@ -483,8 +483,7 @@ func (l internalSchemaListeners) hasSchemaChangeListeners() bool {
 }
 
 func (l internalSchemaListeners) hasNonKeyspaceSchemaChangeListeners() bool {
-	return l.hasKeyspace() ||
-		l.hasTable() ||
+	return l.hasTable() ||
 		l.hasUserType() ||
 		l.hasFunction() ||
 		l.hasAggregate()
