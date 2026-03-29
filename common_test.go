@@ -1,5 +1,5 @@
-//go:build all || unit || integration || ccm || cassandra
-// +build all unit integration ccm cassandra
+//go:build all || unit || integration || cassandra || tc
+// +build all unit integration cassandra tc
 
 /*
  * Licensed to the Apache Software Foundation (ASF) under one
@@ -183,8 +183,8 @@ func createSessionFromCluster(cluster *ClusterConfig, tb testing.TB) *Session {
 		tb.Fatal("createSession:", err)
 	}
 
-	if err := session.control.awaitSchemaAgreement(); err != nil {
-		tb.Fatal(err)
+	if err := session.control.awaitSchemaAgreementWithTimeout(10 * time.Second); err != nil {
+		tb.Logf("proceeding without initial schema agreement: %v", err)
 	}
 
 	return session

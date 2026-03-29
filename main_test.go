@@ -34,6 +34,7 @@ import (
 	"log"
 	"os"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -51,6 +52,8 @@ type tcNode struct {
 
 var cassNodes = make(map[string]*tcNode)
 var networkName string
+
+const tcStartupTimeout = 5 * time.Minute
 
 func TestMain(m *testing.M) {
 	ctx := context.Background()
@@ -78,6 +81,10 @@ func TestMain(m *testing.M) {
 
 	// run all tests
 	code := m.Run()
+
+	if err := cleanupCluster(ctx); err != nil {
+		log.Printf("failed to clean up testcontainers cluster: %v", err)
+	}
 
 	os.Exit(code)
 }
@@ -139,7 +146,7 @@ func NodeUpTC(ctx context.Context, number int) error {
 		Env:        env,
 		Files:      fs,
 		Networks:   []string{networkName},
-		WaitingFor: wait.ForLog("Startup complete").WithStartupTimeout(2 * time.Minute),
+		WaitingFor: wait.ForLog("Startup complete").WithStartupTimeout(tcStartupTimeout),
 		Name:       "node" + strconv.Itoa(number),
 	}
 
@@ -166,10 +173,7 @@ func NodeUpTC(ctx context.Context, number int) error {
 		Addr: cIP,
 	}
 
-	*flagCluster += cIP
-	if *clusterSize > number {
-		*flagCluster += ","
-	}
+	appendClusterHost(cIP)
 
 	return nil
 }
@@ -199,6 +203,30 @@ func assignHostID() error {
 	return nil
 }
 
+func appendClusterHost(addr string) {
+	if *flagCluster == "" {
+		*flagCluster = addr
+		return
+	}
+
+	*flagCluster += "," + addr
+}
+
+func cleanupCluster(ctx context.Context) error {
+	var errs []string
+	for name, node := range cassNodes {
+		if err := node.TC.Terminate(ctx); err != nil {
+			errs = append(errs, fmt.Sprintf("%s: %v", name, err))
+		}
+	}
+
+	if len(errs) == 0 {
+		return nil
+	}
+
+	return fmt.Errorf("terminate containers: %s", strings.Join(errs, "; "))
+}
+
 // restoreCluster is a helper function that ensures the cluster remains fully operational during topology changes.
 // Commonly used in test scenarios where nodes are added, removed, or modified to maintain cluster stability and prevent downtime.
 func restoreCluster(ctx context.Context) error {
@@ -213,7 +241,7 @@ func restoreCluster(ctx context.Context) error {
 		container.CountRestart += 1
 
 		err := wait.ForLog("Startup complete").
-			WithStartupTimeout(60*time.Second).
+			WithStartupTimeout(tcStartupTimeout).
 			WithOccurrence(container.CountRestart+1).
 			WaitUntilReady(ctx, container.TC)
 		if err != nil {

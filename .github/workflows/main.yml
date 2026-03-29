@@ -5,7 +5,7 @@ on:
     branches:
       - trunk
   pull_request:
-    types: [ opened, synchronize, reopened ]
+    types: [opened, synchronize, reopened]
 
 jobs:
   build:
@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        go: [ '1.25', '1.26' ]
+        go: ['1.25', '1.26']
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-go@v6
@@ -25,124 +25,69 @@ jobs:
         run: make test-unit
 
   integration-cassandra:
-    timeout-minutes: 15
-    needs:
-      - build
     name: Integration Tests
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        go: [ '1.25', '1.26' ]
-        cassandra_version: [ '4.1.6', '5.0.3' ]
-        auth: [ "false" ]
-        compressor: [ "no-compression", "snappy", "lz4" ]
-        tags: [ "cassandra", "integration", "ccm" ]
-        proto_version: [ "4", "5" ]
-        exclude:
-          - proto_version: "5"
-            compressor: "snappy"
-    steps:
-      - uses: actions/checkout@v6
-
-      - uses: actions/setup-go@v6
-        with:
-          go-version: ${{ matrix.go }}
-
-      - uses: actions/setup-python@v6
-        with:
-          python-version: '3.10'
-          cache: 'pip'
-          cache-dependency-path: Makefile
-
-      - name: Set up cache for SDKMAN
-        uses: actions/cache@v5
-        with:
-          path: ~/.sdkman
-          key: ${{ runner.os }}-sdkman
-
-      - name: Set up cache for CCM
-        uses: actions/cache@v5
-        with:
-          path: ~/.ccm/repository
-          key: ${{ runner.os }}-ccm-${{ matrix.cassandra_version }}
-
-      - name: Start cassandra nodes
-        env:
-          CASSANDRA_VERSION: ${{ matrix.cassandra_version }}
-        run: |
-          make cassandra-start
-          sleep 30s
-
-      - name: Integration tests
-        env:
-          CASSANDRA_VERSION: ${{ matrix.cassandra_version }}
-          TEST_CQL_PROTOCOL: ${{ matrix.proto_version }}
-          TEST_COMPRESSOR: ${{ matrix.compressor }}
-          TEST_INTEGRATION_TAGS: ${{ matrix.tags }}
-        run: |
-          make test-integration
-
-      - name: 'Save ccm logs'
-        if: 'failure()'
-        uses: actions/upload-artifact@v4
-        with:
-          name: ccm-cluster-cassandra-${{ matrix.cassandra_version }}-go-${{ matrix.go }}-tag-${{ matrix.tags }}-proto-version-${{ matrix.proto_version }}-compressor-${{ matrix.compressor }}
-          path: /home/runner/.ccm/gocql_integration_test
-          retention-days: 5
-  integration-auth-cassandra:
-    timeout-minutes: 15
     needs:
       - build
-    name: Integration Tests with auth
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
-        go: [ '1.25', '1.26' ]
-        cassandra_version: [ '4.0.13' ]
-        compressor: [ "no-compression", "snappy", "lz4" ]
-        tags: [ "integration" ]
-        proto_version: [ "4", "5" ]
+        go: ['1.25', '1.26']
+        cassandra_version: ['4.1.6', '5.0.3']
+        compressor: ['no-compression', 'snappy', 'lz4']
+        proto_version: ['4', '5']
         exclude:
-          - proto_version: "5"
-            compressor: "snappy"
+          - proto_version: '5'
+            compressor: 'snappy'
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-go@v6
         with:
           go-version: ${{ matrix.go }}
-
-      - uses: actions/setup-python@v6
-        with:
-          python-version: '3.10'
-          cache: 'pip'
-          cache-dependency-path: Makefile
-
-      - name: Set up cache for SDKMAN
-        uses: actions/cache@v5
-        with:
-          path: ~/.sdkman
-          key: ${{ runner.os }}-sdkman
-
-      - name: Set up cache for CCM
-        uses: actions/cache@v5
-        with:
-          path: ~/.ccm/repository
-          key: ${{ runner.os }}-ccm-${{ matrix.cassandra_version }}
-
-      - name: Start cassandra nodes
-        env:
-          CASSANDRA_VERSION: ${{ matrix.cassandra_version }}
-        run: |
-          make cassandra-start
-          sleep 30s
-
       - name: Integration tests
         env:
           CASSANDRA_VERSION: ${{ matrix.cassandra_version }}
           TEST_CQL_PROTOCOL: ${{ matrix.proto_version }}
           TEST_COMPRESSOR: ${{ matrix.compressor }}
-          TEST_INTEGRATION_TAGS: ${{ matrix.tags }}
+          TEST_INTEGRATION_TAGS: integration cassandra tc
+        run: make test-integration
+      - name: Docker state on failure
+        if: failure()
         run: |
-          make test-integration-auth
+          docker ps -a
+          docker network ls
+
+  integration-auth-cassandra:
+    name: Integration Tests with auth
+    needs:
+      - build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        go: ['1.25', '1.26']
+        cassandra_version: ['4.1.6']
+        compressor: ['no-compression', 'snappy', 'lz4']
+        proto_version: ['4', '5']
+        exclude:
+          - proto_version: '5'
+            compressor: 'snappy'
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ matrix.go }}
+      - name: Integration tests
+        env:
+          CASSANDRA_VERSION: ${{ matrix.cassandra_version }}
+          TEST_CQL_PROTOCOL: ${{ matrix.proto_version }}
+          TEST_COMPRESSOR: ${{ matrix.compressor }}
+          TEST_INTEGRATION_TAGS: integration cassandra tc
+        run: make test-integration-auth
+      - name: Docker state on failure
+        if: failure()
+        run: |
+          docker ps -a
+          docker network ls

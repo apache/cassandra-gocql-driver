@@ -975,6 +975,9 @@ func TestSliceMapMapScanCollectionTypes(t *testing.T) {
 				}
 			})
 		})
+	}
+}
+
 func TestAllNodesConnected(t *testing.T) {
 	cluster := createCluster()
 	cluster.PoolConfig.HostSelectionPolicy = RoundRobinHostPolicy()

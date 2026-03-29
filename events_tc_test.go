@@ -39,8 +39,8 @@ func TestEventDiscovery(t *testing.T) {
 
 	// check we discovered all the nodes in the ring
 	for _, node := range cassNodes {
-		host := session.ring.getHost(node.HostID)
-		if host == nil {
+		_, ok := session.ring.getHost(node.HostID)
+		if !ok {
 			t.Errorf("did not discover %q", node.Addr)
 		}
 		if t.Failed() {
@@ -73,8 +73,8 @@ func TestEventNodeDownControl(t *testing.T) {
 		t.Fatal("node not removed after remove event")
 	}
 
-	host := session.ring.getHost(node.HostID)
-	if host == nil {
+	host, ok := session.ring.getHost(node.HostID)
+	if !ok {
 		t.Fatal("node not in metadata ring")
 	} else if host.IsUp() {
 		t.Fatalf("not not marked as down after event in metadata: %v", host)
@@ -83,6 +83,9 @@ func TestEventNodeDownControl(t *testing.T) {
 
 func TestEventNodeDown(t *testing.T) {
 	ctx := context.Background()
+	if len(cassNodes) < 3 {
+		t.Skip("this test requires at least 3 nodes")
+	}
 
 	const targetNode = "node3"
 	node := cassNodes[targetNode]
@@ -103,8 +106,8 @@ func TestEventNodeDown(t *testing.T) {
 		t.Errorf("node not removed after remove event")
 	}
 
-	host := session.ring.getHost(node.HostID)
-	if host == nil {
+	host, ok := session.ring.getHost(node.HostID)
+	if !ok {
 		t.Fatal("node not in metadata ring")
 	} else if host.IsUp() {
 		t.Fatalf("not not marked as down after event in metadata: %v", host)
@@ -113,6 +116,9 @@ func TestEventNodeDown(t *testing.T) {
 
 func TestEventNodeUp(t *testing.T) {
 	ctx := context.Background()
+	if len(cassNodes) < 2 {
+		t.Skip("this test requires at least 2 nodes")
+	}
 
 	session := createSession(t)
 	defer session.Close()
@@ -144,8 +150,8 @@ func TestEventNodeUp(t *testing.T) {
 		t.Fatal("node not added after node added event")
 	}
 
-	host := session.ring.getHost(node.HostID)
-	if host == nil {
+	host, ok := session.ring.getHost(node.HostID)
+	if !ok {
 		t.Fatal("node not in metadata ring")
 	} else if !host.IsUp() {
 		t.Fatalf("not not marked as UP after event in metadata: addr=%q host=%p: %v", node.Addr, host, host)
@@ -154,6 +160,9 @@ func TestEventNodeUp(t *testing.T) {
 
 func TestEventFilter(t *testing.T) {
 	ctx := context.Background()
+	if len(cassNodes) < 3 {
+		t.Skipf("this test requires at least 3 Cassandra nodes, current cluster has %d", len(cassNodes))
+	}
 
 	cluster := createCluster()
 
@@ -169,7 +178,8 @@ func TestEventFilter(t *testing.T) {
 	}
 
 	for _, node := range [...]string{"node2", "node3"} {
-		if _, ok := getPool(session.pool, cassNodes[node].HostID); ok {
+		cassNode := cassNodes[node]
+		if _, ok := getPool(session.pool, cassNode.HostID); ok {
 			t.Errorf("should not have %v in pool", node)
 		}
 	}
@@ -189,7 +199,8 @@ func TestEventFilter(t *testing.T) {
 	}
 
 	for _, node := range [...]string{"node2", "node3"} {
-		_, ok := getPool(session.pool, cassNodes[node].HostID)
+		cassNode := cassNodes[node]
+		_, ok := getPool(session.pool, cassNode.HostID)
 		if ok {
 			t.Errorf("should not have %v in pool", node)
 		}
