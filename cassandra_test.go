@@ -4617,3 +4617,62 @@ func TestNewSession_SchemaListenersValidation(t *testing.T) {
 		})
 	}
 }
+
+func TestIterMapScanUDT(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+
+	err := createTable(session, `CREATE TYPE IF NOT EXISTS gocql_test.top_level_mapscan_udt (
+	  field_a text,
+	  field_b int
+	);`)
+	require.NoError(t, err)
+
+	err = createTable(session, `CREATE TABLE IF NOT EXISTS gocql_test.top_level_mapscan_udt_table (
+	  id int PRIMARY KEY,
+	  value frozen<top_level_mapscan_udt>
+	);`)
+	require.NoError(t, err)
+
+	value := map[string]interface{}{
+		"field_a": "test_text",
+		"field_b": 42,
+	}
+
+	err = session.Query("INSERT INTO top_level_mapscan_udt_table (id, value) VALUES (?, ?)", 1, value).Exec()
+	require.NoError(t, err)
+
+	var scanned map[string]interface{}
+	err = session.Query("SELECT value FROM top_level_mapscan_udt_table WHERE id = ?", 1).Scan(&scanned)
+	require.NoError(t, err)
+
+	require.Equal(t, value["field_a"], scanned["field_a"])
+	require.Equal(t, value["field_b"], scanned["field_b"])
+
+	rawResult := map[string]interface{}{}
+	rawResultIter := session.Query("SELECT value FROM top_level_mapscan_udt_table WHERE id = ?", 1).Iter()
+	rawResultIter.MapScan(rawResult)
+	err = rawResultIter.Close()
+	require.NoError(t, err)
+
+	rawValue, ok := rawResult["value"].(map[string]interface{})
+	require.True(t, ok, "expected MapScan() value column to be map[string]interface{} got %T", rawResult["value"])
+	require.Equal(t, value["field_a"], rawValue["field_a"])
+	require.Equal(t, value["field_b"], rawValue["field_b"])
+
+	// Test for null udt value
+	err = session.Query("INSERT INTO top_level_mapscan_udt_table (id) VALUES (?)", 2).Exec()
+	require.NoError(t, err)
+
+	scanned = nil
+	err = session.Query("SELECT value FROM top_level_mapscan_udt_table WHERE id = ?", 2).Scan(&scanned)
+	require.NoError(t, err)
+	require.Nil(t, scanned)
+
+	rawResult = map[string]interface{}{}
+	rawResultIter = session.Query("SELECT value FROM top_level_mapscan_udt_table WHERE id = ?", 2).Iter()
+	rawResultIter.MapScan(rawResult)
+	err = rawResultIter.Close()
+	require.NoError(t, err)
+	require.Nil(t, rawResult["value"])
+}

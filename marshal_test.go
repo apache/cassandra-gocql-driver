@@ -2575,6 +2575,28 @@ func TestUnmarshalUDT(t *testing.T) {
 			t.Errorf(`Expected 42 for second but received: %T(%v)`, value["second"], value["second"])
 		}
 	}
+
+	interfaceValue := interface{}(map[string]interface{}{})
+	err = Unmarshal(info, data, &interfaceValue)
+	if err != nil {
+		t.Error(err)
+	}
+
+	result, ok := interfaceValue.(map[string]interface{})
+	if !ok {
+		t.Error("expected result to be map[string]interface{}")
+	}
+	if result == nil {
+		t.Error("expected result to be not nil")
+	}
+
+	if result["first"] != "Hello" {
+		t.Error("expected result[first] to be Hello")
+	}
+
+	if result["second"] != int16(42) {
+		t.Error("expected result[second] to be 42")
+	}
 }
 
 // bytesWithLength concatenates all data slices and prepends the total length as uint32.
