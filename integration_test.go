@@ -1114,3 +1114,65 @@ func TestHostSelectionPolicyKeyspaceChangedEvents(t *testing.T) {
 	require.Equal(t, ksName, events[0].Keyspace)
 	require.Equal(t, SchemaChangeTypeDropped, events[0].Change)
 }
+
+func TestUDT_EncodeNilMap(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+
+	err := createTable(session, `CREATE TYPE IF NOT EXISTS gocql_test.encode_nil_map_udt (
+		field_a text,
+		field_b int
+	);`)
+	require.NoError(t, err)
+
+	err = createTable(session, `CREATE TABLE IF NOT EXISTS gocql_test.encode_nil_map_udt_table (
+		id int PRIMARY KEY,
+		value frozen<encode_nil_map_udt>
+	);`)
+	require.NoError(t, err)
+	session.Close()
+
+	insertNilMapAndScan := func(t *testing.T, session *Session, recordID int) map[string]interface{} {
+		ctx := context.Background()
+		t.Helper()
+		nilMap := map[string]interface{}(nil)
+		err = session.Query("INSERT INTO encode_nil_map_udt_table (id, value) VALUES (?, ?)", recordID, nilMap).ExecContext(ctx)
+		require.NoError(t, err)
+		var scanned map[string]interface{}
+		err = session.Query("SELECT value FROM encode_nil_map_udt_table WHERE id = ?", recordID).ScanContext(ctx, &scanned)
+		require.NoError(t, err)
+		return scanned
+	}
+
+	// When the table contains such a value:
+	// id | value
+	// 1  | {field_a: null, field_b: null}
+	// The legacy behavior is to scan it as:
+	// {field_a: "", field_b: 0}
+	expectedOld := map[string]interface{}{"field_a": "", "field_b": 0}
+
+	t.Run("encode nil map as initialized UDT with null values / default legacy behavior", func(t *testing.T) {
+		session := createSession(t)
+		defer session.Close()
+		scanned := insertNilMapAndScan(t, session, 1)
+		require.Equal(t, expectedOld, scanned)
+	})
+
+	t.Run("encode nil map as initialized UDT with null values / enabled legacy behavior", func(t *testing.T) {
+		session := createSession(t, func(config *ClusterConfig) {
+			config.RegisteredTypes = GlobalTypes.WithNilMapAsNullUDT(false)
+		})
+		defer session.Close()
+		scanned := insertNilMapAndScan(t, session, 2)
+		require.Equal(t, expectedOld, scanned)
+	})
+
+	t.Run("encode nil map as NULL value / enabled new behavior", func(t *testing.T) {
+		session := createSession(t, func(config *ClusterConfig) {
+			config.RegisteredTypes = GlobalTypes.WithNilMapAsNullUDT(true)
+		})
+		defer session.Close()
+		scanned := insertNilMapAndScan(t, session, 3)
+		require.Nil(t, scanned)
+	})
+}

@@ -2149,6 +2149,40 @@ func TestMarshalUDTMap(t *testing.T) {
 		},
 	}
 
+	t.Run("encode nil map as initialized UDT with null values", func(t *testing.T) {
+		typeInfoCopy := typeInfo
+		typeInfoCopy.EncodeNilMapAsNull = false
+		value := map[string]interface{}(nil)
+		// All UDT fields are set to NULL.
+		expected := []byte("\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff")
+
+		data, err := Marshal(typeInfoCopy, value)
+		if err != nil {
+			t.Errorf("got error %#v", err)
+		}
+
+		if !reflect.DeepEqual(data, expected) {
+			t.Errorf("expected value %#v, got value %#v", expected, data)
+		}
+	})
+
+	t.Run("nil map as NULL value", func(t *testing.T) {
+		typeInfoCopy := typeInfo
+		typeInfoCopy.EncodeNilMapAsNull = true
+
+		value := map[string]interface{}(nil)
+		expected := []byte(nil)
+
+		data, err := Marshal(typeInfoCopy, value)
+		if err != nil {
+			t.Errorf("got error %#v", err)
+		}
+
+		if !reflect.DeepEqual(data, expected) {
+			t.Errorf("got value %#v", data)
+		}
+	})
+
 	t.Run("partially bound", func(t *testing.T) {
 		value := map[string]interface{}{
 			"y": 2,

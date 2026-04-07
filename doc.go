@@ -761,9 +761,18 @@
 //	err := session.Query("SELECT address FROM users WHERE id = ?",
 //		userID).Scan(&udtMap)
 //
+//
 //	// Access fields
 //	street := udtMap["street"].(string)
 //	zipCode := udtMap["zip_code"].(int)
+//
+// Note: By default, nil maps `map[string]interface{}(nil)` are encoded as empty UDTs instead of CQL NULL value. Example:
+//
+//	SELECT id, value FROM users WHERE id = 1;
+//	id | value
+//	1  | {field_a: null, field_b: null}
+//
+// If you need to insert nil maps as CQL NULL values for UDT types, you should consider using the [RegisteredTypes.WithNilMapAsNullUDT] option.
 //
 // Advanced Custom Marshaling:
 //
