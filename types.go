@@ -594,7 +594,7 @@ func (r *RegisteredTypes) Copy() *RegisteredTypes {
 	copy := &RegisteredTypes{}
 	copy.init()
 	for typ, t := range r.byType {
-		copy.byType[typ] = t
+		copy.byType[typ] = copy.rebind(t, r)
 	}
 	for typ, t := range r.simples {
 		copy.simples[typ] = t
@@ -603,7 +603,83 @@ func (r *RegisteredTypes) Copy() *RegisteredTypes {
 		copy.byString[name] = typ
 	}
 	for name, t := range r.custom {
-		copy.custom[name] = t
+		copy.custom[name] = copy.rebind(t, r)
+	}
+	return copy
+}
+
+// rebind returns t pointing at r instead of from if t is one of the built-in
+// codecs that keep a reference to their RegisteredTypes. They use it to parse
+// nested types from type strings, so a copy must not keep resolving nested
+// types through the registry it was copied from.
+// Codecs that are not built in are returned unchanged.
+func (r *RegisteredTypes) rebind(t CQLType, from *RegisteredTypes) CQLType {
+	switch c := t.(type) {
+	case listSetCQLType:
+		if c.types == from {
+			c.types = r
+		}
+		return c
+	case mapCQLType:
+		if c.types == from {
+			c.types = r
+		}
+		return c
+	case tupleCQLType:
+		if c.types == from {
+			c.types = r
+		}
+		return c
+	case udtCQLType:
+		if c.types == from {
+			c.types = r
+		}
+		return c
+	case vectorCQLType:
+		if c.types == from {
+			c.types = r
+		}
+		return c
+	}
+	return t
+}
+
+// WithNilMapAsNullUDT creates a shallow copy of the RegisteredTypes with the nil map as null UDT flag set to the given value.
+// It has no effect if the UDT type was registered with a custom CQLType instead of the built-in one.
+//
+// If enabled, a nil map[string]interface{} bound to a UDT is encoded as CQL NULL.
+//
+// IMPORTANT: Rows written with legacy behavior will remain non-NULL, so mixing legacy and new behavior on the same table
+// yields different stored values for the same input.
+//
+// When disabled, UDTs will be encoded as initialized UDT values with all its fields set to NULL when passed map[string]any(nil).
+// For example, there are following UDT and table definitions:
+//
+//	CREATE TYPE my_udt (field_a text, field_b int);
+//	CREATE TABLE my_table (id int PRIMARY KEY, value frozen<my_udt>);
+//
+// If this option is disabled, the following code will insert a UDT object with both fields set to NULL:
+//
+//	var nilMap map[string]any = nil
+//	session.Query("INSERT INTO my_table (id, value) VALUES (?, ?)", 1, nilMap).Exec()
+//
+// The table my_table will contain:
+//
+//	id | value
+//	1  | {field_a: null, field_b: null}
+//
+// If this option is enabled, the same code will insert a NULL value:
+//
+//	id | value
+//	1  | null
+//
+// Default: false
+func (r *RegisteredTypes) WithNilMapAsNullUDT(enabled bool) *RegisteredTypes {
+	copy := r.Copy()
+	// the copy was just created, so no lock is needed to change it
+	if u, ok := copy.byType[TypeUDT].(udtCQLType); ok {
+		u.encodeNilMapAsNull = enabled
+		copy.byType[TypeUDT] = u
 	}
 	return copy
 }
