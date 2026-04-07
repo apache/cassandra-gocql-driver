@@ -2131,6 +2131,20 @@ func TestMarshalUDTMap(t *testing.T) {
 		},
 	}
 
+	t.Run("nil map", func(t *testing.T) {
+		value := map[string]interface{}(nil)
+		expected := []byte(nil)
+
+		data, err := Marshal(typeInfo, value)
+		if err != nil {
+			t.Errorf("got error %#v", err)
+		}
+
+		if !reflect.DeepEqual(data, expected) {
+			t.Errorf("got value %#v", data)
+		}
+	})
+
 	t.Run("partially bound", func(t *testing.T) {
 		value := map[string]interface{}{
 			"y": 2,

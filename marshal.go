@@ -2855,6 +2855,12 @@ func (udt UDTTypeInfo) Marshal(value interface{}) ([]byte, error) {
 
 		return buf, nil
 	case map[string]interface{}:
+		if v == nil {
+			// If the map is nil, we should marshal it as NULL value.
+			// framer will encode this as NULL value
+			return nil, nil
+		}
+
 		var buf []byte
 		for i := range udt.Elements {
 			val, ok := v[udt.Elements[i].Name]

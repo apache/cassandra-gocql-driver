@@ -4749,3 +4749,43 @@ func TestIterMapScanUDT(t *testing.T) {
 	require.NoError(t, err)
 	require.Nil(t, rawResult["value"])
 }
+
+func TestUDT_MarshalNilMap(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+
+	err := createTable(session, `CREATE TYPE IF NOT EXISTS gocql_test.nil_map_udt (
+		field_a text,
+		field_b int
+	);`)
+	require.NoError(t, err)
+
+	err = createTable(session, `CREATE TABLE IF NOT EXISTS gocql_test.nil_map_udt_table (
+		id int PRIMARY KEY,
+		value frozen<nil_map_udt>
+	);`)
+	require.NoError(t, err)
+
+	nilMap := map[string]interface{}(nil)
+	err = session.Query("INSERT INTO nil_map_udt_table (id, value) VALUES (?, ?)", 1, nilMap).Exec()
+	require.NoError(t, err)
+
+	ctx := context.Background()
+
+	const selectQuery = "SELECT value FROM nil_map_udt_table WHERE id = ?"
+	t.Run("scan", func(t *testing.T) {
+		var scanned map[string]interface{}
+		err = session.Query(selectQuery, 1).ScanContext(ctx, &scanned)
+		require.NoError(t, err)
+		require.Nil(t, scanned)
+	})
+
+	t.Run("iter map scan", func(t *testing.T) {
+		rawResult := map[string]interface{}{}
+		rawResultIter := session.Query(selectQuery, 1).IterContext(ctx)
+		rawResultIter.MapScan(rawResult)
+		err = rawResultIter.Close()
+		require.NoError(t, err)
+		require.Nil(t, rawResult["value"])
+	})
+}
