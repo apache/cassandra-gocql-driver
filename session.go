@@ -230,8 +230,8 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 
 	// set the executor here in case the policy needs to execute queries in Init
 	s.executor = &queryExecutor{
-		pool:   s.pool,
-		policy: cfg.PoolConfig.HostSelectionPolicy,
+		pool:        s.pool,
+		policy:      cfg.PoolConfig.HostSelectionPolicy,
 		interceptor: cfg.QueryAttemptInterceptor,
 	}
 
@@ -969,26 +969,49 @@ type hostMetrics struct {
 	TotalLatency int64
 }
 
+// Query attempts could be started and finished out of order when using speculative execution. Therefore,
+// we issue attempt indexes at query start time (so that Interceptors can use them) then record those attempts
+// at completion time (so that metrics can correctly express average latency).
 type queryMetrics struct {
-	totalAttempts int64
-	totalLatency  int64
+	l                 sync.RWMutex
+	attemptsStarted   int
+	attemptsCompleted int
+	totalLatency      int64
 }
 
-func (qm *queryMetrics) attempt(addLatency time.Duration) int {
-	atomic.AddInt64(&qm.totalLatency, addLatency.Nanoseconds())
-	return int(atomic.AddInt64(&qm.totalAttempts, 1) - 1)
+func (qm *queryMetrics) getNextAttempt() int {
+	qm.l.Lock()
+	defer qm.l.Unlock()
+	attempt := qm.attemptsStarted
+	qm.attemptsStarted++
+	return attempt
 }
 
+func (qm *queryMetrics) recordAttempt(attempt int, addLatency time.Duration, s *Session) {
+	qm.l.Lock()
+	defer qm.l.Unlock()
+	qm.totalLatency += addLatency.Nanoseconds()
+	qm.attemptsCompleted++
+	if attempt > qm.attemptsCompleted && s != nil {
+		s.logger.Debug("attempt number is greater than total attempts completed, this should not happen", NewLogFieldInt("attempt", attempt), NewLogFieldInt("attemptsCompleted", qm.attemptsCompleted))
+	}
+}
+
+// Returns total number of attempts started.
 func (qm *queryMetrics) attempts() int {
-	return int(atomic.LoadInt64(&qm.totalAttempts))
+	qm.l.RLock()
+	defer qm.l.RUnlock()
+	return qm.attemptsStarted
 }
 
 func (qm *queryMetrics) latency() int64 {
-	attempts := atomic.LoadInt64(&qm.totalAttempts)
+	qm.l.RLock()
+	defer qm.l.RUnlock()
+	attempts := qm.attemptsCompleted
 	if attempts == 0 {
-		return atomic.LoadInt64(&qm.totalLatency)
+		return qm.totalLatency
 	}
-	return atomic.LoadInt64(&qm.totalLatency) / attempts
+	return qm.totalLatency / int64(attempts)
 }
 
 type hostMetricsManager interface {

@@ -591,7 +591,7 @@ func (c *controlConn) query(statement string, values ...interface{}) (iter *Iter
 				NewLogFieldString("statement", statement), NewLogFieldError("err", iter.err))
 		}
 
-		qry.metrics.attempt(0)
+		qry.metrics.recordAttempt(0, 0, nil)
 		qry.hostMetricsManager.attempt(0, c.getConn().host)
 		if iter.err == nil || !c.retry.Attempt(qry) {
 			break

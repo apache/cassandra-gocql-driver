@@ -59,7 +59,8 @@ type Statement interface {
 
 type internalRequest interface {
 	execute(ctx context.Context, conn *Conn) *Iter
-	attempt(ctx context.Context, keyspace string, end, start time.Time, iter *Iter, host *HostInfo)
+	getNextAttempt() int
+	recordAttempt(attemptNum int, keyspace string, end, start time.Time, iter *Iter, host *HostInfo)
 	retryPolicy() RetryPolicy
 	speculativeExecutionPolicy() SpeculativeExecutionPolicy
 	getQueryMetrics() *queryMetrics
@@ -76,10 +77,8 @@ type queryExecutor struct {
 }
 
 type QueryAttempt struct {
-	// The query to execute, either a *gocql.Query or *gocql.Batch.
-	Query ExecutableStatement
-	// The connection used to execute the query.
-	Conn *Conn
+	// The statement to execute, either a *gocql.Query or *gocql.Batch.
+	Statement ExecutableStatement
 	// The host that will receive the query.
 	Host *HostInfo
 	// The local address of the connection used to execute the query.
@@ -90,8 +89,8 @@ type QueryAttempt struct {
 	Attempts int
 }
 
-// QueryAttemptHandler is a function that attempts query execution.
-type QueryAttemptHandler = func(context.Context, QueryAttempt) (*Iter, error)
+// QueryAttemptHandler is a function that attempts query execution. This typically pickles internalRequest.execute() to hide private interfaces and types.
+type QueryAttemptHandler = func(context.Context) (*Iter, error)
 
 // QueryAttemptInterceptor is the interface implemented by query interceptors / middleware.
 //
@@ -111,19 +110,20 @@ func (q *queryExecutor) attemptQuery(ctx context.Context, qry internalRequest, c
 
 	var iter *Iter
 	var err error
+	attempt := qry.getNextAttempt()
 	if q.interceptor != nil {
 		// Propagate interceptor context modifications.
 		_ctx := ctx
 		attempt := QueryAttempt{
-			Query:      qry,
+			Statement:  ExecutableStatement(qry),
 			Host:       conn.host,
-			LocalAddr:  conn.conn.LocalAddr(),
-			RemoteAddr: conn.conn.RemoteAddr(),
-			Attempts:   qry.Attempts(),
+			LocalAddr:  conn.r.LocalAddr(),
+			RemoteAddr: conn.r.RemoteAddr(),
+			Attempts:   attempt,
 		}
-		iter, err = q.interceptor.Intercept(_ctx, attempt, func(_ctx context.Context, attempt QueryAttempt) (*Iter, error) {
+		iter, err = q.interceptor.Intercept(_ctx, attempt, func(_ctx context.Context) (*Iter, error) {
 			ctx = _ctx
-			iter := attempt.Query.execute(ctx, conn)
+			iter := qry.execute(ctx, conn)
 			return iter, iter.err
 		})
 		if err != nil {
@@ -134,7 +134,7 @@ func (q *queryExecutor) attemptQuery(ctx context.Context, qry internalRequest, c
 	}
 
 	end := time.Now()
-	qry.attempt(ctx, q.pool.keyspace, end, start, iter, conn.host)
+	qry.recordAttempt(attempt, q.pool.keyspace, end, start, iter, conn.host)
 
 	return iter
 }
@@ -427,14 +427,18 @@ func newInternalQuery(q *Query, ctx context.Context) *internalQuery {
 	}
 }
 
-// Attempts returns the number of times the query was executed.
+// getNextAttempt returns the index of the next attempt. Calling this increments the attempt counter by one.
+func (q *internalQuery) getNextAttempt() int {
+	return q.metrics.getNextAttempt()
+}
+
 func (q *internalQuery) Attempts() int {
 	return q.metrics.attempts()
 }
 
-func (q *internalQuery) attempt(keyspace string, end, start time.Time, iter *Iter, host *HostInfo) {
+func (q *internalQuery) recordAttempt(attemptNum int, keyspace string, end, start time.Time, iter *Iter, host *HostInfo) {
 	latency := end.Sub(start)
-	attempt := q.metrics.attempt(latency)
+	q.metrics.recordAttempt(attemptNum, latency, q.session)
 
 	if q.qryOpts.observer != nil {
 		metricsForHost := q.hostMetricsManager.attempt(latency, host)
@@ -453,7 +457,7 @@ func (q *internalQuery) attempt(keyspace string, end, start time.Time, iter *Ite
 			Host:       host,
 			Metrics:    metricsForHost,
 			Err:        iter.err,
-			Attempt:    attempt,
+			Attempt:    attemptNum,
 			Query:      q.originalQuery,
 		})
 	}
@@ -657,14 +661,18 @@ func newInternalBatch(batch *Batch, ctx context.Context) *internalBatch {
 	}
 }
 
+func (b *internalBatch) getNextAttempt() int {
+	return b.metrics.getNextAttempt()
+}
+
 // Attempts returns the number of attempts made to execute the batch.
 func (b *internalBatch) Attempts() int {
 	return b.metrics.attempts()
 }
 
-func (b *internalBatch) attempt(keyspace string, end, start time.Time, iter *Iter, host *HostInfo) {
+func (b *internalBatch) recordAttempt(attemptNum int, keyspace string, end, start time.Time, iter *Iter, host *HostInfo) {
 	latency := end.Sub(start)
-	attempt := b.metrics.attempt(latency)
+	b.metrics.recordAttempt(attemptNum, latency, b.session)
 
 	if b.batchOpts.observer == nil {
 		return
@@ -700,7 +708,7 @@ func (b *internalBatch) attempt(keyspace string, end, start time.Time, iter *Ite
 		Host:    host,
 		Metrics: metricsForHost,
 		Err:     iter.err,
-		Attempt: attempt,
+		Attempt: attemptNum,
 		Batch:   b.originalBatch,
 	})
 }

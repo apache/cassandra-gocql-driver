@@ -29,7 +29,7 @@ import (
 	"log"
 	"time"
 
-	gocql "github.com/gocql/gocql"
+	gocql "github.com/apache/cassandra-gocql-driver/v2"
 )
 
 type MyQueryAttemptInterceptor struct {
@@ -41,13 +41,14 @@ func (q MyQueryAttemptInterceptor) Intercept(
 	attempt gocql.QueryAttempt,
 	handler gocql.QueryAttemptHandler,
 ) (*gocql.Iter, error) {
-	switch q := attempt.Query.(type) {
+	switch q := attempt.Statement.Statement().(type) {
 	case *gocql.Query:
-		// Inspect or modify query
-		attempt.Query = q
+		// Inspect query
+		log.Println(q.Statement())
 	case *gocql.Batch:
-		// Inspect or modify batch
-		attempt.Query = q
+		// Inspect batch
+
+		log.Println(q.Entries[0].Stmt)
 	}
 
 	// Inspect or modify context
@@ -61,7 +62,7 @@ func (q MyQueryAttemptInterceptor) Intercept(
 	}
 
 	// The interceptor *must* invoke the handler to execute the query.
-	return handler(ctx, attempt)
+	return handler(ctx)
 }
 
 // Example_interceptor demonstrates how to implement a QueryAttemptInterceptor.
@@ -79,9 +80,8 @@ func Example_interceptor() {
 
 	var stringValue string
 	err = session.Query("select now() from system.local").
-		WithContext(ctx).
 		RetryPolicy(&gocql.SimpleRetryPolicy{NumRetries: 2}).
-		Scan(&stringValue)
+		ScanContext(ctx, &stringValue)
 	if err != nil {
 		log.Fatalf("query failed %T", err)
 	}
@@ -96,16 +96,16 @@ func (c QueryAttemptInterceptorChain) Intercept(
 	attempt gocql.QueryAttempt,
 	handler gocql.QueryAttemptHandler,
 ) (*gocql.Iter, error) {
-	return c.interceptors[0].Intercept(ctx, attempt, c.getNextHandler(0, handler))
+	return c.interceptors[0].Intercept(ctx, attempt, c.getNextHandler(0, attempt, handler))
 }
 
-func (c QueryAttemptInterceptorChain) getNextHandler(curr int, final gocql.QueryAttemptHandler) gocql.QueryAttemptHandler {
+func (c QueryAttemptInterceptorChain) getNextHandler(curr int, attempt gocql.QueryAttempt, final gocql.QueryAttemptHandler) gocql.QueryAttemptHandler {
 	if curr == len(c.interceptors)-1 {
 		return final
 	}
 
-	return func(ctx context.Context, attempt gocql.QueryAttempt) (*gocql.Iter, error) {
-		return c.interceptors[curr+1].Intercept(ctx, attempt, c.getNextHandler(curr+1, final))
+	return func(ctx context.Context) (*gocql.Iter, error) {
+		return c.interceptors[curr+1].Intercept(ctx, attempt, c.getNextHandler(curr+1, attempt, final))
 	}
 }
 
@@ -130,9 +130,8 @@ func Example_interceptor_chain() {
 
 	var stringValue string
 	err = session.Query("select now() from system.local").
-		WithContext(ctx).
 		RetryPolicy(&gocql.SimpleRetryPolicy{NumRetries: 2}).
-		Scan(&stringValue)
+		ScanContext(ctx, &stringValue)
 	if err != nil {
 		log.Fatalf("query failed %T", err)
 	}
