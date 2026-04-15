@@ -128,67 +128,6 @@ func (r *RegisteredTypes) init() {
 	})
 }
 
-// defaultTypeCodes is a map of the default type codes for the types that are registered by default.
-var defaultTypeCodes = map[Type]struct{}{
-	TypeAscii:     {},
-	TypeBigInt:    {},
-	TypeBlob:      {},
-	TypeBoolean:   {},
-	TypeCounter:   {},
-	TypeDate:      {},
-	TypeDecimal:   {},
-	TypeDouble:    {},
-	TypeDuration:  {},
-	TypeFloat:     {},
-	TypeInet:      {},
-	TypeInt:       {},
-	TypeSmallInt:  {},
-	TypeText:      {},
-	TypeTime:      {},
-	TypeTimestamp: {},
-	TypeTimeUUID:  {},
-	TypeTinyInt:   {},
-	TypeUUID:      {},
-	TypeVarchar:   {},
-	TypeVarint:    {},
-	TypeList:      {},
-	TypeMap:       {},
-	TypeSet:       {},
-	TypeTuple:     {},
-	TypeUDT:       {},
-}
-
-// defaultTypeNamesAndAliases is a map of the default type names and aliases for the types that are registered by default.
-var defaultTypeNamesAndAliases = map[string]struct{}{
-	"ascii": {}, "AsciiType": {},
-	"bigint": {}, "LongType": {},
-	"blob": {}, "BytesType": {},
-	"boolean": {}, "BooleanType": {},
-	"counter": {}, "CounterColumnType": {},
-	"date": {}, "SimpleDateType": {},
-	"decimal": {}, "DecimalType": {},
-	"double": {}, "DoubleType": {},
-	"duration": {}, "DurationType": {},
-	"float": {}, "FloatType": {},
-	"inet": {}, "InetAddressType": {},
-	"int": {}, "Int32Type": {},
-	"smallint": {}, "ShortType": {},
-	"text": {},
-	"time": {}, "TimeType": {},
-	"timestamp": {}, "TimestampType": {}, "DateType": {},
-	"timeuuid": {}, "TimeUUIDType": {},
-	"tinyint": {}, "ByteType": {},
-	"uuid": {}, "UUIDType": {}, "LexicalUUIDType": {},
-	"varchar": {}, "UTF8Type": {},
-	"varint": {}, "IntegerType": {},
-	"list": {}, "ListType": {},
-	"set": {}, "SetType": {},
-	"map": {}, "MapType": {},
-	"tuple": {}, "TupleType": {},
-	"udt": {}, "UserType": {},
-	"vector": {}, "VectorType": {},
-}
-
 func (r *RegisteredTypes) addDefaultTypes() {
 	r.init()
 	r.mut.Lock()
@@ -658,24 +597,25 @@ func (r *RegisteredTypes) Copy() *RegisteredTypes {
 
 	copy := &RegisteredTypes{}
 	copy.init()
+	// Adding default types to the copy so collection type codecs will have a pointer to the copy instead of the original.
 	copy.addDefaultTypes()
 	for typ, t := range r.byType {
-		if _, ok := defaultTypeCodes[typ]; !ok {
+		if _, exists := copy.byType[typ]; !exists {
 			copy.byType[typ] = t
 		}
 	}
 	for typ, t := range r.simples {
-		if _, ok := defaultTypeCodes[typ]; !ok {
+		if _, exists := copy.simples[typ]; !exists {
 			copy.simples[typ] = t
 		}
 	}
 	for name, typ := range r.byString {
-		if _, ok := defaultTypeNamesAndAliases[name]; !ok {
+		if _, exists := copy.byString[name]; !exists {
 			copy.byString[name] = typ
 		}
 	}
 	for name, t := range r.custom {
-		if _, ok := defaultTypeNamesAndAliases[name]; !ok {
+		if _, exists := copy.custom[name]; !exists {
 			copy.custom[name] = t
 		}
 	}
