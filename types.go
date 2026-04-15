@@ -108,7 +108,7 @@ type RegisteredTypes struct {
 
 	// holds configuration of encoding / decoding behavior of the driver.
 	// currently only used for UDTs to toggle the legacy map scan behavior.
-	encodingConfig *EncodingConfig
+	encodingConfig EncodingConfig
 }
 
 func (r *RegisteredTypes) init() {
@@ -624,7 +624,7 @@ func (r *RegisteredTypes) Copy() *RegisteredTypes {
 
 // sets the encoding config for the registered types.
 func (r *RegisteredTypes) setEncodingConfig(encodingConfig EncodingConfig) {
-	r.encodingConfig = &encodingConfig
+	r.encodingConfig = encodingConfig
 }
 
 // GlobalTypes is the set of types that are registered globally and are copied
