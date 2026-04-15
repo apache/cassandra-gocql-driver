@@ -327,6 +327,9 @@ type ClusterConfig struct {
 
 	// Metadata configures driver's internal metadata caching and event listening.
 	Metadata MetadataConfig
+
+	// Encoding configures encoding / decoding behavior of the driver.
+	Encoding EncodingConfig
 }
 
 // Dialer is the interface that wraps the DialContext method for establishing network connections to Cassandra nodes.
@@ -368,6 +371,10 @@ func NewCluster(hosts ...string) *ClusterConfig {
 		NextPagePrefetch:       0.25,
 		Metadata: MetadataConfig{
 			CacheMode: Full,
+		},
+		Encoding: EncodingConfig{
+			EncodeNilMapAsInitilizedUDT:                true,
+			SuppressEncodeNilMapAsInitilizedUDTWarning: false,
 		},
 	}
 	return cfg
@@ -456,6 +463,38 @@ type SchemaListenersConfig struct {
 	UserTypeChangeListener  UserTypeChangeListener
 	FunctionChangeListener  FunctionChangeListener
 	AggregateChangeListener AggregateChangeListener
+}
+
+// Holds configuration of encoding / decoding behavior of the driver.
+type EncodingConfig struct {
+	// Turns on the encoding nil maps as initialized UDTs for UDTs.
+	// This is a lagacy behavior and it is enabled by default for backward compatibility, but it will be disabled in the next major version
+	// If this is enabled, then nil maps will be encoded as an initilizied UDT object in which each field is set to NULL.
+	//
+	// For example, there are following UDT and table definitions:
+	//
+	// ```cql
+	// CREATE TYPE my_udt (field_a text, field_b int);
+	// CREATE TABLE my_table (id int PRIMARY KEY, value frozen<my_udt>);
+	// ```
+	//
+	// The following code will insert a UDT object with both fields set to NULL:
+	//
+	// ```go
+	// var nilMap map[string]interface{} = nil
+	// session.Query("INSERT INTO my_table (id, value) VALUES (?, ?)", 1, nilMap).Exec()
+	// ```
+	//
+	// The table my_table will contain:
+	//
+	// id | value
+	// 1  | {field_a: null, field_b: null}
+	// ---+-------------------------------
+	//
+	// Default: true
+	EncodeNilMapAsInitilizedUDT bool
+	// Supresses the warning that is emitted when EncodeNilMapAsInitilizedUDT is enabled.
+	SuppressEncodeNilMapAsInitilizedUDTWarning bool
 }
 
 var (

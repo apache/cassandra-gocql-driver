@@ -105,6 +105,10 @@ type RegisteredTypes struct {
 	// the types are immutable
 	mut         sync.Mutex
 	initialized sync.Once
+
+	// holds configuration of encoding / decoding behavior of the driver.
+	// currently only used for UDTs to toggle the legacy map scan behavior.
+	encodingConfig *EncodingConfig
 }
 
 func (r *RegisteredTypes) init() {
@@ -606,6 +610,11 @@ func (r *RegisteredTypes) Copy() *RegisteredTypes {
 		copy.custom[name] = t
 	}
 	return copy
+}
+
+// sets the encoding config for the registered types.
+func (r *RegisteredTypes) setEncodingConfig(encodingConfig EncodingConfig) {
+	r.encodingConfig = &encodingConfig
 }
 
 // GlobalTypes is the set of types that are registered globally and are copied

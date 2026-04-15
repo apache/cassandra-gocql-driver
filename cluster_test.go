@@ -51,6 +51,13 @@ func TestNewCluster_Defaults(t *testing.T) {
 		reflect.DeepEqual(&SimpleConvictionPolicy{}, cfg.ConvictionPolicy))
 	assertTrue(t, "cluster config reconnection policy",
 		reflect.DeepEqual(&ConstantReconnectionPolicy{MaxRetries: 3, Interval: 1 * time.Second}, cfg.ReconnectionPolicy))
+	assertEqual(t, "metadata config", MetadataConfig{
+		CacheMode: Full,
+	}, cfg.Metadata)
+	assertEqual(t, "cluster config encoding config", EncodingConfig{
+		EncodeNilMapAsInitilizedUDT:                true,
+		SuppressEncodeNilMapAsInitilizedUDTWarning: false,
+	}, cfg.Encoding)
 }
 
 func TestNewCluster_WithHosts(t *testing.T) {
