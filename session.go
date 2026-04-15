@@ -151,10 +151,10 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 
 	logger := cfg.newLogger()
 	if cfg.Encoding.EncodeNilMapAsInitilizedUDT && !cfg.Encoding.SuppressEncodeNilMapAsInitilizedUDTWarning {
-		logger.Warning("EncodingConfig.EncodeNilMapAsInitilizedUDT is enabled." +
-			"This is a backward compatibility option for applications that might rely old behavior of MapScan when scanning UDTs." +
-			"Please consider using the new encoding behavior instead if possible." +
-			"To suppress this warning, set EncodingConfig.SuppressEncodeNilMapAsInitilizedUDTWarning to true." +
+		logger.Warning("EncodingConfig.EncodeNilMapAsInitilizedUDT is enabled. " +
+			"This is a backward compatibility option for applications that might rely old behavior of MapScan when scanning UDTs. " +
+			"Please consider using the new encoding behavior instead if possible. " +
+			"To suppress this warning, set EncodingConfig.SuppressEncodeNilMapAsInitilizedUDTWarning to true. " +
 			"Follow https://issues.apache.org/jira/browse/CASSGO-118 for more details.")
 	}
 

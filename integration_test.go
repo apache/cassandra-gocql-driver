@@ -1045,25 +1045,27 @@ func TestUDT_EncodeNilMap(t *testing.T) {
 		value frozen<encode_nil_map_udt>
 	);`)
 	require.NoError(t, err)
-
-	nilMap := map[string]interface{}(nil)
-	err = session.Query("INSERT INTO encode_nil_map_udt_table (id, value) VALUES (?, ?)", 1, nilMap).Exec()
-	require.NoError(t, err)
-
 	session.Close()
 
-	ctx := context.Background()
+	insertNilMapAndScan := func(t *testing.T, session *Session, recordID int) map[string]interface{} {
+		t.Helper()
+		nilMap := map[string]interface{}(nil)
+		err = session.Query("INSERT INTO encode_nil_map_udt_table (id, value) VALUES (?, ?)", recordID, nilMap).Exec()
+		require.NoError(t, err)
+		var scanned map[string]interface{}
+		err = session.Query("SELECT value FROM encode_nil_map_udt_table WHERE id = ?", recordID).ScanContext(context.Background(), &scanned)
+		require.NoError(t, err)
+		return scanned
+	}
 
-	const selectQuery = "SELECT value FROM encode_nil_map_udt_table WHERE id = ?"
 	t.Run("encode nil map as initialized UDT with null values", func(t *testing.T) {
 		session := createSession(t, func(config *ClusterConfig) {
 			config.Encoding.EncodeNilMapAsInitilizedUDT = true
+			config.Logger = NewLogger(LogLevelInfo)
 		})
 		defer session.Close()
-		var scanned map[string]interface{}
-		err = session.Query(selectQuery, 1).ScanContext(ctx, &scanned)
-		require.NoError(t, err)
-		expected := map[string]interface{}{"field_a": nil, "field_b": nil}
+		scanned := insertNilMapAndScan(t, session, 1)
+		expected := map[string]interface{}{"field_a": "", "field_b": 0}
 		require.Equal(t, expected, scanned)
 	})
 
@@ -1072,9 +1074,7 @@ func TestUDT_EncodeNilMap(t *testing.T) {
 			config.Encoding.EncodeNilMapAsInitilizedUDT = false
 		})
 		defer session.Close()
-		var scanned map[string]interface{}
-		err = session.Query(selectQuery, 1).ScanContext(ctx, &scanned)
-		require.NoError(t, err)
+		scanned := insertNilMapAndScan(t, session, 2)
 		require.Nil(t, scanned)
 	})
 }
