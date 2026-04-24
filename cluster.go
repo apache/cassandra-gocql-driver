@@ -373,8 +373,9 @@ func NewCluster(hosts ...string) *ClusterConfig {
 			CacheMode: Full,
 		},
 		Encoding: EncodingConfig{
-			EncodeNilMapAsInitilizedUDT:                true,
-			SuppressEncodeNilMapAsInitilizedUDTWarning: false,
+			// This will be enabled in the next major version.
+			// For backward compatibility, it is disabled by default.
+			EncodeNilMapAsNULL: false,
 		},
 	}
 	return cfg
@@ -467,9 +468,10 @@ type SchemaListenersConfig struct {
 
 // Holds configuration of encoding / decoding behavior of the driver.
 type EncodingConfig struct {
-	// Turns on the encoding nil maps as initialized UDTs for UDTs.
-	// This is a lagacy behavior and it is enabled by default for backward compatibility, but it will be disabled in the next major version
-	// If this is enabled, then nil maps will be encoded as an initilizied UDT object in which each field is set to NULL.
+	// Turns on the encoding nil maps as NULL values for UDTs.
+	// The legacy behavior is to encode nil maps as initialized UDTs with all fields set to NULL which is aligned with the behavior of other drivers.
+	//
+	// It is disabled by default for backward compatibility, but it will be enabled in the next major version.
 	//
 	// For example, there are following UDT and table definitions:
 	//
@@ -478,7 +480,7 @@ type EncodingConfig struct {
 	// CREATE TABLE my_table (id int PRIMARY KEY, value frozen<my_udt>);
 	// ```
 	//
-	// The following code will insert a UDT object with both fields set to NULL:
+	// If this option is disabled, the following code will insert a UDT object with both fields set to NULL:
 	//
 	// ```go
 	// var nilMap map[string]interface{} = nil
@@ -491,10 +493,14 @@ type EncodingConfig struct {
 	// 1  | {field_a: null, field_b: null}
 	// ---+-------------------------------
 	//
-	// Default: true
-	EncodeNilMapAsInitilizedUDT bool
-	// Supresses the warning that is emitted when EncodeNilMapAsInitilizedUDT is enabled.
-	SuppressEncodeNilMapAsInitilizedUDTWarning bool
+	// If this option is enabled, the same code will insert a NULL value:
+	//
+	// id | value
+	// 1  | null
+	// ---+-------------------------------
+	//
+	// Default: false
+	EncodeNilMapAsNULL bool
 }
 
 var (

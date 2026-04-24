@@ -2749,10 +2749,10 @@ func (u udtCQLType) TypeInfoFromParams(proto int, params []interface{}) (TypeInf
 		return nil, fmt.Errorf("expected []UDTField for udt, got %T", params[2])
 	}
 	return UDTTypeInfo{
-		Keyspace:                     keyspace,
-		Name:                         name,
-		Elements:                     elements,
-		encodeNilMapAsInitializedUDT: u.types.encodingConfig.EncodeNilMapAsInitilizedUDT,
+		Keyspace:           keyspace,
+		Name:               name,
+		Elements:           elements,
+		encodeNilMapAsNULL: u.types.encodingConfig.EncodeNilMapAsNULL,
 	}, nil
 }
 
@@ -2770,9 +2770,9 @@ func (u udtCQLType) TypeInfoFromString(proto int, name string) (TypeInfo, error)
 		// first is keyspace, second is hex(name), third is elements
 		name, _ := hex.DecodeString(parts[1])
 		ti := UDTTypeInfo{
-			Keyspace:                     parts[0],
-			Name:                         string(name),
-			encodeNilMapAsInitializedUDT: u.types.encodingConfig.EncodeNilMapAsInitilizedUDT,
+			Keyspace:           parts[0],
+			Name:               string(name),
+			encodeNilMapAsNULL: u.types.encodingConfig.EncodeNilMapAsNULL,
 		}
 		ti.Elements = make([]UDTField, 0, len(parts)-2)
 		for i := 2; i < len(parts); i++ {
@@ -2802,7 +2802,7 @@ func (u udtCQLType) TypeInfoFromString(proto int, name string) (TypeInfo, error)
 	}
 	// we can't get the name or anything so we'll just try to parse the elements
 	ti := UDTTypeInfo{
-		encodeNilMapAsInitializedUDT: u.types.encodingConfig.EncodeNilMapAsInitilizedUDT,
+		encodeNilMapAsNULL: u.types.encodingConfig.EncodeNilMapAsNULL,
 	}
 	ti.Elements = make([]UDTField, 0, len(parts))
 	for _, part := range parts {
@@ -2833,7 +2833,7 @@ type UDTTypeInfo struct {
 
 	// indicates whether to encode nil maps as initialized UDTs with all fields set to NULL.
 	// This is used to maintain backward compatibility with the old behavior of MapScan when scanning UDTs.
-	encodeNilMapAsInitializedUDT bool
+	encodeNilMapAsNULL bool
 }
 
 func (u UDTTypeInfo) Type() Type {
@@ -2863,7 +2863,7 @@ func (udt UDTTypeInfo) Marshal(value interface{}) ([]byte, error) {
 
 		return buf, nil
 	case map[string]interface{}:
-		if v == nil && !udt.encodeNilMapAsInitializedUDT {
+		if v == nil && udt.encodeNilMapAsNULL {
 			// Legacy behavior is disabled, so we should encode nil map as a NULL value.
 			// framer encodes []byte(nil) as NULL.
 			return nil, nil

@@ -149,15 +149,6 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 		return nil, fmt.Errorf("the default SerialConsistency level is not allowed to be anything else but SERIAL or LOCAL_SERIAL. Recived value: %v", cfg.SerialConsistency)
 	}
 
-	logger := cfg.newLogger()
-	if cfg.Encoding.EncodeNilMapAsInitilizedUDT && !cfg.Encoding.SuppressEncodeNilMapAsInitilizedUDTWarning {
-		logger.Warning("EncodingConfig.EncodeNilMapAsInitilizedUDT is enabled. " +
-			"This is a backward compatibility option for applications that might rely old behavior encoding nil maps for UDTs. " +
-			"Please consider using the new encoding behavior instead if possible. " +
-			"To suppress this warning, set EncodingConfig.SuppressEncodeNilMapAsInitilizedUDTWarning to true. " +
-			"Follow https://issues.apache.org/jira/browse/CASSGO-118 for more details.")
-	}
-
 	// TODO: we should take a context in here at some point
 	ctx, cancel := context.WithCancel(context.TODO())
 
@@ -170,7 +161,7 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 		connectObserver: cfg.ConnectObserver,
 		ctx:             ctx,
 		cancel:          cancel,
-		logger:          logger,
+		logger:          cfg.newLogger(),
 		trace:           cfg.Tracer,
 	}
 	if cfg.RegisteredTypes == nil {

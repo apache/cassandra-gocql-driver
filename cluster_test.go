@@ -55,8 +55,7 @@ func TestNewCluster_Defaults(t *testing.T) {
 		CacheMode: Full,
 	}, cfg.Metadata)
 	assertEqual(t, "cluster config encoding config", EncodingConfig{
-		EncodeNilMapAsInitilizedUDT:                true,
-		SuppressEncodeNilMapAsInitilizedUDTWarning: false,
+		EncodeNilMapAsNULL: false,
 	}, cfg.Encoding)
 }
 

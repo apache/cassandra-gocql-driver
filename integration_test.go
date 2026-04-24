@@ -1060,8 +1060,7 @@ func TestUDT_EncodeNilMap(t *testing.T) {
 
 	t.Run("encode nil map as initialized UDT with null values", func(t *testing.T) {
 		session := createSession(t, func(config *ClusterConfig) {
-			config.Encoding.EncodeNilMapAsInitilizedUDT = true
-			config.Logger = NewLogger(LogLevelInfo)
+			config.Encoding.EncodeNilMapAsNULL = false
 		})
 		defer session.Close()
 		scanned := insertNilMapAndScan(t, session, 1)
@@ -1071,7 +1070,7 @@ func TestUDT_EncodeNilMap(t *testing.T) {
 
 	t.Run("encode nil map as NULL value", func(t *testing.T) {
 		session := createSession(t, func(config *ClusterConfig) {
-			config.Encoding.EncodeNilMapAsInitilizedUDT = false
+			config.Encoding.EncodeNilMapAsNULL = true
 		})
 		defer session.Close()
 		scanned := insertNilMapAndScan(t, session, 2)
