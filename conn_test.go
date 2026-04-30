@@ -48,6 +48,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/apache/cassandra-gocql-driver/v2/internal/streams"
@@ -731,7 +732,7 @@ func TestStream0(t *testing.T) {
 		logger: NewLogger(LogLevelNone),
 	}
 
-	err := conn.recv(context.Background(), false)
+	err := conn.recv(context.Background())
 	if err == nil {
 		t.Fatal("expected to get an error on stream 0")
 	} else if !strings.HasPrefix(err.Error(), expErr) {
@@ -1171,6 +1172,8 @@ func (srv *TestServer) serve() {
 			break
 		}
 
+		segmentCodec := newSegmentCodec(nil)
+
 		go func(conn net.Conn) {
 			var startupCompleted bool
 			var useProtoV5 bool
@@ -1180,7 +1183,7 @@ func (srv *TestServer) serve() {
 				var reader io.Reader = conn
 
 				if useProtoV5 && startupCompleted {
-					frame, _, err := readUncompressedSegment(conn)
+					frame, _, err := segmentCodec.decode(conn)
 					if err != nil {
 						if errors.Is(err, io.EOF) {
 							return
@@ -1457,7 +1460,8 @@ finish:
 	}
 
 	if *useProtoV5 && *startupCompleted {
-		segment, err := newUncompressedSegment(respFrame.buf, true)
+		segmentCodec := newSegmentCodec(nil)
+		segment, err := segmentCodec.encode(respFrame.buf, true)
 		if err == nil {
 			_, err = conn.Write(segment)
 		}
@@ -1523,8 +1527,10 @@ func TestConnProcessAllFramesInSingleSegment(t *testing.T) {
 			quit:      make(chan struct{}),
 		},
 		writeTimeout: time.Second * 10,
-		session:      &Session{types: GlobalTypes},
-		logger:       &defaultLogger{},
+		session: &Session{
+			types: GlobalTypes,
+		},
+		logger: &defaultLogger{},
 	}
 
 	call1 := &callReq{
@@ -1550,6 +1556,8 @@ func TestConnProcessAllFramesInSingleSegment(t *testing.T) {
 		},
 	}
 
+	c.r = newSegmentReader(c.r, newSegmentCodec(nil))
+
 	framer1 := newFramer(nil, protoVersion5, GlobalTypes)
 	err = req.buildFrame(framer1, 1)
 	require.NoError(t, err)
@@ -1563,10 +1571,11 @@ func TestConnProcessAllFramesInSingleSegment(t *testing.T) {
 		buf = append(buf, framer1.buf...)
 		buf = append(buf, framer2.buf...)
 
-		uncompressedSegment, err := newUncompressedSegment(buf, true)
+		segmentCodec := newSegmentCodec(nil)
+		segment, err := segmentCodec.encode(buf, true)
 		require.NoError(t, err)
 
-		_, err = client.Write(uncompressedSegment)
+		_, err = client.Write(segment)
 		require.NoError(t, err)
 	}()
 
@@ -1575,7 +1584,7 @@ func TestConnProcessAllFramesInSingleSegment(t *testing.T) {
 
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- c.recvSegment(ctx)
+		errCh <- c.recv(ctx)
 	}()
 
 	go func() {
@@ -1595,5 +1604,48 @@ func TestConnProcessAllFramesInSingleSegment(t *testing.T) {
 		t.Fatal("Timed out waiting for frames")
 	case err := <-errCh:
 		require.NoError(t, err)
+	}
+}
+
+func TestSegmentWriter_MultipleFrames(t *testing.T) {
+	server, client, err := tcpConnPair()
+	require.NoError(t, err)
+	defer server.Close()
+	defer client.Close()
+
+	sw := newSegmentWriter(&deadlineContextWriter{
+		w:         client,
+		timeout:   time.Second * 2,
+		semaphore: make(chan struct{}, 1),
+		quit:      make(chan struct{}),
+	}, time.Microsecond*400, make(chan struct{}), nil)
+	go func() {
+		_, err := sw.writeContext(context.Background(), []byte("one"))
+		require.NoError(t, err)
+	}()
+
+	go func() {
+		_, err := sw.writeContext(context.Background(), []byte("two"))
+		require.NoError(t, err)
+	}()
+
+	readCh := make(chan []byte)
+	go func() {
+		defer close(readCh)
+		segmentCodec := newSegmentCodec(nil)
+		body, isSelfContained, err := segmentCodec.decode(server)
+		require.NoError(t, err)
+		require.True(t, isSelfContained)
+		readCh <- body
+	}()
+
+	select {
+	case result := <-readCh:
+		// Order of frames is not guaranteed, so we need to check both possible orders
+		if !assert.ObjectsAreEqual([]byte("onetwo"), result) && !assert.ObjectsAreEqual([]byte("twoone"), result) {
+			t.Fatal("Expected to read 'onetwo' or 'twoone', but got: ", string(result))
+		}
+	case <-time.After(time.Hour):
+		t.Fatal("Timed out waiting for segment to be read")
 	}
 }
