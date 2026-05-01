@@ -73,7 +73,7 @@ type internalRequest interface {
 type queryExecutor struct {
 	pool        *policyConnPool
 	policy      HostSelectionPolicy
-	interceptor QueryAttemptInterceptor
+	interceptor ExecAttemptInterceptor
 }
 
 type QueryAttempt struct {
@@ -92,16 +92,18 @@ type QueryAttempt struct {
 // QueryAttemptHandler is a function that attempts query execution. This typically pickles internalRequest.execute() to hide private interfaces and types.
 type QueryAttemptHandler = func(context.Context) (*Iter, error)
 
-// QueryAttemptInterceptor is the interface implemented by query interceptors / middleware.
+// ExecAttemptInterceptor is the interface implemented by interceptors / middleware.
 //
-// Interceptors are well-suited to logic that is not specific to a single query or batch.
-type QueryAttemptInterceptor interface {
-	// Intercept is invoked once immediately before a query execution attempt, including retry attempts and
+// Interceptors are well-suited to logic that is not specific to a single query or batch, such as flow control.
+type ExecAttemptInterceptor interface {
+	// Intercept is invoked once immediately before a query or batch execution attempt, including retry attempts and
 	// speculative execution attempts.
-
+	//
 	// The interceptor is responsible for calling the `handler` function and returning the handler result. If the
 	// interceptor wants to bypass the handler and skip query execution, it should return an error. Failure to
 	// return either the handler result or an error will panic.
+	//
+	// Note that there is no affordance to mutate the query or batch at this stage -- the handler already encapsulates the original query/batch and cannot be modified.
 	Intercept(ctx context.Context, attempt QueryAttempt, handler QueryAttemptHandler) (*Iter, error)
 }
 

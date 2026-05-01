@@ -32,11 +32,11 @@ import (
 	gocql "github.com/apache/cassandra-gocql-driver/v2"
 )
 
-type MyQueryAttemptInterceptor struct {
+type MyExecAttemptInterceptor struct {
 	injectFault bool
 }
 
-func (q MyQueryAttemptInterceptor) Intercept(
+func (q MyExecAttemptInterceptor) Intercept(
 	ctx context.Context,
 	attempt gocql.QueryAttempt,
 	handler gocql.QueryAttemptHandler,
@@ -65,10 +65,10 @@ func (q MyQueryAttemptInterceptor) Intercept(
 	return handler(ctx)
 }
 
-// Example_interceptor demonstrates how to implement a QueryAttemptInterceptor.
+// Example_interceptor demonstrates how to implement a ExecAttemptInterceptor.
 func Example_interceptor() {
 	cluster := gocql.NewCluster("localhost:9042")
-	cluster.QueryAttemptInterceptor = MyQueryAttemptInterceptor{injectFault: true}
+	cluster.ExecAttemptInterceptor = MyExecAttemptInterceptor{injectFault: true}
 
 	session, err := cluster.CreateSession()
 	if err != nil {
@@ -87,11 +87,11 @@ func Example_interceptor() {
 	}
 }
 
-type QueryAttemptInterceptorChain struct {
-	interceptors []gocql.QueryAttemptInterceptor
+type ExecAttemptInterceptorChain struct {
+	interceptors []gocql.ExecAttemptInterceptor
 }
 
-func (c QueryAttemptInterceptorChain) Intercept(
+func (c ExecAttemptInterceptorChain) Intercept(
 	ctx context.Context,
 	attempt gocql.QueryAttempt,
 	handler gocql.QueryAttemptHandler,
@@ -99,7 +99,7 @@ func (c QueryAttemptInterceptorChain) Intercept(
 	return c.interceptors[0].Intercept(ctx, attempt, c.getNextHandler(0, attempt, handler))
 }
 
-func (c QueryAttemptInterceptorChain) getNextHandler(curr int, attempt gocql.QueryAttempt, final gocql.QueryAttemptHandler) gocql.QueryAttemptHandler {
+func (c ExecAttemptInterceptorChain) getNextHandler(curr int, attempt gocql.QueryAttempt, final gocql.QueryAttemptHandler) gocql.QueryAttemptHandler {
 	if curr == len(c.interceptors)-1 {
 		return final
 	}
@@ -109,14 +109,14 @@ func (c QueryAttemptInterceptorChain) getNextHandler(curr int, attempt gocql.Que
 	}
 }
 
-// Example_interceptor_chain demonstrates how to chain QueryAttemptInterceptors.
+// Example_interceptor_chain demonstrates how to chain ExecAttemptInterceptors.
 func Example_interceptor_chain() {
 	cluster := gocql.NewCluster("localhost:9042")
-	cluster.QueryAttemptInterceptor = QueryAttemptInterceptorChain{
-		[]gocql.QueryAttemptInterceptor{
-			MyQueryAttemptInterceptor{},
-			MyQueryAttemptInterceptor{},
-			MyQueryAttemptInterceptor{},
+	cluster.ExecAttemptInterceptor = ExecAttemptInterceptorChain{
+		[]gocql.ExecAttemptInterceptor{
+			MyExecAttemptInterceptor{},
+			MyExecAttemptInterceptor{},
+			MyExecAttemptInterceptor{},
 		},
 	}
 
