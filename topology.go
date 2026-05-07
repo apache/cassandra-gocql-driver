@@ -66,7 +66,7 @@ func (h tokenRingReplicas) replicasFor(t token) *hostTokens {
 }
 
 type placementStrategy interface {
-	replicaMap(tokenRing *tokenRing) tokenRingReplicas
+	replicaMap(tokenRing *tokenRing, logger StructuredLogger) tokenRingReplicas
 	replicationFactor(dc string) int
 	// strategyKey returns a unique identifier string for this strategy instance.
 	// Two strategy instances with identical configuration should return the same key.
@@ -162,7 +162,7 @@ func (s *simpleStrategy) replicationFactor(dc string) int {
 	return s.rf
 }
 
-func (s *simpleStrategy) replicaMap(tokenRing *tokenRing) tokenRingReplicas {
+func (s *simpleStrategy) replicaMap(tokenRing *tokenRing, _ StructuredLogger) tokenRingReplicas {
 	tokens := tokenRing.tokens
 	ring := make(tokenRingReplicas, len(tokens))
 
@@ -255,7 +255,7 @@ func (n *networkTopology) haveRF(replicaCounts map[string]int) bool {
 	return true
 }
 
-func (n *networkTopology) replicaMap(tokenRing *tokenRing) tokenRingReplicas {
+func (n *networkTopology) replicaMap(tokenRing *tokenRing, logger StructuredLogger) tokenRingReplicas {
 	dcRacks := make(map[string]map[string]struct{}, len(n.dcs))
 	// skipped hosts in a dc
 	skipped := make(map[string][]*HostInfo, len(n.dcs))
@@ -324,7 +324,11 @@ func (n *networkTopology) replicaMap(tokenRing *tokenRing) tokenRingReplicas {
 				continue
 			} else if replicasInDC[dc] >= rf {
 				if replicasInDC[dc] > rf {
-					panic(fmt.Sprintf("replica overflow. rf=%d have=%d in dc %q", rf, replicasInDC[dc], dc))
+					logger.Warning("Replica overflow. Returning empty map.",
+						NewLogFieldInt("rf", rf),
+						NewLogFieldInt("have", replicasInDC[dc]),
+						NewLogFieldString("dc", dc))
+					return tokenRingReplicas{}
 				}
 
 				// have enough replicas in this DC
@@ -372,23 +376,36 @@ func (n *networkTopology) replicaMap(tokenRing *tokenRing) tokenRingReplicas {
 		}
 
 		if len(replicas) == 0 {
-			panic(fmt.Sprintf("no replicas for token: %v", th.token))
+			logger.Warning("No replicas for token. Returning empty map.",
+				NewLogFieldString("token", th.token.String()))
+			return tokenRingReplicas{}
 		} else if !replicas[0].Equal(th.host) {
-			panic(fmt.Sprintf("first replica is not the primary replica for the token: expected %v got %v", replicas[0].ConnectAddress(), th.host.ConnectAddress()))
+			logger.Warning("First replica is not the primary replica for the token. Returning empty map.",
+				NewLogFieldString("token", th.token.String()),
+				NewLogFieldIP("expected", replicas[0].ConnectAddress()),
+				NewLogFieldIP("got", th.host.ConnectAddress()))
+			return tokenRingReplicas{}
 		}
 
 		replicaRing = append(replicaRing, hostTokens{th.token, replicas})
 	}
 
 	dcsWithReplicas := 0
-	for _, dc := range n.dcs {
-		if dc > 0 {
+	for dc, rf := range n.dcs {
+		// We should count only DCs that driver is aware of and have a replication factor > 0
+		if _, knownDc := dcRacks[dc]; knownDc && rf > 0 {
 			dcsWithReplicas++
 		}
 	}
 
 	if dcsWithReplicas == len(dcRacks) && len(replicaRing) != len(tokens) {
-		panic(fmt.Sprintf("token map different size to token ring: got %d expected %d", len(replicaRing), len(tokens)))
+		logger.Warning("Unexpected state while building replica map. Returning empty map.",
+			NewLogFieldString("strategy_key", n.strategyKey()),
+			NewLogFieldInt("dcs_with_replicas", dcsWithReplicas),
+			NewLogFieldInt("dcs_in_ring", len(dcRacks)),
+			NewLogFieldInt("token_ring_size", len(tokens)),
+			NewLogFieldInt("replica_ring_size", len(replicaRing)))
+		return tokenRingReplicas{}
 	}
 
 	return replicaRing

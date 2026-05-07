@@ -524,7 +524,7 @@ func (t *tokenAwareHostPolicy) updateReplicas(keyspace string) {
 				if _, ok := meta.replicas[key]; !ok {
 					metaUpdate := t.getMetadataForUpdate()
 					newReplicas := make(map[string]tokenRingReplicas, len(meta.replicas))
-					newReplicas[key] = strat.replicaMap(metaUpdate.tokenRing)
+					newReplicas[key] = strat.replicaMap(metaUpdate.tokenRing, t.logger)
 					for k, replicas := range metaUpdate.replicas {
 						newReplicas[k] = replicas
 					}
@@ -556,7 +556,7 @@ func (t *tokenAwareHostPolicy) updateAllReplicas(meta *clusterMeta, schemaMeta *
 			if meta != nil && meta.tokenRing != nil {
 				key := strat.strategyKey()
 				if _, ok := newReplicas[key]; !ok {
-					newReplicas[key] = strat.replicaMap(meta.tokenRing)
+					newReplicas[key] = strat.replicaMap(meta.tokenRing, t.logger)
 				}
 			}
 		}
