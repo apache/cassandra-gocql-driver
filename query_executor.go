@@ -85,11 +85,13 @@ type QueryAttempt struct {
 	LocalAddr net.Addr
 	// The remote address of the connection used to execute the query.
 	RemoteAddr net.Addr
-	// The number of previous query attempts. 0 for the initial attempt, 1 for the first retry, etc.
+	// The number of this query attempt. 0 for the initial attempt, 1 for the first retry, etc. Note that there may be multiple serial Attempts to different hosts within a single execution, whether main execution or speculative.
 	Attempts int
+	// The index of the speculative execution attempt this attempt is associated with, starting with index 1. -1 indicates this is the "main" execution.
+	SpeculativeExecutionCount int
 }
 
-// QueryAttemptHandler is a function that attempts query execution. This typically pickles internalRequest.execute() to hide private interfaces and types.
+// QueryAttemptHandler is a function that attempts query execution. The interceptor must call this once if it does not return an error.
 type QueryAttemptHandler = func(context.Context) (*Iter, error)
 
 // ExecAttemptInterceptor is the interface implemented by interceptors / middleware.
@@ -107,7 +109,30 @@ type ExecAttemptInterceptor interface {
 	Intercept(ctx context.Context, attempt QueryAttempt, handler QueryAttemptHandler) (*Iter, error)
 }
 
-func (q *queryExecutor) attemptQuery(ctx context.Context, qry internalRequest, conn *Conn) *Iter {
+// Use an ExecAttemptInterceptorChain to apply multiple Interceptors at Intercept time.
+type ExecAttemptInterceptorChain struct {
+	Interceptors []ExecAttemptInterceptor
+}
+
+func (c ExecAttemptInterceptorChain) Intercept(
+	ctx context.Context,
+	attempt QueryAttempt,
+	handler QueryAttemptHandler,
+) (*Iter, error) {
+	return c.Interceptors[0].Intercept(ctx, attempt, c.getNextHandler(0, attempt, handler))
+}
+
+func (c ExecAttemptInterceptorChain) getNextHandler(curr int, attempt QueryAttempt, final QueryAttemptHandler) QueryAttemptHandler {
+	if curr == len(c.Interceptors)-1 {
+		return final
+	}
+
+	return func(ctx context.Context) (*Iter, error) {
+		return c.Interceptors[curr+1].Intercept(ctx, attempt, c.getNextHandler(curr+1, attempt, final))
+	}
+}
+
+func (q *queryExecutor) attemptQuery(ctx context.Context, qry internalRequest, conn *Conn, speculativeExecutionCount int) *Iter {
 	start := time.Now()
 
 	var iter *Iter
@@ -122,6 +147,7 @@ func (q *queryExecutor) attemptQuery(ctx context.Context, qry internalRequest, c
 			LocalAddr:  conn.r.LocalAddr(),
 			RemoteAddr: conn.r.RemoteAddr(),
 			Attempts:   attempt,
+			SpeculativeExecutionCount: speculativeExecutionCount,
 		}
 		iter, err = q.interceptor.Intercept(_ctx, attempt, func(_ctx context.Context) (*Iter, error) {
 			ctx = _ctx
@@ -149,7 +175,7 @@ func (q *queryExecutor) speculate(ctx context.Context, qry internalRequest, sp S
 	for i := 0; i < sp.Attempts(); i++ {
 		select {
 		case <-ticker.C:
-			go q.run(ctx, qry, hostIter, results)
+			go q.run(ctx, qry, hostIter, i+1, results)
 		case <-ctx.Done():
 			return newErrIter(ctx.Err(), qry.getQueryMetrics(), qry.Keyspace(), qry.getRoutingInfo(), qry.getKeyspaceFunc())
 		case iter := <-results:
@@ -189,7 +215,7 @@ func (q *queryExecutor) executeQuery(qry internalRequest) (*Iter, error) {
 	// it is, we force the policy to NonSpeculative
 	sp := qry.speculativeExecutionPolicy()
 	if qry.GetHostID() != "" || !qry.IsIdempotent() || sp.Attempts() == 0 {
-		return q.do(qry.Context(), qry, hostIter), nil
+		return q.do(qry.Context(), qry, hostIter, -1), nil
 	}
 
 	// When speculative execution is enabled, we could be accessing the host iterator from multiple goroutines below.
@@ -208,7 +234,7 @@ func (q *queryExecutor) executeQuery(qry internalRequest) (*Iter, error) {
 	results := make(chan *Iter, 1)
 
 	// Launch the main execution
-	go q.run(ctx, qry, hostIter, results)
+	go q.run(ctx, qry, hostIter, -1, results)
 
 	// The speculative executions are launched _in addition_ to the main
 	// execution, on a timer. So Speculation{2} would make 3 executions running
@@ -225,7 +251,7 @@ func (q *queryExecutor) executeQuery(qry internalRequest) (*Iter, error) {
 	}
 }
 
-func (q *queryExecutor) do(ctx context.Context, qry internalRequest, hostIter NextHost) *Iter {
+func (q *queryExecutor) do(ctx context.Context, qry internalRequest, hostIter NextHost, speculativeExecutionCount int) *Iter {
 	selectedHost := hostIter()
 	rt := qry.retryPolicy()
 
@@ -250,7 +276,7 @@ func (q *queryExecutor) do(ctx context.Context, qry internalRequest, hostIter Ne
 			continue
 		}
 
-		iter = q.attemptQuery(ctx, qry, conn)
+		iter = q.attemptQuery(ctx, qry, conn, speculativeExecutionCount)
 		iter.host = selectedHost.Info()
 		// Update host
 		switch iter.err {
@@ -306,9 +332,9 @@ func (q *queryExecutor) do(ctx context.Context, qry internalRequest, hostIter Ne
 	return newErrIter(ErrNoConnections, qry.getQueryMetrics(), qry.Keyspace(), qry.getRoutingInfo(), qry.getKeyspaceFunc())
 }
 
-func (q *queryExecutor) run(ctx context.Context, qry internalRequest, hostIter NextHost, results chan<- *Iter) {
+func (q *queryExecutor) run(ctx context.Context, qry internalRequest, hostIter NextHost, speculativeExecutionCount int, results chan<- *Iter) {
 	select {
-	case results <- q.do(ctx, qry, hostIter):
+	case results <- q.do(ctx, qry, hostIter, speculativeExecutionCount):
 	case <-ctx.Done():
 	}
 }
