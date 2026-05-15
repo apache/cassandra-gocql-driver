@@ -16,8 +16,8 @@
 # under the License.
 
 notifications:
-  commits:      commits@cassandra.apache.org
-  issues:       commits@cassandra.apache.org
+  commits: commits@cassandra.apache.org
+  issues: commits@cassandra.apache.org
   pullrequests: pr@cassandra.apache.org
   jira_options: link worklog
 
@@ -25,9 +25,9 @@ github:
   description: "GoCQL Driver for Apache Cassandra®"
   homepage: https://cassandra.apache.org/
   enabled_merge_buttons:
-    squash:  false
-    merge:   false
-    rebase:  true
+    squash: false
+    merge: false
+    rebase: true
   features:
     wiki: false
     issues: true
@@ -35,3 +35,16 @@ github:
   autolink_jira:
     - CASSANDRA
     - CASSGO
+  rulesets:
+    - name: "Default Branch Protection"
+      type: branch
+      branches:
+        includes:
+          - "~DEFAULT_BRANCH"
+          - "release/*"
+          - "rel/*"
+        excludes: []
+      bypass_teams:
+        - root
+      restrict_deletion: true
+      restrict_force_push: true
