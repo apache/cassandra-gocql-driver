@@ -1338,11 +1338,32 @@ func (srv *TestServer) process(conn net.Conn, reqFrame *framer, useProtoV5, star
 			srv.errorLocked(err)
 			return
 		}
-		name := strings.TrimPrefix(query, "select ")
+		name := query
+		for _, verb := range []string{"select ", "insert ", "update ", "delete "} {
+			if strings.HasPrefix(strings.ToLower(name), verb) {
+				name = name[len(verb):]
+				break
+			}
+		}
 		if n := strings.Index(name, " "); n > 0 {
 			name = name[:n]
 		}
 		switch strings.ToLower(name) {
+		case "always-unprep":
+			// Returns id=99 which is intentionally NOT 1 or 2, so the
+			// opExecute default branch will respond with
+			// ErrCodeUnprepared. This drives the re-prepare retry loop
+			// in Conn.executeQuery — used by the recursion-cap test.
+			respFrame.writeHeader(0, opResult, head.stream)
+			respFrame.writeInt(resultKindPrepared)
+			respFrame.writeShortBytes(binary.BigEndian.AppendUint64(nil, 99))
+			respFrame.writeInt(0)
+			respFrame.writeInt(0)
+			if srv.protocol >= protoVersion4 {
+				respFrame.writeInt(0)
+			}
+			respFrame.writeInt(int32(flagNoMetaData))
+			respFrame.writeInt(0)
 		case "nometadata":
 			respFrame.writeHeader(0, opResult, head.stream)
 			respFrame.writeInt(resultKindPrepared)
@@ -1441,6 +1462,72 @@ func (srv *TestServer) process(conn net.Conn, reqFrame *framer, useProtoV5, star
 			respFrame.writeInt(ErrCodeUnprepared)
 			respFrame.writeString("unprepared")
 			respFrame.writeShortBytes(binary.BigEndian.AppendUint64(nil, id))
+		}
+	case opBatch:
+		// Walk the batch frame far enough to extract any prepared statement
+		// IDs. If any equals the always-unprep id (99), respond with
+		// ErrCodeUnprepared to drive the executeBatch re-prepare loop in
+		// the recursion-cap test. Otherwise respond with a void result.
+		if _, err := reqFrame.readByte(); err != nil { // batch type
+			srv.errorLocked(err)
+			return
+		}
+		nStmt, err := reqFrame.readShort()
+		if err != nil {
+			srv.errorLocked(err)
+			return
+		}
+		var unprepID []byte
+		for i := uint16(0); i < nStmt; i++ {
+			kind, err := reqFrame.readByte()
+			if err != nil {
+				srv.errorLocked(err)
+				return
+			}
+			var id []byte
+			if kind == 1 {
+				id, err = reqFrame.readShortBytes()
+				if err != nil {
+					srv.errorLocked(err)
+					return
+				}
+			} else {
+				if _, err := reqFrame.readLongString(); err != nil {
+					srv.errorLocked(err)
+					return
+				}
+			}
+			nVal, err := reqFrame.readShort()
+			if err != nil {
+				srv.errorLocked(err)
+				return
+			}
+			for j := uint16(0); j < nVal; j++ {
+				sz, err := reqFrame.readInt()
+				if err != nil {
+					srv.errorLocked(err)
+					return
+				}
+				if sz > 0 {
+					if len(reqFrame.buf) < sz {
+						srv.errorLocked(fmt.Errorf("opBatch: short read on value"))
+						return
+					}
+					reqFrame.buf = reqFrame.buf[sz:]
+				}
+			}
+			if kind == 1 && len(id) == 8 && binary.BigEndian.Uint64(id) == 99 {
+				unprepID = id
+			}
+		}
+		if unprepID != nil {
+			respFrame.writeHeader(0, opError, head.stream)
+			respFrame.writeInt(ErrCodeUnprepared)
+			respFrame.writeString("unprepared")
+			respFrame.writeShortBytes(unprepID)
+		} else {
+			respFrame.writeHeader(0, opResult, head.stream)
+			respFrame.writeInt(resultKindVoid)
 		}
 	default:
 		respFrame.writeHeader(0, opError, head.stream)

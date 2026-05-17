@@ -1546,7 +1546,20 @@ func marshalQueryValue(typ TypeInfo, value interface{}, dst *queryValues) error 
 	return nil
 }
 
+// maxUnprepRetries caps the number of times executeQuery and executeBatch
+// will respond to a RequestErrUnprepared by evicting the prepared-statement
+// cache entry and retrying. Without this cap, a server-side cache thrash
+// (Cassandra evicting our prepared statement between every attempt) would
+// recurse unboundedly and stack-overflow the goroutine. Five retries is
+// generous — a single legitimate eviction is the realistic case — while
+// ruling out pathological recursion.
+const maxUnprepRetries = 5
+
 func (c *Conn) executeQuery(ctx context.Context, q *internalQuery) *Iter {
+	return c.executeQueryWithUnprepRetries(ctx, q, 0)
+}
+
+func (c *Conn) executeQueryWithUnprepRetries(ctx context.Context, q *internalQuery, unprepAttempt int) *Iter {
 	qryOpts := q.qryOpts
 	params := queryParams{
 		consistency: q.GetConsistency(),
@@ -1746,9 +1759,18 @@ func (c *Conn) executeQuery(ctx context.Context, q *internalQuery) *Iter {
 		// is not consistent with regards to its schema.
 		return iter
 	case *RequestErrUnprepared:
+		if unprepAttempt >= maxUnprepRetries {
+			// Pathological re-prepare loop (server-side cache evicting
+			// our prepared statement between every attempt). Bail with
+			// the underlying server error rather than recursing
+			// indefinitely.
+			iter.err = fmt.Errorf("gocql: failed to execute prepared statement after %d re-prepare attempts: %w",
+				unprepAttempt+1, x)
+			return iter
+		}
 		stmtCacheKey := c.session.stmtsLRU.keyFor(c.host.HostID(), usedKeyspace, qryOpts.stmt)
 		c.session.stmtsLRU.evictPreparedID(stmtCacheKey, x.StatementId)
-		return c.executeQuery(ctx, q)
+		return c.executeQueryWithUnprepRetries(ctx, q, unprepAttempt+1)
 	case error:
 		iter.err = x
 		iter.framer = framer
@@ -1809,6 +1831,10 @@ func (c *Conn) UseKeyspace(keyspace string) error {
 }
 
 func (c *Conn) executeBatch(ctx context.Context, b *internalBatch) *Iter {
+	return c.executeBatchWithUnprepRetries(ctx, b, 0)
+}
+
+func (c *Conn) executeBatchWithUnprepRetries(ctx context.Context, b *internalBatch, unprepAttempt int) *Iter {
 	iter := newIter(b.metrics, b.Keyspace(), b.routingInfo, nil)
 	n := len(b.batchOpts.entries)
 	req := &writeBatchFrame{
@@ -1905,12 +1931,21 @@ func (c *Conn) executeBatch(ctx context.Context, b *internalBatch) *Iter {
 	case *resultVoidFrame:
 		return iter
 	case *RequestErrUnprepared:
+		if unprepAttempt >= maxUnprepRetries {
+			// Pathological re-prepare loop on the batch path (server-side
+			// cache evicting our prepared statement between every attempt).
+			// Bail with the underlying server error rather than recursing
+			// indefinitely.
+			iter.err = fmt.Errorf("gocql: failed to execute batch after %d re-prepare attempts: %w",
+				unprepAttempt+1, x)
+			return iter
+		}
 		stmt, found := stmts[string(x.StatementId)]
 		if found {
 			key := c.session.stmtsLRU.keyFor(c.host.HostID(), usedKeyspace, stmt)
 			c.session.stmtsLRU.evictPreparedID(key, x.StatementId)
 		}
-		return c.executeBatch(ctx, b)
+		return c.executeBatchWithUnprepRetries(ctx, b, unprepAttempt+1)
 	case *resultRowsFrame:
 		iter.meta = x.meta
 		iter.framer = framer
