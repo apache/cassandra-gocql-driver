@@ -797,6 +797,7 @@ type ConnReader interface {
 
 // connReader implements ConnReader.
 // It retries to read data up to 5 times or returns error.
+// TODO: refactor and narrow this down to just the read part, remove Write method
 type connReader struct {
 	conn    net.Conn
 	r       *bufio.Reader
@@ -1938,6 +1939,8 @@ func (c *Conn) awaitSchemaAgreementWithTimeout(ctx context.Context, timeout time
 }
 
 // segmentWriter allows batching multiple frames into a single segment before flushing them to the connection.
+// Implementation based on similar logic in DataStax lib on which Java driver relies:
+// https://github.com/datastax/native-protocol/blob/6b9bfb05c3fb1e29e74eec288dd54bd78232c2b7/src/main/java/com/datastax/oss/protocol/internal/SegmentBuilder.java#L74
 type segmentWriter struct {
 	w    contextWriter
 	quit <-chan struct{}
@@ -2001,6 +2004,13 @@ func (sw *segmentWriter) runFlusher(interval time.Duration) {
 		case req := <-sw.writeCh:
 			frame := req.data
 			if len(frame) > maxSegmentPayloadSize {
+				// Frame is too big to fit into a single segment, so we need to flush the current segment and start a new one.
+				// If the current segment is not empty, we need to flush it first.
+				if running {
+					running = false
+					sw.flushCurrentSegment()
+					sw.reset()
+				}
 				sw.flushBigFrameImmediately(req)
 			} else if sw.fitsSegment(frame) {
 				sw.appendWriteRequest(req)
@@ -2144,7 +2154,6 @@ func newSegmentReader(r ConnReader, segmentCodec segmentCodec) *segmentReader {
 	}
 }
 
-// why do we have a write method for reader lol
 func (sr *segmentReader) Write(b []byte) (n int, err error) {
 	return sr.r.Write(b)
 }
@@ -2184,7 +2193,7 @@ func (sr *segmentReader) GetTimeout() time.Duration {
 func (sr *segmentReader) Read(p []byte) (n int, err error) {
 	// If we don't have a read buffer, or it's empty, read the first segment.
 	// If we have read all the frames from the current segment, read the next segment.
-	// If segment is non self-container, it will read all segments and read buffer will hold the full frame.
+	// If segment is non self-contained, it will read all segments and read buffer will hold the full frame.
 	if sr.readBufferDecoded.Len() == 0 {
 		err = sr.readSegment()
 		if err != nil {
@@ -2198,11 +2207,6 @@ func (sr *segmentReader) Read(p []byte) (n int, err error) {
 func (sr *segmentReader) readSegment() error {
 	segment, isSelfContained, err := sr.segmentCodec.decode(sr.r)
 	if err != nil {
-		// TODO: does only network related errors should result in connection closure?
-		// var verr net.Error
-		// if errors.As(err, &verr) {
-		// 	return nil, false, verr
-		// }
 		return err
 	}
 
