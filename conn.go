@@ -776,7 +776,7 @@ func (c *Conn) releaseStream(call *callReq) {
 
 func (c *Conn) maybeSwitchToSegments() {
 	if c.version >= protoVersion5 {
-		// Use segments writter which basically batches multiple frames into a single segment before flushing them to the connection.
+		// Use segments writer which basically batches multiple frames into a single segment before flushing them to the connection.
 		segmentWriter := newSegmentWriter(c.w, c.session.cfg.WriteCoalesceWaitTime, c.ctx.Done(), c.compressor)
 		segmentReader := newSegmentReader(c.r, newSegmentCodec(c.compressor))
 		c.w = segmentWriter
@@ -1937,7 +1937,7 @@ func (c *Conn) awaitSchemaAgreementWithTimeout(ctx context.Context, timeout time
 	return fmt.Errorf("gocql: cluster schema versions not consistent: %+v", schemas)
 }
 
-// segmentWriter allows batching multiple frames into a signle segment before flushing them to the connection.
+// segmentWriter allows batching multiple frames into a single segment before flushing them to the connection.
 type segmentWriter struct {
 	w    contextWriter
 	quit <-chan struct{}
@@ -2208,7 +2208,7 @@ func (sr *segmentReader) readSegment() error {
 
 	if isSelfContained {
 		// Reset the buffer to the new segment
-		// It might contain multiple frames so Read should be called mutiple times to read all of them
+		// It might contain multiple frames so Read should be called multiple times to read all of them
 		sr.readBufferDecoded.Reset(segment)
 		return nil
 	}
@@ -2257,7 +2257,7 @@ func (sr *segmentReader) readPartialFrames(dstBuf *bytes.Buffer, bytesToRead int
 		}
 		// Expected to receive only non self-contained segments
 		if isSelfContained {
-			return errUnexpectedSelfcontainedSegment
+			return errUnexpectedSelfContainedSegment
 		}
 		if totalLength := dstBuf.Len() + len(frame); totalLength > dstBuf.Cap() {
 			return fmt.Errorf("gocql: expected partial frame of length %d, got %d", dstBuf.Cap(), totalLength)
@@ -2285,5 +2285,5 @@ var (
 	// Deprecated: Never returned by the driver
 	ErrQueryArgLength = errors.New("gocql: query argument length mismatch")
 
-	errUnexpectedSelfcontainedSegment = errors.New("gocql: segment reader received unexpected self-contained segment")
+	errUnexpectedSelfContainedSegment = errors.New("gocql: segment reader received unexpected self-contained segment")
 )
