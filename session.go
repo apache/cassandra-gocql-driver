@@ -764,7 +764,7 @@ func (s *Session) StatementMetadata(ctx context.Context, stmt, keyspace string) 
 	}
 
 	// get the query info for the statement
-	info, err := conn.prepareStatement(ctx, stmt, nil, keyspace)
+	info, err := conn.prepareStatement(ctx, stmt, nil, keyspace, s.cfg.Timeout)
 	if err != nil {
 		// TODO: it would be nice to mark hosts here but as we are not using the policies
 		// to fetch hosts we cant and we can't use the policies because they might
@@ -1077,6 +1077,15 @@ type Query struct {
 
 	keyspace          string
 	nowInSecondsValue *int
+
+	// requestTimeout caps the time spent waiting for a server response to this
+	// specific query. Implemented via callReq.timer inside Conn.exec —
+	// independently of the socket read deadline (ClusterConfig.ReadTimeout).
+	// Initialized by default to ClusterConfig.Timeout in Session.Query / Session.Bind.
+	// 0 means "no client-side timeout" (rely on ctx and ReadTimeout).
+	//
+	// Change via WithRequestTimeout / SetRequestTimeout.
+	requestTimeout time.Duration
 }
 
 type queryRoutingInfo struct {
@@ -1112,6 +1121,7 @@ func (q *Query) defaultsFromSession() {
 	q.serialCons = s.cfg.SerialConsistency
 	q.defaultTimestamp = s.cfg.DefaultTimestamp
 	q.idempotent = s.cfg.DefaultIdempotence
+	q.requestTimeout = s.cfg.Timeout
 
 	q.spec = &NonSpeculativeExecution{}
 }
@@ -1232,6 +1242,33 @@ func (q *Query) WithContext(ctx context.Context) *Query {
 	q2 := *q
 	q2.context = ctx
 	return &q2
+}
+
+// WithRequestTimeout sets the client-side timeout for waiting on a server
+// response to this specific query. Independent of ClusterConfig.Timeout: it lets
+// individual queries be more urgent or more lenient without touching the global
+// timeout. Implemented via callReq.timer inside Conn.exec — independently of
+// the socket read deadline (ClusterConfig.ReadTimeout, the defensive net).
+//
+// By default (when a Query is created via Session.Query / Session.Bind)
+// requestTimeout is initialized to ClusterConfig.Timeout. Setting it to 0
+// disables the client-side timeout for this query (we rely on ctx and ReadTimeout).
+func (q *Query) WithRequestTimeout(d time.Duration) *Query {
+	q.requestTimeout = d
+	return q
+}
+
+// SetRequestTimeout is an alias for WithRequestTimeout, matching the name used
+// in upstream scylladb/gocql. Semantically equivalent.
+func (q *Query) SetRequestTimeout(d time.Duration) *Query {
+	return q.WithRequestTimeout(d)
+}
+
+// GetRequestTimeout returns the current per-request timeout. The default is
+// ClusterConfig.Timeout (set in Session.Query / Session.Bind). 0 means the
+// timeout has been explicitly disabled via SetRequestTimeout(0).
+func (q *Query) GetRequestTimeout() time.Duration {
+	return q.requestTimeout
 }
 
 // Keyspace returns the keyspace the query will be executed against.
@@ -1999,6 +2036,11 @@ type Batch struct {
 	context               context.Context
 	keyspace              string
 	nowInSeconds          *int
+
+	// requestTimeout — see Query.requestTimeout. Initialized to
+	// ClusterConfig.Timeout by default in Session.Batch. Change via
+	// WithRequestTimeout / SetRequestTimeout.
+	requestTimeout time.Duration
 }
 
 // Deprecated: use Session.Batch instead
@@ -2022,6 +2064,7 @@ func (s *Session) Batch(typ BatchType) *Batch {
 		defaultTimestamp: s.cfg.DefaultTimestamp,
 		keyspace:         s.cfg.Keyspace,
 		spec:             &NonSpeculativeExecution{},
+		requestTimeout:   s.cfg.Timeout,
 	}
 
 	return batch
@@ -2126,6 +2169,25 @@ func (b *Batch) WithContext(ctx context.Context) *Batch {
 	b2 := *b
 	b2.context = ctx
 	return &b2
+}
+
+// WithRequestTimeout — see Query.WithRequestTimeout.
+func (b *Batch) WithRequestTimeout(d time.Duration) *Batch {
+	b.requestTimeout = d
+	return b
+}
+
+// SetRequestTimeout is an alias for WithRequestTimeout, matching the name used
+// in upstream scylladb/gocql.
+func (b *Batch) SetRequestTimeout(d time.Duration) *Batch {
+	return b.WithRequestTimeout(d)
+}
+
+// GetRequestTimeout returns the current per-request timeout. The default is
+// ClusterConfig.Timeout (set in Session.Batch). 0 means the timeout has been
+// explicitly disabled via SetRequestTimeout(0).
+func (b *Batch) GetRequestTimeout() time.Duration {
+	return b.requestTimeout
 }
 
 // Size returns the number of batch statements to be executed by the batch operation.

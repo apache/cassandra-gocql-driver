@@ -294,6 +294,12 @@ type queryOptions struct {
 
 	// getKeyspace is field so that it can be overriden in tests
 	getKeyspace func() string
+
+	// requestTimeout is a snapshot of Query.requestTimeout taken when queryOptions
+	// is created. Initialized to ClusterConfig.Timeout by default via
+	// defaultsFromSession. 0 is interpreted by Conn.exec as "no client-side
+	// timeout".
+	requestTimeout time.Duration
 }
 
 func newQueryOptions(q *Query, ctx context.Context) *queryOptions {
@@ -330,6 +336,7 @@ func newQueryOptions(q *Query, ctx context.Context) *queryOptions {
 		nowInSecondsValue:     q.nowInSecondsValue,
 		keyspace:              q.keyspace,
 		hostID:                q.hostID,
+		requestTimeout:        q.requestTimeout,
 	}
 }
 
@@ -518,6 +525,9 @@ type batchOptions struct {
 	idempotent    bool
 	routingKey    []byte
 	nowInSeconds  *int
+
+	// requestTimeout — see queryOptions.requestTimeout.
+	requestTimeout time.Duration
 }
 
 func newBatchOptions(b *Batch, ctx context.Context) *batchOptions {
@@ -551,6 +561,7 @@ func newBatchOptions(b *Batch, ctx context.Context) *batchOptions {
 		idempotent:            b.IsIdempotent(),
 		routingKey:            newRoutingKey,
 		nowInSeconds:          b.nowInSeconds,
+		requestTimeout:        b.requestTimeout,
 	}
 }
 

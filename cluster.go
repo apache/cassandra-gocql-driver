@@ -112,7 +112,11 @@ type ClusterConfig struct {
 	// Timeout limits the time spent on the client side while executing a query.
 	// Specifically, query or batch execution will return an error if the client does not receive a response
 	// from the server within the Timeout period.
-	// Timeout is also used to configure the read timeout on the underlying network connection.
+	// Timeout is the default per-request client-side budget for user Query/Batch
+	// (inherited at construction time by Query.requestTimeout / Batch.requestTimeout,
+	// overridable via WithRequestTimeout/SetRequestTimeout). It is enforced via the
+	// per-request callReq.timer inside Conn.exec, independently of the socket read
+	// deadline (which is configured via ReadTimeout, falling back to ConnectTimeout).
 	// Client Timeout should always be higher than the request timeouts configured on the server,
 	// so that retries don't overload the server.
 	// Timeout has a default value of 11 seconds, which is higher than default server timeout for most query types.
@@ -132,6 +136,22 @@ type ClusterConfig struct {
 	// WriteTimeout should be lower than or equal to Timeout.
 	// WriteTimeout defaults to the value of Timeout.
 	WriteTimeout time.Duration
+
+	// ReadTimeout — socket-level read deadline. Defensive net: if the server stops
+	// responding entirely (TCP alive but no data flowing), the socket must detect
+	// this and fail rather than blocking goroutines indefinitely. Does NOT cap a
+	// single request — that is the role of Timeout (default for user queries) and
+	// Metadata.SystemRequestTimeout (for system queries), enforced via the
+	// per-request callReq.timer.
+	//
+	// Only takes effect after finalizeConnection. During init the socket read
+	// deadline is pinned to ConnectTimeout, so a low ReadTimeout will not break
+	// connection establishment — but it will tighten an already-validated
+	// connection at runtime and may misfire on idle waits. Pick
+	// ReadTimeout >= ConnectTimeout. If unset (0), ConnectTimeout is used.
+	//
+	// Default: 11s.
+	ReadTimeout time.Duration
 
 	// Port used when dialing.
 	// Default: 9042
@@ -353,6 +373,7 @@ func NewCluster(hosts ...string) *ClusterConfig {
 		CQLVersion:             "3.0.0",
 		Timeout:                11 * time.Second,
 		ConnectTimeout:         11 * time.Second,
+		ReadTimeout:            11 * time.Second,
 		Port:                   9042,
 		NumConns:               2,
 		Consistency:            Quorum,
@@ -367,7 +388,8 @@ func NewCluster(hosts ...string) *ClusterConfig {
 		WriteCoalesceWaitTime:  200 * time.Microsecond,
 		NextPagePrefetch:       0.25,
 		Metadata: MetadataConfig{
-			CacheMode: Full,
+			CacheMode:            Full,
+			SystemRequestTimeout: 60 * time.Second,
 		},
 	}
 	return cfg
@@ -439,6 +461,26 @@ type MetadataConfig struct {
 	//
 	// Consider using [SessionReadyListenersMux] if you need to register multiple listeners for the same session ready event.
 	SessionReadyListener SessionReadyListener
+
+	// SystemRequestTimeout — client-side per-request timeout for queries to
+	// system / system_schema tables (`system.local`, `system.peers[_v2]`,
+	// `system_schema.*`) and other internal control-conn frames at runtime.
+	// Independent of ClusterConfig.Timeout and ConnectTimeout: schema operations
+	// (e.g. reading metadata of a large keyspace) can legitimately take
+	// significantly longer than normal user queries, so they need a separate,
+	// typically longer, timeout.
+	//
+	// Applied as requestTimeout in Conn.exec for system queries (via
+	// controlConn.query / controlConn.writeFrame / Conn.querySystem). Only takes
+	// effect after finalizeConnection — during init these requests are bound to
+	// ConnectTimeout via Conn.systemRequestTimeout. STARTUP/AUTH/OPTIONS and
+	// USE keyspace are init-phase only and never use SystemRequestTimeout; they
+	// are always bound to ConnectTimeout.
+	//
+	// The defensive socket read deadline is configured via ClusterConfig.ReadTimeout.
+	//
+	// Default: 60s.
+	SystemRequestTimeout time.Duration
 }
 
 type HostListenersConfig struct {
