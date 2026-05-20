@@ -1661,6 +1661,7 @@ func (c *Conn) executeQuery(ctx context.Context, q *internalQuery) *Iter {
 			q.routingInfo.keyspace = usedKeyspace
 		}
 		q.routingInfo.table = info.request.table
+		q.routingInfo.prepared = true
 		q.routingInfo.mu.Unlock()
 	} else {
 		frame = &writeQueryFrame{
@@ -1856,6 +1857,12 @@ func (c *Conn) executeBatch(ctx context.Context, b *internalBatch) *Iter {
 
 	stmts := make(map[string]string, len(b.batchOpts.entries))
 
+	if b.batchOpts.observer != nil {
+		b.entryKeyspaces = make([]string, n)
+		b.entryTables = make([]string, n)
+		b.entryPrepared = make([]bool, n)
+	}
+
 	for i := 0; i < n; i++ {
 		entry := &b.batchOpts.entries[i]
 		batchStmt := &req.statements[i]
@@ -1865,6 +1872,12 @@ func (c *Conn) executeBatch(ctx context.Context, b *internalBatch) *Iter {
 			if err != nil {
 				iter.err = err
 				return iter
+			}
+
+			if b.entryTables != nil {
+				b.entryKeyspaces[i] = info.request.keyspace
+				b.entryTables[i] = info.request.table
+				b.entryPrepared[i] = true
 			}
 
 			var values []interface{}

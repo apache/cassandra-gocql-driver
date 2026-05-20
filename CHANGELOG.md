@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Security-model discoverability (CASSANDRA-21464)
 - Improve host_source locking and ring refresh concurrency (CASSGO-121)
+- Add PreparedMetadata (Keyspace, Table) and IsPrepared fields to ObservedQuery, and parallel PreparedMetadata / IsPrepared slices to ObservedBatch, for statement-level observability without CQL parsing (CASSGO-119)
 
 ## [2.1.2]
 

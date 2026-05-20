@@ -172,9 +172,12 @@ func TestObserve(t *testing.T) {
 	}
 
 	var (
-		observedErr      error
-		observedKeyspace string
-		observedStmt     string
+		observedErr              error
+		observedKeyspace         string
+		observedPreparedKeyspace string
+		observedStmt             string
+		observedPreparedTable    string
+		observedIsPrepared       bool
 	)
 
 	const keyspace = "gocql_test"
@@ -182,12 +185,18 @@ func TestObserve(t *testing.T) {
 	resetObserved := func() {
 		observedErr = errors.New("placeholder only") // used to distinguish err=nil cases
 		observedKeyspace = ""
+		observedPreparedKeyspace = ""
 		observedStmt = ""
+		observedPreparedTable = ""
+		observedIsPrepared = false
 	}
 
 	observer := funcQueryObserver(func(ctx context.Context, o ObservedQuery) {
 		observedKeyspace = o.Keyspace
+		observedPreparedKeyspace = o.PreparedMetadata.Keyspace
 		observedStmt = o.Statement
+		observedPreparedTable = o.PreparedMetadata.Table
+		observedIsPrepared = o.IsPrepared
 		observedErr = o.Err
 	})
 
@@ -202,6 +211,12 @@ func TestObserve(t *testing.T) {
 		t.Fatal("select: unexpected observed keyspace", observedKeyspace)
 	} else if observedStmt != `SELECT id FROM observe WHERE id = ?` {
 		t.Fatal("select: unexpected observed stmt", observedStmt)
+	} else if !observedIsPrepared {
+		t.Fatal("select: expected observed IsPrepared to be true")
+	} else if observedPreparedKeyspace != keyspace {
+		t.Fatal("select: unexpected observed prepared keyspace", observedPreparedKeyspace)
+	} else if observedPreparedTable != "observe" {
+		t.Fatal("select: unexpected observed prepared table", observedPreparedTable)
 	}
 
 	resetObserved()
@@ -213,6 +228,12 @@ func TestObserve(t *testing.T) {
 		t.Fatal("insert: unexpected observed keyspace", observedKeyspace)
 	} else if observedStmt != `INSERT INTO observe (id) VALUES (?)` {
 		t.Fatal("insert: unexpected observed stmt", observedStmt)
+	} else if !observedIsPrepared {
+		t.Fatal("insert: expected observed IsPrepared to be true")
+	} else if observedPreparedKeyspace != keyspace {
+		t.Fatal("insert: unexpected observed prepared keyspace", observedPreparedKeyspace)
+	} else if observedPreparedTable != "observe" {
+		t.Fatal("insert: unexpected observed prepared table", observedPreparedTable)
 	}
 
 	resetObserved()
@@ -227,6 +248,12 @@ func TestObserve(t *testing.T) {
 		t.Fatal("select: unexpected observed keyspace", observedKeyspace)
 	} else if observedStmt != `SELECT id FROM observe WHERE id = ?` {
 		t.Fatal("select: unexpected observed stmt", observedStmt)
+	} else if !observedIsPrepared {
+		t.Fatal("select: expected observed IsPrepared to be true")
+	} else if observedPreparedKeyspace != keyspace {
+		t.Fatal("select: unexpected observed prepared keyspace", observedPreparedKeyspace)
+	} else if observedPreparedTable != "observe" {
+		t.Fatal("select: unexpected observed prepared table", observedPreparedTable)
 	}
 
 	// also works from session observer
@@ -240,6 +267,12 @@ func TestObserve(t *testing.T) {
 		t.Fatal("select: unexpected observed keyspace", observedKeyspace)
 	} else if observedStmt != `SELECT id FROM observe WHERE id = ?` {
 		t.Fatal("select: unexpected observed stmt", observedStmt)
+	} else if !observedIsPrepared {
+		t.Fatal("select: expected observed IsPrepared to be true")
+	} else if observedPreparedKeyspace != keyspace {
+		t.Fatal("select: unexpected observed prepared keyspace", observedPreparedKeyspace)
+	} else if observedPreparedTable != "observe" {
+		t.Fatal("select: unexpected observed prepared table", observedPreparedTable)
 	}
 
 	// reports errors when the query is poorly formed
@@ -253,6 +286,24 @@ func TestObserve(t *testing.T) {
 		t.Fatal("select: unexpected observed keyspace", observedKeyspace)
 	} else if observedStmt != `SELECT id FROM unknown_table WHERE id = ?` {
 		t.Fatal("select: unexpected observed stmt", observedStmt)
+	}
+
+	// statements that cannot be prepared (e.g. DDL) report IsPrepared=false and
+	// a zero PreparedMetadata, so the contract is explicit for observers.
+	resetObserved()
+	const ddlStmt = `CREATE TABLE IF NOT EXISTS gocql_test.observe_unprepared (id int primary key)`
+	if err := session.Query(ddlStmt).Observer(observer).Exec(); err != nil {
+		t.Fatal("ddl:", err)
+	} else if observedErr != nil {
+		t.Fatal("ddl:", observedErr)
+	} else if observedStmt != ddlStmt {
+		t.Fatal("ddl: unexpected observed stmt", observedStmt)
+	} else if observedIsPrepared {
+		t.Fatal("ddl: expected observed IsPrepared to be false for unprepared statement")
+	} else if observedPreparedKeyspace != "" {
+		t.Fatal("ddl: expected zero PreparedMetadata.Keyspace, got", observedPreparedKeyspace)
+	} else if observedPreparedTable != "" {
+		t.Fatal("ddl: expected zero PreparedMetadata.Table, got", observedPreparedTable)
 	}
 }
 
@@ -2134,10 +2185,12 @@ func TestBatchObserve(t *testing.T) {
 	}
 
 	type observation struct {
-		observedErr      error
-		observedKeyspace string
-		observedStmts    []string
-		observedValues   [][]interface{}
+		observedErr              error
+		observedKeyspace         string
+		observedPreparedMetadata []PreparedMetadata
+		observedStmts            []string
+		observedIsPrepared       []bool
+		observedValues           [][]interface{}
 	}
 
 	var observedBatch *observation
@@ -2149,10 +2202,12 @@ func TestBatchObserve(t *testing.T) {
 		}
 
 		observedBatch = &observation{
-			observedKeyspace: o.Keyspace,
-			observedStmts:    o.Statements,
-			observedErr:      o.Err,
-			observedValues:   o.Values,
+			observedKeyspace:         o.Keyspace,
+			observedPreparedMetadata: o.PreparedMetadata,
+			observedStmts:            o.Statements,
+			observedIsPrepared:       o.IsPrepared,
+			observedErr:              o.Err,
+			observedValues:           o.Values,
 		}
 	}))
 	for i := 0; i < 100; i++ {
@@ -2175,9 +2230,27 @@ func TestBatchObserve(t *testing.T) {
 	if observedBatch.observedKeyspace != "gocql_test" {
 		t.Fatalf("expecting keyspace 'gocql_test', got %q", observedBatch.observedKeyspace)
 	}
+	if len(observedBatch.observedPreparedMetadata) != 100 {
+		t.Fatal("expecting 100 observed prepared metadata entries, got", len(observedBatch.observedPreparedMetadata))
+	}
+	if len(observedBatch.observedIsPrepared) != 100 {
+		t.Fatal("expecting 100 observed IsPrepared flags, got", len(observedBatch.observedIsPrepared))
+	}
 	for i, stmt := range observedBatch.observedStmts {
 		if stmt != fmt.Sprintf(`INSERT INTO batch_observe_table (id,other) VALUES (?,%d)`, i) {
 			t.Fatal("unexpected query", stmt)
+		}
+
+		if !observedBatch.observedIsPrepared[i] {
+			t.Fatalf("expected observed IsPrepared at index %d to be true", i)
+		}
+
+		if observedBatch.observedPreparedMetadata[i].Keyspace != "gocql_test" {
+			t.Fatalf("unexpected observed prepared keyspace at index %d: %q", i, observedBatch.observedPreparedMetadata[i].Keyspace)
+		}
+
+		if observedBatch.observedPreparedMetadata[i].Table != "batch_observe_table" {
+			t.Fatalf("unexpected observed prepared table at index %d: %q", i, observedBatch.observedPreparedMetadata[i].Table)
 		}
 
 		assertDeepEqual(t, "observed value", []interface{}{i}, observedBatch.observedValues[i])

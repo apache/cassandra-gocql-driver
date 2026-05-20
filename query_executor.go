@@ -385,15 +385,20 @@ func (q *internalQuery) attempt(keyspace string, end, start time.Time, iter *Ite
 		q.qryOpts.observer.ObserveQuery(q.qryOpts.context, ObservedQuery{
 			Keyspace:  keyspace,
 			Statement: q.qryOpts.stmt,
-			Values:    q.qryOpts.values,
-			Start:     start,
-			End:       end,
-			Rows:      iter.numRows,
-			Host:      host,
-			Metrics:   metricsForHost,
-			Err:       iter.err,
-			Attempt:   attempt,
-			Query:     q.originalQuery,
+			PreparedMetadata: PreparedMetadata{
+				Keyspace: q.routingInfo.getKeyspace(),
+				Table:    q.routingInfo.getTable(),
+			},
+			IsPrepared: q.routingInfo.isPrepared(),
+			Values:     q.qryOpts.values,
+			Start:      start,
+			End:        end,
+			Rows:       iter.numRows,
+			Host:       host,
+			Metrics:    metricsForHost,
+			Err:        iter.err,
+			Attempt:    attempt,
+			Query:      q.originalQuery,
 		})
 	}
 }
@@ -432,6 +437,7 @@ func (q *internalQuery) GetRoutingKey() ([]byte, error) {
 		q.routingInfo.mu.Lock()
 		q.routingInfo.keyspace = meta.Keyspace
 		q.routingInfo.table = meta.Table
+		q.routingInfo.prepared = true
 		q.routingInfo.mu.Unlock()
 	}
 	return createRoutingKey(meta, q.qryOpts.values)
@@ -562,6 +568,19 @@ type internalBatch struct {
 	session            *Session
 	metrics            *queryMetrics
 	hostMetricsManager hostMetricsManager
+
+	// entryKeyspaces holds the keyspace for each batch entry,
+	// populated from prepared statement metadata during execution.
+	entryKeyspaces []string
+
+	// entryTables holds the table name for each batch entry,
+	// populated from prepared statement metadata during execution.
+	entryTables []string
+
+	// entryPrepared[i] reports whether the i-th batch entry was prepared by
+	// the driver, and therefore whether entryKeyspaces[i]/entryTables[i] hold
+	// valid prepared statement metadata.
+	entryPrepared []bool
 }
 
 func newInternalBatch(batch *Batch, ctx context.Context) *internalBatch {
@@ -597,20 +616,30 @@ func (b *internalBatch) attempt(keyspace string, end, start time.Time, iter *Ite
 
 	metricsForHost := b.hostMetricsManager.attempt(latency, host)
 
-	statements := make([]string, len(b.batchOpts.entries))
-	values := make([][]interface{}, len(b.batchOpts.entries))
+	n := len(b.batchOpts.entries)
+	statements := make([]string, n)
+	values := make([][]interface{}, n)
+	preparedMetadata := make([]PreparedMetadata, n)
 
 	for i, entry := range b.batchOpts.entries {
 		statements[i] = entry.Stmt
 		values[i] = entry.Args
+		if i < len(b.entryKeyspaces) {
+			preparedMetadata[i] = PreparedMetadata{
+				Keyspace: b.entryKeyspaces[i],
+				Table:    b.entryTables[i],
+			}
+		}
 	}
 
 	b.batchOpts.observer.ObserveBatch(b.batchOpts.context, ObservedBatch{
-		Keyspace:   keyspace,
-		Statements: statements,
-		Values:     values,
-		Start:      start,
-		End:        end,
+		Keyspace:         keyspace,
+		Statements:       statements,
+		PreparedMetadata: preparedMetadata,
+		IsPrepared:       b.entryPrepared,
+		Values:           values,
+		Start:            start,
+		End:              end,
 		// Rows not used in batch observations // TODO - might be able to support it when using BatchCAS
 		Host:    host,
 		Metrics: metricsForHost,
@@ -652,6 +681,7 @@ func (b *internalBatch) GetRoutingKey() ([]byte, error) {
 		b.routingInfo.mu.Lock()
 		b.routingInfo.keyspace = meta.Keyspace
 		b.routingInfo.table = meta.Table
+		b.routingInfo.prepared = true
 		b.routingInfo.mu.Unlock()
 	}
 
