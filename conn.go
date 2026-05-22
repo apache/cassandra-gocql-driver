@@ -2261,7 +2261,7 @@ func (sr *segmentReader) readPartialFrames(dstBuf *bytes.Buffer, bytesToRead int
 		}
 		// Expected to receive only non self-contained segments
 		if isSelfContained {
-			return errUnexpectedSelfContainedSegment
+			return errors.New("gocql: segment reader received unexpected self-contained segment")
 		}
 		if totalLength := dstBuf.Len() + len(frame); totalLength > dstBuf.Cap() {
 			return fmt.Errorf("gocql: expected partial frame of length %d, got %d", dstBuf.Cap(), totalLength)
@@ -2272,7 +2272,7 @@ func (sr *segmentReader) readPartialFrames(dstBuf *bytes.Buffer, bytesToRead int
 
 	if bytesToRead < 0 {
 		// This should never happen actually
-		panic("gocql: something went wrong while reading partial frames")
+		return fmt.Errorf("gocql: driver encountered unexpected state while reading partial frames of the segment, read more bytes than expected: %d; please report this bug to gocql maintainers", bytesToRead)
 	}
 
 	return nil
@@ -2288,6 +2288,4 @@ var (
 
 	// Deprecated: Never returned by the driver
 	ErrQueryArgLength = errors.New("gocql: query argument length mismatch")
-
-	errUnexpectedSelfContainedSegment = errors.New("gocql: segment reader received unexpected self-contained segment")
 )
