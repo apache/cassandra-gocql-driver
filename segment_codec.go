@@ -25,12 +25,17 @@ import (
 )
 
 const (
+	// Maximum size of a segment payload in bytes
 	maxSegmentPayloadSize = 1<<17 - 1
 
-	compressedHeaderSize   = 5 + crc24Size
+	// Size of compressed segment header in bytes
+	compressedHeaderSize = 5 + crc24Size
+	// Size of uncompressed segment header in bytes
 	uncompressedHeaderSize = 3 + crc24Size
 
+	// Size of header checksum in bytes
 	crc24Size = 3
+	// Size of payload checksum in bytes
 	crc32Size = 4
 )
 
@@ -51,9 +56,17 @@ func (segment *segmentHeader) String() string {
 		segment.isSelfContained)
 }
 
+// segmentCodec is responsible for encoding and decoding segments.
+// It supports both compressed and uncompressed segment formats.
+// Decode path is not thread safe as it uses reusable buffers for decoding segment header and payload crc32.
+// It is expected to be used within a single instance of [Conn].
 type segmentCodec struct {
 	compressor Compressor
 	compressed bool
+	// Reusable buffer for decoding segment header, at most 8 bytes
+	readHeaderBuf [compressedHeaderSize]byte
+	// Reusable buffer for decoding segment payload crc32, at most 4 bytes
+	readChecksumBuf [crc32Size]byte
 }
 
 func newSegmentCodec(compressor Compressor) segmentCodec {
@@ -108,7 +121,7 @@ func (sc *segmentCodec) encodeCompressedSegmentHeader(compressedLen, uncompresse
 		combined |= 1 << 34
 	}
 
-	binary.LittleEndian.PutUint64(dest[:], combined)
+	binary.LittleEndian.PutUint64(dest, combined)
 
 	headerCRC24 := Crc24(dest[:5])
 	dest[5] = byte(headerCRC24)
@@ -224,9 +237,8 @@ func (sc *segmentCodec) verifySegmentPayloadChecksum(data []byte, expected uint3
 
 // decodeCompressedSegmentHeader reads and verifies the header of a compressed segment from the given reader.
 func (sc *segmentCodec) decodeCompressedSegmentHeader(r io.Reader) (*segmentHeader, error) {
-	var headerBuf [8]byte // TODO: potentially optimize allocation, could be stored in segmentCodec and reused if the codec is a specific for each Conn
-
-	if _, err := io.ReadFull(r, headerBuf[:8]); err != nil {
+	headerBuf := sc.readHeaderBuf[:compressedHeaderSize]
+	if _, err := io.ReadFull(r, headerBuf); err != nil {
 		return nil, err
 	}
 
@@ -249,19 +261,18 @@ func (sc *segmentCodec) decodeCompressedSegmentHeader(r io.Reader) (*segmentHead
 
 // decodeUncompressedSegmentHeader reads and verifies the header of an uncompressed segment from the given reader.
 func (sc *segmentCodec) decodeUncompressedSegmentHeader(r io.Reader) (*segmentHeader, error) {
-	var header [6]byte
-
-	if _, err := io.ReadFull(r, header[:]); err != nil {
+	headerBuf := sc.readHeaderBuf[:uncompressedHeaderSize]
+	if _, err := io.ReadFull(r, headerBuf); err != nil {
 		return nil, err
 	}
 
-	readHeaderCRC24 := uint32(header[3]) | uint32(header[4])<<8 | uint32(header[5])<<16
-	err := sc.verifySegmentHeaderChecksum(header[:3], readHeaderCRC24)
+	readHeaderCRC24 := uint32(headerBuf[3]) | uint32(headerBuf[4])<<8 | uint32(headerBuf[5])<<16
+	err := sc.verifySegmentHeaderChecksum(headerBuf[:3], readHeaderCRC24)
 	if err != nil {
 		return nil, err
 	}
 
-	headerInt := uint32(header[0]) | uint32(header[1])<<8 | uint32(header[2])<<16
+	headerInt := uint32(headerBuf[0]) | uint32(headerBuf[1])<<8 | uint32(headerBuf[2])<<16
 	payloadLen := int(headerInt & maxSegmentPayloadSize)
 	isSelfContained := (headerInt & (1 << 17)) != 0
 
@@ -278,12 +289,12 @@ func (sc *segmentCodec) decodePayload(r io.Reader, header *segmentHeader) ([]byt
 		return nil, err
 	}
 
-	var crcBuf [4]byte
-	if _, err := io.ReadFull(r, crcBuf[:]); err != nil {
+	crcBuf := sc.readChecksumBuf[:]
+	if _, err := io.ReadFull(r, crcBuf); err != nil {
 		return nil, fmt.Errorf("gocql: failed to read segment payload crc32, err: %w", err)
 	}
 
-	readPayloadCRC32 := binary.LittleEndian.Uint32(crcBuf[:])
+	readPayloadCRC32 := binary.LittleEndian.Uint32(crcBuf)
 	err := sc.verifySegmentPayloadChecksum(payload, readPayloadCRC32)
 	if err != nil {
 		return nil, err
