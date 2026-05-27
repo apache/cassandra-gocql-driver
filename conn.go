@@ -2205,7 +2205,7 @@ func (sr *segmentReader) Read(p []byte) (n int, err error) {
 }
 
 func (sr *segmentReader) readSegment() error {
-	segment, isSelfContained, err := sr.segmentCodec.decode(sr.r)
+	payload, isSelfContained, err := sr.segmentCodec.decode(sr.r)
 	if err != nil {
 		return err
 	}
@@ -2213,35 +2213,35 @@ func (sr *segmentReader) readSegment() error {
 	if isSelfContained {
 		// Reset the buffer to the new segment
 		// It might contain multiple frames so Read should be called multiple times to read all of them
-		sr.readBufferDecoded.Reset(segment)
+		sr.readBufferDecoded.Reset(payload)
 		return nil
 	}
 
-	frame, err := sr.readNonSelfContainedSegment(segment)
+	payload, err = sr.readNonSelfContainedSegment(payload)
 	if err != nil {
 		return err
 	}
 
 	// Contains a single frame so we can read it all at once
-	sr.readBufferDecoded.Reset(frame)
+	sr.readBufferDecoded.Reset(payload)
 	return nil
 }
 
 // Non self-contained segment contains only part of a bigger frame that is split into multiple segments.
 // Calling it results in a full frame being read into a single buffer.
-func (sr *segmentReader) readNonSelfContainedSegment(segment []byte) ([]byte, error) {
-	frameHeader, err := readHeader(bytes.NewBuffer(segment), sr.frameHeaderBuf[:])
+func (sr *segmentReader) readNonSelfContainedSegment(payload []byte) ([]byte, error) {
+	frameHeader, err := readHeader(bytes.NewBuffer(payload), sr.frameHeaderBuf[:])
 	if err != nil {
 		return nil, err
 	}
 
 	// Allocate a buffer to read the rest of the segment into
 	buf := bytes.NewBuffer(make([]byte, 0, frameHeader.length+frameHeadSize))
-	buf.Write(segment)
+	buf.Write(payload)
 
 	// Computing how many bytes of message left to read
-	// len(segment) is the length of the first frame we already read
-	bytesToRead := frameHeader.length - len(segment) + frameHeadSize
+	// len(payload) is the length of the first frame we already read
+	bytesToRead := frameHeader.length - len(payload) + frameHeadSize
 	err = sr.readPartialFrames(buf, bytesToRead)
 	if err != nil {
 		return nil, err
@@ -2261,7 +2261,7 @@ func (sr *segmentReader) readPartialFrames(dstBuf *bytes.Buffer, bytesToRead int
 		}
 		// Expected to receive only non self-contained segments
 		if isSelfContained {
-			return errors.New("gocql: segment reader received unexpected self-contained segment")
+			return errUnexpectedSelfContainedSegment
 		}
 		if totalLength := dstBuf.Len() + len(frame); totalLength > dstBuf.Cap() {
 			return fmt.Errorf("gocql: expected partial frame of length %d, got %d", dstBuf.Cap(), totalLength)
@@ -2288,4 +2288,6 @@ var (
 
 	// Deprecated: Never returned by the driver
 	ErrQueryArgLength = errors.New("gocql: query argument length mismatch")
+
+	errUnexpectedSelfContainedSegment = errors.New("gocql: segment reader received unexpected self-contained segment")
 )
