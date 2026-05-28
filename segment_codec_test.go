@@ -31,6 +31,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
+	"io"
 	"testing"
 
 	"github.com/apache/cassandra-gocql-driver/v2/lz4"
@@ -549,4 +550,104 @@ func Test_segmentCodec_roundtrip_compressed(t *testing.T) {
 			assert.Equal(t, tt.isSelfContained, selfContained)
 		})
 	}
+}
+
+func benchmarkSegmentCodecEncode(b *testing.B, codec segmentCodec) {
+	b.ResetTimer()
+
+	bench := func(b *testing.B, payload []byte) {
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			_, err := codec.encode(payload, true)
+			require.NoError(b, err)
+		}
+	}
+
+	b.Run("128 bytes", func(b *testing.B) {
+		bench(b, make([]byte, 128))
+	})
+
+	b.Run("4K bytes", func(b *testing.B) {
+		bench(b, make([]byte, 4*1024))
+	})
+
+	b.Run("64K bytes", func(b *testing.B) {
+		bench(b, make([]byte, 64*1024))
+	})
+
+	b.Run("max size payload", func(b *testing.B) {
+		bench(b, make([]byte, maxSegmentPayloadSize))
+	})
+}
+
+// Basically a copy of bytes.Reader.Read, but with Reset method that doesn't allocate a new buffer instance.
+type bufReader struct {
+	buf []byte
+	pos int
+}
+
+func (r *bufReader) Read(p []byte) (int, error) {
+	if r.pos >= len(r.buf) {
+		return 0, io.EOF
+	}
+	n := copy(p, r.buf[r.pos:])
+	r.pos += n
+	return n, nil
+}
+
+func (r *bufReader) Reset() {
+	r.pos = 0
+}
+
+func benchmarkSegmentCodecDecode(b *testing.B, codec segmentCodec) {
+	b.ResetTimer()
+
+	bench := func(b *testing.B, payload []byte) {
+		encodedSegment, err := codec.encode(payload, true)
+		require.NoError(b, err)
+		reader := &bufReader{buf: encodedSegment}
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			_, _, err := codec.decode(reader)
+			require.NoError(b, err)
+			reader.Reset()
+		}
+	}
+
+	b.Run("128 bytes", func(b *testing.B) {
+		bench(b, make([]byte, 128))
+	})
+
+	b.Run("4K bytes", func(b *testing.B) {
+		bench(b, make([]byte, 4*1024))
+	})
+
+	b.Run("64K bytes", func(b *testing.B) {
+		bench(b, make([]byte, 64*1024))
+	})
+
+	b.Run("max size payload", func(b *testing.B) {
+		bench(b, make([]byte, maxSegmentPayloadSize))
+	})
+}
+
+func benchmarkSegmentCodec(b *testing.B, codec segmentCodec) {
+	b.Run("encode", func(b *testing.B) {
+		benchmarkSegmentCodecEncode(b, codec)
+	})
+
+	b.Run("decode", func(b *testing.B) {
+		benchmarkSegmentCodecDecode(b, codec)
+	})
+}
+
+
+func Benchmark_segmentCodec(b *testing.B) {
+	b.Run("uncompressed", func(b *testing.B) {
+		benchmarkSegmentCodec(b, newSegmentCodec(nil))
+	})
+
+	b.Run("compressed", func(b *testing.B) {
+		benchmarkSegmentCodec(b, newSegmentCodec(lz4.LZ4Compressor{}))
+	})
 }
