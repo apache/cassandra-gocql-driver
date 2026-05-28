@@ -1679,14 +1679,14 @@ func writeToSegmentWriterOrderedlyAndWait(t *testing.T, sw *segmentWriter, frame
 	scheduled := make(chan struct{}, len(frames))
 	errorCh := make(chan error, len(frames))
 	for i, frame := range frames {
-		go func(frame []byte) {
+		go func(idx int, frame []byte) {
 			scheduled <- struct{}{}
 			n, err := sw.writeContext(context.Background(), frame)
 			errorCh <- err
 			if err == nil {
-				require.Equal(t, len(frame), n, "frame index %d", i)
+				require.Equal(t, len(frame), n, "frame index %d", idx)
 			}
-		}(frame)
+		}(i, frame)
 		<-scheduled
 	}
 
