@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Prevent panic when using a HostFilter and keyspace is not replicated to every DC (CASSGO-122)
+- system.peers fallback doesn't work in some scenarios (CASSGO-126)
 
 ## [2.1.1]
 

@@ -1952,7 +1952,8 @@ func (c *Conn) querySystemPeers(ctx context.Context, version cassVersion) *Iter 
 
 		err := iter.checkErrAndNotFound()
 		if err != nil {
-			if errFrame, ok := err.(errorFrame); ok && errFrame.code == ErrCodeInvalid { // system.peers_v2 not found, try system.peers
+			var requestErr RequestError
+			if errors.As(err, &requestErr) && requestErr.Code() == ErrCodeInvalid { // system.peers_v2 not found, try system.peers
 				c.mu.Lock()
 				c.isSchemaV2 = false
 				c.mu.Unlock()
