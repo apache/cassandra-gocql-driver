@@ -48,6 +48,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/apache/cassandra-gocql-driver/v2/internal/streams"
@@ -731,7 +732,7 @@ func TestStream0(t *testing.T) {
 		logger: NewLogger(LogLevelNone),
 	}
 
-	err := conn.recv(context.Background(), false)
+	err := conn.recv(context.Background())
 	if err == nil {
 		t.Fatal("expected to get an error on stream 0")
 	} else if !strings.HasPrefix(err.Error(), expErr) {
@@ -1171,6 +1172,8 @@ func (srv *TestServer) serve() {
 			break
 		}
 
+		segmentCodec := newSegmentCodec(nil)
+
 		go func(conn net.Conn) {
 			var startupCompleted bool
 			var useProtoV5 bool
@@ -1180,7 +1183,7 @@ func (srv *TestServer) serve() {
 				var reader io.Reader = conn
 
 				if useProtoV5 && startupCompleted {
-					frame, _, err := readUncompressedSegment(conn)
+					frame, _, err := segmentCodec.decode(conn)
 					if err != nil {
 						if errors.Is(err, io.EOF) {
 							return
@@ -1457,7 +1460,8 @@ finish:
 	}
 
 	if *useProtoV5 && *startupCompleted {
-		segment, err := newUncompressedSegment(respFrame.buf, true)
+		segmentCodec := newSegmentCodec(nil)
+		segment, err := segmentCodec.encode(respFrame.buf, true)
 		if err == nil {
 			_, err = conn.Write(segment)
 		}
@@ -1523,8 +1527,10 @@ func TestConnProcessAllFramesInSingleSegment(t *testing.T) {
 			quit:      make(chan struct{}),
 		},
 		writeTimeout: time.Second * 10,
-		session:      &Session{types: GlobalTypes},
-		logger:       &defaultLogger{},
+		session: &Session{
+			types: GlobalTypes,
+		},
+		logger: &defaultLogger{},
 	}
 
 	call1 := &callReq{
@@ -1550,6 +1556,8 @@ func TestConnProcessAllFramesInSingleSegment(t *testing.T) {
 		},
 	}
 
+	c.r = newSegmentReader(c.r, newSegmentCodec(nil))
+
 	framer1 := newFramer(nil, protoVersion5, GlobalTypes)
 	err = req.buildFrame(framer1, 1)
 	require.NoError(t, err)
@@ -1563,10 +1571,11 @@ func TestConnProcessAllFramesInSingleSegment(t *testing.T) {
 		buf = append(buf, framer1.buf...)
 		buf = append(buf, framer2.buf...)
 
-		uncompressedSegment, err := newUncompressedSegment(buf, true)
+		segmentCodec := newSegmentCodec(nil)
+		segment, err := segmentCodec.encode(buf, true)
 		require.NoError(t, err)
 
-		_, err = client.Write(uncompressedSegment)
+		_, err = client.Write(segment)
 		require.NoError(t, err)
 	}()
 
@@ -1575,7 +1584,7 @@ func TestConnProcessAllFramesInSingleSegment(t *testing.T) {
 
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- c.recvSegment(ctx)
+		errCh <- c.recv(ctx)
 	}()
 
 	go func() {
@@ -1596,4 +1605,467 @@ func TestConnProcessAllFramesInSingleSegment(t *testing.T) {
 	case err := <-errCh:
 		require.NoError(t, err)
 	}
+}
+
+func TestSegmentWriter_MultipleFrames(t *testing.T) {
+	server, client, err := tcpConnPair()
+	require.NoError(t, err)
+	defer server.Close()
+	defer client.Close()
+
+	sw := newSegmentWriter(&deadlineContextWriter{
+		w:         client,
+		timeout:   time.Second * 2,
+		semaphore: make(chan struct{}, 1),
+		quit:      make(chan struct{}),
+	}, time.Microsecond*400, make(chan struct{}), nil)
+	go func() {
+		_, err := sw.writeContext(context.Background(), []byte("one"))
+		require.NoError(t, err)
+	}()
+
+	go func() {
+		_, err := sw.writeContext(context.Background(), []byte("two"))
+		require.NoError(t, err)
+	}()
+
+	readCh := make(chan []byte)
+	go func() {
+		defer close(readCh)
+		segmentCodec := newSegmentCodec(nil)
+		body, isSelfContained, err := segmentCodec.decode(server)
+		require.NoError(t, err)
+		require.True(t, isSelfContained)
+		readCh <- body
+	}()
+
+	select {
+	case result := <-readCh:
+		// Order of frames is not guaranteed, so we need to check both possible orders
+		if !assert.ObjectsAreEqual([]byte("onetwo"), result) && !assert.ObjectsAreEqual([]byte("twoone"), result) {
+			t.Fatal("Expected to read 'onetwo' or 'twoone', but got: ", string(result))
+		}
+	case <-time.After(time.Second * 5):
+		t.Fatal("Timed out waiting for segment to be read")
+	}
+}
+
+// recordingContextWriter captures writes for assertions.
+type recordingContextWriter struct {
+	mu              sync.Mutex
+	recordedBuffers [][]byte
+	returnErr       error
+}
+
+func (r *recordingContextWriter) writeContext(ctx context.Context, p []byte) (int, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.returnErr != nil {
+		return 0, r.returnErr
+	}
+	r.recordedBuffers = append(r.recordedBuffers, p)
+	return len(p), nil
+}
+
+func createTestSegmentWriter(writer contextWriter) (*segmentWriter, context.CancelFunc) {
+	ctx, cancel := context.WithCancel(context.Background())
+	segmentWriter := newSegmentWriter(writer, 10*time.Millisecond, ctx.Done(), nil)
+	return segmentWriter, cancel
+}
+
+// writeToSegmentWriterOrderedlyAndWait writes frames to the segment writer
+// in the exact order and waits for all frames to be written.
+func writeToSegmentWriterOrderedlyAndWait(t *testing.T, sw *segmentWriter, frames [][]byte) {
+	scheduled := make(chan struct{}, len(frames))
+	errorCh := make(chan error, len(frames))
+	for i, frame := range frames {
+		go func(idx int, frame []byte) {
+			scheduled <- struct{}{}
+			n, err := sw.writeContext(context.Background(), frame)
+			errorCh <- err
+			if err == nil {
+				require.Equal(t, len(frame), n, "frame index %d", idx)
+			}
+		}(i, frame)
+		<-scheduled
+	}
+
+	// Iterating not over the errorCh to not block
+	for i := 0; i < len(frames); i++ {
+		require.NoError(t, <-errorCh)
+	}
+
+	close(scheduled)
+	close(errorCh)
+}
+
+func decodeSegmentFromBytes(t *testing.T, data []byte) ([]byte, bool) {
+	t.Helper()
+	codec := newSegmentCodec(nil)
+	payload, selfContained, err := codec.decode(bytes.NewReader(data))
+	require.NoError(t, err)
+	return payload, selfContained
+}
+
+// buildTestFrame builds a test frame with exact length
+func buildTestFrame(t *testing.T, length int) []byte {
+	t.Helper()
+	framer := newFramer(nil, protoVersion5, GlobalTypes)
+	framer.buf = make([]byte, length)
+	require.NoError(t, framer.finish())
+	return framer.buf
+}
+
+func buildResponseTestFrame(t *testing.T, length int) []byte {
+	t.Helper()
+	framer := newFramer(nil, protoVersion5, GlobalTypes)
+	framer.buf = make([]byte, length)
+	framer.writeHeader(0, opResult, 0)
+	framer.writeInt(resultKindVoid)
+	// Response frame direction
+	framer.buf[0] = protoVersion5 | protoDirectionMask
+	framer.buf = framer.buf[:length]
+	require.NoError(t, framer.finish())
+	return framer.buf
+}
+
+func Test_segmentWriter_writeContext(t *testing.T) {
+	t.Run("context canceled before enqueue", func(t *testing.T) {
+		rec := &recordingContextWriter{}
+		sw, cancel := createTestSegmentWriter(rec)
+		defer cancel()
+
+		ctx, ctxCancel := context.WithCancel(context.Background())
+		// Cancel the context before the write is enqueued.
+		ctxCancel()
+
+		n, err := sw.writeContext(ctx, []byte("test"))
+		require.ErrorIs(t, err, context.Canceled)
+		assert.Equal(t, 0, n)
+	})
+
+	t.Run("connection closed before enqueue", func(t *testing.T) {
+		rec := &recordingContextWriter{}
+		sw, stop := createTestSegmentWriter(rec)
+		// calling stop stops the segment writer.
+		stop()
+
+		n, err := sw.writeContext(context.Background(), []byte("test"))
+		require.ErrorIs(t, err, ErrConnectionClosed)
+		assert.Equal(t, 0, n)
+	})
+
+	t.Run("success write small frame", func(t *testing.T) {
+		rec := &recordingContextWriter{}
+		sw, cancel := createTestSegmentWriter(rec)
+		defer cancel()
+
+		testData := []byte("test")
+
+		n, err := sw.writeContext(context.Background(), testData)
+		require.NoError(t, err)
+		require.Equal(t, len(testData), n)
+		require.Len(t, rec.recordedBuffers, 1)
+
+		payload, selfContained := decodeSegmentFromBytes(t, rec.recordedBuffers[0])
+		require.True(t, selfContained)
+		require.Equal(t, testData, payload)
+	})
+
+	t.Run("success write multiple frames", func(t *testing.T) {
+		rec := &recordingContextWriter{}
+		sw, cancel := createTestSegmentWriter(rec)
+		defer cancel()
+
+		testFrame1 := []byte("test1")
+		testFrame2 := []byte("test2")
+		writeToSegmentWriterOrderedlyAndWait(t, sw, [][]byte{testFrame1, testFrame2})
+
+		// Expected a single segment with the two frames concatenated.
+		require.Len(t, rec.recordedBuffers, 1)
+
+		payload, selfContained := decodeSegmentFromBytes(t, rec.recordedBuffers[0])
+		require.True(t, selfContained)
+		require.Equal(t, append(testFrame1, testFrame2...), payload)
+	})
+
+	t.Run("success write small frame that does not fit current segment", func(t *testing.T) {
+		rec := &recordingContextWriter{}
+		sw, cancel := createTestSegmentWriter(rec)
+		defer cancel()
+
+		// Small enough frame to fit into a single segment
+		testFrame1 := buildTestFrame(t, maxSegmentPayloadSize-50)
+		// This frame doesn't fit current segment so should be written to a new one
+		testFrame2 := buildTestFrame(t, 100)
+		writeToSegmentWriterOrderedlyAndWait(t, sw, [][]byte{testFrame1, testFrame2})
+
+		require.Len(t, rec.recordedBuffers, 2)
+
+		payload1, selfContained1 := decodeSegmentFromBytes(t, rec.recordedBuffers[0])
+		payload2, selfContained2 := decodeSegmentFromBytes(t, rec.recordedBuffers[1])
+		// Both segment should be self-contained because they both contain a full frame
+		require.True(t, selfContained1, "should be self-contained")
+		require.True(t, selfContained2, "should be self-contained")
+		require.Equal(t, testFrame1, payload1)
+		require.Equal(t, testFrame2, payload2)
+	})
+
+	t.Run("success write big frame", func(t *testing.T) {
+		rec := &recordingContextWriter{}
+		sw, cancel := createTestSegmentWriter(rec)
+		defer cancel()
+
+		// big enough frame to be split into multiple segments.
+		testFrame := buildTestFrame(t, maxSegmentPayloadSize+10)
+		n, err := sw.writeContext(context.Background(), testFrame)
+		require.NoError(t, err)
+		require.Equal(t, len(testFrame), n)
+		require.Len(t, rec.recordedBuffers, 2)
+
+		payload1, selfContained1 := decodeSegmentFromBytes(t, rec.recordedBuffers[0])
+		payload2, selfContained2 := decodeSegmentFromBytes(t, rec.recordedBuffers[1])
+		// Expected non-self-contained segments because the frame is too big to fit into a single segment.
+		require.False(t, selfContained1, "should not be self-contained")
+		require.False(t, selfContained2, "should not be self-contained")
+		require.Equal(t, testFrame, append(payload1, payload2...))
+	})
+
+	t.Run("success write multiple big frames", func(t *testing.T) {
+		rec := &recordingContextWriter{}
+		sw, cancel := createTestSegmentWriter(rec)
+		defer cancel()
+
+		testFrame1 := buildTestFrame(t, maxSegmentPayloadSize+10)
+		testFrame2 := buildTestFrame(t, maxSegmentPayloadSize+10)
+		writeToSegmentWriterOrderedlyAndWait(t, sw, [][]byte{testFrame1, testFrame2})
+
+		require.Len(t, rec.recordedBuffers, 4)
+
+		payload1, selfContained1 := decodeSegmentFromBytes(t, rec.recordedBuffers[0])
+		payload2, selfContained2 := decodeSegmentFromBytes(t, rec.recordedBuffers[1])
+		payload3, selfContained3 := decodeSegmentFromBytes(t, rec.recordedBuffers[2])
+		payload4, selfContained4 := decodeSegmentFromBytes(t, rec.recordedBuffers[3])
+		// Expected non-self-contained segments because the frames are too big to fit into a single segment.
+		require.False(t, selfContained1, "should not be self-contained")
+		require.False(t, selfContained2, "should not be self-contained")
+		require.False(t, selfContained3, "should not be self-contained")
+		require.False(t, selfContained4, "should not be self-contained")
+		require.Equal(t, testFrame1, append(payload1, payload2...))
+		require.Equal(t, testFrame2, append(payload3, payload4...))
+	})
+
+	t.Run("flush current segment before writing frame that does not fit", func(t *testing.T) {
+		rec := &recordingContextWriter{}
+		sw, cancel := createTestSegmentWriter(rec)
+		defer cancel()
+
+		// Small enough frame to fit into a single segment
+		testFrame1 := buildTestFrame(t, 50)
+		// This is a big frame so it should flush the current segment before writing it.
+		testFrame2 := buildTestFrame(t, maxSegmentPayloadSize+100)
+
+		writeToSegmentWriterOrderedlyAndWait(t, sw, [][]byte{testFrame1, testFrame2})
+		require.Len(t, rec.recordedBuffers, 3)
+
+		payload1, selfContained1 := decodeSegmentFromBytes(t, rec.recordedBuffers[0])
+		payload2, selfContained2 := decodeSegmentFromBytes(t, rec.recordedBuffers[1])
+		payload3, selfContained3 := decodeSegmentFromBytes(t, rec.recordedBuffers[2])
+		require.True(t, selfContained1, "should be self-contained")
+		require.False(t, selfContained2, "should not be self-contained")
+		require.False(t, selfContained3, "should not be self-contained")
+		require.Equal(t, testFrame1, payload1)
+		require.Equal(t, testFrame2, append(payload2, payload3...))
+	})
+
+	t.Run("failed to write segment broadcasted to all write requests", func(t *testing.T) {
+		expectedErr := errors.New("test error")
+		rec := &recordingContextWriter{
+			returnErr: expectedErr,
+		}
+		sw, cancel := createTestSegmentWriter(rec)
+		defer cancel()
+
+		testFrame1 := buildTestFrame(t, 20)
+		testFrame2 := buildTestFrame(t, 30)
+
+		resultCh := make(chan writeResult, 2)
+
+		go func() {
+			n, err := sw.writeContext(context.Background(), testFrame1)
+			resultCh <- writeResult{n: n, err: err}
+		}()
+		go func() {
+			n, err := sw.writeContext(context.Background(), testFrame2)
+			resultCh <- writeResult{n: n, err: err}
+		}()
+
+		for i := 0; i < 2; i++ {
+			result := <-resultCh
+			require.ErrorIs(t, result.err, expectedErr)
+			require.Equal(t, 0, result.n)
+		}
+	})
+
+	t.Run("failed to write a big frame", func(t *testing.T) {
+		expectedErr := errors.New("test error")
+		rec := &recordingContextWriter{
+			returnErr: expectedErr,
+		}
+		sw, cancel := createTestSegmentWriter(rec)
+		defer cancel()
+
+		testFrame := buildTestFrame(t, maxSegmentPayloadSize+100)
+		n, err := sw.writeContext(context.Background(), testFrame)
+		require.ErrorIs(t, err, expectedErr)
+		require.Equal(t, 0, n)
+	})
+}
+
+type recordingConnReader struct {
+	readCalls                int
+	buf                      *bytes.Buffer
+	returnErr                error
+	returnErrAfterCallsCount int
+}
+
+var _ ConnReader = (*recordingConnReader)(nil)
+
+func (r *recordingConnReader) Read(p []byte) (n int, err error) {
+	if r.returnErr != nil {
+		if r.returnErrAfterCallsCount == 0 || r.readCalls == r.returnErrAfterCallsCount {
+			return 0, r.returnErr
+		}
+	}
+	r.readCalls++
+	return r.buf.Read(p)
+}
+
+func (r *recordingConnReader) Close() error {
+	return nil
+}
+
+func (r *recordingConnReader) Write(p []byte) (n int, err error)  { return 0, nil }
+func (r *recordingConnReader) LocalAddr() net.Addr                { return nil }
+func (r *recordingConnReader) RemoteAddr() net.Addr               { return nil }
+func (r *recordingConnReader) SetDeadline(t time.Time) error      { return nil }
+func (r *recordingConnReader) SetReadDeadline(t time.Time) error  { return nil }
+func (r *recordingConnReader) SetWriteDeadline(t time.Time) error { return nil }
+func (r *recordingConnReader) SetTimeout(timeout time.Duration)   {}
+func (r *recordingConnReader) GetTimeout() time.Duration          { return 0 }
+
+func encodeSegment(t *testing.T, payload []byte, selfContained bool) []byte {
+	t.Helper()
+	codec := newSegmentCodec(nil)
+	segment, err := codec.encode(payload, selfContained)
+	require.NoError(t, err)
+	return segment
+}
+
+func createTestConnReaderMockFromBytes(buf []byte) *recordingConnReader {
+	return &recordingConnReader{
+		buf:       bytes.NewBuffer(buf),
+		readCalls: 0,
+	}
+}
+
+// readFrameFromSegmentReader reads a frame from the segment reader and returns the frame header and body as a single buffer.
+func readFrameFromSegmentReader(t *testing.T, sr *segmentReader) []byte {
+	t.Helper()
+	var readBuf [frameHeadSize]byte
+	head, err := readHeader(sr, readBuf[:])
+	require.NoError(t, err, "expected to read frame header from the segment reader")
+	framer := newFramer(nil, protoVersion5, GlobalTypes)
+	err = framer.readFrame(sr, &head)
+	require.NoError(t, err, "expected to read frame body from the segment reader")
+	// Returning the frame header and body as a single buffer
+	return append(readBuf[:frameHeadSize], framer.buf[:head.length]...)
+}
+
+func Test_segmentReader_Read(t *testing.T) {
+	t.Run("read a frame from a self-contained segment", func(t *testing.T) {
+		payload := buildResponseTestFrame(t, 20)
+		segment := encodeSegment(t, payload, true)
+
+		r := createTestConnReaderMockFromBytes(segment)
+		sr := newSegmentReader(r, newSegmentCodec(nil))
+
+		frame := readFrameFromSegmentReader(t, sr)
+		// For a single segment read segmentCodec calls Read method 3 times, so we expect 3 read calls to the underlying reader.
+		require.Equal(t, 3, r.readCalls, "expected to read 3 calls to the underlying reader")
+		require.Equal(t, payload, frame)
+	})
+
+	t.Run("read multiple frames from a self-contained segment", func(t *testing.T) {
+		payload1 := buildResponseTestFrame(t, 20)
+		payload2 := buildResponseTestFrame(t, 30)
+		segment := encodeSegment(t, append(payload1, payload2...), true)
+
+		r := createTestConnReaderMockFromBytes(segment)
+		sr := newSegmentReader(r, newSegmentCodec(nil))
+
+		frame1 := readFrameFromSegmentReader(t, sr)
+		frame2 := readFrameFromSegmentReader(t, sr)
+
+		require.Equal(t, 3, r.readCalls, "expected to read 3 calls to the underlying reader")
+		require.Equal(t, payload1, frame1)
+		require.Equal(t, payload2, frame2)
+	})
+
+	t.Run("read frame from a non-self-contained segment", func(t *testing.T) {
+		payload := buildResponseTestFrame(t, maxSegmentPayloadSize+100)
+		segment1 := encodeSegment(t, payload[:maxSegmentPayloadSize], false)
+		segment2 := encodeSegment(t, payload[maxSegmentPayloadSize:], false)
+
+		r := createTestConnReaderMockFromBytes(append(segment1, segment2...))
+		sr := newSegmentReader(r, newSegmentCodec(nil))
+
+		frame := readFrameFromSegmentReader(t, sr)
+		require.Equal(t, payload, frame)
+		require.Equal(t, 6, r.readCalls, "expected to read 6 calls to the underlying reader")
+	})
+
+	t.Run("unexpected self-contained segment", func(t *testing.T) {
+		payload := buildResponseTestFrame(t, maxSegmentPayloadSize+100)
+		segment1 := encodeSegment(t, payload[:maxSegmentPayloadSize], false)
+		// Unexpected self-contained segment
+		segment2 := encodeSegment(t, payload[maxSegmentPayloadSize:], true)
+
+		r := createTestConnReaderMockFromBytes(append(segment1, segment2...))
+		sr := newSegmentReader(r, newSegmentCodec(nil))
+
+		var headerBuf [frameHeadSize]byte
+		_, err := sr.Read(headerBuf[:])
+		require.ErrorIs(t, err, errUnexpectedSelfContainedSegment)
+	})
+
+	t.Run("error reading from the underlying reader", func(t *testing.T) {
+		expectedErr := errors.New("test error")
+		r := createTestConnReaderMockFromBytes([]byte{})
+		r.returnErr = expectedErr
+		sr := newSegmentReader(r, newSegmentCodec(nil))
+
+		var headerBuf [frameHeadSize]byte
+		_, err := sr.Read(headerBuf[:])
+		require.ErrorIs(t, err, expectedErr)
+	})
+
+	t.Run("error reading partial  from underlying reader", func(t *testing.T) {
+		payload := buildResponseTestFrame(t, maxSegmentPayloadSize+100)
+		segment1 := encodeSegment(t, payload[:maxSegmentPayloadSize], false)
+		// Unexpected self-contained segment
+		segment2 := encodeSegment(t, payload[maxSegmentPayloadSize:], true)
+
+		expectedErr := errors.New("test error")
+
+		r := createTestConnReaderMockFromBytes(append(segment1, segment2...))
+		r.returnErrAfterCallsCount = 3
+		r.returnErr = expectedErr
+		sr := newSegmentReader(r, newSegmentCodec(nil))
+
+		var headerBuf [frameHeadSize]byte
+		_, err := sr.Read(headerBuf[:])
+		require.ErrorIs(t, err, expectedErr)
+		require.Equal(t, 3, r.readCalls, "expected to read 3 calls to the underlying reader")
+	})
 }

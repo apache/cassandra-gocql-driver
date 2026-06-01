@@ -3300,7 +3300,7 @@ func TestNegativeStream(t *testing.T) {
 		return f.finish()
 	})
 
-	frame, err := conn.exec(context.Background(), writer, nil)
+	frame, err := conn.execInternal(context.Background(), writer, nil)
 	if err == nil {
 		t.Fatalf("expected to get an error on stream %d", stream)
 	} else if frame != nil {
@@ -3311,7 +3311,9 @@ func TestNegativeStream(t *testing.T) {
 func TestManualQueryPaging(t *testing.T) {
 	const rowsToInsert = 5
 
-	session := createSession(t)
+	session := createSession(t, func(cfg *ClusterConfig) {
+		cfg.Logger = NewLogger(LogLevelDebug)
+	})
 	defer session.Close()
 
 	if err := createTable(session, "CREATE TABLE gocql_test.testManualPaging (id int, count int, PRIMARY KEY (id))"); err != nil {
@@ -4003,18 +4005,18 @@ func TestQueryCompressionNotWorthIt(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
 
-	if err := createTable(session, "CREATE TABLE IF NOT EXISTS gocql_test.compression_now_worth_it(id int, text_col text, PRIMARY KEY (id))"); err != nil {
+	if err := createTable(session, "CREATE TABLE IF NOT EXISTS gocql_test.compression_not_worth_it(id int, text_col text, PRIMARY KEY (id))"); err != nil {
 		t.Fatal(err)
 	}
 
 	str := "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890!@#$%^&*()_+"
-	err := session.Query("INSERT INTO gocql_test.large_size_query (id, text_col) VALUES (?, ?)", "1", str).Exec()
+	err := session.Query("INSERT INTO gocql_test.compression_not_worth_it (id, text_col) VALUES (?, ?)", "1", str).Exec()
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	var result string
-	err = session.Query("SELECT text_col FROM gocql_test.large_size_query").Scan(&result)
+	err = session.Query("SELECT text_col FROM gocql_test.compression_not_worth_it").Scan(&result)
 	if err != nil {
 		t.Fatal(err)
 	}
