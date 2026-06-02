@@ -171,6 +171,7 @@ type Conn struct {
 	w contextWriter
 
 	writeTimeout   time.Duration
+	requestTimeout time.Duration // Request timeout, used for setting up request timers
 	cfg            *ConnConfig
 	frameObserver  FrameHeaderObserver
 	streamObserver StreamObserver
@@ -279,6 +280,7 @@ func (s *Session) dialWithoutObserver(ctx context.Context, host *HostInfo, cfg *
 		logger:         logger,
 		streamObserver: s.streamObserver,
 		writeTimeout:   writeTimeout,
+		requestTimeout: cfg.ConnectTimeout,
 	}
 
 	if err := c.init(ctx, dialedHost); err != nil {
@@ -312,6 +314,7 @@ func (c *Conn) init(ctx context.Context, dialedHost *DialedHost) error {
 	}
 
 	c.r.SetTimeout(c.cfg.Timeout)
+	c.requestTimeout = c.cfg.Timeout
 
 	// dont coalesce startup frames
 	if c.session.cfg.WriteCoalesceWaitTime > 0 && !c.cfg.disableCoalesce && !dialedHost.DisableCoalesce {
@@ -335,8 +338,8 @@ type startupCoordinator struct {
 
 func (s *startupCoordinator) setupConn(ctx context.Context) error {
 	var cancel context.CancelFunc
-	if s.conn.r.GetTimeout() > 0 {
-		ctx, cancel = context.WithTimeout(ctx, s.conn.r.GetTimeout())
+	if s.conn.requestTimeout > 0 {
+		ctx, cancel = context.WithTimeout(ctx, s.conn.requestTimeout)
 	} else {
 		ctx, cancel = context.WithCancel(ctx)
 	}
@@ -688,8 +691,9 @@ func (c *Conn) processFrame(ctx context.Context, r io.Reader) error {
 
 	// read a full header, ignore timeouts, as this is being ran in a loop
 	// TODO: TCP level deadlines? or just query level deadlines?
-	if c.r.GetTimeout() > 0 {
-		c.r.SetReadDeadline(time.Time{})
+	readTimeout := c.r.GetTimeout()
+	if readTimeout > 0 {
+		c.r.SetTimeout(0)
 	}
 
 	headStartTime := time.Now()
@@ -698,6 +702,11 @@ func (c *Conn) processFrame(ctx context.Context, r io.Reader) error {
 	headEndTime := time.Now()
 	if err != nil {
 		return err
+	}
+
+	// Set timeout back for reading frame body
+	if readTimeout > 0 {
+		c.r.SetTimeout(readTimeout)
 	}
 
 	if c.frameObserver != nil {
@@ -802,12 +811,24 @@ func (c *Conn) recvSegment(ctx context.Context) error {
 		err             error
 	)
 
+	// Read segment without timeout, as this is being run in a loop waiting for the next segment
+	readTimeout := c.r.GetTimeout()
+	if readTimeout > 0 {
+		c.r.SetTimeout(0)
+	}
+
 	// Read frame based on compression
 	if c.compressor != nil {
 		frame, isSelfContained, err = readCompressedSegment(c.r, c.compressor)
 	} else {
 		frame, isSelfContained, err = readUncompressedSegment(c.r)
 	}
+
+	// Restore timeout for subsequent segment reads in multi-segment frames
+	if readTimeout > 0 {
+		c.r.SetTimeout(readTimeout)
+	}
+
 	if err != nil {
 		return err
 	}
@@ -908,6 +929,8 @@ func (c *connReader) Read(p []byte) (n int, err error) {
 		var nn int
 		if c.timeout > 0 {
 			c.conn.SetReadDeadline(time.Now().Add(c.timeout))
+		} else if c.timeout == 0 {
+			c.conn.SetReadDeadline(time.Time{})
 		}
 
 		nn, err = io.ReadFull(c.r, p[n:])
@@ -1309,7 +1332,7 @@ func (c *Conn) execInternal(ctx context.Context, req frameBuilder, tracer Tracer
 	}
 
 	var timeoutCh <-chan time.Time
-	if timeout := c.r.GetTimeout(); timeout > 0 {
+	if c.requestTimeout > 0 {
 		if call.timer == nil {
 			call.timer = time.NewTimer(0)
 			<-call.timer.C
@@ -1322,7 +1345,7 @@ func (c *Conn) execInternal(ctx context.Context, req frameBuilder, tracer Tracer
 			}
 		}
 
-		call.timer.Reset(timeout)
+		call.timer.Reset(c.requestTimeout)
 		timeoutCh = call.timer.C
 	}
 

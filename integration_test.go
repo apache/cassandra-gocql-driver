@@ -977,3 +977,54 @@ func TestSliceMapMapScanCollectionTypes(t *testing.T) {
 		})
 	}
 }
+
+// TestSmallTimeoutNoPoolErrors verifies that small Session.Timeout values
+// don't cause connections to timeout and reconnect constantly. This is a
+// regression test for https://github.com/apache/cassandra-gocql-driver/issues/1919
+//
+// The issue was that the timeout was being applied to frame header reads,
+// causing connections to timeout while waiting for the next frame. The fix
+// ensures frame headers are read without timeout, while frame bodies are
+// read with timeout.
+func TestSmallTimeoutNoPoolErrors(t *testing.T) {
+	// Create a test logger to capture log messages
+	logger := newTestLogger(LogLevelDebug)
+	defer func() {
+		t.Log(logger.String())
+	}()
+
+	cluster := createCluster()
+	cluster.ConnectTimeout = 10 * time.Second
+	cluster.Timeout = 750 * time.Millisecond
+	cluster.NumConns = 1
+	cluster.Logger = logger
+
+	db, err := cluster.CreateSession()
+	if err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+	defer db.Close()
+
+	// Wait for connections to sit idle
+	// If the bug exists, connections will timeout while waiting for frame headers
+	// and "Pool connection error" messages will be logged repeatedly
+	time.Sleep(5 * time.Second)
+
+	// Get log output for analysis
+	logOutput := strings.ToLower(logger.String())
+
+	// Count successful connection messages - should be exactly NumConns * number of nodes
+	connectedCount := strings.Count(logOutput, "pool connected to node")
+	if connectedCount != *clusterSize*cluster.NumConns {
+		t.Fatalf("Expected exactly %d 'Pool connected to node' messages, got %d:\n%s",
+			*clusterSize*cluster.NumConns, connectedCount, logOutput)
+	}
+
+	// Count error messages - should be zero
+	// With the bug, we'd see many errors as connections constantly timeout and reconnect
+	errorCount := strings.Count(logOutput, "pool connection error")
+	if errorCount > 0 {
+		t.Fatalf("Found %d 'Pool connection error' messages - connections are timing out and reconnecting:\n%s",
+			errorCount, logOutput)
+	}
+}

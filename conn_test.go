@@ -287,7 +287,9 @@ func TestTimeout(t *testing.T) {
 	srv := NewTestServer(t, defaultProto, ctx)
 	defer srv.Stop()
 
-	db, err := newTestSession(defaultProto, srv.Address)
+	cluster := testCluster(defaultProto, srv.Address)
+	cluster.Timeout = 2 * time.Second
+	db, err := cluster.CreateSession()
 	if err != nil {
 		t.Fatalf("NewCluster: %v", err)
 	}
@@ -306,12 +308,18 @@ func TestTimeout(t *testing.T) {
 		}
 	}()
 
-	if err := db.Query("kill").WithContext(ctx).Exec(); err == nil {
+	now := time.Now()
+	err = db.Query("timeout").ExecContext(ctx)
+	if err == nil {
 		t.Fatal("expected error got nil")
 	}
 	cancel()
-
 	wg.Wait()
+
+	elapsed := time.Since(now)
+	if elapsed < 1*time.Second || elapsed > 4*time.Second {
+		t.Fatalf("timeout is not respected (took %v)", elapsed.String())
+	}
 }
 
 func TestCancel(t *testing.T) {
@@ -329,13 +337,11 @@ func TestCancel(t *testing.T) {
 	}
 	defer db.Close()
 
-	qry := db.Query("timeout").WithContext(ctx)
-
 	// Make sure we finish the query without leftovers
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
-		err = qry.Exec()
+		err = db.Query("timeout").ExecContext(ctx)
 		wg.Done()
 	}()
 
@@ -720,9 +726,14 @@ func TestStream0(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	clientConn, serverConn := net.Pipe()
+	defer clientConn.Close()
+	defer serverConn.Close()
+
 	conn := &Conn{
 		r: &connReader{
-			r: bufio.NewReader(&buf),
+			r:    bufio.NewReader(&buf),
+			conn: clientConn,
 		},
 		streams: streams.New(protoVersion4),
 		session: &Session{

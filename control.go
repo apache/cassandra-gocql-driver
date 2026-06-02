@@ -361,7 +361,8 @@ func (c *controlConn) setupConn(conn *Conn, sessionInit bool) error {
 	c.conn.Store(ch)
 
 	c.session.logger.Info("Control connection connected to host.",
-		NewLogFieldIP("host_addr", host.ConnectAddress()), NewLogFieldString("host_id", host.HostID()))
+		NewLogFieldIP("host_addr", host.ConnectAddress()), NewLogFieldString("host_id", host.HostID()),
+		NewLogFieldInt("protocol_version", c.session.cfg.ProtoVersion))
 
 	if c.session.initialized() {
 		refreshErr := c.session.schemaDescriber.refreshSchemaMetadata()

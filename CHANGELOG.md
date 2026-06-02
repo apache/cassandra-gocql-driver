@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Prevent panic when using a HostFilter and keyspace is not replicated to every DC (CASSGO-122)
 - system.peers fallback doesn't work in some scenarios (CASSGO-126)
+- Many "Pool connection error" with small Session.Timeout (CASSGO-125)
 
 ## [2.1.1]
 
