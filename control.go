@@ -291,6 +291,7 @@ func (c *controlConn) connect(hosts []*HostInfo, sessionInit bool) error {
 		}
 		err = c.setupConn(conn, sessionInit)
 		if err == nil {
+			conn.finalizeConnection()
 			break
 		}
 		c.session.logger.Info("Control connection setup failed after connecting to host.",
@@ -360,6 +361,11 @@ func (c *controlConn) setupConn(conn *Conn, sessionInit bool) error {
 
 	c.conn.Store(ch)
 
+	// NOTE: caller must invoke conn.finalizeConnection() after a successful return
+	// from setupConn (matches upstream scylladb/gocql). Switches the conn from
+	// ConnectTimeout-bound init mode to operational ReadTimeout/WriteTimeout/
+	// Metadata.SystemRequestTimeout.
+
 	c.session.logger.Info("Control connection connected to host.",
 		NewLogFieldIP("host_addr", host.ConnectAddress()), NewLogFieldString("host_id", host.HostID()))
 
@@ -402,7 +408,7 @@ func (c *controlConn) registerEvents(conn *Conn) error {
 	framer, err := conn.exec(context.Background(),
 		&writeRegisterFrame{
 			events: events,
-		}, nil)
+		}, nil, conn.cfg.ConnectTimeout)
 	if err != nil {
 		return err
 	}
@@ -493,6 +499,7 @@ func (c *controlConn) attemptReconnectToAnyOfHosts(hosts []*HostInfo) (*Conn, er
 		}
 		err = c.setupConn(conn, false)
 		if err == nil {
+			conn.finalizeConnection()
 			break
 		}
 		c.session.logger.Info("During reconnection, control connection setup failed after connecting to host.",
@@ -524,7 +531,7 @@ func (c *controlConn) HandleError(conn *Conn, err error, closed bool) {
 		NewLogFieldString("host_id", conn.host.HostID()),
 		NewLogFieldError("err", err))
 
-	c.reconnect()
+	go c.reconnect()
 }
 
 func (c *controlConn) getConn() *connHost {
@@ -537,7 +544,12 @@ func (c *controlConn) writeFrame(w frameBuilder) (frame, error) {
 		return nil, errNoControl
 	}
 
-	framer, err := ch.conn.exec(context.Background(), w, nil)
+	// controlConn.writeFrame is called from heartBeat and other internal
+	// control-conn operations. For consistency with upstream scylladb/gocql, the
+	// client-side timeout is taken from Metadata.SystemRequestTimeout — the same
+	// budget caps queries to schema/system tables, which also go through the
+	// control connection.
+	framer, err := ch.conn.exec(context.Background(), w, nil, c.session.cfg.Metadata.SystemRequestTimeout)
 	if err != nil {
 		return nil, err
 	}
@@ -574,9 +586,27 @@ func (c *controlConn) withConn(fn func(*Conn) *Iter) *Iter {
 	})
 }
 
-// query will return nil if the connection is closed or nil
+// query will return nil if the connection is closed or nil.
+//
+// control-conn queries target schema/system tables (`system.local`,
+// `system.peers[_v2]`, `system_schema.*`) and logically belong to the same
+// budget as Conn.querySystem. The per-request timeout is therefore taken from
+// Metadata.SystemRequestTimeout, not ClusterConfig.Timeout — otherwise an
+// aggressive user Timeout (typically tens or hundreds of milliseconds) would
+// cut off schema discovery on large keyspaces.
+//
+// controlConn.query is only called in the runtime phase (via
+// schemaDescriber.fetchSchema/fetchAllSchema/refreshSchemas and
+// Conn.awaitSchemaAgreement) — the connection has already passed
+// finalizeConnection. The init path goes through Conn.querySystemLocal directly
+// and is capped at ConnectTimeout via Conn.systemRequestTimeout.
+//
+// Important: WithRequestTimeout must be set before newInternalQuery; otherwise
+// requestTimeout is snapshotted from ClusterConfig.Timeout into queryOptions
+// before we override it.
 func (c *controlConn) query(statement string, values ...interface{}) (iter *Iter) {
-	q := c.session.Query(statement, values...).Consistency(One).RoutingKey([]byte{}).Trace(nil)
+	q := c.session.Query(statement, values...).Consistency(One).RoutingKey([]byte{}).Trace(nil).
+		WithRequestTimeout(c.session.cfg.Metadata.SystemRequestTimeout)
 	qry := newInternalQuery(q, context.TODO())
 
 	for {

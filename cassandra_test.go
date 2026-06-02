@@ -1724,7 +1724,7 @@ func TestQueryInfo(t *testing.T) {
 	defer session.Close()
 
 	conn := getRandomConn(t, session)
-	info, err := conn.prepareStatement(context.Background(), "SELECT release_version, host_id FROM system.local WHERE key = ?", nil, conn.currentKeyspace)
+	info, err := conn.prepareStatement(context.Background(), "SELECT release_version, host_id FROM system.local WHERE key = ?", nil, conn.currentKeyspace, time.Second)
 
 	if err != nil {
 		t.Fatalf("Failed to execute query for preparing statement: %v", err)
@@ -3300,7 +3300,7 @@ func TestNegativeStream(t *testing.T) {
 		return f.finish()
 	})
 
-	frame, err := conn.exec(context.Background(), writer, nil)
+	frame, err := conn.exec(context.Background(), writer, nil, time.Second)
 	if err == nil {
 		t.Fatalf("expected to get an error on stream %d", stream)
 	} else if frame != nil {

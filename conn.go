@@ -135,18 +135,20 @@ type SslOptions struct {
 
 // ConnConfig contains configuration options for establishing connections to Cassandra nodes.
 type ConnConfig struct {
-	ProtoVersion   int
-	CQLVersion     string
-	Timeout        time.Duration
-	WriteTimeout   time.Duration
-	ConnectTimeout time.Duration
-	Dialer         Dialer
-	HostDialer     HostDialer
-	Compressor     Compressor
-	Authenticator  Authenticator
-	AuthProvider   func(h *HostInfo) (Authenticator, error)
-	Keepalive      time.Duration
-	Logger         StructuredLogger
+	ProtoVersion         int
+	CQLVersion           string
+	Timeout              time.Duration
+	WriteTimeout         time.Duration
+	ConnectTimeout       time.Duration
+	ReadTimeout          time.Duration
+	SystemRequestTimeout time.Duration
+	Dialer               Dialer
+	HostDialer           HostDialer
+	Compressor           Compressor
+	Authenticator        Authenticator
+	AuthProvider         func(h *HostInfo) (Authenticator, error)
+	Keepalive            time.Duration
+	Logger               StructuredLogger
 
 	tlsConfig       *tls.Config
 	disableCoalesce bool
@@ -170,10 +172,18 @@ type Conn struct {
 	r ConnReader
 	w contextWriter
 
-	writeTimeout   time.Duration
-	cfg            *ConnConfig
-	frameObserver  FrameHeaderObserver
-	streamObserver StreamObserver
+	// systemRequestTimeout — snapshot of the client-side timeout for schema/system
+	// queries. During init it equals ConnectTimeout; after finalizeConnection it
+	// switches to Metadata.SystemRequestTimeout. Used as requestTimeout in
+	// Conn.querySystem and controlConn.query.
+	//
+	// The source of truth for read/write socket deadlines are the atomics inside
+	// connReader and deadlineContextWriter/writeCoalescer; they are updated via
+	// c.r.SetTimeout() and c.w.setWriteTimeout() in finalizeConnection.
+	systemRequestTimeout time.Duration
+	cfg                  *ConnConfig
+	frameObserver        FrameHeaderObserver
+	streamObserver       StreamObserver
 
 	headerBuf [frameHeadSize]byte
 
@@ -238,11 +248,6 @@ func (s *Session) dialWithoutObserver(ctx context.Context, host *HostInfo, cfg *
 		return nil, err
 	}
 
-	writeTimeout := cfg.Timeout
-	if cfg.WriteTimeout > 0 {
-		writeTimeout = cfg.WriteTimeout
-	}
-
 	logger := cfg.Logger
 	if logger == nil {
 		logger = s.logger
@@ -252,33 +257,67 @@ func (s *Session) dialWithoutObserver(ctx context.Context, host *HostInfo, cfg *
 	}
 
 	ctx, cancel := context.WithCancel(ctx)
+
+	reader := &connReader{
+		conn: dialedHost.Conn,
+		r:    bufio.NewReader(dialedHost.Conn),
+	}
+
+	// During the init phase we pin the socket write deadline (and below in init()
+	// the read deadline and systemRequestTimeout) to ConnectTimeout, NOT to
+	// WriteTimeout/Timeout. The reason is not obvious from the docs, so in detail:
+	//
+	// The init phase (dial → STARTUP/AUTH/OPTIONS → system.local → USE keyspace)
+	// and runtime are different budgets by nature:
+	//   • Init happens once per connection and must succeed regardless of network
+	//     conditions. It is not a user request — it makes no sense to apply the
+	//     user's (often aggressive) Timeout/WriteTimeout to it.
+	//   • Runtime is user queries, where the user actually wants short timeouts
+	//     so they can retry quickly on other hosts.
+	//
+	// Before these budgets were conflated: the write deadline during
+	// init was WriteTimeout || Timeout. With a legitimate ClusterConfig.Timeout=100ms
+	// (user wants fast retries on user queries) STARTUP/AUTH could not be written
+	// within that 100ms — CreateSession() failed with
+	// "no connections were made when creating the session"
+	// (scylladb/gocql#532, fix — PR #531).
+	//
+	// After SCYLLA-2121 init is fully pinned to ConnectTimeout (a separate, usually
+	// generous handshake budget). Once the connection is fully ready, the caller
+	// (hostConnPool.connect / controlConn.connect / attemptReconnectToAnyOfHosts)
+	// calls conn.finalizeConnection() — there the writer and reader atomics switch
+	// to WriteTimeout and ReadTimeout, and systemRequestTimeout switches to
+	// Metadata.SystemRequestTimeout. From that point on the documented semantics
+	// "WriteTimeout limits the time the driver waits to write a request"
+	// work as expected.
+	//
+	// Regression test — TestNewConnectWithLowTimeout.
+	writer := &deadlineContextWriter{
+		w:         dialedHost.Conn,
+		semaphore: make(chan struct{}, 1),
+		quit:      make(chan struct{}),
+	}
+	writer.setWriteTimeout(cfg.ConnectTimeout)
+
 	c := &Conn{
-		r: &connReader{
-			conn: dialedHost.Conn,
-			r:    bufio.NewReader(dialedHost.Conn),
-		},
-		cfg:           cfg,
-		calls:         make(map[int]*callReq),
-		version:       uint8(cfg.ProtoVersion),
-		addr:          dialedHost.Conn.RemoteAddr().String(),
-		errorHandler:  errorHandler,
-		compressor:    cfg.Compressor,
-		session:       s,
-		streams:       streams.New(cfg.ProtoVersion),
-		host:          host,
-		isSchemaV2:    true, // Try using "system.peers_v2" until proven otherwise
-		frameObserver: s.frameObserver,
-		w: &deadlineContextWriter{
-			w:         dialedHost.Conn,
-			timeout:   writeTimeout,
-			semaphore: make(chan struct{}, 1),
-			quit:      make(chan struct{}),
-		},
-		ctx:            ctx,
-		cancel:         cancel,
-		logger:         logger,
-		streamObserver: s.streamObserver,
-		writeTimeout:   writeTimeout,
+		r:                    reader,
+		cfg:                  cfg,
+		calls:                make(map[int]*callReq),
+		version:              uint8(cfg.ProtoVersion),
+		addr:                 dialedHost.Conn.RemoteAddr().String(),
+		errorHandler:         errorHandler,
+		compressor:           cfg.Compressor,
+		session:              s,
+		streams:              streams.New(cfg.ProtoVersion),
+		host:                 host,
+		isSchemaV2:           true, // Try using "system.peers_v2" until proven otherwise
+		frameObserver:        s.frameObserver,
+		w:                    writer,
+		ctx:                  ctx,
+		cancel:               cancel,
+		logger:               logger,
+		streamObserver:       s.streamObserver,
+		systemRequestTimeout: cfg.ConnectTimeout, // during init, schema queries are bound to ConnectTimeout
 	}
 
 	if err := c.init(ctx, dialedHost); err != nil {
@@ -306,16 +345,21 @@ func (c *Conn) init(ctx context.Context, dialedHost *DialedHost) error {
 		conn:        c,
 	}
 
+	// During the init phase the socket read deadline is pinned to ConnectTimeout —
+	// see the detailed rationale (separate init vs runtime budgets) in the
+	// dialWithoutObserver comment. After startup.setupConn the caller invokes
+	// finalizeConnection(), which switches the read deadline to ReadTimeout.
 	c.r.SetTimeout(c.cfg.ConnectTimeout)
 	if err := startup.setupConn(ctx); err != nil {
 		return err
 	}
 
-	c.r.SetTimeout(c.cfg.Timeout)
-
 	// dont coalesce startup frames
 	if c.session.cfg.WriteCoalesceWaitTime > 0 && !c.cfg.disableCoalesce && !dialedHost.DisableCoalesce {
-		c.w = newWriteCoalescer(dialedHost.Conn, c.writeTimeout, c.session.cfg.WriteCoalesceWaitTime, ctx.Done())
+		// During init the writeCoalescer also starts with ConnectTimeout (see
+		// dialWithoutObserver); finalizeConnection() will update its atomic
+		// via c.w.setWriteTimeout(WriteTimeout).
+		c.w = newWriteCoalescer(dialedHost.Conn, c.cfg.ConnectTimeout, c.session.cfg.WriteCoalesceWaitTime, ctx.Done())
 	}
 
 	go c.serve(ctx)
@@ -326,6 +370,40 @@ func (c *Conn) init(ctx context.Context, dialedHost *DialedHost) error {
 
 func (c *Conn) Write(p []byte) (n int, err error) {
 	return c.w.writeContext(context.Background(), p)
+}
+
+// finalizeConnection switches the connection from init mode to operational mode:
+// all timeouts pinned to ConnectTimeout during initialization are replaced by
+// their normal values from ClusterConfig:
+//   - socket read deadline → ReadTimeout (defensive net against a silent server);
+//   - socket write deadline → WriteTimeout;
+//   - per-Conn systemRequestTimeout → Metadata.SystemRequestTimeout (budget for
+//     schema/system queries via Conn.querySystem and controlConn.query).
+//
+// Called exactly once — by the caller, after the connection is fully initialized
+// (added to the pool via hostConnPool.connect or registered as the control
+// connection via controlConn.setupConn) and ready to serve regular requests.
+// Until that point all socket reads/writes and all internal init-phase requests
+// (STARTUP/AUTH/OPTIONS/system.local/USE keyspace) are bound to ConnectTimeout —
+// a low user-supplied Timeout must not break session establishment.
+//
+// Per-request timeouts (ClusterConfig.Timeout by default, Query.WithRequestTimeout
+// for override, Metadata.SystemRequestTimeout for system queries) are implemented
+// via callReq.timer inside Conn.exec and fire independently of the socket read
+// deadline — therefore a schema query with a large Metadata.SystemRequestTimeout
+// is not capped by a tighter ReadTimeout.
+func (c *Conn) finalizeConnection() {
+	c.r.SetTimeout(c.cfg.ReadTimeout)
+	c.w.setWriteTimeout(c.cfg.WriteTimeout)
+	c.setSystemRequestTimeout(c.cfg.SystemRequestTimeout)
+}
+
+// setSystemRequestTimeout stores the per-Conn snapshot of the client-side timeout
+// for schema/system queries. Matches upstream scylladb/gocql, but without
+// recalculateSystemRequestTimeout — the Scylla-specific " USING TIMEOUT" clause
+// is not ported, to preserve cross-compatibility with Cassandra.
+func (c *Conn) setSystemRequestTimeout(t time.Duration) {
+	c.systemRequestTimeout = t
 }
 
 type startupCoordinator struct {
@@ -433,7 +511,7 @@ func (s *startupCoordinator) write(ctx context.Context, frame frameBuilder, star
 		return nil, ctx.Err()
 	}
 
-	framer, err := s.conn.execInternal(ctx, frame, nil, startupCompleted.Load())
+	framer, err := s.conn.execInternal(ctx, frame, nil, startupCompleted.Load(), s.conn.cfg.ConnectTimeout)
 	if err != nil {
 		return nil, err
 	}
@@ -647,7 +725,7 @@ func (c *Conn) heartBeat(ctx context.Context) {
 		case <-timer.C:
 		}
 
-		framer, err := c.exec(context.Background(), &writeOptionsFrame{}, nil)
+		framer, err := c.exec(context.Background(), &writeOptionsFrame{}, nil, c.cfg.ConnectTimeout)
 		if err != nil {
 			failures++
 			continue
@@ -896,9 +974,12 @@ type ConnReader interface {
 // connReader implements ConnReader.
 // It retries to read data up to 5 times or returns error.
 type connReader struct {
-	conn    net.Conn
-	r       *bufio.Reader
-	timeout time.Duration
+	conn net.Conn
+	r    *bufio.Reader
+	// timeout is read by Read() and updated by SetTimeout(). Stored as int64 nanoseconds
+	// to allow lock-free concurrent access between the reader goroutine and the caller
+	// that finalizes the connection (Conn.finalizeConnection).
+	timeout atomic.Int64
 }
 
 func (c *connReader) Read(p []byte) (n int, err error) {
@@ -906,8 +987,8 @@ func (c *connReader) Read(p []byte) (n int, err error) {
 
 	for i := 0; i < maxAttempts; i++ {
 		var nn int
-		if c.timeout > 0 {
-			c.conn.SetReadDeadline(time.Now().Add(c.timeout))
+		if timeout := time.Duration(c.GetTimeout()); timeout > 0 {
+			c.conn.SetReadDeadline(time.Now().Add(timeout)) //nolint:errcheck
 		}
 
 		nn, err = io.ReadFull(c.r, p[n:])
@@ -953,11 +1034,11 @@ func (c *connReader) SetWriteDeadline(t time.Time) error {
 }
 
 func (c *connReader) SetTimeout(timeout time.Duration) {
-	c.timeout = timeout
+	c.timeout.Store(int64(timeout))
 }
 
 func (c *connReader) GetTimeout() time.Duration {
-	return c.timeout
+	return time.Duration(c.timeout.Load())
 }
 
 type callReq struct {
@@ -996,6 +1077,10 @@ type contextWriter interface {
 	// early. writeContext must return a non-nil error if it returns n < len(p). writeContext must not modify the
 	// data in p, even temporarily.
 	writeContext(ctx context.Context, p []byte) (n int, err error)
+
+	// setWriteTimeout updates the write deadline used for subsequent writeContext calls.
+	// Used by Conn.finalizeConnection to switch from ConnectTimeout to operational WriteTimeout.
+	setWriteTimeout(timeout time.Duration)
 }
 
 type deadlineWriter interface {
@@ -1004,8 +1089,11 @@ type deadlineWriter interface {
 }
 
 type deadlineContextWriter struct {
-	w       deadlineWriter
-	timeout time.Duration
+	w deadlineWriter
+	// timeout (int64 nanoseconds) is read by writeContext() and updated by setWriteTimeout().
+	// Atomic to allow lock-free concurrent access from query goroutines and the caller
+	// of Conn.finalizeConnection().
+	timeout atomic.Int64
 	// semaphore protects critical section for SetWriteDeadline/Write.
 	// It is a channel with capacity 1.
 	semaphore chan struct{}
@@ -1030,13 +1118,18 @@ func (c *deadlineContextWriter) writeContext(ctx context.Context, p []byte) (int
 		<-c.semaphore
 	}()
 
-	if c.timeout > 0 {
-		err := c.w.SetWriteDeadline(time.Now().Add(c.timeout))
+	if timeout := time.Duration(c.timeout.Load()); timeout > 0 {
+		err := c.w.SetWriteDeadline(time.Now().Add(timeout))
 		if err != nil {
 			return 0, err
 		}
 	}
 	return c.w.Write(p)
+}
+
+// setWriteTimeout implements contextWriter.
+func (c *deadlineContextWriter) setWriteTimeout(timeout time.Duration) {
+	c.timeout.Store(int64(timeout))
 }
 
 func newWriteCoalescer(conn deadlineWriter, writeTimeout, coalesceDuration time.Duration,
@@ -1045,8 +1138,8 @@ func newWriteCoalescer(conn deadlineWriter, writeTimeout, coalesceDuration time.
 		writeCh: make(chan writeRequest),
 		c:       conn,
 		quit:    quit,
-		timeout: writeTimeout,
 	}
+	wc.setWriteTimeout(writeTimeout)
 	go wc.writeFlusher(coalesceDuration)
 	return wc
 }
@@ -1059,7 +1152,9 @@ type writeCoalescer struct {
 	quit    <-chan struct{}
 	writeCh chan writeRequest
 
-	timeout time.Duration
+	// timeout (int64 nanoseconds) — read by flush() goroutine, updated by setWriteTimeout().
+	// Atomic for safe concurrent access.
+	timeout atomic.Int64
 
 	testEnqueuedHook func()
 	testFlushedHook  func()
@@ -1100,6 +1195,16 @@ func (w *writeCoalescer) writeContext(ctx context.Context, p []byte) (int, error
 
 	result := <-resultChan
 	return result.n, result.err
+}
+
+// setWriteTimeout implements contextWriter.
+func (w *writeCoalescer) setWriteTimeout(timeout time.Duration) {
+	w.timeout.Store(int64(timeout))
+}
+
+// getWriteTimeout helper
+func (w *writeCoalescer) getWriteTimeout() time.Duration {
+	return time.Duration(w.timeout.Load())
 }
 
 func (w *writeCoalescer) writeFlusher(interval time.Duration) {
@@ -1154,8 +1259,8 @@ func (w *writeCoalescer) writeFlusherImpl(timerC <-chan time.Time, resetTimer fu
 
 func (w *writeCoalescer) flush(resultChans []chan<- writeResult, buffers net.Buffers) {
 	// Flush everything we have so far.
-	if w.timeout > 0 {
-		err := w.c.SetWriteDeadline(time.Now().Add(w.timeout))
+	if timeout := w.getWriteTimeout(); timeout > 0 {
+		err := w.c.SetWriteDeadline(time.Now().Add(timeout))
 		if err != nil {
 			for i := range resultChans {
 				resultChans[i] <- writeResult{
@@ -1209,11 +1314,17 @@ func (c *Conn) addCall(call *callReq) error {
 	return nil
 }
 
-func (c *Conn) exec(ctx context.Context, req frameBuilder, tracer Tracer) (*framer, error) {
-	return c.execInternal(ctx, req, tracer, true)
+// exec sends a single CQL frame on this connection and waits for the response.
+//
+// requestTimeout is the client-side timeout for waiting on the response to this
+// specific request. If 0, there is no client-side timeout (we rely solely on ctx
+// and the socket read deadline). Drives a dedicated callReq.timer independently
+// of the global ClusterConfig.Timeout.
+func (c *Conn) exec(ctx context.Context, req frameBuilder, tracer Tracer, requestTimeout time.Duration) (*framer, error) {
+	return c.execInternal(ctx, req, tracer, true, requestTimeout)
 }
 
-func (c *Conn) execInternal(ctx context.Context, req frameBuilder, tracer Tracer, startupCompleted bool) (*framer, error) {
+func (c *Conn) execInternal(ctx context.Context, req frameBuilder, tracer Tracer, startupCompleted bool, requestTimeout time.Duration) (*framer, error) {
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		return nil, ctxErr
 	}
@@ -1309,7 +1420,7 @@ func (c *Conn) execInternal(ctx context.Context, req frameBuilder, tracer Tracer
 	}
 
 	var timeoutCh <-chan time.Time
-	if timeout := c.r.GetTimeout(); timeout > 0 {
+	if requestTimeout > 0 {
 		if call.timer == nil {
 			call.timer = time.NewTimer(0)
 			<-call.timer.C
@@ -1322,7 +1433,7 @@ func (c *Conn) execInternal(ctx context.Context, req frameBuilder, tracer Tracer
 			}
 		}
 
-		call.timer.Reset(timeout)
+		call.timer.Reset(requestTimeout)
 		timeoutCh = call.timer.C
 	}
 
@@ -1450,7 +1561,7 @@ type inflightPrepare struct {
 	preparedStatment *preparedStatment
 }
 
-func (c *Conn) prepareStatement(ctx context.Context, stmt string, tracer Tracer, keyspace string) (*preparedStatment, error) {
+func (c *Conn) prepareStatement(ctx context.Context, stmt string, tracer Tracer, keyspace string, requestTimeout time.Duration) (*preparedStatment, error) {
 	stmtCacheKey := c.session.stmtsLRU.keyFor(c.host.HostID(), keyspace, stmt)
 	flight, ok := c.session.stmtsLRU.execIfMissing(stmtCacheKey, func(lru *lru.Cache) *inflightPrepare {
 		flight := &inflightPrepare{
@@ -1474,7 +1585,7 @@ func (c *Conn) prepareStatement(ctx context.Context, stmt string, tracer Tracer,
 			// we won the race to do the load, if our context is canceled we shouldnt
 			// stop the load as other callers are waiting for it but this caller should get
 			// their context cancelled error.
-			framer, err := c.exec(c.ctx, prep, tracer)
+			framer, err := c.exec(c.ctx, prep, tracer, requestTimeout)
 			if err != nil {
 				flight.err = err
 				c.session.stmtsLRU.remove(stmtCacheKey)
@@ -1548,6 +1659,11 @@ func marshalQueryValue(typ TypeInfo, value interface{}, dst *queryValues) error 
 
 func (c *Conn) executeQuery(ctx context.Context, q *internalQuery) *Iter {
 	qryOpts := q.qryOpts
+	// requestTimeout is passed through as-is. By default Query/Batch are initialized
+	// to s.cfg.Timeout (see defaultsFromSession/Session.Batch), so 0 here is only
+	// possible if the caller explicitly invoked SetRequestTimeout(0) — Conn.exec
+	// interprets that as "no client-side timeout" (we rely on ctx and ReadTimeout).
+	requestTimeout := qryOpts.requestTimeout
 	params := queryParams{
 		consistency: q.GetConsistency(),
 	}
@@ -1584,7 +1700,7 @@ func (c *Conn) executeQuery(ctx context.Context, q *internalQuery) *Iter {
 	if !qryOpts.skipPrepare && shouldPrepare(qryOpts.stmt) {
 		// Prepare all DML queries. Other queries can not be prepared.
 		var err error
-		info, err = c.prepareStatement(ctx, qryOpts.stmt, qryOpts.trace, usedKeyspace)
+		info, err = c.prepareStatement(ctx, qryOpts.stmt, qryOpts.trace, usedKeyspace, requestTimeout)
 		if err != nil {
 			iter.err = err
 			return iter
@@ -1647,7 +1763,7 @@ func (c *Conn) executeQuery(ctx context.Context, q *internalQuery) *Iter {
 		}
 	}
 
-	framer, err := c.exec(ctx, frame, qryOpts.trace)
+	framer, err := c.exec(ctx, frame, qryOpts.trace, requestTimeout)
 	if err != nil {
 		iter.err = err
 		return iter
@@ -1785,7 +1901,9 @@ func (c *Conn) UseKeyspace(keyspace string) error {
 	q := &writeQueryFrame{statement: `USE "` + keyspace + `"`}
 	q.params.consistency = c.session.cons
 
-	framer, err := c.exec(c.ctx, q, nil)
+	// UseKeyspace is invoked from pool.connect before finalizeConnection — it is
+	// part of connection initialization, so we use ConnectTimeout.
+	framer, err := c.exec(c.ctx, q, nil, c.cfg.ConnectTimeout)
 	if err != nil {
 		return err
 	}
@@ -1810,6 +1928,8 @@ func (c *Conn) UseKeyspace(keyspace string) error {
 
 func (c *Conn) executeBatch(ctx context.Context, b *internalBatch) *Iter {
 	iter := newIter(b.metrics, b.Keyspace(), b.routingInfo, nil)
+	// See the comment in executeQuery.
+	requestTimeout := b.batchOpts.requestTimeout
 	n := len(b.batchOpts.entries)
 	req := &writeBatchFrame{
 		typ:                   b.batchOpts.bType,
@@ -1838,7 +1958,7 @@ func (c *Conn) executeBatch(ctx context.Context, b *internalBatch) *Iter {
 		batchStmt := &req.statements[i]
 
 		if len(entry.Args) > 0 || entry.binding != nil {
-			info, err := c.prepareStatement(ctx, entry.Stmt, b.batchOpts.trace, usedKeyspace)
+			info, err := c.prepareStatement(ctx, entry.Stmt, b.batchOpts.trace, usedKeyspace, requestTimeout)
 			if err != nil {
 				iter.err = err
 				return iter
@@ -1884,7 +2004,7 @@ func (c *Conn) executeBatch(ctx context.Context, b *internalBatch) *Iter {
 		}
 	}
 
-	framer, err := c.exec(ctx, req, b.batchOpts.trace)
+	framer, err := c.exec(ctx, req, b.batchOpts.trace, requestTimeout)
 	if err != nil {
 		iter.err = err
 		return iter
@@ -1948,7 +2068,7 @@ func (c *Conn) querySystemPeers(ctx context.Context, version cassVersion) *Iter 
 
 	if version.AtLeast(4, 0, 0) && isSchemaV2 {
 		// Try "system.peers_v2" and fallback to "system.peers" if it's not found
-		iter := c.query(ctx, peerV2Schemas)
+		iter := c.querySystem(ctx, peerV2Schemas)
 
 		err := iter.checkErrAndNotFound()
 		if err != nil {
@@ -1957,19 +2077,34 @@ func (c *Conn) querySystemPeers(ctx context.Context, version cassVersion) *Iter 
 				c.mu.Lock()
 				c.isSchemaV2 = false
 				c.mu.Unlock()
-				return c.query(ctx, peerSchema)
+				return c.querySystem(ctx, peerSchema)
 			} else {
 				return iter
 			}
 		}
 		return iter
 	} else {
-		return c.query(ctx, peerSchema)
+		return c.querySystem(ctx, peerSchema)
 	}
 }
 
 func (c *Conn) querySystemLocal(ctx context.Context) *Iter {
-	return c.query(ctx, "SELECT * FROM system.local WHERE key='local'")
+	return c.querySystem(ctx, "SELECT * FROM system.local WHERE key='local'")
+}
+
+// querySystem runs a query against schema/system tables with a per-request
+// timeout of systemRequestTimeout (a snapshot of Metadata.SystemRequestTimeout).
+// Used for schema/topology discovery (system.local, system.peers,
+// system_schema.*). USING TIMEOUT is not added — for cross-compatibility with
+// Cassandra.
+//
+// Matches upstream scylladb/gocql Conn.querySystem.
+func (c *Conn) querySystem(ctx context.Context, statement string, values ...interface{}) *Iter {
+	q := c.session.Query(statement, values...).Consistency(One).Trace(nil).
+		WithRequestTimeout(c.systemRequestTimeout)
+	q.skipPrepare = true
+	q.disableSkipMetadata = true
+	return q.iterInternal(c, ctx)
 }
 
 func (c *Conn) awaitSchemaAgreement(ctx context.Context) (err error) {

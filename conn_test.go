@@ -281,6 +281,37 @@ func TestStartupTimeout(t *testing.T) {
 	cancel()
 }
 
+// TestNewConnectWithLowTimeout verifies that ConnectTimeout covers the entire
+// connection initialization phase, including writes. A low user-supplied
+// Timeout must not break session establishment — it only applies after a
+// successful init. Regression test for scylladb/gocql#532 (PR #531).
+//
+// We use 100ms as a "low but not pathological" Timeout. Before the fix the
+// write deadline for STARTUP/AUTH was set to Timeout=100ms — the packets did
+// not have time to be sent and `CreateSession` returned "no connections were
+// made". With ConnectTimeout=5s initialization passes cleanly.
+func TestNewConnectWithLowTimeout(t *testing.T) {
+	srv := NewTestServer(t, defaultProto, context.Background())
+	defer srv.Stop()
+
+	cluster := testCluster(defaultProto, srv.Address)
+	cluster.Timeout = 100 * time.Millisecond
+	cluster.WriteTimeout = 100 * time.Millisecond
+	cluster.ConnectTimeout = 5 * time.Second
+
+	session, err := cluster.CreateSession()
+	if err != nil {
+		t.Fatalf("CreateSession should succeed when ConnectTimeout is generous: %v", err)
+	}
+	defer session.Close()
+
+	// Sanity: the "timeout" query in TestServer never gets a response — the
+	// normal Timeout bounds the wait on this specific request, and it fails.
+	if err := session.Query("timeout").Exec(); err == nil {
+		t.Fatal("expected query to fail with client-side timeout")
+	}
+}
+
 func TestTimeout(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -614,6 +645,146 @@ func TestQueryTimeout(t *testing.T) {
 	}
 }
 
+// TestInitSchemaQueryRespectsConnectTimeout verifies that a schema query inside
+// controlConn.setupConn (called during session initialization) is capped by
+// ConnectTimeout — via Conn.systemRequestTimeout, which is initialized to
+// ConnectTimeout in dialWithoutObserver. After finalizeConnection,
+// systemRequestTimeout switches to ClusterConfig.Metadata.SystemRequestTimeout
+// (runtime path).
+//
+// Regression test for scylladb/gocql PR #222+#536 (client-side, no USING TIMEOUT).
+func TestInitSchemaQueryRespectsConnectTimeout(t *testing.T) {
+	srv := NewTestServer(t, defaultProto, context.Background())
+	defer srv.Stop()
+
+	// Hang all schema/system queries on the server side.
+	atomic.StoreInt32(&srv.TimeoutOnSystemQueries, 1)
+
+	cluster := NewCluster(srv.Address)
+	cluster.ProtoVersion = int(defaultProto)
+	// Small ConnectTimeout — it must fire on the init schema query inside setupConn.
+	cluster.ConnectTimeout = 100 * time.Millisecond
+	cluster.Timeout = 5 * time.Second
+	cluster.Metadata.SystemRequestTimeout = 60 * time.Second // runtime value, does not apply during init
+
+	start := time.Now()
+	_, err := cluster.CreateSession()
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatal("CreateSession should fail when init schema query hangs and ConnectTimeout is low")
+	}
+	if elapsed > 2*time.Second {
+		t.Fatalf("ConnectTimeout not honored on init schema query: elapsed %v, expected ~100ms", elapsed)
+	}
+}
+
+// TestControlConnQueryRespectsSystemRequestTimeout verifies that the per-request
+// budget for queries via controlConn.query (schema discovery: reads from
+// system_schema.*, system.local, system.peers[_v2]) is taken from
+// Metadata.SystemRequestTimeout, NOT from ClusterConfig.Timeout.
+//
+// Before the fix, controlConn.query built a Query via session.Query(...), which
+// inherits ClusterConfig.Timeout — schema discovery on a large keyspace would
+// be cut off by an aggressive user timeout, contrary to the docs and unlike
+// Conn.querySystem.
+//
+// Regression test for SCYLLA-2121 (v2). NewTestServer does not respond to
+// system.local, so a full session with a control conn cannot be assembled
+// through the mock. The test goes around: it uses testCluster
+// (disableControlConn=true) to get a working pool, then manually builds a
+// controlConn around the real Conn.
+func TestControlConnQueryRespectsSystemRequestTimeout(t *testing.T) {
+	srv := NewTestServer(t, defaultProto, context.Background())
+	defer srv.Stop()
+
+	cluster := testCluster(defaultProto, srv.Address)
+	// Large ClusterConfig.Timeout — it must NOT affect the schema query after
+	// the fix. Small Metadata.SystemRequestTimeout — that is what should fire.
+	cluster.Timeout = 5 * time.Second
+	cluster.Metadata.SystemRequestTimeout = 200 * time.Millisecond
+
+	db, err := cluster.CreateSession()
+	if err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+	defer db.Close()
+
+	// Grab one real Conn from the pool.
+	var (
+		conn *Conn
+		host *HostInfo
+	)
+	db.pool.mu.RLock()
+	for _, hp := range db.pool.hostConnPools {
+		hp.mu.RLock()
+		if len(hp.conns) > 0 {
+			conn = hp.conns[0]
+			host = hp.host
+		}
+		hp.mu.RUnlock()
+		if conn != nil {
+			break
+		}
+	}
+	db.pool.mu.RUnlock()
+	if conn == nil {
+		t.Fatal("no live connection in pool")
+	}
+
+	// Build a controlConn around this Conn (without a real .connect — the mock
+	// does not respond to system.local). Retries are disabled so elapsed is
+	// ~200ms rather than N*200ms.
+	ctrl := createControlConn(db)
+	ctrl.conn.Store(&connHost{conn: conn, host: host})
+	ctrl.retry = &SimpleRetryPolicy{NumRetries: 0}
+
+	// "timeout" — the mock hangs on this query until Stop().
+	start := time.Now()
+	iter := ctrl.query("timeout")
+	err = iter.Close()
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatal("expected timeout error on hung query, got nil")
+	}
+	// SystemRequestTimeout=200ms should fire well before ClusterConfig.Timeout=5s.
+	// We use a generous upper bound of 2s — before the fix elapsed would have been ~5s.
+	if elapsed > 2*time.Second {
+		t.Fatalf("Metadata.SystemRequestTimeout not honored by controlConn.query: elapsed %v, expected ~200ms", elapsed)
+	}
+}
+
+// TestQueryRequestTimeout verifies that Query.WithRequestTimeout() sets a
+// client-side timeout for a specific query that is shorter than the global
+// ClusterConfig.Timeout. Regression test for scylladb/gocql PR #535.
+func TestQueryRequestTimeout(t *testing.T) {
+	srv := NewTestServer(t, defaultProto, context.Background())
+	defer srv.Stop()
+
+	cluster := testCluster(defaultProto, srv.Address)
+	// High session-level Timeout to make sure it is the per-request timeout
+	// that fires, not the global one.
+	cluster.Timeout = 5 * time.Second
+
+	db, err := cluster.CreateSession()
+	if err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+	defer db.Close()
+
+	start := time.Now()
+	err = db.Query("timeout").WithRequestTimeout(50 * time.Millisecond).Exec()
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatal("expected per-request timeout error, got nil")
+	}
+	if elapsed > 500*time.Millisecond {
+		t.Fatalf("per-request timeout not honored: elapsed %v, expected ~50ms", elapsed)
+	}
+}
+
 func BenchmarkSingleConn(b *testing.B) {
 	srv := NewTestServer(b, 3, context.Background())
 	defer srv.Stop()
@@ -888,7 +1059,6 @@ func TestWriteCoalescing(t *testing.T) {
 		writeCh: make(chan writeRequest),
 		c:       client,
 		quit:    ctx.Done(),
-		timeout: 500 * time.Millisecond,
 		testEnqueuedHook: func() {
 			enqueued <- struct{}{}
 		},
@@ -896,6 +1066,7 @@ func TestWriteCoalescing(t *testing.T) {
 			client.Close()
 		},
 	}
+	w.setWriteTimeout(500 * time.Millisecond)
 	timerC := make(chan time.Time, 1)
 	go func() {
 		w.writeFlusherImpl(timerC, func() { resetTimer <- struct{}{} })
@@ -1132,11 +1303,12 @@ func NewSSLTestServer(t testing.TB, protocol uint8, ctx context.Context) *TestSe
 }
 
 type TestServer struct {
-	Address          string
-	TimeoutOnStartup int32
-	t                testing.TB
-	listen           net.Listener
-	nKillReq         int64
+	Address                string
+	TimeoutOnStartup       int32
+	TimeoutOnSystemQueries int32
+	t                      testing.TB
+	listen                 net.Listener
+	nKillReq               int64
 
 	protocol   byte
 	headerSize int
@@ -1277,6 +1449,13 @@ func (srv *TestServer) process(conn net.Conn, reqFrame *framer, useProtoV5, star
 		query, err := reqFrame.readLongString()
 		if err != nil {
 			srv.errorLocked(err)
+			return
+		}
+		if atomic.LoadInt32(&srv.TimeoutOnSystemQueries) > 0 &&
+			(strings.Contains(strings.ToLower(query), " system.") ||
+				strings.Contains(strings.ToLower(query), " system_schema.")) {
+			// Do not respond to schema/system queries.
+			<-srv.ctx.Done()
 			return
 		}
 		first := query
@@ -1516,16 +1695,16 @@ func TestConnProcessAllFramesInSingleSegment(t *testing.T) {
 		addr:       server.RemoteAddr().String(),
 		streams:    streams.New(protoVersion5),
 		isSchemaV2: true,
-		w: &deadlineContextWriter{
-			w:         server,
-			timeout:   time.Second * 10,
-			semaphore: make(chan struct{}, 1),
-			quit:      make(chan struct{}),
-		},
-		writeTimeout: time.Second * 10,
-		session:      &Session{types: GlobalTypes},
-		logger:       &defaultLogger{},
+		session:    &Session{types: GlobalTypes},
+		logger:     &defaultLogger{},
 	}
+	writer := &deadlineContextWriter{
+		w:         server,
+		semaphore: make(chan struct{}, 1),
+		quit:      make(chan struct{}),
+	}
+	writer.timeout.Store(int64(time.Second * 10))
+	c.w = writer
 
 	call1 := &callReq{
 		timeout:  make(chan struct{}),

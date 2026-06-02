@@ -28,8 +28,12 @@
 package gocql
 
 import (
+	"context"
+	"errors"
+	"fmt"
 	"net"
 	"testing"
+	"time"
 )
 
 func TestHostInfo_Lookup(t *testing.T) {
@@ -55,5 +59,80 @@ func TestHostInfo_Lookup(t *testing.T) {
 		if !host.ConnectAddress().Equal(test.ip) {
 			t.Errorf("expected ip %v got %v for addr %q", test.ip, host.ConnectAddress(), test.addr)
 		}
+	}
+}
+
+// blockingDNSResolver is a DNSResolver that sends a signal on `entered` on the
+// first call and blocks the return until `unblock` is closed. It is used to
+// turn the fallback path in controlConn.attemptReconnect into an "endless" one
+// — which lets us detect whether HandleError blocks on reconnect synchronously
+// or launches it in a goroutine.
+type blockingDNSResolver struct {
+	entered chan<- struct{}
+	unblock <-chan struct{}
+}
+
+func (b *blockingDNSResolver) LookupIP(host string) ([]net.IP, error) {
+	select {
+	case b.entered <- struct{}{}:
+	default:
+	}
+	<-b.unblock
+	return nil, fmt.Errorf("blocked")
+}
+
+// TestControlConn_HandleError_LaunchesReconnectInGoroutine verifies that
+// HandleError launches reconnect in a background goroutine, not synchronously.
+// Regression test for scylladb/gocql#521 (deadlock in connection storm): a
+// synchronous reconnect could hold the controlConn mutex while attemptReconnect
+// did DNS resolution / TCP dial.
+func TestControlConn_HandleError_LaunchesReconnectInGoroutine(t *testing.T) {
+	resolverEntered := make(chan struct{}, 1)
+	unblock := make(chan struct{})
+	defer close(unblock)
+
+	resolver := &blockingDNSResolver{
+		entered: resolverEntered,
+		unblock: unblock,
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	session := &Session{
+		cfg: ClusterConfig{
+			DNSResolver: resolver,
+			Hosts:       []string{"nonexistent.invalid"},
+			Port:        9042,
+		},
+		ctx:    ctx,
+		logger: newTestLogger(LogLevelDebug),
+	}
+
+	cc := createControlConn(session)
+
+	fakeConn := &Conn{host: &HostInfo{}}
+
+	start := time.Now()
+	done := make(chan struct{})
+	go func() {
+		cc.HandleError(fakeConn, errors.New("boom"), true)
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatalf("HandleError did not return within 2s; it likely runs reconnect synchronously")
+	}
+
+	if elapsed := time.Since(start); elapsed > 100*time.Millisecond {
+		t.Fatalf("HandleError took %v, expected <100ms (sync reconnect bug?)", elapsed)
+	}
+
+	select {
+	case <-resolverEntered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("reconnect goroutine never reached DNS resolution; was it started at all?")
 	}
 }

@@ -94,6 +94,51 @@ Some tips for getting more performance from the driver:
 * Reading data from the network to unmarshal will incur a large amount of allocations, this can adversely affect the garbage collector, tune `GOGC`
 * Close iterators after use to recycle byte buffers
 
+Connection Timeouts
+-------------------
+
+The driver exposes several independent timeouts. They live on different layers
+(per-request budget vs. socket-level deadline) and serve different purposes — set
+them together, not "the smallest wins":
+
+| Field | Default | Layer | Purpose |
+|---|---|---|---|
+| `ClusterConfig.ConnectTimeout` | `11s` | Per-request, **init only** | Covers the entire connection setup: TCP dial, `STARTUP`/`AUTH`/`OPTIONS` handshake, initial `system.local` read, `USE keyspace`. Independent of `Timeout` — a low user `Timeout` will not break session creation. |
+| `ClusterConfig.Timeout` | `11s` | Per-request, **runtime** | Default client-side timeout for user `Query`/`Batch` (inherited at construction time, see below). Should be **greater** than server-side timeouts to avoid retry storms. |
+| `ClusterConfig.WriteTimeout` | `Timeout` | Socket write deadline | Operational write deadline after `finalizeConnection`. Defaults to `Timeout` if not set. Should be `<= Timeout`. |
+| `ClusterConfig.ReadTimeout` | `11s` | Socket read deadline | **Defensive net only** — fails the socket if the server stops sending bytes (TCP alive but silent). Renewed on every `Read()`. Does **not** cap a single request. Falls back to `ConnectTimeout` if unset. |
+| `ClusterConfig.Metadata.SystemRequestTimeout` | `60s` | Per-request, schema | Client-side timeout for schema/system queries (`system.local`, `system.peers[_v2]`, `system_schema.*`) and other internal control-conn frames. Independent of `Timeout` — schema reads on a large keyspace can legitimately outlive a regular user query. |
+| `Query.WithRequestTimeout(d)` / `SetRequestTimeout(d)` | `= Timeout` | Per-request override | Per-query override of `Timeout`. Inherited from `ClusterConfig.Timeout` on `Session.Query` / `Session.Bind`. `d == 0` disables the client-side timer (relies on `ctx` + `ReadTimeout`). |
+| `Batch.WithRequestTimeout(d)` / `SetRequestTimeout(d)` | `= Timeout` | Per-request override | Same, for a batch. Inherited from `ClusterConfig.Timeout` on `Session.Batch`. |
+
+**Connection lifecycle.**
+
+1. **Dial / init.** All read, write, and system-query budgets are pinned to
+   `ConnectTimeout`. `STARTUP`/`AUTH`/`OPTIONS`/`UseKeyspace` and the initial
+   `system.local` lookup all use `ConnectTimeout` as their per-request budget. A
+   low user `Timeout` (say, 100ms) will not prevent the session from coming up.
+2. **`finalizeConnection()`.** Called when the connection joins the pool or is
+   registered as the control connection. After this call:
+   - socket read deadline → `ReadTimeout`,
+   - socket write deadline → `WriteTimeout`,
+   - per-`Conn` `systemRequestTimeout` → `Metadata.SystemRequestTimeout`.
+3. **Runtime.** Per-request budgets (`Timeout`, `Metadata.SystemRequestTimeout`,
+   `Query.WithRequestTimeout`) fire through `callReq.timer` inside `Conn.exec` —
+   independently of the socket deadline. The socket `ReadTimeout` only fires
+   when the server is fully silent for the full window.
+
+**Picking values.**
+
+- Pick `ReadTimeout >= ConnectTimeout`. The init read deadline is `ConnectTimeout`;
+  a shorter `ReadTimeout` after finalize would tighten an already-validated
+  connection for no benefit and may misfire on idle waits.
+- Keep `Timeout > server-side timeout` (in `cassandra.yaml`, e.g. `read_request_timeout_in_ms`).
+- Use `Metadata.SystemRequestTimeout` (default `60s`) for schema discovery — it is
+  applied to control-conn writes and `system_schema.*` reads, and decoupled from
+  user query budget.
+- For occasional long queries, prefer `Query.WithRequestTimeout(d)` over raising
+  the global `Timeout`.
+
 Important Default Keyspace Changes
 ----------------------------------
 gocql no longer supports executing "use <keyspace>" statements to simplify the library. The user still has the

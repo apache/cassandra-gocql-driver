@@ -142,19 +142,30 @@ func connConfig(cfg *ClusterConfig) (*ConnConfig, error) {
 		}
 	}
 
+	writeTimeout := cfg.WriteTimeout
+	if writeTimeout == 0 {
+		writeTimeout = cfg.Timeout
+	}
+	readTimeout := cfg.ReadTimeout
+	if readTimeout == 0 {
+		readTimeout = cfg.ConnectTimeout
+	}
+
 	return &ConnConfig{
-		ProtoVersion:   cfg.ProtoVersion,
-		CQLVersion:     cfg.CQLVersion,
-		Timeout:        cfg.Timeout,
-		WriteTimeout:   cfg.WriteTimeout,
-		ConnectTimeout: cfg.ConnectTimeout,
-		Dialer:         cfg.Dialer,
-		HostDialer:     hostDialer,
-		Compressor:     cfg.Compressor,
-		Authenticator:  cfg.Authenticator,
-		AuthProvider:   cfg.AuthProvider,
-		Keepalive:      cfg.SocketKeepalive,
-		Logger:         cfg.Logger,
+		ProtoVersion:         cfg.ProtoVersion,
+		CQLVersion:           cfg.CQLVersion,
+		Timeout:              cfg.Timeout,
+		WriteTimeout:         writeTimeout,
+		ConnectTimeout:       cfg.ConnectTimeout,
+		ReadTimeout:          readTimeout,
+		SystemRequestTimeout: cfg.Metadata.SystemRequestTimeout,
+		Dialer:               cfg.Dialer,
+		HostDialer:           hostDialer,
+		Compressor:           cfg.Compressor,
+		Authenticator:        cfg.Authenticator,
+		AuthProvider:         cfg.AuthProvider,
+		Keepalive:            cfg.SocketKeepalive,
+		Logger:               cfg.Logger,
 	}, nil
 }
 
@@ -598,6 +609,10 @@ func (pool *hostConnPool) connect() (err error) {
 			return err
 		}
 	}
+
+	// Connection is fully initialized — switch deadlines from ConnectTimeout to
+	// operational Timeout / WriteTimeout before serving regular queries.
+	conn.finalizeConnection()
 
 	// add the Conn to the pool
 	pool.mu.Lock()
