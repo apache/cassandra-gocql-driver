@@ -1997,9 +1997,23 @@ func (sw *segmentWriter) runFlusher(interval time.Duration) {
 	// Indicates whether the flush timer is running
 	running := false
 
+	// stopTimer stops the flush timer and drains a pending tick if there is one
+	stopTimer := func() {
+		if !timer.Stop() {
+			select {
+			case <-timer.C:
+			default:
+			}
+		}
+		running = false
+	}
+
 	for {
 		select {
 		case <-sw.quit:
+			// Returning io.EOF as writeCoalescer does.
+			sw.failPending(io.EOF)
+			sw.reset()
 			return
 		case req := <-sw.writeCh:
 			frame := req.data
@@ -2007,7 +2021,8 @@ func (sw *segmentWriter) runFlusher(interval time.Duration) {
 				// Frame is too big to fit into a single segment, so we need to flush the current segment and start a new one.
 				// If the current segment is not empty, we need to flush it first.
 				if running {
-					running = false
+					// Stop timer here as we are about to flush current segment
+					stopTimer()
 					sw.flushCurrentSegment()
 					sw.reset()
 				}
@@ -2020,10 +2035,14 @@ func (sw *segmentWriter) runFlusher(interval time.Duration) {
 				}
 			} else {
 				// Frame doesn't fit into current segment,
-				// so we need to flush the current one and start a new one
+				// so we need to flush the current one and start a new one.
+				// Stopping timer as we are about to flush current segment.
+				stopTimer()
 				sw.flushCurrentSegment()
+				// Starting new segment
 				sw.reset()
 				sw.appendWriteRequest(req)
+				running = true
 				timer.Reset(interval)
 			}
 		case <-timer.C:
@@ -2043,23 +2062,33 @@ func (sw *segmentWriter) fitsSegment(frame []byte) bool {
 	return sw.totalFramesLength+len(frame) <= maxSegmentPayloadSize
 }
 
+// failPending reports err to every buffered write request so their callers,
+// which are blocked on the result channel, are unblocked.
+func (sw *segmentWriter) failPending(err error) {
+	for _, req := range sw.writeRequests {
+		req.resultChan <- writeResult{
+			n:   0,
+			err: err,
+		}
+	}
+}
+
 // Flushes the current segment and writes the results to the result listeners.
 // Should be called before resetting the segment writer.
 func (sw *segmentWriter) flushCurrentSegment() {
+	// nothing to flush
+	if len(sw.writeRequests) == 0 {
+		return
+	}
+
 	framesBuf := make([]byte, 0, sw.totalFramesLength)
 	for _, req := range sw.writeRequests {
-		// TODO: interesting if compiler optimizes this
 		framesBuf = append(framesBuf, req.data...)
 	}
 
 	err := sw.encodeAndWrite(framesBuf, true)
 	if err != nil {
-		for _, req := range sw.writeRequests {
-			req.resultChan <- writeResult{
-				n:   0,
-				err: err,
-			}
-		}
+		sw.failPending(fmt.Errorf("error occured while encoding and writing of the current segment: %w", err))
 		return
 	}
 

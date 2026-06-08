@@ -1920,6 +1920,32 @@ func Test_segmentWriter_writeContext(t *testing.T) {
 		require.ErrorIs(t, err, expectedErr)
 		require.Equal(t, 0, n)
 	})
+
+	t.Run("connection closed after enqueue unblocks buffered writer", func(t *testing.T) {
+		rec := &recordingContextWriter{}
+		ctx, cancel := context.WithCancel(context.Background())
+		// Large interval so the frame stays buffered (waiting for the timer)
+		// until we close the writer, exercising the quit-while-pending path.
+		sw := newSegmentWriter(rec, time.Hour, ctx.Done(), nil)
+
+		resultCh := make(chan writeResult, 1)
+		go func() {
+			n, err := sw.writeContext(context.Background(), []byte("buffered"))
+			resultCh <- writeResult{n: n, err: err}
+		}()
+
+		// Give the flusher a moment to receive and buffer the request before closing.
+		time.Sleep(50 * time.Millisecond)
+		cancel()
+
+		select {
+		case res := <-resultCh:
+			require.ErrorIs(t, res.err, io.EOF)
+			require.Equal(t, 0, res.n)
+		case <-time.After(2 * time.Second):
+			t.Fatal("writeContext hung after the connection was closed")
+		}
+	})
 }
 
 type recordingConnReader struct {
@@ -2050,12 +2076,12 @@ func Test_segmentReader_Read(t *testing.T) {
 		require.ErrorIs(t, err, expectedErr)
 	})
 
-	t.Run("error reading partial  from underlying reader", func(t *testing.T) {
+	t.Run("error reading partial frame from underlying reader", func(t *testing.T) {
 		payload := buildResponseTestFrame(t, maxSegmentPayloadSize+100)
 		segment1 := encodeSegment(t, payload[:maxSegmentPayloadSize], false)
-		// Unexpected self-contained segment
-		segment2 := encodeSegment(t, payload[maxSegmentPayloadSize:], true)
+		segment2 := encodeSegment(t, payload[maxSegmentPayloadSize:], false)
 
+		// The underlying reader fails while reading the second (partial) segment.
 		expectedErr := errors.New("test error")
 
 		r := createTestConnReaderMockFromBytes(append(segment1, segment2...))
