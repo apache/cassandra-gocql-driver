@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - Correct protocol negotiation with non-Cassandra servers (CASSGO-131)
+- LZ4 test fails on arm64 (CASSGO-128)
 
 ## [2.1.2]
 

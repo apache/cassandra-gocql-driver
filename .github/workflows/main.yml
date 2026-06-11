@@ -8,9 +8,25 @@ on:
     types: [ opened, synchronize, reopened ]
 
 jobs:
-  build:
-    name: Unit tests
+  unit-tests-amd64:
+    name: Unit tests AMD64
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        go: [ '1.25', '1.26' ]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ matrix.go }}
+      - name: Run linting
+        run: make check
+      - name: Run unit tests
+        run: make test-unit
+  
+  unit-tests-arm64:
+    name: Unit tests ARM64
+    runs-on: ubuntu-24.04-arm
     strategy:
       matrix:
         go: [ '1.25', '1.26' ]
@@ -27,7 +43,8 @@ jobs:
   integration-cassandra:
     timeout-minutes: 15
     needs:
-      - build
+      - unit-tests-amd64
+      - unit-tests-arm64
     name: Integration Tests
     runs-on: ubuntu-latest
     strategy:
@@ -93,7 +110,8 @@ jobs:
   integration-auth-cassandra:
     timeout-minutes: 15
     needs:
-      - build
+      - unit-tests-amd64
+      - unit-tests-arm64
     name: Integration Tests with auth
     runs-on: ubuntu-latest
     strategy:
