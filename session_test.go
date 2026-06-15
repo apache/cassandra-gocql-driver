@@ -403,3 +403,60 @@ func TestRetryType_IgnoreRethrow(t *testing.T) {
 		resetObserved()
 	}
 }
+
+func TestStaticQueryInfo_OverrideBindingFunction(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+
+	if err := createTable(session, "CREATE TABLE IF NOT EXISTS gocql_test.static_query_info_override (id int, value text, PRIMARY KEY (id))"); err != nil {
+		t.Fatalf("failed to create table with error '%v'", err)
+	}
+
+	if err := session.Query("INSERT INTO static_query_info_override (id, value) VALUES (?, ?)", 1, "foo").Exec(); err != nil {
+		t.Fatalf("insert into static_query_info_override failed, err '%v'", err)
+	}
+
+	if err := session.Query("INSERT INTO static_query_info_override (id, value) VALUES (?, ?)", 2, "bar").Exec(); err != nil {
+		t.Fatalf("insert into static_query_info_override failed, err '%v'", err)
+	}
+
+	qry := session.Bind("SELECT id, value FROM static_query_info_override WHERE id = ?", func(q *QueryInfo) ([]interface{}, error) {
+		values := make([]interface{}, 1)
+		values[0] = 1
+		return values, nil
+	})
+
+	iter := qry.Iter()
+	var id int
+	var value string
+	iter.Scan(&id, &value)
+	if err := iter.Close(); err != nil {
+		t.Fatalf("query with exposed info failed, err '%v'", err)
+	}
+
+	if id != 1 {
+		t.Fatalf("Expected id %d, but got %d", 113, id)
+	}
+	if value != "foo" {
+		t.Fatalf("Expected value %s, but got %s", "foo", value)
+	}
+
+	qry.Binding(func(q *QueryInfo) ([]interface{}, error) {
+		values := make([]interface{}, 1)
+		values[0] = 2
+		return values, nil
+	})
+
+	iter = qry.Iter()
+	iter.Scan(&id, &value)
+	if err := iter.Close(); err != nil {
+		t.Fatalf("query with exposed info failed, err '%v'", err)
+	}
+
+	if id != 2 {
+		t.Fatalf("Expected id %d, but got %d", 2, id)
+	}
+	if value != "bar" {
+		t.Fatalf("Expected value %s, but got %s", "bar", value)
+	}
+}

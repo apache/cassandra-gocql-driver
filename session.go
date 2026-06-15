@@ -1326,6 +1326,14 @@ func (q *Query) Idempotent(value bool) *Query {
 // For supported Go to CQL type conversions for query parameters, see Session.Query documentation.
 func (q *Query) Bind(v ...interface{}) *Query {
 	q.values = v
+	q.binding = nil
+	return q
+}
+
+// Binding sets a function for dynamic generation of query arguments.
+func (q *Query) Binding(binding func(q *QueryInfo) ([]interface{}, error)) *Query {
+	q.values = nil
+	q.binding = binding
 	return q
 }
 
