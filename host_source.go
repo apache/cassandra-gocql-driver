@@ -453,6 +453,14 @@ func (h *HostInfo) IsUp() bool {
 }
 
 func (h *HostInfo) HostnameAndPort() string {
+	h.mu.RLock()
+	if h.hostname != "" {
+		s := net.JoinHostPort(h.hostname, strconv.Itoa(h.port))
+		h.mu.RUnlock()
+		return s
+	}
+	h.mu.RUnlock()
+
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if h.hostname == "" {
@@ -463,8 +471,8 @@ func (h *HostInfo) HostnameAndPort() string {
 }
 
 func (h *HostInfo) ConnectAddressAndPort() string {
-	h.mu.Lock()
-	defer h.mu.Unlock()
+	h.mu.RLock()
+	defer h.mu.RUnlock()
 	addr, _ := h.connectAddressLocked()
 	return net.JoinHostPort(addr.String(), strconv.Itoa(h.port))
 }
@@ -484,10 +492,7 @@ func (h *HostInfo) String() string {
 
 // Polls system.peers at a specific interval to find new hosts
 type ringDescriber struct {
-	session         *Session
-	mu              sync.Mutex
-	prevHosts       []*HostInfo
-	prevPartitioner string
+	session *Session
 }
 
 // Returns true if we are using system_schema.keyspaces instead of system.schema_keyspaces
@@ -806,7 +811,7 @@ func (r *ringDescriber) getClusterPeerInfo(localHost *HostInfo) ([]*HostInfo, er
 
 // Return true if the host is a valid peer
 func isValidPeer(host *HostInfo) bool {
-	return !(len(host.RPCAddress()) == 0 ||
+	return !(len(host.rpcAddress) == 0 ||
 		host.hostId == "" ||
 		host.dataCenter == "" ||
 		host.missingRack ||
@@ -815,17 +820,14 @@ func isValidPeer(host *HostInfo) bool {
 
 // GetHosts returns a list of hosts found via queries to system.local and system.peers
 func (r *ringDescriber) GetHosts() ([]*HostInfo, string, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
 	localHost, err := r.getLocalHostInfo()
 	if err != nil {
-		return r.prevHosts, r.prevPartitioner, err
+		return nil, "", err
 	}
 
 	peerHosts, err := r.getClusterPeerInfo(localHost)
 	if err != nil {
-		return r.prevHosts, r.prevPartitioner, err
+		return nil, "", err
 	}
 
 	hosts := append([]*HostInfo{localHost}, peerHosts...)
@@ -1048,13 +1050,13 @@ func (b *errorBroadcaster) newListener() <-chan error {
 
 func (b *errorBroadcaster) broadcast(err error) {
 	b.mu.Lock()
-	defer b.mu.Unlock()
 	curListeners := b.listeners
-	if len(curListeners) > 0 {
-		b.listeners = nil
-	} else {
+	if len(curListeners) == 0 {
+		b.mu.Unlock()
 		return
 	}
+	b.listeners = nil
+	b.mu.Unlock()
 
 	for _, listener := range curListeners {
 		listener <- err

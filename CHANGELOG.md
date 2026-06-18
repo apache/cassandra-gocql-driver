@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Security-model discoverability (CASSANDRA-21464)
+- Improve host_source locking and ring refresh concurrency (CASSGO-121)
 
 ## [2.1.2]
 
