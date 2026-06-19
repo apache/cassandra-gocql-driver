@@ -971,6 +971,8 @@ type hostMetrics struct {
 type queryMetrics struct {
 	totalAttempts int64
 	totalLatency  int64
+	// totalSpeculativeExecutions is the number of speculative executions launched for this query.
+	totalSpeculativeExecutions int64
 }
 
 func (qm *queryMetrics) attempt(addLatency time.Duration) int {
@@ -980,6 +982,15 @@ func (qm *queryMetrics) attempt(addLatency time.Duration) int {
 
 func (qm *queryMetrics) attempts() int {
 	return int(atomic.LoadInt64(&qm.totalAttempts))
+}
+
+func (qm *queryMetrics) speculativeExecutions() int {
+	return int(atomic.LoadInt64(&qm.totalSpeculativeExecutions))
+}
+
+// increments the speculative execution count.
+func (qm *queryMetrics) speculativeExecution() {
+	atomic.AddInt64(&qm.totalSpeculativeExecutions, 1)
 }
 
 func (qm *queryMetrics) latency() int64 {
@@ -2400,6 +2411,9 @@ type ObservedQuery struct {
 	// The first attempt is number zero and any retries have non-zero attempt number.
 	Attempt int
 
+	// SpeculativeExecutions is the number of speculative executions launched
+	SpeculativeExecutions int
+
 	// Query object associated with this request. Should be used as read only.
 	Query *Query
 }
@@ -2439,6 +2453,9 @@ type ObservedBatch struct {
 	// Attempt is the index of attempt at executing this query.
 	// The first attempt is number zero and any retries have non-zero attempt number.
 	Attempt int
+
+	// SpeculativeExecutions is the number of speculative executions launched
+	SpeculativeExecutions int
 
 	// Batch object associated with this request. Should be used as read only.
 	Batch *Batch
