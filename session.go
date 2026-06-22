@@ -2532,6 +2532,10 @@ var (
 // ErrProtocol represents a protocol-level error.
 type ErrProtocol struct{ error }
 
+func (e ErrProtocol) Unwrap() error {
+	return e.error
+}
+
 // NewErrProtocol creates a new protocol error with the specified format and arguments.
 func NewErrProtocol(format string, args ...interface{}) error {
 	return ErrProtocol{fmt.Errorf(format, args...)}

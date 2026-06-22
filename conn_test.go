@@ -1259,7 +1259,12 @@ func (srv *TestServer) process(conn net.Conn, reqFrame *framer, useProtoV5, star
 		srv.errorLocked("process frame with a nil header")
 		return
 	}
-	respFrame := newFramer(nil, byte(head.version), GlobalTypes)
+	// use the configured version unless it wasn't specified
+	version := srv.protocol
+	if version == 0 {
+		version = byte(head.version)
+	}
+	respFrame := newFramer(nil, version, GlobalTypes)
 
 	if srv.customRequestHandler != nil {
 		if err := srv.customRequestHandler(srv, reqFrame, respFrame); err != nil {

@@ -231,9 +231,18 @@ func TestProtocolNegotiation(t *testing.T) {
 				forceZeroStreamID:         tc.forceZeroStreamID,
 			}
 
+			// use the maximum protocol supported
+			protocol := uint8(0)
+			for _, supportedVersion := range tc.supportedVersions {
+				supportedProto := uint8(supportedVersion)
+				if supportedProto > protocol {
+					protocol = supportedProto
+				}
+			}
+
 			srv := newTestServerOpts{
 				addr:                       "127.0.0.1:0",
-				protocol:                   5,
+				protocol:                   protocol,
 				customRequestHandler:       handler.handle,
 				dontFailOnProtocolMismatch: true,
 			}.newServer(t, context.Background())
