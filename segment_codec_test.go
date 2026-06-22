@@ -29,6 +29,7 @@ package gocql
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
 	"errors"
 	"io"
@@ -641,7 +642,6 @@ func benchmarkSegmentCodec(b *testing.B, codec segmentCodec) {
 	})
 }
 
-
 func Benchmark_segmentCodec(b *testing.B) {
 	b.Run("uncompressed", func(b *testing.B) {
 		benchmarkSegmentCodec(b, newSegmentCodec(nil))
@@ -649,5 +649,76 @@ func Benchmark_segmentCodec(b *testing.B) {
 
 	b.Run("compressed", func(b *testing.B) {
 		benchmarkSegmentCodec(b, newSegmentCodec(lz4.LZ4Compressor{}))
+	})
+}
+
+// discardContextWriter discards everything written to it and reports success.
+type discardContextWriter struct{}
+
+func (discardContextWriter) writeContext(_ context.Context, p []byte) (int, error) {
+	return len(p), nil
+}
+
+// benchmarkSegmentWriterFlush measures the full flushCurrentSegment path
+// (frame concatenation into framesBuf + segmentCodec.encode) for a segment
+// built from frameCount frames of frameSize bytes each.
+func benchmarkSegmentWriterFlush(b *testing.B, compressor Compressor, frameCount, frameSize int) {
+	reqs := make([]writeRequest, frameCount)
+	resultChans := make([]chan writeResult, frameCount)
+	for i := range reqs {
+		resultChans[i] = make(chan writeResult, 1)
+		reqs[i] = writeRequest{
+			data:       make([]byte, frameSize),
+			resultChan: resultChans[i],
+		}
+	}
+
+	sw := &segmentWriter{
+		w:            discardContextWriter{},
+		segmentCodec: newSegmentCodec(compressor),
+	}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		sw.writeRequests = reqs
+		sw.totalFramesLength = frameCount * frameSize
+		sw.flushCurrentSegment()
+		for _, ch := range resultChans {
+			<-ch
+		}
+	}
+}
+
+func Benchmark_segmentWriter_flushCurrentSegment(b *testing.B) {
+	// frameCount x frameSize must stay <= maxSegmentPayloadSize so the whole
+	// batch fits into a single self-contained segment.
+	cases := []struct {
+		name       string
+		frameCount int
+		frameSize  int
+	}{
+		{"1x128", 1, 128},
+		{"8x128", 8, 128},
+		{"64x128", 64, 128},
+		{"256x128", 256, 128},
+		{"32x1K", 32, 1024},
+		{"120x1K", 120, 1024},
+	}
+
+	run := func(b *testing.B, compressor Compressor) {
+		for _, tc := range cases {
+			b.Run(tc.name, func(b *testing.B) {
+				benchmarkSegmentWriterFlush(b, compressor, tc.frameCount, tc.frameSize)
+			})
+		}
+	}
+
+	b.Run("uncompressed", func(b *testing.B) {
+		run(b, nil)
+	})
+
+	b.Run("compressed", func(b *testing.B) {
+		run(b, lz4.LZ4Compressor{})
 	})
 }
