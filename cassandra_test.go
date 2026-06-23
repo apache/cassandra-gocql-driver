@@ -3091,7 +3091,6 @@ func TestTokenAwareConnPool(t *testing.T) {
 	createKeyspaceWithRF(t, cluster, "test_token_aware_ks", 1)
 
 	cluster.PoolConfig.HostSelectionPolicy = TokenAwareHostPolicy(RoundRobinHostPolicy())
-	cluster.Logger = NewLogger(LogLevelDebug)
 	// force metadata query to page
 	cluster.PageSize = 1
 
@@ -3311,9 +3310,7 @@ func TestNegativeStream(t *testing.T) {
 func TestManualQueryPaging(t *testing.T) {
 	const rowsToInsert = 5
 
-	session := createSession(t, func(cfg *ClusterConfig) {
-		cfg.Logger = NewLogger(LogLevelDebug)
-	})
+	session := createSession(t)
 	defer session.Close()
 
 	if err := createTable(session, "CREATE TABLE gocql_test.testManualPaging (id int, count int, PRIMARY KEY (id))"); err != nil {

@@ -156,7 +156,7 @@ func Test_readUncompressedFrame(t *testing.T) {
 			require.NoError(t, err)
 
 			segmentCodec := newSegmentCodec(nil)
-			frame, err := segmentCodec.encode(framer.buf, true)
+			frame, err := segmentCodec.encode([][]byte{framer.buf}, true)
 			require.NoError(t, err)
 
 			if tt.modifyFrame != nil {
@@ -268,7 +268,7 @@ func Test_readCompressedFrame(t *testing.T) {
 			require.NoError(t, err)
 
 			segmentCodec1 := newSegmentCodec(testMockedCompressor{})
-			frame, err := segmentCodec1.encode(framer.buf, true)
+			frame, err := segmentCodec1.encode([][]byte{framer.buf}, true)
 			require.NoError(t, err)
 
 			if tt.modifyFrameFn != nil {
@@ -298,12 +298,12 @@ func Test_segmentCodec_encode_payloadSizeValidation(t *testing.T) {
 
 	// Test max valid payload
 	maxPayload := make([]byte, maxSegmentPayloadSize)
-	_, err := codec.encode(maxPayload, true)
+	_, err := codec.encode([][]byte{maxPayload}, true)
 	require.NoError(t, err)
 
 	// Test exceeding max payload
 	oversizedPayload := make([]byte, maxSegmentPayloadSize+1)
-	_, err = codec.encode(oversizedPayload, false)
+	_, err = codec.encode([][]byte{oversizedPayload}, false)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "exceeds maximum segment size")
 }
@@ -447,7 +447,7 @@ func Test_segmentCodec_encode_compressionWorthiness(t *testing.T) {
 	}
 	codec := newSegmentCodec(mockCompressor)
 
-	encoded, err := codec.encode(payload, true)
+	encoded, err := codec.encode([][]byte{payload}, true)
 	require.NoError(t, err)
 
 	reader := bytes.NewReader(encoded)
@@ -498,7 +498,7 @@ func Test_segmentCodec_roundtrip_uncompressed(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			codec := newSegmentCodec(nil)
 
-			encoded, err := codec.encode(tt.payload, tt.isSelfContained)
+			encoded, err := codec.encode([][]byte{tt.payload}, tt.isSelfContained)
 			require.NoError(t, err)
 
 			decoded, selfContained, err := codec.decode(bytes.NewReader(encoded))
@@ -542,7 +542,7 @@ func Test_segmentCodec_roundtrip_compressed(t *testing.T) {
 			// using real lz4 compressor for this test
 			codec := newSegmentCodec(lz4.LZ4Compressor{})
 
-			encoded, err := codec.encode(tt.payload, tt.isSelfContained)
+			encoded, err := codec.encode([][]byte{tt.payload}, tt.isSelfContained)
 			require.NoError(t, err)
 
 			decoded, selfContained, err := codec.decode(bytes.NewReader(encoded))
@@ -559,7 +559,7 @@ func benchmarkSegmentCodecEncode(b *testing.B, codec segmentCodec) {
 	bench := func(b *testing.B, payload []byte) {
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			_, err := codec.encode(payload, true)
+			_, err := codec.encode([][]byte{payload}, true)
 			require.NoError(b, err)
 		}
 	}
@@ -604,7 +604,7 @@ func benchmarkSegmentCodecDecode(b *testing.B, codec segmentCodec) {
 	b.ResetTimer()
 
 	bench := func(b *testing.B, payload []byte) {
-		encodedSegment, err := codec.encode(payload, true)
+		encodedSegment, err := codec.encode([][]byte{payload}, true)
 		require.NoError(b, err)
 		reader := &bufReader{buf: encodedSegment}
 		b.ResetTimer()

@@ -76,19 +76,29 @@ func newSegmentCodec(compressor Compressor) segmentCodec {
 	}
 }
 
-func (sc *segmentCodec) encode(payload []byte, isSelfContained bool) ([]byte, error) {
-	if len(payload) > maxSegmentPayloadSize {
-		return nil, fmt.Errorf("gocql: payload length (%d) exceeds maximum segment size of %d", len(payload), maxSegmentPayloadSize)
+// encode encodes the given frames into a single segment. The frames are treated
+// as one logical payload: on the uncompressed path they are copied straight into
+// the segment buffer, avoiding a separate concatenation buffer.
+func (sc *segmentCodec) encode(frames [][]byte, isSelfContained bool) ([]byte, error) {
+	payloadLen := 0
+	for _, frame := range frames {
+		payloadLen += len(frame)
+	}
+
+	if payloadLen > maxSegmentPayloadSize {
+		return nil, fmt.Errorf("gocql: payload length (%d) exceeds maximum segment size of %d", payloadLen, maxSegmentPayloadSize)
 	}
 
 	if sc.compressed {
-		return sc.encodeCompressedSegment(payload, isSelfContained)
+		return sc.encodeCompressedSegment(frames, payloadLen, isSelfContained)
 	}
-	return sc.encodeUncompressedSegment(payload, isSelfContained)
+	return sc.encodeUncompressedSegment(frames, payloadLen, isSelfContained)
 }
 
-func (sc *segmentCodec) encodeCompressedSegment(payload []byte, isSelfContained bool) ([]byte, error) {
-	uncompressedLen := len(payload)
+func (sc *segmentCodec) encodeCompressedSegment(frames [][]byte, uncompressedLen int, isSelfContained bool) ([]byte, error) {
+	// Block compression requires a single contiguous input buffer, so the
+	// frames have to be concatenated before being handed to the compressor.
+	payload := concatFrames(frames, uncompressedLen)
 
 	compressed, err := sc.compressor.AppendCompressed(nil, payload)
 	if err != nil {
@@ -113,6 +123,16 @@ func (sc *segmentCodec) encodeCompressedSegment(payload []byte, isSelfContained 
 	return segmentBuf, nil
 }
 
+// concatFrames concatenates frames into a single contiguous buffer of totalLen bytes.
+func concatFrames(frames [][]byte, totalLen int) []byte {
+	buf := make([]byte, totalLen)
+	offset := 0
+	for _, frame := range frames {
+		offset += copy(buf[offset:], frame)
+	}
+	return buf
+}
+
 // encodeCompressedSegmentHeader encodes the compressed segment header into the provided destination slice.
 // It assumes that dest has enough space to hold the header.
 func (sc *segmentCodec) encodeCompressedSegmentHeader(compressedLen, uncompressedLen int, isSelfContained bool, dest []byte) {
@@ -129,13 +149,20 @@ func (sc *segmentCodec) encodeCompressedSegmentHeader(compressedLen, uncompresse
 	dest[7] = byte(headerCRC24 >> 16)
 }
 
-func (sc *segmentCodec) encodeUncompressedSegment(payload []byte, isSelfContained bool) ([]byte, error) {
-	payloadLen := len(payload)
-
+func (sc *segmentCodec) encodeUncompressedSegment(frames [][]byte, payloadLen int, isSelfContained bool) ([]byte, error) {
 	segmentBuf := make([]byte, uncompressedHeaderSize+payloadLen+crc32Size)
-
 	sc.encodeUncompressedSegmentHeader(payloadLen, isSelfContained, segmentBuf)
-	sc.encodePayloadAndChecksum(payload, segmentBuf[uncompressedHeaderSize:])
+
+	// Frames are copied directly into the segment payload region, so no
+	// separate concatenation buffer is needed.
+	payload := segmentBuf[uncompressedHeaderSize : uncompressedHeaderSize+payloadLen]
+	offset := 0
+	for _, frame := range frames {
+		offset += copy(payload[offset:], frame)
+	}
+
+	payloadCRC32 := Crc32(payload)
+	binary.LittleEndian.PutUint32(segmentBuf[uncompressedHeaderSize+payloadLen:], payloadCRC32)
 
 	return segmentBuf, nil
 }

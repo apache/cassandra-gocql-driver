@@ -1461,7 +1461,7 @@ finish:
 
 	if *useProtoV5 && *startupCompleted {
 		segmentCodec := newSegmentCodec(nil)
-		segment, err := segmentCodec.encode(respFrame.buf, true)
+		segment, err := segmentCodec.encode([][]byte{respFrame.buf}, true)
 		if err == nil {
 			_, err = conn.Write(segment)
 		}
@@ -1572,7 +1572,7 @@ func TestConnProcessAllFramesInSingleSegment(t *testing.T) {
 		buf = append(buf, framer2.buf...)
 
 		segmentCodec := newSegmentCodec(nil)
-		segment, err := segmentCodec.encode(buf, true)
+		segment, err := segmentCodec.encode([][]byte{buf}, true)
 		require.NoError(t, err)
 
 		_, err = client.Write(segment)
@@ -1983,7 +1983,7 @@ func (r *recordingConnReader) GetTimeout() time.Duration          { return 0 }
 func encodeSegment(t *testing.T, payload []byte, selfContained bool) []byte {
 	t.Helper()
 	codec := newSegmentCodec(nil)
-	segment, err := codec.encode(payload, selfContained)
+	segment, err := codec.encode([][]byte{payload}, selfContained)
 	require.NoError(t, err)
 	return segment
 }

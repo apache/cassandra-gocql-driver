@@ -1945,10 +1945,14 @@ type segmentWriter struct {
 	w    contextWriter
 	quit <-chan struct{}
 
+	// Channel for writing requests to the segment writer.
+	writeCh chan writeRequest
+
 	// Holds write requests for the current segment.
-	writeRequests     []writeRequest
+	writeRequests []writeRequest
+	// Total length of all frames in the current segment.
+	// Used to track if the current segment can fit a new frame.
 	totalFramesLength int
-	writeCh           chan writeRequest
 
 	segmentCodec segmentCodec
 }
@@ -2076,17 +2080,12 @@ func (sw *segmentWriter) failPending(err error) {
 // Flushes the current segment and writes the results to the result listeners.
 // Should be called before resetting the segment writer.
 func (sw *segmentWriter) flushCurrentSegment() {
-	// nothing to flush
-	if len(sw.writeRequests) == 0 {
-		return
+	frames := make([][]byte, len(sw.writeRequests))
+	for i, req := range sw.writeRequests {
+		frames[i] = req.data
 	}
 
-	framesBuf := make([]byte, 0, sw.totalFramesLength)
-	for _, req := range sw.writeRequests {
-		framesBuf = append(framesBuf, req.data...)
-	}
-
-	err := sw.encodeAndWrite(framesBuf, true)
+	err := sw.encodeAndWrite(frames, true)
 	if err != nil {
 		sw.failPending(fmt.Errorf("error occured while encoding and writing of the current segment: %w", err))
 		return
@@ -2100,6 +2099,7 @@ func (sw *segmentWriter) flushCurrentSegment() {
 	}
 }
 
+// reset resets the segment writer to its initial state.
 func (sw *segmentWriter) reset() {
 	sw.writeRequests = nil
 	sw.totalFramesLength = 0
@@ -2122,6 +2122,10 @@ func (sw *segmentWriter) flushBigFrameImmediately(req writeRequest) {
 
 	var flushErr error
 
+	// Reusable slice of frame payloads passed to the codec on flush.
+	// Reused accross calls to encodeAndWrite to avoid per-segment allocation of the slice.
+	frameHolder := [][]byte{nil}
+
 	for i := 0; i < segmentsCount; i++ {
 		// Calculate the length of the current frame part which will be encoded into a segment
 		partialFrameLength := 0
@@ -2130,7 +2134,9 @@ func (sw *segmentWriter) flushBigFrameImmediately(req writeRequest) {
 		} else {
 			partialFrameLength = frameLength % maxSegmentPayloadSize
 		}
-		err := sw.encodeAndWrite(frame[:partialFrameLength], false)
+		// Reusing the same scratch buffer for the partial frame
+		frameHolder[0] = frame[:partialFrameLength]
+		err := sw.encodeAndWrite(frameHolder, false)
 		if err != nil {
 			flushErr = err
 			break
@@ -2149,9 +2155,9 @@ func (sw *segmentWriter) flushBigFrameImmediately(req writeRequest) {
 	}
 }
 
-// Encodes a frame into a segment and writes it to the underlying connection
-func (sw *segmentWriter) encodeAndWrite(frame []byte, isSelfContained bool) error {
-	segmentBuf, err := sw.segmentCodec.encode(frame, isSelfContained)
+// Encodes the given frames into a single segment and writes it to the underlying connection
+func (sw *segmentWriter) encodeAndWrite(frames [][]byte, isSelfContained bool) error {
+	segmentBuf, err := sw.segmentCodec.encode(frames, isSelfContained)
 	if err != nil {
 		return err
 	}
