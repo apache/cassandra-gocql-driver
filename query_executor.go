@@ -76,9 +76,58 @@ type queryExecutor struct {
 	interceptor ExecAttemptInterceptor
 }
 
+type OpType int
+
+const (
+	OpQuery OpType = iota
+	OpBatch
+)
+
+type ImmutableQuery interface {
+	Statement() string
+	Values() []interface{}
+}
+
+type immutableQuery struct {
+	query *Query
+}
+
+func (q *immutableQuery) Statement() string {
+	return q.query.stmt
+}
+
+func (q *immutableQuery) Values() []interface{} {
+	return q.query.values
+}
+
+type ImmutableBatch interface {
+	Type() BatchType
+	Entries() []BatchEntry
+	Cons() Consistency
+}
+
+type immutableBatch struct {
+	batch *Batch
+}
+
+func (b *immutableBatch) Type() BatchType {
+	return b.batch.Type
+}
+
+func (b *immutableBatch) Entries() []BatchEntry {
+	return b.batch.Entries
+}
+
+func (b *immutableBatch) Cons() Consistency {
+	return b.batch.Cons
+}
+
 type QueryAttempt struct {
-	// The statement to execute, either a *gocql.Query or *gocql.Batch.
-	Statement ExecutableStatement
+	// The op type, whether query or batch.
+	Type OpType
+	// Only one of Query or Batch will be set, depending on the op type.
+	Query ImmutableQuery
+	Batch ImmutableBatch
 	// The host that will receive the query.
 	Host *HostInfo
 	// The local address of the connection used to execute the query.
@@ -132,37 +181,41 @@ func (c ExecAttemptInterceptorChain) getNextHandler(curr int, attempt QueryAttem
 	}
 }
 
-func (q *queryExecutor) attemptQuery(ctx context.Context, qry internalRequest, conn *Conn, speculativeExecutionCount int) *Iter {
+func (q *queryExecutor) attemptQuery(ctx context.Context, iRequest internalRequest, conn *Conn, speculativeExecutionCount int) *Iter {
 	start := time.Now()
 
 	var iter *Iter
 	var err error
-	attempt := qry.getNextAttempt()
+	attempt := iRequest.getNextAttempt()
 	if q.interceptor != nil {
-		// Propagate interceptor context modifications.
-		_ctx := ctx
-		attempt := QueryAttempt{
-			Statement:  ExecutableStatement(qry),
-			Host:       conn.host,
-			LocalAddr:  conn.r.LocalAddr(),
-			RemoteAddr: conn.r.RemoteAddr(),
-			Attempts:   attempt,
+		iq := QueryAttempt{
+			Host:                      conn.host,
+			LocalAddr:                 conn.r.LocalAddr(),
+			RemoteAddr:                conn.r.RemoteAddr(),
+			Attempts:                  attempt,
 			SpeculativeExecutionCount: speculativeExecutionCount,
 		}
-		iter, err = q.interceptor.Intercept(_ctx, attempt, func(_ctx context.Context) (*Iter, error) {
-			ctx = _ctx
-			iter := qry.execute(ctx, conn)
-			return iter, iter.err
+		if iQuery, ok := iRequest.(*internalQuery); ok {
+			iq.Type = OpQuery
+			iq.Query = &immutableQuery{query: iQuery.originalQuery}
+		}
+		if iBatch, ok := iRequest.(*internalBatch); ok {
+			iq.Type = OpBatch
+			iq.Batch = &immutableBatch{batch: iBatch.originalBatch}
+		}
+		iter, err = q.interceptor.Intercept(ctx, iq, func(cxCtx context.Context) (*Iter, error) {
+			it := iRequest.execute(cxCtx, conn)
+			return it, it.err
 		})
 		if err != nil {
 			iter = &Iter{err: err}
 		}
 	} else {
-		iter = qry.execute(ctx, conn)
+		iter = iRequest.execute(ctx, conn)
 	}
 
 	end := time.Now()
-	qry.recordAttempt(attempt, q.pool.keyspace, end, start, iter, conn.host)
+	iRequest.recordAttempt(attempt, q.pool.keyspace, end, start, iter, conn.host)
 
 	return iter
 }

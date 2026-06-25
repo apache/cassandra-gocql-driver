@@ -41,14 +41,13 @@ func (q MyExecAttemptInterceptor) Intercept(
 	attempt gocql.QueryAttempt,
 	handler gocql.QueryAttemptHandler,
 ) (*gocql.Iter, error) {
-	switch q := attempt.Statement.Statement().(type) {
-	case *gocql.Query:
+	switch attempt.Type {
+	case gocql.OpQuery:
 		// Inspect query
-		log.Println(q.Statement())
-	case *gocql.Batch:
+		log.Println(attempt.Query.Statement())
+	case gocql.OpBatch:
 		// Inspect batch
-
-		log.Println(q.Entries[0].Stmt)
+		log.Println(attempt.Batch.Entries()[0].Stmt)
 	}
 
 	// Inspect or modify context
