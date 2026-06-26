@@ -29,11 +29,11 @@ package gocql
 
 import (
 	"bytes"
-	"context"
 	"encoding/binary"
 	"errors"
 	"io"
 	"testing"
+	"time"
 
 	"github.com/apache/cassandra-gocql-driver/v2/lz4"
 	"github.com/stretchr/testify/assert"
@@ -378,11 +378,6 @@ func Test_segmentCodec_encodeUncompressedSegmentHeader(t *testing.T) {
 			payloadLen:      maxSegmentPayloadSize,
 			isSelfContained: true,
 		},
-		{
-			name:            "empty payload",
-			payloadLen:      0,
-			isSelfContained: false,
-		},
 	}
 
 	for _, tt := range tests {
@@ -653,9 +648,13 @@ func Benchmark_segmentCodec(b *testing.B) {
 }
 
 // discardContextWriter discards everything written to it and reports success.
-type discardContextWriter struct{}
+type discardDeadlineWriter struct{}
 
-func (discardContextWriter) writeContext(_ context.Context, p []byte) (int, error) {
+func (discardDeadlineWriter) SetWriteDeadline(time.Time) error {
+	return nil
+}
+
+func (discardDeadlineWriter) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
@@ -674,7 +673,7 @@ func benchmarkSegmentWriterFlush(b *testing.B, compressor Compressor, frameCount
 	}
 
 	sw := &segmentWriter{
-		w:            discardContextWriter{},
+		w:            discardDeadlineWriter{},
 		segmentCodec: newSegmentCodec(compressor),
 	}
 

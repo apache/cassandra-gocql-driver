@@ -306,7 +306,7 @@ func (c *Conn) init(ctx context.Context, dialedHost *DialedHost) error {
 	}
 
 	c.r.SetTimeout(c.cfg.ConnectTimeout)
-	if err := startup.setupConn(ctx); err != nil {
+	if err := startup.setupConn(ctx, dialedHost); err != nil {
 		return err
 	}
 
@@ -332,7 +332,7 @@ type startupCoordinator struct {
 	frameTicker chan struct{}
 }
 
-func (s *startupCoordinator) setupConn(ctx context.Context) error {
+func (s *startupCoordinator) setupConn(ctx context.Context, host *DialedHost) error {
 	var cancel context.CancelFunc
 	if s.conn.r.GetTimeout() > 0 {
 		ctx, cancel = context.WithTimeout(ctx, s.conn.r.GetTimeout())
@@ -358,7 +358,7 @@ func (s *startupCoordinator) setupConn(ctx context.Context) error {
 
 	go func() {
 		defer close(s.frameTicker)
-		err := s.options(ctx)
+		err := s.options(ctx, host)
 		select {
 		case startupErr <- err:
 		case <-ctx.Done():
@@ -431,7 +431,7 @@ func (s *startupCoordinator) write(ctx context.Context, frame frameBuilder) (fra
 	return framer.parseFrame()
 }
 
-func (s *startupCoordinator) options(ctx context.Context) error {
+func (s *startupCoordinator) options(ctx context.Context, host *DialedHost) error {
 	frame, err := s.write(ctx, &writeOptionsFrame{})
 	if err != nil {
 		return err
@@ -439,7 +439,7 @@ func (s *startupCoordinator) options(ctx context.Context) error {
 
 	switch frame := frame.(type) {
 	case *supportedFrame:
-		return s.startup(ctx, frame.supported)
+		return s.startup(ctx, frame.supported, host)
 	case error:
 		return frame
 	default:
@@ -447,7 +447,7 @@ func (s *startupCoordinator) options(ctx context.Context) error {
 	}
 }
 
-func (s *startupCoordinator) startup(ctx context.Context, supported map[string][]string) error {
+func (s *startupCoordinator) startup(ctx context.Context, supported map[string][]string, host *DialedHost) error {
 	m := map[string]string{
 		"CQL_VERSION":    s.conn.cfg.CQLVersion,
 		"DRIVER_NAME":    driverName,
@@ -479,11 +479,11 @@ func (s *startupCoordinator) startup(ctx context.Context, supported map[string][
 		return v
 	case *readyFrame:
 		// If proto version is 5+ and startup is successfully completed, we should switch to segments
-		s.conn.maybeSwitchToSegments()
+		s.conn.maybeSwitchToSegments(host)
 		return nil
 	case *authenticateFrame:
 		// If proto version is 5+ and startup is successfully completed, we should switch to segments
-		s.conn.maybeSwitchToSegments()
+		s.conn.maybeSwitchToSegments(host)
 		return s.authenticateHandshake(ctx, v)
 	default:
 		return NewErrProtocol("Unknown type of response to startup frame: %s", v)
@@ -774,10 +774,10 @@ func (c *Conn) releaseStream(call *callReq) {
 	}
 }
 
-func (c *Conn) maybeSwitchToSegments() {
+func (c *Conn) maybeSwitchToSegments(host *DialedHost) {
 	if c.version >= protoVersion5 {
 		// Use segments writer which basically batches multiple frames into a single segment before flushing them to the connection.
-		segmentWriter := newSegmentWriter(c.w, c.session.cfg.WriteCoalesceWaitTime, c.ctx.Done(), c.compressor)
+		segmentWriter := newSegmentWriter(host.Conn, c.session.cfg.WriteCoalesceWaitTime, c.ctx.Done(), c.compressor)
 		segmentReader := newSegmentReader(c.r, newSegmentCodec(c.compressor))
 		c.w = segmentWriter
 		c.r = segmentReader
@@ -1942,7 +1942,7 @@ func (c *Conn) awaitSchemaAgreementWithTimeout(ctx context.Context, timeout time
 // Implementation based on similar logic in DataStax lib on which Java driver relies:
 // https://github.com/datastax/native-protocol/blob/6b9bfb05c3fb1e29e74eec288dd54bd78232c2b7/src/main/java/com/datastax/oss/protocol/internal/SegmentBuilder.java#L74
 type segmentWriter struct {
-	w    contextWriter
+	w    deadlineWriter
 	quit <-chan struct{}
 
 	// Channel for writing requests to the segment writer.
@@ -1957,7 +1957,7 @@ type segmentWriter struct {
 	segmentCodec segmentCodec
 }
 
-func newSegmentWriter(w contextWriter, writeInterval time.Duration, quit <-chan struct{}, compressor Compressor) *segmentWriter {
+func newSegmentWriter(w deadlineWriter, writeInterval time.Duration, quit <-chan struct{}, compressor Compressor) *segmentWriter {
 	sw := &segmentWriter{
 		w:            w,
 		quit:         quit,
@@ -2125,6 +2125,8 @@ func (sw *segmentWriter) flushBigFrameImmediately(req writeRequest) {
 	// Reusable slice of frame payloads passed to the codec on flush.
 	// Reused accross calls to encodeAndWrite to avoid per-segment allocation of the slice.
 	frameHolder := [][]byte{nil}
+	// Holds the segments to be written
+	segments := make(net.Buffers, segmentsCount)
 
 	for i := 0; i < segmentsCount; i++ {
 		// Calculate the length of the current frame part which will be encoded into a segment
@@ -2136,14 +2138,20 @@ func (sw *segmentWriter) flushBigFrameImmediately(req writeRequest) {
 		}
 		// Reusing the same scratch buffer for the partial frame
 		frameHolder[0] = frame[:partialFrameLength]
-		err := sw.encodeAndWrite(frameHolder, false)
+		segment, err := sw.segmentCodec.encode(frameHolder, false)
 		if err != nil {
 			flushErr = err
 			break
 		}
 		frame = frame[partialFrameLength:]
+		segments[i] = segment
 	}
 
+	if flushErr == nil {
+		_, flushErr = segments.WriteTo(sw.w)
+	}
+
+	// Write length of the frame to the result channel
 	written := len(req.data)
 	if flushErr != nil {
 		written = 0
@@ -2161,7 +2169,7 @@ func (sw *segmentWriter) encodeAndWrite(frames [][]byte, isSelfContained bool) e
 	if err != nil {
 		return err
 	}
-	_, err = sw.w.writeContext(context.Background(), segmentBuf)
+	_, err = sw.w.Write(segmentBuf)
 	if err != nil {
 		return err
 	}

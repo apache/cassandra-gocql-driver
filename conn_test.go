@@ -1613,12 +1613,7 @@ func TestSegmentWriter_MultipleFrames(t *testing.T) {
 	defer server.Close()
 	defer client.Close()
 
-	sw := newSegmentWriter(&deadlineContextWriter{
-		w:         client,
-		timeout:   time.Second * 2,
-		semaphore: make(chan struct{}, 1),
-		quit:      make(chan struct{}),
-	}, time.Microsecond*400, make(chan struct{}), nil)
+	sw := newSegmentWriter(client, time.Microsecond*400, make(chan struct{}), nil)
 	go func() {
 		_, err := sw.writeContext(context.Background(), []byte("one"))
 		require.NoError(t, err)
@@ -1650,14 +1645,18 @@ func TestSegmentWriter_MultipleFrames(t *testing.T) {
 	}
 }
 
-// recordingContextWriter captures writes for assertions.
-type recordingContextWriter struct {
+// recordingDeadlineWriter captures deadline writer writes for assertions.
+type recordingDeadlineWriter struct {
 	mu              sync.Mutex
 	recordedBuffers [][]byte
 	returnErr       error
 }
 
-func (r *recordingContextWriter) writeContext(ctx context.Context, p []byte) (int, error) {
+func (r *recordingDeadlineWriter) SetWriteDeadline(t time.Time) error {
+	return nil
+}
+
+func (r *recordingDeadlineWriter) Write(p []byte) (int, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.returnErr != nil {
@@ -1667,7 +1666,7 @@ func (r *recordingContextWriter) writeContext(ctx context.Context, p []byte) (in
 	return len(p), nil
 }
 
-func createTestSegmentWriter(writer contextWriter) (*segmentWriter, context.CancelFunc) {
+func createTestSegmentWriter(writer deadlineWriter) (*segmentWriter, context.CancelFunc) {
 	ctx, cancel := context.WithCancel(context.Background())
 	segmentWriter := newSegmentWriter(writer, 10*time.Millisecond, ctx.Done(), nil)
 	return segmentWriter, cancel
@@ -1731,7 +1730,7 @@ func buildResponseTestFrame(t *testing.T, length int) []byte {
 
 func Test_segmentWriter_writeContext(t *testing.T) {
 	t.Run("context canceled before enqueue", func(t *testing.T) {
-		rec := &recordingContextWriter{}
+		rec := &recordingDeadlineWriter{}
 		sw, cancel := createTestSegmentWriter(rec)
 		defer cancel()
 
@@ -1745,7 +1744,7 @@ func Test_segmentWriter_writeContext(t *testing.T) {
 	})
 
 	t.Run("connection closed before enqueue", func(t *testing.T) {
-		rec := &recordingContextWriter{}
+		rec := &recordingDeadlineWriter{}
 		sw, stop := createTestSegmentWriter(rec)
 		// calling stop stops the segment writer.
 		stop()
@@ -1756,7 +1755,7 @@ func Test_segmentWriter_writeContext(t *testing.T) {
 	})
 
 	t.Run("success write small frame", func(t *testing.T) {
-		rec := &recordingContextWriter{}
+		rec := &recordingDeadlineWriter{}
 		sw, cancel := createTestSegmentWriter(rec)
 		defer cancel()
 
@@ -1773,7 +1772,7 @@ func Test_segmentWriter_writeContext(t *testing.T) {
 	})
 
 	t.Run("success write multiple frames", func(t *testing.T) {
-		rec := &recordingContextWriter{}
+		rec := &recordingDeadlineWriter{}
 		sw, cancel := createTestSegmentWriter(rec)
 		defer cancel()
 
@@ -1790,7 +1789,7 @@ func Test_segmentWriter_writeContext(t *testing.T) {
 	})
 
 	t.Run("success write small frame that does not fit current segment", func(t *testing.T) {
-		rec := &recordingContextWriter{}
+		rec := &recordingDeadlineWriter{}
 		sw, cancel := createTestSegmentWriter(rec)
 		defer cancel()
 
@@ -1812,7 +1811,7 @@ func Test_segmentWriter_writeContext(t *testing.T) {
 	})
 
 	t.Run("success write big frame", func(t *testing.T) {
-		rec := &recordingContextWriter{}
+		rec := &recordingDeadlineWriter{}
 		sw, cancel := createTestSegmentWriter(rec)
 		defer cancel()
 
@@ -1832,7 +1831,7 @@ func Test_segmentWriter_writeContext(t *testing.T) {
 	})
 
 	t.Run("success write multiple big frames", func(t *testing.T) {
-		rec := &recordingContextWriter{}
+		rec := &recordingDeadlineWriter{}
 		sw, cancel := createTestSegmentWriter(rec)
 		defer cancel()
 
@@ -1856,7 +1855,7 @@ func Test_segmentWriter_writeContext(t *testing.T) {
 	})
 
 	t.Run("flush current segment before writing frame that does not fit", func(t *testing.T) {
-		rec := &recordingContextWriter{}
+		rec := &recordingDeadlineWriter{}
 		sw, cancel := createTestSegmentWriter(rec)
 		defer cancel()
 
@@ -1880,7 +1879,7 @@ func Test_segmentWriter_writeContext(t *testing.T) {
 
 	t.Run("failed to write segment broadcasted to all write requests", func(t *testing.T) {
 		expectedErr := errors.New("test error")
-		rec := &recordingContextWriter{
+		rec := &recordingDeadlineWriter{
 			returnErr: expectedErr,
 		}
 		sw, cancel := createTestSegmentWriter(rec)
@@ -1909,7 +1908,7 @@ func Test_segmentWriter_writeContext(t *testing.T) {
 
 	t.Run("failed to write a big frame", func(t *testing.T) {
 		expectedErr := errors.New("test error")
-		rec := &recordingContextWriter{
+		rec := &recordingDeadlineWriter{
 			returnErr: expectedErr,
 		}
 		sw, cancel := createTestSegmentWriter(rec)
@@ -1922,7 +1921,7 @@ func Test_segmentWriter_writeContext(t *testing.T) {
 	})
 
 	t.Run("connection closed after enqueue unblocks buffered writer", func(t *testing.T) {
-		rec := &recordingContextWriter{}
+		rec := &recordingDeadlineWriter{}
 		ctx, cancel := context.WithCancel(context.Background())
 		// Large interval so the frame stays buffered (waiting for the timer)
 		// until we close the writer, exercising the quit-while-pending path.
