@@ -58,8 +58,8 @@ func (segment *segmentHeader) String() string {
 
 // segmentCodec is responsible for encoding and decoding segments.
 // It supports both compressed and uncompressed segment formats.
-// Decode path is not thread safe as it uses reusable buffers for decoding segment header and payload crc32.
-// It is expected to be used within a single instance of [Conn].
+// Neither the encode nor the decode path is thread safe: both reuse internal scratch
+// buffers, so a single segmentCodec must be used by at most one goroutine at a time.
 type segmentCodec struct {
 	compressor Compressor
 	compressed bool
@@ -67,6 +67,14 @@ type segmentCodec struct {
 	readHeaderBuf [compressedHeaderSize]byte
 	// Reusable buffer for decoding segment payload crc32, at most 4 bytes
 	readChecksumBuf [crc32Size]byte
+
+	// Reusable scratch buffers for the compressed encode path. encodeConcatBuf holds the
+	// contiguous compressor input (the concatenated frames) and encodeCompressBuf holds the
+	// compressor output. Both are fully consumed within a single encode call (copied into the
+	// returned segment buffer), so reusing them across calls is safe even on the writev
+	// big-frame path where multiple returned segment buffers stay alive simultaneously.
+	encodeConcatBuf   []byte
+	encodeCompressBuf []byte
 }
 
 func newSegmentCodec(compressor Compressor) segmentCodec {
@@ -76,10 +84,24 @@ func newSegmentCodec(compressor Compressor) segmentCodec {
 	}
 }
 
-// encode encodes the given frames into a single segment. The frames are treated
-// as one logical payload: on the uncompressed path they are copied straight into
-// the segment buffer, avoiding a separate concatenation buffer.
+// encode encodes the given frames into a single, freshly allocated segment buffer.
+// Use encodeInto when a reusable output buffer is available.
 func (sc *segmentCodec) encode(frames [][]byte, isSelfContained bool) ([]byte, error) {
+	return sc.encodeInto(nil, frames, isSelfContained)
+}
+
+// encodeInto encodes the given frames into a single segment, reusing dst's backing array
+// when it has enough capacity (otherwise a new buffer is allocated). The frames are treated
+// as one logical payload: on the uncompressed path they are copied straight into the segment
+// buffer, avoiding a separate concatenation buffer.
+//
+// The returned slice points to dst's backing array, so a caller that passes a reusable buffer
+// must finish using the returned slice before the next encodeInto call that reuses the same dst. 
+// 
+// Pass nil for dst to always get a fresh allocation,
+// which is required by the writev big-frame path where multiple encoded segments must stay
+// alive simultaneously.
+func (sc *segmentCodec) encodeInto(dst []byte, frames [][]byte, isSelfContained bool) ([]byte, error) {
 	payloadLen := 0
 	for _, frame := range frames {
 		payloadLen += len(frame)
@@ -90,20 +112,23 @@ func (sc *segmentCodec) encode(frames [][]byte, isSelfContained bool) ([]byte, e
 	}
 
 	if sc.compressed {
-		return sc.encodeCompressedSegment(frames, payloadLen, isSelfContained)
+		return sc.encodeCompressedSegment(dst, frames, payloadLen, isSelfContained)
 	}
-	return sc.encodeUncompressedSegment(frames, payloadLen, isSelfContained)
+	return sc.encodeUncompressedSegment(dst, frames, payloadLen, isSelfContained)
 }
 
-func (sc *segmentCodec) encodeCompressedSegment(frames [][]byte, uncompressedLen int, isSelfContained bool) ([]byte, error) {
-	// Block compression requires a single contiguous input buffer, so the
-	// frames have to be concatenated before being handed to the compressor.
-	payload := concatFrames(frames, uncompressedLen)
+func (sc *segmentCodec) encodeCompressedSegment(dst []byte, frames [][]byte, uncompressedLen int, isSelfContained bool) ([]byte, error) {
+	// Block compression requires a single contiguous input buffer, so the frames have to be
+	// concatenated before being handed to the compressor. Both scratch buffers are reused
+	// across calls; they are fully consumed (copied into segmentBuf) before this returns.
+	sc.encodeConcatBuf = appendFrames(sc.encodeConcatBuf[:0], frames)
+	payload := sc.encodeConcatBuf
 
-	compressed, err := sc.compressor.AppendCompressed(nil, payload)
+	compressed, err := sc.compressor.AppendCompressed(sc.encodeCompressBuf[:0], payload)
 	if err != nil {
 		return nil, err
 	}
+	sc.encodeCompressBuf = compressed
 
 	compressedLen := len(compressed)
 
@@ -115,7 +140,7 @@ func (sc *segmentCodec) encodeCompressedSegment(frames [][]byte, uncompressedLen
 		uncompressedLen = 0
 	}
 
-	segmentBuf := make([]byte, compressedHeaderSize+compressedLen+crc32Size)
+	segmentBuf := resizeBuf(dst, compressedHeaderSize+compressedLen+crc32Size)
 
 	sc.encodeCompressedSegmentHeader(compressedLen, uncompressedLen, isSelfContained, segmentBuf)
 	sc.encodePayloadAndChecksum(compressed, segmentBuf[compressedHeaderSize:])
@@ -123,14 +148,21 @@ func (sc *segmentCodec) encodeCompressedSegment(frames [][]byte, uncompressedLen
 	return segmentBuf, nil
 }
 
-// concatFrames concatenates frames into a single contiguous buffer of totalLen bytes.
-func concatFrames(frames [][]byte, totalLen int) []byte {
-	buf := make([]byte, totalLen)
-	offset := 0
+// appendFrames appends the frames to dst in order and returns the extended slice.
+func appendFrames(dst []byte, frames [][]byte) []byte {
 	for _, frame := range frames {
-		offset += copy(buf[offset:], frame)
+		dst = append(dst, frame...)
 	}
-	return buf
+	return dst
+}
+
+// resizeBuf returns a slice of length n that reuses buf's backing array when it has enough
+// capacity, allocating a new buffer otherwise.
+func resizeBuf(buf []byte, n int) []byte {
+	if cap(buf) >= n {
+		return buf[:n]
+	}
+	return make([]byte, n)
 }
 
 // encodeCompressedSegmentHeader encodes the compressed segment header into the provided destination slice.
@@ -149,8 +181,8 @@ func (sc *segmentCodec) encodeCompressedSegmentHeader(compressedLen, uncompresse
 	dest[7] = byte(headerCRC24 >> 16)
 }
 
-func (sc *segmentCodec) encodeUncompressedSegment(frames [][]byte, payloadLen int, isSelfContained bool) ([]byte, error) {
-	segmentBuf := make([]byte, uncompressedHeaderSize+payloadLen+crc32Size)
+func (sc *segmentCodec) encodeUncompressedSegment(dst []byte, frames [][]byte, payloadLen int, isSelfContained bool) ([]byte, error) {
+	segmentBuf := resizeBuf(dst, uncompressedHeaderSize+payloadLen+crc32Size)
 	sc.encodeUncompressedSegmentHeader(payloadLen, isSelfContained, segmentBuf)
 
 	// Frames are copied directly into the segment payload region, so no

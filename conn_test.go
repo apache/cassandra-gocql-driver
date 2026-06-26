@@ -1613,7 +1613,7 @@ func TestSegmentWriter_MultipleFrames(t *testing.T) {
 	defer server.Close()
 	defer client.Close()
 
-	sw := newSegmentWriter(client, time.Microsecond*400, make(chan struct{}), nil)
+	sw := newSegmentWriter(client, time.Second*10, time.Microsecond*400, make(chan struct{}), nil)
 	go func() {
 		_, err := sw.writeContext(context.Background(), []byte("one"))
 		require.NoError(t, err)
@@ -1662,13 +1662,14 @@ func (r *recordingDeadlineWriter) Write(p []byte) (int, error) {
 	if r.returnErr != nil {
 		return 0, r.returnErr
 	}
-	r.recordedBuffers = append(r.recordedBuffers, p)
+	recorded := append([]byte(nil), p...)
+	r.recordedBuffers = append(r.recordedBuffers, recorded)
 	return len(p), nil
 }
 
 func createTestSegmentWriter(writer deadlineWriter) (*segmentWriter, context.CancelFunc) {
 	ctx, cancel := context.WithCancel(context.Background())
-	segmentWriter := newSegmentWriter(writer, 10*time.Millisecond, ctx.Done(), nil)
+	segmentWriter := newSegmentWriter(writer, time.Second*10, 10*time.Millisecond, ctx.Done(), nil)
 	return segmentWriter, cancel
 }
 
@@ -1925,7 +1926,7 @@ func Test_segmentWriter_writeContext(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		// Large interval so the frame stays buffered (waiting for the timer)
 		// until we close the writer, exercising the quit-while-pending path.
-		sw := newSegmentWriter(rec, time.Hour, ctx.Done(), nil)
+		sw := newSegmentWriter(rec, time.Hour, time.Hour, ctx.Done(), nil)
 
 		resultCh := make(chan writeResult, 1)
 		go func() {

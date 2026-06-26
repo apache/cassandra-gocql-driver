@@ -248,7 +248,6 @@ func TestProtocolNegotiation(t *testing.T) {
 
 			cluster.Compressor = nil
 			cluster.ProtoVersion = 0
-			cluster.Logger = NewLogger(LogLevelDebug)
 			cluster.ConnectTimeout = time.Second * 2
 			cluster.Timeout = time.Second * 2
 			cluster.DisableInitialHostLookup = true

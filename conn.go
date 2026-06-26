@@ -776,8 +776,9 @@ func (c *Conn) releaseStream(call *callReq) {
 
 func (c *Conn) maybeSwitchToSegments(host *DialedHost) {
 	if c.version >= protoVersion5 {
+		c.logger.Debug("Switching to segments for connection", NewLogFieldStringer("write_timeout", c.session.cfg.WriteTimeout), NewLogFieldStringer("write_coalesce_wait_time", c.session.cfg.WriteCoalesceWaitTime))
 		// Use segments writer which basically batches multiple frames into a single segment before flushing them to the connection.
-		segmentWriter := newSegmentWriter(host.Conn, c.session.cfg.WriteCoalesceWaitTime, c.ctx.Done(), c.compressor)
+		segmentWriter := newSegmentWriter(host.Conn, c.writeTimeout, c.session.cfg.WriteCoalesceWaitTime, c.ctx.Done(), c.compressor)
 		segmentReader := newSegmentReader(c.r, newSegmentCodec(c.compressor))
 		c.w = segmentWriter
 		c.r = segmentReader
@@ -1942,8 +1943,9 @@ func (c *Conn) awaitSchemaAgreementWithTimeout(ctx context.Context, timeout time
 // Implementation based on similar logic in DataStax lib on which Java driver relies:
 // https://github.com/datastax/native-protocol/blob/6b9bfb05c3fb1e29e74eec288dd54bd78232c2b7/src/main/java/com/datastax/oss/protocol/internal/SegmentBuilder.java#L74
 type segmentWriter struct {
-	w    deadlineWriter
-	quit <-chan struct{}
+	w            deadlineWriter
+	writeTimeout time.Duration
+	quit         <-chan struct{}
 
 	// Channel for writing requests to the segment writer.
 	writeCh chan writeRequest
@@ -1955,11 +1957,20 @@ type segmentWriter struct {
 	totalFramesLength int
 
 	segmentCodec segmentCodec
+
+	// Reusable scratch for the common single-segment flush path (flushCurrentSegment).
+	// frames holds the per-request payload slices handed to the codec, and encodeBuf holds
+	// the encoded segment. encodeBuf is safe to reuse because the segment is written
+	// synchronously to the connection before the next encode. Neither is used by the writev
+	// big-frame path, which needs multiple live segment buffers at once.
+	frames    [][]byte
+	encodeBuf []byte
 }
 
-func newSegmentWriter(w deadlineWriter, writeInterval time.Duration, quit <-chan struct{}, compressor Compressor) *segmentWriter {
+func newSegmentWriter(w deadlineWriter, writeTimeout, writeInterval time.Duration, quit <-chan struct{}, compressor Compressor) *segmentWriter {
 	sw := &segmentWriter{
 		w:            w,
+		writeTimeout: writeTimeout,
 		quit:         quit,
 		writeCh:      make(chan writeRequest),
 		segmentCodec: newSegmentCodec(compressor),
@@ -2080,12 +2091,12 @@ func (sw *segmentWriter) failPending(err error) {
 // Flushes the current segment and writes the results to the result listeners.
 // Should be called before resetting the segment writer.
 func (sw *segmentWriter) flushCurrentSegment() {
-	frames := make([][]byte, len(sw.writeRequests))
-	for i, req := range sw.writeRequests {
-		frames[i] = req.data
+	sw.frames = sw.frames[:0]
+	for _, req := range sw.writeRequests {
+		sw.frames = append(sw.frames, req.data)
 	}
 
-	err := sw.encodeAndWrite(frames, true)
+	err := sw.encodeAndWrite(sw.frames, true)
 	if err != nil {
 		sw.failPending(fmt.Errorf("error occured while encoding and writing of the current segment: %w", err))
 		return
@@ -2148,6 +2159,7 @@ func (sw *segmentWriter) flushBigFrameImmediately(req writeRequest) {
 	}
 
 	if flushErr == nil {
+		sw.w.SetWriteDeadline(time.Now().Add(sw.writeTimeout))
 		_, flushErr = segments.WriteTo(sw.w)
 	}
 
@@ -2163,12 +2175,17 @@ func (sw *segmentWriter) flushBigFrameImmediately(req writeRequest) {
 	}
 }
 
-// Encodes the given frames into a single segment and writes it to the underlying connection
+// Encodes the given frames into a single segment and writes it to the underlying connection.
+// Reuses sw.encodeBuf for the segment buffer: the segment is written synchronously below, so
+// the buffer is free to be reused on the next call.
 func (sw *segmentWriter) encodeAndWrite(frames [][]byte, isSelfContained bool) error {
-	segmentBuf, err := sw.segmentCodec.encode(frames, isSelfContained)
+	segmentBuf, err := sw.segmentCodec.encodeInto(sw.encodeBuf, frames, isSelfContained)
 	if err != nil {
 		return err
 	}
+	// Retain the (possibly grown) buffer for reuse on the next flush.
+	sw.encodeBuf = segmentBuf
+	sw.w.SetWriteDeadline(time.Now().Add(sw.writeTimeout))
 	_, err = sw.w.Write(segmentBuf)
 	if err != nil {
 		return err
