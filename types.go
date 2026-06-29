@@ -627,7 +627,7 @@ func (r *RegisteredTypes) Copy() *RegisteredTypes {
 	return copy
 }
 
-// WithNullableUDTs sets the nullable UDTs flag for the registered types.
+// WithNullableUDTs creates a shallow copy of the RegisteredTypes with the nullable UDTs flag set to the given value.
 //
 // If enabled, UDTs will be encoded as null CQL values when map is marshaled.
 //
@@ -663,9 +663,10 @@ func (r *RegisteredTypes) Copy() *RegisteredTypes {
 //
 // Default: false
 func (r *RegisteredTypes) WithNullableUDTs(enabled bool) *RegisteredTypes {
-	r.encodeNilMapAsNull = enabled
-	r.warnOnNilMap = false
-	return r
+	copy := r.Copy()
+	copy.encodeNilMapAsNull = enabled
+	copy.warnOnNilMap = false
+	return copy
 }
 
 func (r *RegisteredTypes) withLogger(logger StructuredLogger) *RegisteredTypes {

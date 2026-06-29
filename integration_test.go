@@ -1061,7 +1061,7 @@ func TestUDT_EncodeNilMap(t *testing.T) {
 
 	logMessage := fmt.Sprintf(nilMapOnUDTWarningFormat, "gocql_test", "encode_nil_map_udt")
 
-	t.Run("defencode nil map as initialized UDT with null values / default behavior with warning", func(t *testing.T) {
+	t.Run("encode nil map as initialized UDT with null values / default behavior with warning", func(t *testing.T) {
 		logger := newTestLogger(LogLevelInfo)
 		session := createSession(t, func(config *ClusterConfig) {
 			config.Logger = logger
