@@ -170,6 +170,9 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 		s.types = cfg.RegisteredTypes.Copy()
 	}
 
+	// propagate the logger to the registered types with a limited logger to avoid spamming the logs
+	s.types.withLogger(newLimitedLogger(100, s.logger))
+
 	s.schemaDescriber = newSchemaDescriber(s, newRefreshDebouncer(schemaRefreshDebounceTime, func() error {
 		return refreshSchemas(s)
 	}))

@@ -1059,22 +1059,51 @@ func TestUDT_EncodeNilMap(t *testing.T) {
 		return scanned
 	}
 
-	t.Run("encode nil map as initialized UDT with null values", func(t *testing.T) {
+	logMessage := fmt.Sprintf(nilMapOnUDTWarningFormat, "gocql_test", "encode_nil_map_udt")
+
+	t.Run("defencode nil map as initialized UDT with null values / default behavior with warning", func(t *testing.T) {
+		logger := newTestLogger(LogLevelInfo)
 		session := createSession(t, func(config *ClusterConfig) {
-			config.RegisteredTypes = GlobalTypes.WithNullableUDTs(false)
+			config.Logger = logger
 		})
 		defer session.Close()
 		scanned := insertNilMapAndScan(t, session, 1)
 		expected := map[string]interface{}{"field_a": "", "field_b": 0}
 		require.Equal(t, expected, scanned)
+
+		// Expecting warning message
+		logs := logger.String()
+		require.Equal(t, 1, strings.Count(logs, logMessage))
+	})
+
+	t.Run("encode nil map as initialized UDT with null values", func(t *testing.T) {
+		logger := newTestLogger(LogLevelInfo)
+		session := createSession(t, func(config *ClusterConfig) {
+			config.RegisteredTypes = GlobalTypes.WithNullableUDTs(false)
+			config.Logger = logger
+		})
+		defer session.Close()
+		scanned := insertNilMapAndScan(t, session, 1)
+		expected := map[string]interface{}{"field_a": "", "field_b": 0}
+		require.Equal(t, expected, scanned)
+
+		// Expecting no warning message
+		logs := logger.String()
+		require.Equal(t, 0, strings.Count(logs, logMessage))
 	})
 
 	t.Run("encode nil map as NULL value", func(t *testing.T) {
+		logger := newTestLogger(LogLevelInfo)
 		session := createSession(t, func(config *ClusterConfig) {
 			config.RegisteredTypes = GlobalTypes.WithNullableUDTs(true)
+			config.Logger = logger
 		})
 		defer session.Close()
 		scanned := insertNilMapAndScan(t, session, 2)
 		require.Nil(t, scanned)
+
+		// Expecting no warning message
+		logs := logger.String()
+		require.Equal(t, 0, strings.Count(logs, logMessage))
 	})
 }

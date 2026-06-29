@@ -2753,6 +2753,8 @@ func (u udtCQLType) TypeInfoFromParams(proto int, params []interface{}) (TypeInf
 		Name:               name,
 		Elements:           elements,
 		encodeNilMapAsNull: u.types.encodeNilMapAsNull,
+		warnOnNilMap:       u.types.warnOnNilMap,
+		logger:             u.types.logger,
 	}, nil
 }
 
@@ -2773,6 +2775,8 @@ func (u udtCQLType) TypeInfoFromString(proto int, name string) (TypeInfo, error)
 			Keyspace:           parts[0],
 			Name:               string(name),
 			encodeNilMapAsNull: u.types.encodeNilMapAsNull,
+			warnOnNilMap:       u.types.warnOnNilMap,
+			logger:             u.types.logger,
 		}
 		ti.Elements = make([]UDTField, 0, len(parts)-2)
 		for i := 2; i < len(parts); i++ {
@@ -2803,6 +2807,8 @@ func (u udtCQLType) TypeInfoFromString(proto int, name string) (TypeInfo, error)
 	// we can't get the name or anything so we'll just try to parse the elements
 	ti := UDTTypeInfo{
 		encodeNilMapAsNull: u.types.encodeNilMapAsNull,
+		warnOnNilMap:       u.types.warnOnNilMap,
+		logger:             u.types.logger,
 	}
 	ti.Elements = make([]UDTField, 0, len(parts))
 	for _, part := range parts {
@@ -2833,6 +2839,9 @@ type UDTTypeInfo struct {
 
 	// indicates whether to encode nil maps as initialized UDTs with all fields set to NULL.
 	encodeNilMapAsNull bool
+	warnOnNilMap       bool
+
+	logger StructuredLogger
 }
 
 func (u UDTTypeInfo) Type() Type {
@@ -2843,6 +2852,8 @@ func (u UDTTypeInfo) Type() Type {
 func (UDTTypeInfo) Zero() interface{} {
 	return map[string]interface{}(nil)
 }
+
+const nilMapOnUDTWarningFormat = "UDT marshal: nil map passed for UDT %s.%s, please follow the documentation on RegisteredTypes.WithNullableUDTs option"
 
 // Marshal marshals the value into a byte slice.
 func (udt UDTTypeInfo) Marshal(value interface{}) ([]byte, error) {
@@ -2866,6 +2877,10 @@ func (udt UDTTypeInfo) Marshal(value interface{}) ([]byte, error) {
 			// Nullable UDTs encoding for maps is enabled,
 			// so it should return nil and framer encodes []byte(nil) as NULL.
 			return nil, nil
+		}
+
+		if v == nil && udt.warnOnNilMap {
+			udt.logger.Warning(fmt.Sprintf(nilMapOnUDTWarningFormat, udt.Keyspace, udt.Name))
 		}
 
 		var buf []byte
