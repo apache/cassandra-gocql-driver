@@ -1048,19 +1048,20 @@ func TestUDT_EncodeNilMap(t *testing.T) {
 	session.Close()
 
 	insertNilMapAndScan := func(t *testing.T, session *Session, recordID int) map[string]interface{} {
+		ctx := context.Background()
 		t.Helper()
 		nilMap := map[string]interface{}(nil)
-		err = session.Query("INSERT INTO encode_nil_map_udt_table (id, value) VALUES (?, ?)", recordID, nilMap).Exec()
+		err = session.Query("INSERT INTO encode_nil_map_udt_table (id, value) VALUES (?, ?)", recordID, nilMap).ExecContext(ctx)
 		require.NoError(t, err)
 		var scanned map[string]interface{}
-		err = session.Query("SELECT value FROM encode_nil_map_udt_table WHERE id = ?", recordID).ScanContext(context.Background(), &scanned)
+		err = session.Query("SELECT value FROM encode_nil_map_udt_table WHERE id = ?", recordID).ScanContext(ctx, &scanned)
 		require.NoError(t, err)
 		return scanned
 	}
 
 	t.Run("encode nil map as initialized UDT with null values", func(t *testing.T) {
 		session := createSession(t, func(config *ClusterConfig) {
-			config.Encoding.EncodeNilMapAsNULL = false
+			config.RegisteredTypes = GlobalTypes.WithNullableUDTs(false)
 		})
 		defer session.Close()
 		scanned := insertNilMapAndScan(t, session, 1)
@@ -1070,7 +1071,7 @@ func TestUDT_EncodeNilMap(t *testing.T) {
 
 	t.Run("encode nil map as NULL value", func(t *testing.T) {
 		session := createSession(t, func(config *ClusterConfig) {
-			config.Encoding.EncodeNilMapAsNULL = true
+			config.RegisteredTypes = GlobalTypes.WithNullableUDTs(true)
 		})
 		defer session.Close()
 		scanned := insertNilMapAndScan(t, session, 2)

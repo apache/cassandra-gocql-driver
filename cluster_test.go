@@ -54,9 +54,6 @@ func TestNewCluster_Defaults(t *testing.T) {
 	assertEqual(t, "metadata config", MetadataConfig{
 		CacheMode: Full,
 	}, cfg.Metadata)
-	assertEqual(t, "cluster config encoding config", EncodingConfig{
-		EncodeNilMapAsNULL: false,
-	}, cfg.Encoding)
 }
 
 func TestNewCluster_WithHosts(t *testing.T) {

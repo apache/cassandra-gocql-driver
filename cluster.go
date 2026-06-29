@@ -327,9 +327,6 @@ type ClusterConfig struct {
 
 	// Metadata configures driver's internal metadata caching and event listening.
 	Metadata MetadataConfig
-
-	// Encoding configures encoding / decoding behavior of the driver.
-	Encoding EncodingConfig
 }
 
 // Dialer is the interface that wraps the DialContext method for establishing network connections to Cassandra nodes.
@@ -371,11 +368,6 @@ func NewCluster(hosts ...string) *ClusterConfig {
 		NextPagePrefetch:       0.25,
 		Metadata: MetadataConfig{
 			CacheMode: Full,
-		},
-		Encoding: EncodingConfig{
-			// This will be enabled in the next major version.
-			// For backward compatibility, it is disabled by default.
-			EncodeNilMapAsNULL: false,
 		},
 	}
 	return cfg
@@ -464,43 +456,6 @@ type SchemaListenersConfig struct {
 	UserTypeChangeListener  UserTypeChangeListener
 	FunctionChangeListener  FunctionChangeListener
 	AggregateChangeListener AggregateChangeListener
-}
-
-// Holds configuration of encoding / decoding behavior of the driver.
-type EncodingConfig struct {
-	// Turns on the encoding nil maps as NULL values for UDTs.
-	// The legacy behavior is to encode nil maps as initialized UDTs with all fields set to NULL which is aligned with the behavior of other drivers.
-	//
-	// It is disabled by default for backward compatibility, but it will be enabled in the next major version.
-	//
-	// For example, there are following UDT and table definitions:
-	//
-	// ```cql
-	// CREATE TYPE my_udt (field_a text, field_b int);
-	// CREATE TABLE my_table (id int PRIMARY KEY, value frozen<my_udt>);
-	// ```
-	//
-	// If this option is disabled, the following code will insert a UDT object with both fields set to NULL:
-	//
-	// ```go
-	// var nilMap map[string]interface{} = nil
-	// session.Query("INSERT INTO my_table (id, value) VALUES (?, ?)", 1, nilMap).Exec()
-	// ```
-	//
-	// The table my_table will contain:
-	//
-	// id | value
-	// 1  | {field_a: null, field_b: null}
-	// ---+-------------------------------
-	//
-	// If this option is enabled, the same code will insert a NULL value:
-	//
-	// id | value
-	// 1  | null
-	// ---+-------------------------------
-	//
-	// Default: false
-	EncodeNilMapAsNULL bool
 }
 
 var (

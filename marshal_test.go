@@ -2133,7 +2133,7 @@ func TestMarshalUDTMap(t *testing.T) {
 
 	t.Run("encode nil map as initialized UDT with null values", func(t *testing.T) {
 		typeInfoCopy := typeInfo
-		typeInfoCopy.encodeNilMapAsNULL = false
+		typeInfoCopy.encodeNilMapAsNull = false
 		value := map[string]interface{}(nil)
 		// All UDT fields are set to NULL.
 		expected := []byte("\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff")
@@ -2150,7 +2150,7 @@ func TestMarshalUDTMap(t *testing.T) {
 
 	t.Run("nil map as NULL value", func(t *testing.T) {
 		typeInfoCopy := typeInfo
-		typeInfoCopy.encodeNilMapAsNULL = true
+		typeInfoCopy.encodeNilMapAsNull = true
 
 		value := map[string]interface{}(nil)
 		expected := []byte(nil)

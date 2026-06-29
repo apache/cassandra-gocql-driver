@@ -170,8 +170,6 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 		s.types = cfg.RegisteredTypes.Copy()
 	}
 
-	s.types.setEncodingConfig(cfg.Encoding)
-
 	s.schemaDescriber = newSchemaDescriber(s, newRefreshDebouncer(schemaRefreshDebounceTime, func() error {
 		return refreshSchemas(s)
 	}))

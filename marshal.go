@@ -2752,7 +2752,7 @@ func (u udtCQLType) TypeInfoFromParams(proto int, params []interface{}) (TypeInf
 		Keyspace:           keyspace,
 		Name:               name,
 		Elements:           elements,
-		encodeNilMapAsNULL: u.types.encodingConfig.EncodeNilMapAsNULL,
+		encodeNilMapAsNull: u.types.encodeNilMapAsNull,
 	}, nil
 }
 
@@ -2772,7 +2772,7 @@ func (u udtCQLType) TypeInfoFromString(proto int, name string) (TypeInfo, error)
 		ti := UDTTypeInfo{
 			Keyspace:           parts[0],
 			Name:               string(name),
-			encodeNilMapAsNULL: u.types.encodingConfig.EncodeNilMapAsNULL,
+			encodeNilMapAsNull: u.types.encodeNilMapAsNull,
 		}
 		ti.Elements = make([]UDTField, 0, len(parts)-2)
 		for i := 2; i < len(parts); i++ {
@@ -2802,7 +2802,7 @@ func (u udtCQLType) TypeInfoFromString(proto int, name string) (TypeInfo, error)
 	}
 	// we can't get the name or anything so we'll just try to parse the elements
 	ti := UDTTypeInfo{
-		encodeNilMapAsNULL: u.types.encodingConfig.EncodeNilMapAsNULL,
+		encodeNilMapAsNull: u.types.encodeNilMapAsNull,
 	}
 	ti.Elements = make([]UDTField, 0, len(parts))
 	for _, part := range parts {
@@ -2832,8 +2832,7 @@ type UDTTypeInfo struct {
 	Elements []UDTField
 
 	// indicates whether to encode nil maps as initialized UDTs with all fields set to NULL.
-	// This is used to maintain backward compatibility with the old behavior of MapScan when scanning UDTs.
-	encodeNilMapAsNULL bool
+	encodeNilMapAsNull bool
 }
 
 func (u UDTTypeInfo) Type() Type {
@@ -2863,9 +2862,9 @@ func (udt UDTTypeInfo) Marshal(value interface{}) ([]byte, error) {
 
 		return buf, nil
 	case map[string]interface{}:
-		if v == nil && udt.encodeNilMapAsNULL {
-			// Legacy behavior is disabled, so we should encode nil map as a NULL value.
-			// framer encodes []byte(nil) as NULL.
+		if v == nil && udt.encodeNilMapAsNull {
+			// Nullable UDTs encoding for maps is enabled,
+			// so it should return nil and framer encodes []byte(nil) as NULL.
 			return nil, nil
 		}
 

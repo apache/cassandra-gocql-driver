@@ -106,9 +106,8 @@ type RegisteredTypes struct {
 	mut         sync.Mutex
 	initialized sync.Once
 
-	// holds configuration of encoding / decoding behavior of the driver.
-	// currently only used for UDTs to toggle the legacy map scan behavior.
-	encodingConfig EncodingConfig
+	// encodeNilMapAsNull is a flag that indicates whether nullable UDTs are enabled.
+	encodeNilMapAsNull bool
 }
 
 func (r *RegisteredTypes) init() {
@@ -597,6 +596,7 @@ func (r *RegisteredTypes) Copy() *RegisteredTypes {
 
 	copy := &RegisteredTypes{}
 	copy.init()
+	copy.encodeNilMapAsNull = r.encodeNilMapAsNull
 	// Adding default types to the copy so collection type codecs will have a pointer to the copy instead of the original.
 	copy.addDefaultTypes()
 	for typ, t := range r.byType {
@@ -622,9 +622,42 @@ func (r *RegisteredTypes) Copy() *RegisteredTypes {
 	return copy
 }
 
-// sets the encoding config for the registered types.
-func (r *RegisteredTypes) setEncodingConfig(encodingConfig EncodingConfig) {
-	r.encodingConfig = encodingConfig
+// WithNullableUDTs sets the nullable UDTs flag for the registered types.
+//
+// If enabled, UDTs will be encoded as null CQL values when map is marshaled.
+//
+// When disabled, UDTs will be encoded as initialized UDT values with all its fields set to NULL when passed map[string]any{} is nil.
+//
+// For example, there are following UDT and table definitions:
+//
+// ```cql
+// CREATE TYPE my_udt (field_a text, field_b int);
+// CREATE TABLE my_table (id int PRIMARY KEY, value frozen<my_udt>);
+// ```
+//
+// If this option is disabled, the following code will insert a UDT object with both fields set to NULL:
+//
+// ```go
+// var nilMap map[string]interface{} = nil
+// session.Query("INSERT INTO my_table (id, value) VALUES (?, ?)", 1, nilMap).Exec()
+// ```
+//
+// The table my_table will contain:
+//
+// id | value
+// 1  | {field_a: null, field_b: null}
+// ---+-------------------------------
+//
+// If this option is enabled, the same code will insert a NULL value:
+//
+// id | value
+// 1  | null
+// ---+-------------------------------
+//
+// Default: false
+func (r *RegisteredTypes) WithNullableUDTs(enabled bool) *RegisteredTypes {
+	r.encodeNilMapAsNull = enabled
+	return r
 }
 
 // GlobalTypes is the set of types that are registered globally and are copied
