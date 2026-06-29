@@ -1083,7 +1083,7 @@ func TestUDT_EncodeNilMap(t *testing.T) {
 			config.Logger = logger
 		})
 		defer session.Close()
-		scanned := insertNilMapAndScan(t, session, 1)
+		scanned := insertNilMapAndScan(t, session, 2)
 		expected := map[string]interface{}{"field_a": "", "field_b": 0}
 		require.Equal(t, expected, scanned)
 
@@ -1099,7 +1099,7 @@ func TestUDT_EncodeNilMap(t *testing.T) {
 			config.Logger = logger
 		})
 		defer session.Close()
-		scanned := insertNilMapAndScan(t, session, 2)
+		scanned := insertNilMapAndScan(t, session, 3)
 		require.Nil(t, scanned)
 
 		// Expecting no warning message
