@@ -405,9 +405,26 @@ func (cfg *ClusterConfig) filterHost(host *HostInfo) bool {
 	return !(cfg.HostFilter == nil || cfg.HostFilter.Accept(host))
 }
 
+func (cfg *ClusterConfig) validate() error {
+	logger := cfg.newLogger()
+
+	if cfg.Metadata.CacheMode == Disabled {
+		mrp, ok := cfg.PoolConfig.HostSelectionPolicy.(MetadataRequiredPolicy)
+		if !ok {
+			logger.Warning(metadataCacheDisabledWarningMsg)
+		} else if mrp.MetadataRequired() {
+			return ErrMetadataCacheRequired
+		}
+	}
+
+	return nil
+}
+
 // MetadataConfig configures driver's internal metadata caching and event listening.
 type MetadataConfig struct {
 	// CacheMode controls how the driver reads and caches schema metadata from Cassandra system tables.
+	//
+	// It is required to be enabled for [TokenAwareHostPolicy] and custom host selection policies.
 	//
 	// Also, it affects the behavior of schema change listeners.
 	//
@@ -465,4 +482,10 @@ var (
 	ErrNoConnectionsStarted = errors.New("no connections were made when creating the session")
 	// Deprecated: Never used or returned by the driver.
 	ErrHostQueryFailed = errors.New("unable to populate Hosts")
+)
+
+const (
+	metadataCacheDisabledWarningMsg = "Metadata cache is disabled and the host selection policy does not implement MetadataRequiredPolicy interface. " +
+		"This might result in unexpected behavior if your custom policy requires keyspace metadata. " +
+		"To avoid this warning, please implement the MetadataRequiredPolicy interface."
 )

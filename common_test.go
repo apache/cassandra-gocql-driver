@@ -303,6 +303,10 @@ func randomText(size int) string {
 	return string(result)
 }
 
+func randomNameWithPrefix(prefix string) string {
+	return prefix + strings.ToLower(randomText(10))
+}
+
 func assertEqual(t *testing.T, description string, expected, actual interface{}) {
 	t.Helper()
 	if expected != actual {
