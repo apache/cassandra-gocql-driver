@@ -575,6 +575,10 @@ type schemaDescriber struct {
 // Schema change events are server-initiated messages sent to clients that have registered
 // for schema change notifications. These events indicate modifications to keyspaces, tables,
 // user-defined types, functions, or aggregates.
+//
+// When a schema change event is received, the driver will update its internal metadata
+// by comparing the old and new metadata. If the metadata has changed, the driver will
+// notify [HostSelectionPolicy.KeyspaceChanged] method about the change.
 const (
 	SchemaChangeTypeCreated = "CREATED" // Schema object was created
 	SchemaChangeTypeUpdated = "UPDATED" // Schema object was modified
@@ -858,9 +862,6 @@ func refreshSchemas(session *Session) error {
 
 	// Notify policy if it supports schema refresh notifications
 	notifier, supportsRefresh := session.policy.(schemaRefreshNotifier)
-	hasKeyspaceListener := session.schemaListeners.hasKeyspace() && sessionInitialized
-
-	// Notify the policy if it supports schema refresh notifications
 	if supportsRefresh {
 		notifier.schemaRefreshed(session.schemaDescriber.getSchemaMetaForRead())
 	}
@@ -871,31 +872,36 @@ func refreshSchemas(session *Session) error {
 		NewLogFieldInt("dropped_keyspaces_count", len(droppedKeyspaces)),
 	)
 
-	// If we don't support schemaRefreshed OR we have listeners, we need to loop
-	if !supportsRefresh || hasKeyspaceListener {
+	// We should not call KeyspaceChanged method if policy implements schemaRefreshNotifier.
+	shouldCallKeyspaceChanged := !supportsRefresh && sessionInitialized
+	// We should not notify keyspace listeners if they are not set or session is not initialized yet.
+	shouldNotifyKeyspaceListener := session.schemaListeners.hasKeyspace() && sessionInitialized
+
+	// Loop only if we need to notify policy or keyspace listeners.
+	if shouldCallKeyspaceChanged || shouldNotifyKeyspaceListener {
 		for _, name := range newKeyspaces {
-			if !supportsRefresh {
+			if shouldCallKeyspaceChanged {
 				session.policy.KeyspaceChanged(KeyspaceUpdateEvent{Keyspace: name, Change: SchemaChangeTypeCreated})
 			}
-			if hasKeyspaceListener {
+			if shouldNotifyKeyspaceListener {
 				session.schemaListeners.OnKeyspaceCreated(OnKeyspaceCreatedEvent{Keyspace: keyspaces[name].Clone()})
 			}
 		}
 
 		for _, name := range droppedKeyspaces {
-			if !supportsRefresh {
+			if shouldCallKeyspaceChanged {
 				session.policy.KeyspaceChanged(KeyspaceUpdateEvent{Keyspace: name, Change: SchemaChangeTypeDropped})
 			}
-			if hasKeyspaceListener {
+			if shouldNotifyKeyspaceListener {
 				session.schemaListeners.OnKeyspaceDropped(OnKeyspaceDroppedEvent{Keyspace: oldKeyspaceMeta[name].Clone()})
 			}
 		}
 
 		for _, name := range updatedKeyspaces {
-			if !supportsRefresh {
+			if shouldCallKeyspaceChanged {
 				session.policy.KeyspaceChanged(KeyspaceUpdateEvent{Keyspace: name, Change: SchemaChangeTypeUpdated})
 			}
-			if hasKeyspaceListener {
+			if shouldNotifyKeyspaceListener {
 				session.schemaListeners.OnKeyspaceUpdated(OnKeyspaceUpdatedEvent{
 					Old: oldKeyspaceMeta[name].Clone(),
 					New: keyspaces[name].Clone(),

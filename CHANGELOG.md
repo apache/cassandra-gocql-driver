@@ -13,10 +13,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Improve host_source locking and ring refresh concurrency (CASSGO-121)
 - Add PreparedMetadata (Keyspace, Table) and IsPrepared fields to ObservedQuery, and parallel PreparedMetadata / IsPrepared slices to ObservedBatch, for statement-level observability without CQL parsing (CASSGO-119)
 - Query.Binding() method to override binding function for a query object.
+- MetadataRequiredPolicy interface to allow users to disable metadata if host selection policy does not need it (CASSGO-132)
 
 ### Fixed
+
 - Correct protocol negotiation with non-Cassandra servers (CASSGO-131)
 - LZ4 test fails on arm64 (CASSGO-128)
+- Prevent synthetic CREATED events on HostSelectionPolicy.KeyspaceChanged during session init (CASSGO-132)
 
 ## [2.1.2]
 
