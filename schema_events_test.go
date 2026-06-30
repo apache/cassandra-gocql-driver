@@ -23,7 +23,6 @@ package gocql
 
 import (
 	"fmt"
-	"strings"
 	"testing"
 	"time"
 
@@ -261,10 +260,6 @@ func testSchemaEventsKeyspace(t *testing.T, session *Session, listener *schemaCh
 
 	// Verify that the listener received the keyspace dropped event
 	require.Equal(t, ks, listener.KeyspaceDroppedEvents[0].Keyspace.Name, "Expected keyspace dropped event to have correct keyspace name")
-}
-
-func randomNameWithPrefix(prefix string) string {
-	return prefix + strings.ToLower(randomText(10))
 }
 
 func testSchemaEventsTable(t *testing.T, session *Session, listener *schemaChangesTestListener) {

@@ -30,6 +30,7 @@ package gocql
 import (
 	"net"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
@@ -82,4 +83,71 @@ func TestClusterConfig_translateAddressAndPort_Success(t *testing.T) {
 	newAddr, newPort := cfg.translateAddressPort(net.ParseIP("10.0.0.1"), 2345, nopLoggerSingleton)
 	assertTrue(t, "translated address", net.ParseIP("10.10.10.10").Equal(newAddr))
 	assertEqual(t, "translated port", 5432, newPort)
+}
+
+type testHostSelectionPolicy struct {
+	HostSelectionPolicy
+}
+
+func TestClusterConfig_validate_HostSelectionPolicyRequiresMetadata(t *testing.T) {
+	type testCase struct {
+		name                string
+		cacheMode           MetadataCacheMode
+		hostSelectionPolicy HostSelectionPolicy
+		expectedError       error
+
+		// In case when policy doesn't implement MetadataRequiredPolicy interface, and cache is disabled, we expect a warning.
+		expectsWarning bool
+	}
+
+	testCases := []testCase{
+		{
+			name:                "Metadata cache is disabled and policy does not require metadata",
+			cacheMode:           Disabled,
+			hostSelectionPolicy: RoundRobinHostPolicy(),
+			expectedError:       nil,
+		},
+		{
+			name:                "Metadata cache is disabled and policy requires metadata",
+			cacheMode:           Disabled,
+			hostSelectionPolicy: TokenAwareHostPolicy(RoundRobinHostPolicy()),
+			expectedError:       ErrMetadataCacheRequired,
+		},
+		{
+			name:                "Metadata cache is enabled and policy requires metadata",
+			cacheMode:           Full,
+			hostSelectionPolicy: TokenAwareHostPolicy(RoundRobinHostPolicy()),
+			expectedError:       nil,
+		},
+		{
+			name:                "Metadata cache is disabled and the host selection policy does not implement MetadataRequiredPolicy interface",
+			cacheMode:           Disabled,
+			hostSelectionPolicy: testHostSelectionPolicy{},
+			expectedError:       nil,
+			expectsWarning:      true,
+		},
+		{
+			name:                "Metadata cache is enabled",
+			cacheMode:           Full,
+			hostSelectionPolicy: RoundRobinHostPolicy(),
+			expectedError:       nil,
+			expectsWarning:      false,
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			logger := newTestLogger(LogLevelInfo)
+			cfg := ClusterConfig{
+				Metadata:   MetadataConfig{CacheMode: testCase.cacheMode},
+				PoolConfig: PoolConfig{HostSelectionPolicy: testCase.hostSelectionPolicy},
+				Logger:     logger,
+			}
+			err := cfg.validate()
+			assertEqual(t, "error", testCase.expectedError, err)
+			if testCase.expectsWarning {
+				assertTrue(t, "has warning", strings.Contains(logger.String(), metadataCacheDisabledWarningMsg))
+			}
+		})
+	}
 }

@@ -35,9 +35,11 @@ import (
 	"net"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
 	inf "gopkg.in/inf.v0"
 )
 
@@ -1027,4 +1029,88 @@ func TestSmallTimeoutNoPoolErrors(t *testing.T) {
 		t.Fatalf("Found %d 'Pool connection error' messages - connections are timing out and reconnecting:\n%s",
 			errorCount, logOutput)
 	}
+}
+
+// Emulates round-robin host selection policy and captures KeyspaceChanged events.
+type capturingRRTestPolicy struct {
+	roundRobinHostPolicy
+
+	capturedEvents []KeyspaceUpdateEvent
+	mu             sync.Mutex
+}
+
+func (c *capturingRRTestPolicy) KeyspaceChanged(event KeyspaceUpdateEvent) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.capturedEvents = append(c.capturedEvents, event)
+	c.roundRobinHostPolicy.KeyspaceChanged(event)
+}
+
+func (c *capturingRRTestPolicy) CapturedEvents() []KeyspaceUpdateEvent {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return append([]KeyspaceUpdateEvent{}, c.capturedEvents...)
+}
+
+func (c *capturingRRTestPolicy) ResetEvents() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.capturedEvents = nil
+}
+
+func TestHostSelectionPolicyKeyspaceChangedEvents(t *testing.T) {
+	cluster := createCluster()
+	policy := capturingRRTestPolicy{}
+	cluster.Metadata.CacheMode = Full
+	cluster.PoolConfig.HostSelectionPolicy = &policy
+
+	session, err := cluster.CreateSession()
+	require.NoError(t, err)
+	defer session.Close()
+
+	// Regression test for CASSGO-132: KeyspaceChanged events are fired during session creation.
+	events := policy.CapturedEvents()
+	require.Empty(t, events, "KeyspaceChanged events should not be fired during session creation")
+
+	// Check keyspace events are fired
+
+	// CREATE
+	ksName := randomNameWithPrefix("gocql_test_")
+	err = session.Query(fmt.Sprintf("CREATE KEYSPACE %s WITH replication = {'class': 'SimpleStrategy', 'replication_factor': '1'}", ksName)).ExecContext(context.Background())
+	require.NoError(t, err)
+
+	require.Eventually(t, func() bool {
+		events = policy.CapturedEvents()
+		return len(events) == 1
+	}, time.Second*5, time.Millisecond*100)
+
+	require.Len(t, events, 1)
+	require.Equal(t, ksName, events[0].Keyspace)
+	require.Equal(t, SchemaChangeTypeCreated, events[0].Change)
+
+	// ALTER
+	policy.ResetEvents()
+	err = session.Query(fmt.Sprintf("ALTER KEYSPACE %s WITH replication = {'class': 'SimpleStrategy', 'replication_factor': '2'}", ksName)).ExecContext(context.Background())
+	require.NoError(t, err)
+	require.Eventually(t, func() bool {
+		events = policy.CapturedEvents()
+		return len(events) == 1
+	}, time.Second*5, time.Millisecond*100)
+
+	require.Len(t, events, 1)
+	require.Equal(t, ksName, events[0].Keyspace)
+	require.Equal(t, SchemaChangeTypeUpdated, events[0].Change)
+
+	// DROP
+	policy.ResetEvents()
+	err = session.Query(fmt.Sprintf("DROP KEYSPACE %s", ksName)).ExecContext(context.Background())
+	require.NoError(t, err)
+	require.Eventually(t, func() bool {
+		events = policy.CapturedEvents()
+		return len(events) == 1
+	}, time.Second*5, time.Millisecond*100)
+
+	require.Len(t, events, 1)
+	require.Equal(t, ksName, events[0].Keyspace)
+	require.Equal(t, SchemaChangeTypeDropped, events[0].Change)
 }
