@@ -659,9 +659,8 @@ func (r *RegisteredTypes) WithNullableUDTs(enabled bool) *RegisteredTypes {
 	return copy
 }
 
-func (r *RegisteredTypes) withLogger(logger StructuredLogger) *RegisteredTypes {
+func (r *RegisteredTypes) setLogger(logger StructuredLogger) {
 	r.logger = logger
-	return r
 }
 
 // GlobalTypes is the set of types that are registered globally and are copied
