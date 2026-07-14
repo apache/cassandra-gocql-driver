@@ -630,36 +630,26 @@ func (r *RegisteredTypes) Copy() *RegisteredTypes {
 // WithNullableUDTs creates a shallow copy of the RegisteredTypes with the nullable UDTs flag set to the given value.
 //
 // If enabled, UDTs will be encoded as null CQL values when map is marshaled.
-//
 // When disabled, UDTs will be encoded as initialized UDT values with all its fields set to NULL when passed map[string]any{} is nil.
-//
 // For example, there are following UDT and table definitions:
 //
-// ```cql
-// CREATE TYPE my_udt (field_a text, field_b int);
-// CREATE TABLE my_table (id int PRIMARY KEY, value frozen<my_udt>);
-// ```
+//	CREATE TYPE my_udt (field_a text, field_b int);
+//	CREATE TABLE my_table (id int PRIMARY KEY, value frozen<my_udt>);
 //
 // If this option is disabled, the following code will insert a UDT object with both fields set to NULL:
 //
-// ```go
-// var nilMap map[string]interface{} = nil
-// session.Query("INSERT INTO my_table (id, value) VALUES (?, ?)", 1, nilMap).Exec()
-// ```
+//	var nilMap map[string]any = nil
+//	session.Query("INSERT INTO my_table (id, value) VALUES (?, ?)", 1, nilMap).Exec()
 //
 // The table my_table will contain:
 //
-// id | value
-// 1  | {field_a: null, field_b: null}
-// ---+-------------------------------
+//	id | value
+//	1  | {field_a: null, field_b: null}
 //
 // If this option is enabled, the same code will insert a NULL value:
 //
-// id | value
-// 1  | null
-// ---+-------------------------------
-//
-// When this method is called, it disables the warning message when nil map is passed to UDT marshal regardless of the value of the flag.
+//	id | value
+//	1  | null
 //
 // Default: false
 func (r *RegisteredTypes) WithNullableUDTs(enabled bool) *RegisteredTypes {
