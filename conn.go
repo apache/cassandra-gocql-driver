@@ -2098,7 +2098,7 @@ func (sw *segmentWriter) flushCurrentSegment() {
 
 	err := sw.encodeAndWrite(sw.frames, true)
 	if err != nil {
-		sw.failPending(fmt.Errorf("error occured while encoding and writing of the current segment: %w", err))
+		sw.failPending(fmt.Errorf("error occurred while flushing current segment: %w", err))
 		return
 	}
 
@@ -2134,7 +2134,7 @@ func (sw *segmentWriter) flushBigFrameImmediately(req writeRequest) {
 	var flushErr error
 
 	// Reusable slice of frame payloads passed to the codec on flush.
-	// Reused accross calls to encodeAndWrite to avoid per-segment allocation of the slice.
+	// Reused across calls to encodeAndWrite to avoid per-segment allocation of the slice.
 	frameHolder := [][]byte{nil}
 	// Holds the segments to be written
 	segments := make(net.Buffers, segmentsCount)
@@ -2293,6 +2293,11 @@ func (sr *segmentReader) readNonSelfContainedSegment(payload []byte) ([]byte, er
 	frameHeader, err := readHeader(bytes.NewBuffer(payload), sr.frameHeaderBuf[:])
 	if err != nil {
 		return nil, err
+	}
+
+	// Frame body length is limited to maxFrameSize
+	if frameHeader.length < 0 || frameHeader.length > maxFrameSize {
+		return nil, fmt.Errorf("gocql: expected frame length to be between 1 and %d, got %d", maxFrameSize, frameHeader.length)
 	}
 
 	// Allocate a buffer to read the rest of the segment into

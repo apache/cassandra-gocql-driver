@@ -96,8 +96,8 @@ func (sc *segmentCodec) encode(frames [][]byte, isSelfContained bool) ([]byte, e
 // buffer, avoiding a separate concatenation buffer.
 //
 // The returned slice points to dst's backing array, so a caller that passes a reusable buffer
-// must finish using the returned slice before the next encodeInto call that reuses the same dst. 
-// 
+// must finish using the returned slice before the next encodeInto call that reuses the same dst.
+//
 // Pass nil for dst to always get a fresh allocation,
 // which is required by the writev big-frame path where multiple encoded segments must stay
 // alive simultaneously.
