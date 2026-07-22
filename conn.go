@@ -436,7 +436,7 @@ func (s *startupCoordinator) write(ctx context.Context, frame frameBuilder, star
 		return nil, ctx.Err()
 	}
 
-	framer, err := s.conn.execInternal(ctx, frame, nil, startupCompleted.Load())
+	framer, err := s.conn.execInternal(ctx, frame, nil, startupCompleted.Load(), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -1233,10 +1233,14 @@ func (c *Conn) addCall(call *callReq) error {
 }
 
 func (c *Conn) exec(ctx context.Context, req frameBuilder, tracer Tracer) (*framer, error) {
-	return c.execInternal(ctx, req, tracer, true)
+	return c.execWithMetrics(ctx, req, tracer, nil)
 }
 
-func (c *Conn) execInternal(ctx context.Context, req frameBuilder, tracer Tracer, startupCompleted bool) (*framer, error) {
+func (c *Conn) execWithMetrics(ctx context.Context, req frameBuilder, tracer Tracer, bm *byteMetrics) (*framer, error) {
+	return c.execInternal(ctx, req, tracer, true, bm)
+}
+
+func (c *Conn) execInternal(ctx context.Context, req frameBuilder, tracer Tracer, startupCompleted bool, bm *byteMetrics) (*framer, error) {
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		return nil, ctxErr
 	}
@@ -1303,6 +1307,9 @@ func (c *Conn) execInternal(ctx context.Context, req frameBuilder, tracer Tracer
 	}
 	if err == nil {
 		n, err = c.w.writeContext(ctx, framer.buf)
+		if err == nil {
+			bm.addTx(framer.uncompressedBodySize)
+		}
 	}
 	if err != nil {
 		// closeWithError will block waiting for this stream to either receive a response
@@ -1367,6 +1374,9 @@ func (c *Conn) execInternal(ctx context.Context, req frameBuilder, tracer Tracer
 			}
 			return nil, resp.err
 		}
+		// Count the response only once this request has received it, so a
+		// response arriving after a timeout or cancellation is not counted.
+		bm.addRx(resp.framer.uncompressedBodySize)
 		// dont release the stream if detect a timeout as another request can reuse
 		// that stream and get a response for the old request, which we have no
 		// easy way of detecting.
@@ -1474,6 +1484,10 @@ type inflightPrepare struct {
 }
 
 func (c *Conn) prepareStatement(ctx context.Context, stmt string, tracer Tracer, keyspace string) (*preparedStatment, error) {
+	return c.prepareStatementWithMetrics(ctx, stmt, tracer, keyspace, nil)
+}
+
+func (c *Conn) prepareStatementWithMetrics(ctx context.Context, stmt string, tracer Tracer, keyspace string, bm *byteMetrics) (*preparedStatment, error) {
 	stmtCacheKey := c.session.stmtsLRU.keyFor(c.host.HostID(), keyspace, stmt)
 	flight, ok := c.session.stmtsLRU.execIfMissing(stmtCacheKey, func(lru *lru.Cache) *inflightPrepare {
 		flight := &inflightPrepare{
@@ -1494,10 +1508,10 @@ func (c *Conn) prepareStatement(ctx context.Context, stmt string, tracer Tracer,
 				prep.keyspace = keyspace
 			}
 
-			// we won the race to do the load, if our context is canceled we shouldnt
-			// stop the load as other callers are waiting for it but this caller should get
-			// their context cancelled error.
-			framer, err := c.exec(c.ctx, prep, tracer)
+			// Charge only the caller that initiated this prepare, not cache hits
+			// or callers waiting for the same inflight prepare. Keep c.ctx so a
+			// canceled caller does not cancel preparation for other callers.
+			framer, err := c.execWithMetrics(c.ctx, prep, tracer, bm)
 			if err != nil {
 				flight.err = err
 				c.session.stmtsLRU.remove(stmtCacheKey)
@@ -1570,6 +1584,10 @@ func marshalQueryValue(typ TypeInfo, value interface{}, dst *queryValues) error 
 }
 
 func (c *Conn) executeQuery(ctx context.Context, q *internalQuery) *Iter {
+	return c.executeQueryWithMetrics(ctx, q, nil)
+}
+
+func (c *Conn) executeQueryWithMetrics(ctx context.Context, q *internalQuery, bm *byteMetrics) *Iter {
 	qryOpts := q.qryOpts
 	params := queryParams{
 		consistency: q.GetConsistency(),
@@ -1607,7 +1625,7 @@ func (c *Conn) executeQuery(ctx context.Context, q *internalQuery) *Iter {
 	if !qryOpts.skipPrepare && shouldPrepare(qryOpts.stmt) {
 		// Prepare all DML queries. Other queries can not be prepared.
 		var err error
-		info, err = c.prepareStatement(ctx, qryOpts.stmt, qryOpts.trace, usedKeyspace)
+		info, err = c.prepareStatementWithMetrics(ctx, qryOpts.stmt, qryOpts.trace, usedKeyspace, bm)
 		if err != nil {
 			iter.err = err
 			return iter
@@ -1671,7 +1689,7 @@ func (c *Conn) executeQuery(ctx context.Context, q *internalQuery) *Iter {
 		}
 	}
 
-	framer, err := c.exec(ctx, frame, qryOpts.trace)
+	framer, err := c.execWithMetrics(ctx, frame, qryOpts.trace, bm)
 	if err != nil {
 		iter.err = err
 		return iter
@@ -1749,6 +1767,9 @@ func (c *Conn) executeQuery(ctx context.Context, q *internalQuery) *Iter {
 				q:   newQry,
 				pos: int((1 - qryOpts.prefetch) * float64(x.numRows)),
 			}
+			if newQry.conn != nil {
+				iter.next.bytes = bm
+			}
 
 			if iter.next.pos < 1 {
 				iter.next.pos = 1
@@ -1761,7 +1782,7 @@ func (c *Conn) executeQuery(ctx context.Context, q *internalQuery) *Iter {
 		return iter
 	case *schemaChangeKeyspace, *schemaChangeTable, *schemaChangeFunction, *schemaChangeAggregate, *schemaChangeType:
 		iter.framer = framer
-		if err := c.awaitSchemaAgreement(ctx); err != nil {
+		if err := c.awaitSchemaAgreementWithMetrics(ctx, c.session.cfg.MaxWaitSchemaAgreement, bm); err != nil {
 			// TODO: should have this behind a flag
 			c.logger.Warning("Error while awaiting for schema agreement after a schema change event.", NewLogFieldError("err", err))
 		}
@@ -1772,7 +1793,7 @@ func (c *Conn) executeQuery(ctx context.Context, q *internalQuery) *Iter {
 	case *RequestErrUnprepared:
 		stmtCacheKey := c.session.stmtsLRU.keyFor(c.host.HostID(), usedKeyspace, qryOpts.stmt)
 		c.session.stmtsLRU.evictPreparedID(stmtCacheKey, x.StatementId)
-		return c.executeQuery(ctx, q)
+		return c.executeQueryWithMetrics(ctx, q, bm)
 	case error:
 		iter.err = x
 		iter.framer = framer
@@ -1833,6 +1854,10 @@ func (c *Conn) UseKeyspace(keyspace string) error {
 }
 
 func (c *Conn) executeBatch(ctx context.Context, b *internalBatch) *Iter {
+	return c.executeBatchWithMetrics(ctx, b, nil)
+}
+
+func (c *Conn) executeBatchWithMetrics(ctx context.Context, b *internalBatch, bm *byteMetrics) *Iter {
 	iter := newIter(b.metrics, b.Keyspace(), b.routingInfo, nil)
 	n := len(b.batchOpts.entries)
 	req := &writeBatchFrame{
@@ -1868,7 +1893,7 @@ func (c *Conn) executeBatch(ctx context.Context, b *internalBatch) *Iter {
 		batchStmt := &req.statements[i]
 
 		if len(entry.Args) > 0 || entry.binding != nil {
-			info, err := c.prepareStatement(ctx, entry.Stmt, b.batchOpts.trace, usedKeyspace)
+			info, err := c.prepareStatementWithMetrics(ctx, entry.Stmt, b.batchOpts.trace, usedKeyspace, bm)
 			if err != nil {
 				iter.err = err
 				return iter
@@ -1920,7 +1945,7 @@ func (c *Conn) executeBatch(ctx context.Context, b *internalBatch) *Iter {
 		}
 	}
 
-	framer, err := c.exec(ctx, req, b.batchOpts.trace)
+	framer, err := c.execWithMetrics(ctx, req, b.batchOpts.trace, bm)
 	if err != nil {
 		iter.err = err
 		return iter
@@ -1946,7 +1971,7 @@ func (c *Conn) executeBatch(ctx context.Context, b *internalBatch) *Iter {
 			key := c.session.stmtsLRU.keyFor(c.host.HostID(), usedKeyspace, stmt)
 			c.session.stmtsLRU.evictPreparedID(key, x.StatementId)
 		}
-		return c.executeBatch(ctx, b)
+		return c.executeBatchWithMetrics(ctx, b, bm)
 	case *resultRowsFrame:
 		iter.meta = x.meta
 		iter.framer = framer
@@ -1964,15 +1989,23 @@ func (c *Conn) executeBatch(ctx context.Context, b *internalBatch) *Iter {
 }
 
 func (c *Conn) query(ctx context.Context, statement string, values ...interface{}) (iter *Iter) {
+	return c.queryWithMetrics(ctx, nil, statement, values...)
+}
+
+func (c *Conn) queryWithMetrics(ctx context.Context, bm *byteMetrics, statement string, values ...interface{}) (iter *Iter) {
 	q := c.session.Query(statement, values...).Consistency(One).Trace(nil)
 	q.skipPrepare = true
 	q.disableSkipMetadata = true
 
 	// we want to keep the query on this connection
-	return q.iterInternal(c, ctx)
+	return q.iterInternal(c, ctx, bm)
 }
 
 func (c *Conn) querySystemPeers(ctx context.Context, version cassVersion) *Iter {
+	return c.querySystemPeersWithMetrics(ctx, version, nil)
+}
+
+func (c *Conn) querySystemPeersWithMetrics(ctx context.Context, version cassVersion, bm *byteMetrics) *Iter {
 	const (
 		peerSchema    = "SELECT * FROM system.peers"
 		peerV2Schemas = "SELECT * FROM system.peers_v2"
@@ -1984,7 +2017,7 @@ func (c *Conn) querySystemPeers(ctx context.Context, version cassVersion) *Iter 
 
 	if version.AtLeast(4, 0, 0) && isSchemaV2 {
 		// Try "system.peers_v2" and fallback to "system.peers" if it's not found
-		iter := c.query(ctx, peerV2Schemas)
+		iter := c.queryWithMetrics(ctx, bm, peerV2Schemas)
 
 		err := iter.checkErrAndNotFound()
 		if err != nil {
@@ -1993,14 +2026,14 @@ func (c *Conn) querySystemPeers(ctx context.Context, version cassVersion) *Iter 
 				c.mu.Lock()
 				c.isSchemaV2 = false
 				c.mu.Unlock()
-				return c.query(ctx, peerSchema)
+				return c.queryWithMetrics(ctx, bm, peerSchema)
 			} else {
 				return iter
 			}
 		}
 		return iter
 	} else {
-		return c.query(ctx, peerSchema)
+		return c.queryWithMetrics(ctx, bm, peerSchema)
 	}
 }
 
@@ -2013,6 +2046,10 @@ func (c *Conn) awaitSchemaAgreement(ctx context.Context) (err error) {
 }
 
 func (c *Conn) awaitSchemaAgreementWithTimeout(ctx context.Context, timeout time.Duration) (err error) {
+	return c.awaitSchemaAgreementWithMetrics(ctx, timeout, nil)
+}
+
+func (c *Conn) awaitSchemaAgreementWithMetrics(ctx context.Context, timeout time.Duration, bm *byteMetrics) (err error) {
 	const localSchemas = "SELECT schema_version FROM system.local WHERE key='local'"
 
 	var versions map[string]struct{}
@@ -2022,7 +2059,7 @@ func (c *Conn) awaitSchemaAgreementWithTimeout(ctx context.Context, timeout time
 	endDeadline := time.Now().Add(timeout)
 
 	for time.Now().Before(endDeadline) {
-		iter := c.querySystemPeers(ctx, c.host.version)
+		iter := c.querySystemPeersWithMetrics(ctx, c.host.version, bm)
 
 		versions = make(map[string]struct{})
 
@@ -2049,7 +2086,7 @@ func (c *Conn) awaitSchemaAgreementWithTimeout(ctx context.Context, timeout time
 			goto cont
 		}
 
-		iter = c.query(ctx, localSchemas)
+		iter = c.queryWithMetrics(ctx, bm, localSchemas)
 		for iter.Scan(&schemaVersion) {
 			versions[schemaVersion] = struct{}{}
 			schemaVersion = ""

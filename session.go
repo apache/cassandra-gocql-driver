@@ -1455,11 +1455,11 @@ func (q *Query) IterContext(ctx context.Context) *Iter {
 	return q.session.executeQuery(internalQry)
 }
 
-func (q *Query) iterInternal(c *Conn, ctx context.Context) *Iter {
+func (q *Query) iterInternal(c *Conn, ctx context.Context, bm *byteMetrics) *Iter {
 	internalQry := newInternalQuery(q, ctx)
 	internalQry.conn = c
 
-	iter := c.executeQuery(internalQry.Context(), internalQry)
+	iter := c.executeQueryWithMetrics(internalQry.Context(), internalQry, bm)
 	if iter != nil {
 		// set iter.host so that the caller can retrieve the connect address which should be preferable (if valid) for the local host
 		iter.host = c.host
@@ -2021,6 +2021,10 @@ type nextIter struct {
 	oncea sync.Once
 	once  sync.Once
 	next  *Iter
+	// Set only for queries pinned to a connection, whose pages can be part of
+	// a surrounding attempt (for example, schema agreement checks). Pages routed
+	// through the session get their own byteMetrics through queryExecutor.
+	bytes *byteMetrics
 }
 
 func (n *nextIter) fetchAsync() {
@@ -2034,7 +2038,7 @@ func (n *nextIter) fetch() *Iter {
 		// if the query was specifically run on a connection then re-use that
 		// connection when fetching the next results
 		if n.q.conn != nil {
-			n.next = n.q.conn.executeQuery(n.q.qryOpts.context, n.q)
+			n.next = n.q.conn.executeQueryWithMetrics(n.q.qryOpts.context, n.q, n.bytes)
 		} else {
 			n.next = n.q.session.executeQuery(n.q)
 		}
@@ -2494,6 +2498,23 @@ type ObservedQuery struct {
 	// Whether the attempt was aborted by the interceptor before it was issued. In this case, the request was never
 	// actually sent to the above host.
 	RejectedByInterceptor bool
+
+	// BytesTx is the total size of the uncompressed bodies of native protocol
+	// messages fully written during this attempt. It is not the number of bytes
+	// sent on the wire: compression is not reflected, and frame headers, protocol
+	// v5+ segment headers and checksums, and TLS and TCP overhead are excluded.
+	// A message whose write fails partway contributes zero. Fully written messages
+	// remain counted if the attempt later fails, for example while awaiting a response.
+	// Preparation, UNPREPARED recovery and schema agreement requests initiated
+	// within the attempt contribute to these counts. Shared preparation is charged
+	// only to the attempt that initiates it; cache hits and waiters are not charged.
+	BytesTx int64
+	// BytesRx is the total size of the uncompressed (after decompression) bodies
+	// of native protocol responses received by this attempt, with the same
+	// exclusions as BytesTx. A response is counted only once the request waiting
+	// for it receives it, so a response that fails to read or decompress, or that
+	// arrives after the request has timed out or been canceled, is not counted.
+	BytesRx int64
 }
 
 // QueryObserver is the interface implemented by query observers / stat collectors.
@@ -2547,6 +2568,12 @@ type ObservedBatch struct {
 	// Whether the attempt was aborted by the interceptor before it was issued. In this case, the request was never
 	// actually sent to the above host.
 	RejectedByInterceptor bool
+
+	// BytesTx and BytesRx have the same semantics as the corresponding fields
+	// of ObservedQuery, for this batch attempt: they count uncompressed message
+	// bodies, not bytes on the wire.
+	BytesTx int64
+	BytesRx int64
 }
 
 // BatchObserver is the interface implemented by batch observers / stat collectors.
