@@ -384,6 +384,9 @@ type framer struct {
 	customPayload map[string][]byte
 
 	types *RegisteredTypes
+
+	// Body size before compression on writes, or after decompression on reads.
+	uncompressedBodySize int
 }
 
 func newFramer(compressor Compressor, version byte, r *RegisteredTypes) *framer {
@@ -494,6 +497,7 @@ func (f *framer) readFrame(r io.Reader, head *frameHeader) error {
 		}
 	}
 
+	f.uncompressedBodySize = len(f.buf)
 	f.header = head
 	return nil
 }
@@ -823,6 +827,7 @@ func (f *framer) finish() error {
 		return ErrFrameTooBig
 	}
 
+	f.uncompressedBodySize = len(f.buf) - frameHeadSize
 	if f.proto < protoVersion5 && f.buf[1]&flagCompress == flagCompress {
 		if f.compres == nil {
 			panic("compress flag set with no compressor")
