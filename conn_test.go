@@ -1613,3 +1613,28 @@ func TestConnProcessAllFramesInSingleSegment(t *testing.T) {
 		require.NoError(t, err)
 	}
 }
+
+type unitFuncQueryObserver func(context.Context, ObservedQuery)
+
+func (f unitFuncQueryObserver) ObserveQuery(ctx context.Context, o ObservedQuery) { f(ctx, o) }
+
+// TestObserveQueryByteMetrics checks that the observer sees uncompressed body
+// sizes, excluding frame and segment overhead, for each protocol version.
+func TestObserveQueryByteMetrics(t *testing.T) {
+	for _, proto := range []byte{protoVersion4, protoVersion5} {
+		t.Run(fmt.Sprintf("v%d", proto), func(t *testing.T) {
+			srv := NewTestServer(t, proto, context.Background())
+			defer srv.Stop()
+			db, err := newTestSession(protoVersion(proto), srv.Address)
+			require.NoError(t, err)
+			defer db.Close()
+
+			var observed ObservedQuery
+			observer := unitFuncQueryObserver(func(_ context.Context, o ObservedQuery) { observed = o })
+			require.NoError(t, db.Query("void").Observer(observer).Exec())
+
+			require.Positive(t, observed.BytesTx)
+			require.Equal(t, int64(4), observed.BytesRx) // resultKindVoid
+		})
+	}
+}
