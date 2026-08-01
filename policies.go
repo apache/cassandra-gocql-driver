@@ -362,7 +362,9 @@ type NextHost func() SelectedHost
 // RoundRobinHostPolicy is a round-robin load balancing policy, where each host
 // is tried sequentially for each query.
 func RoundRobinHostPolicy() HostSelectionPolicy {
-	return &roundRobinHostPolicy{}
+	return &roundRobinHostPolicy{
+		lastUsedHostIdx: rand.Uint64(),
+	}
 }
 
 type roundRobinHostPolicy struct {
@@ -377,7 +379,7 @@ func (r *roundRobinHostPolicy) Init(*Session)                       {}
 
 func (r *roundRobinHostPolicy) Pick(qry ExecutableStatement) NextHost {
 	nextStartOffset := atomic.AddUint64(&r.lastUsedHostIdx, 1)
-	return roundRobbin(int(nextStartOffset), r.hosts.get())
+	return roundRobbin(nextStartOffset, r.hosts.get())
 }
 
 func (r *roundRobinHostPolicy) AddHost(host *HostInfo) {
@@ -810,7 +812,10 @@ type dcAwareRR struct {
 // return hosts which are in the local datacenter before returning hosts in all
 // other datacenters
 func DCAwareRoundRobinPolicy(localDC string) HostSelectionPolicy {
-	return &dcAwareRR{local: localDC}
+	return &dcAwareRR{
+		local:           localDC,
+		lastUsedHostIdx: rand.Uint64(),
+	}
 }
 
 func (d *dcAwareRR) Init(*Session)                       {}
@@ -848,34 +853,33 @@ func (d *dcAwareRR) HostDown(host *HostInfo) { d.RemoveHost(host) }
 //
 // For tiered and DC-aware strategy:
 // roundRobbin(offset, localHosts, remoteHosts)
-func roundRobbin(shift int, hosts ...[]*HostInfo) NextHost {
-	currentLayer := 0
-	currentlyObserved := 0
+func roundRobbin(shift uint64, hosts ...[]*HostInfo) NextHost {
+	var currentlyObserved, currentLayerIdx uint64
 
 	return func() SelectedHost {
 		// iterate over layers
 		for {
-			if currentLayer == len(hosts) {
+			if currentLayerIdx == uint64(len(hosts)) {
 				return nil
 			}
 
-			currentLayerSize := len(hosts[currentLayer])
-
+			currentLayer := hosts[currentLayerIdx]
+			currentLayerSize := uint64(len(hosts[currentLayerIdx]))
 			// iterate over hosts within a layer
+		layerLoop:
 			for {
 				currentlyObserved++
 				if currentlyObserved > currentLayerSize {
-					currentLayer++
+					currentLayerIdx++
 					currentlyObserved = 0
-					break
+					break layerLoop
 				}
 
-				h := hosts[currentLayer][(shift+currentlyObserved)%currentLayerSize]
+				h := currentLayer[(shift+currentlyObserved)%currentLayerSize]
 
 				if h.IsUp() {
 					return (*selectedHost)(h)
 				}
-
 			}
 		}
 	}
@@ -883,7 +887,7 @@ func roundRobbin(shift int, hosts ...[]*HostInfo) NextHost {
 
 func (d *dcAwareRR) Pick(q ExecutableStatement) NextHost {
 	nextStartOffset := atomic.AddUint64(&d.lastUsedHostIdx, 1)
-	return roundRobbin(int(nextStartOffset), d.localHosts.get(), d.remoteHosts.get())
+	return roundRobbin(nextStartOffset, d.localHosts.get(), d.remoteHosts.get())
 }
 
 // RackAwareRoundRobinPolicy is a host selection policies which will prioritize and
