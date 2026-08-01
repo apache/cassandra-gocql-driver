@@ -53,6 +53,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Upgraded Github actions dependencies versions (CASSGO-111)
 - Fix a couple of issues related to CASSGO-101 (CASSGO-114)
 
+- Fix DisableInitialHostLookup flag ignored when querying system.peers (CASSGO-5)
+
 ### Fixed
 
 - Prevent panic with queries during session init (CASSGO-92)
