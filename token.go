@@ -29,7 +29,6 @@
 package gocql
 
 import (
-	"bytes"
 	"crypto/md5"
 	"fmt"
 	"math/big"
@@ -205,7 +204,7 @@ func (t *tokenRing) Swap(i, j int) {
 }
 
 func (t *tokenRing) String() string {
-	buf := &bytes.Buffer{}
+	var buf  strings.Builder
 	buf.WriteString("TokenRing(")
 	if t.partitioner != nil {
 		buf.WriteString(t.partitioner.Name())
@@ -223,7 +222,7 @@ func (t *tokenRing) String() string {
 		buf.WriteString(th.host.ConnectAddress().String())
 	}
 	buf.WriteString("\n}")
-	return string(buf.Bytes())
+	return buf.String()
 }
 
 func (t *tokenRing) GetHostForToken(token token) (host *HostInfo, endToken token) {
