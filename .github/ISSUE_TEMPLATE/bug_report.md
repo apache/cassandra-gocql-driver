@@ -1,3 +1,14 @@
+---
+name: Bug report
+about: Create a report to help us improve
+title: ''
+labels: bug
+assignees: ''
+
+---
+
+**It is strongly preferable to create an issue in [Apache JIRA Cassandra project](https://issues.apache.org/jira/projects/CASSANDRA/issues/).**
+
 Please answer these questions before submitting your issue. Thanks!
 
 ### What version of Cassandra are you using?
