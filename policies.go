@@ -840,6 +840,52 @@ func (d *dcAwareRR) RemoveHost(host *HostInfo) {
 func (d *dcAwareRR) HostUp(host *HostInfo)   { d.AddHost(host) }
 func (d *dcAwareRR) HostDown(host *HostInfo) { d.RemoveHost(host) }
 
+func (d *dcAwareRR) Pick(q ExecutableStatement) NextHost {
+	nextStartOffset := atomic.AddUint64(&d.lastUsedHostIdx, 1)
+	return roundRobbin(int(nextStartOffset), d.localHosts.get(), d.remoteHosts.get())
+}
+
+type dcLocalRR struct {
+	local           string
+	localHosts      cowHostList
+	lastUsedHostIdx uint64
+}
+
+// DCLocalRoundRobinPolicy is a host selection policies which will allow and
+// return hosts which are in the local datacenter and will ignore hosts
+// from other datacenters
+func DCLocalRoundRobinPolicy(localDC string) HostSelectionPolicy {
+	return &dcLocalRR{local: localDC}
+}
+
+func (d *dcLocalRR) Init(*Session)                       {}
+func (d *dcLocalRR) KeyspaceChanged(KeyspaceUpdateEvent) {}
+func (d *dcLocalRR) SetPartitioner(p string)             {}
+
+func (d *dcLocalRR) IsLocal(host *HostInfo) bool {
+	return host.DataCenter() == d.local
+}
+
+func (d *dcLocalRR) AddHost(host *HostInfo) {
+	if d.IsLocal(host) {
+		d.localHosts.add(host)
+	}
+}
+
+func (d *dcLocalRR) RemoveHost(host *HostInfo) {
+	if d.IsLocal(host) {
+		d.localHosts.remove(host.ConnectAddress())
+	}
+}
+
+func (d *dcLocalRR) HostUp(host *HostInfo)   { d.AddHost(host) }
+func (d *dcLocalRR) HostDown(host *HostInfo) { d.RemoveHost(host) }
+
+func (d *dcLocalRR) Pick(q ExecutableStatement) NextHost {
+	nextStartOffset := atomic.AddUint64(&d.lastUsedHostIdx, 1)
+	return roundRobbin(int(nextStartOffset), d.localHosts.get())
+}
+
 // This function is supposed to be called in a fashion
 // roundRobbin(offset, hostsPriority1, hostsPriority2, hostsPriority3 ... )
 //
@@ -879,11 +925,6 @@ func roundRobbin(shift int, hosts ...[]*HostInfo) NextHost {
 			}
 		}
 	}
-}
-
-func (d *dcAwareRR) Pick(q ExecutableStatement) NextHost {
-	nextStartOffset := atomic.AddUint64(&d.lastUsedHostIdx, 1)
-	return roundRobbin(int(nextStartOffset), d.localHosts.get(), d.remoteHosts.get())
 }
 
 // RackAwareRoundRobinPolicy is a host selection policies which will prioritize and
