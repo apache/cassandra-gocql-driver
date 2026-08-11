@@ -2732,7 +2732,7 @@ func (udtCQLType) Params(proto int) []interface{} {
 
 // TypeInfoFromParams builds a TypeInfo implementation for the composite type with
 // the given parameters.
-func (udtCQLType) TypeInfoFromParams(proto int, params []interface{}) (TypeInfo, error) {
+func (u udtCQLType) TypeInfoFromParams(proto int, params []interface{}) (TypeInfo, error) {
 	if len(params) != 3 {
 		return nil, fmt.Errorf("expected 3 param for udt, got %d", len(params))
 	}
@@ -2749,9 +2749,12 @@ func (udtCQLType) TypeInfoFromParams(proto int, params []interface{}) (TypeInfo,
 		return nil, fmt.Errorf("expected []UDTField for udt, got %T", params[2])
 	}
 	return UDTTypeInfo{
-		Keyspace: keyspace,
-		Name:     name,
-		Elements: elements,
+		Keyspace:           keyspace,
+		Name:               name,
+		Elements:           elements,
+		encodeNilMapAsNull: u.types.encodeNilMapAsNull,
+		warnOnNilMap:       u.types.warnOnNilMap,
+		logger:             u.types.logger,
 	}, nil
 }
 
@@ -2769,8 +2772,11 @@ func (u udtCQLType) TypeInfoFromString(proto int, name string) (TypeInfo, error)
 		// first is keyspace, second is hex(name), third is elements
 		name, _ := hex.DecodeString(parts[1])
 		ti := UDTTypeInfo{
-			Keyspace: parts[0],
-			Name:     string(name),
+			Keyspace:           parts[0],
+			Name:               string(name),
+			encodeNilMapAsNull: u.types.encodeNilMapAsNull,
+			warnOnNilMap:       u.types.warnOnNilMap,
+			logger:             u.types.logger,
 		}
 		ti.Elements = make([]UDTField, 0, len(parts)-2)
 		for i := 2; i < len(parts); i++ {
@@ -2799,7 +2805,11 @@ func (u udtCQLType) TypeInfoFromString(proto int, name string) (TypeInfo, error)
 		return ti, nil
 	}
 	// we can't get the name or anything so we'll just try to parse the elements
-	ti := UDTTypeInfo{}
+	ti := UDTTypeInfo{
+		encodeNilMapAsNull: u.types.encodeNilMapAsNull,
+		warnOnNilMap:       u.types.warnOnNilMap,
+		logger:             u.types.logger,
+	}
 	ti.Elements = make([]UDTField, 0, len(parts))
 	for _, part := range parts {
 		et, err := u.types.typeInfoFromString(proto, part)
@@ -2826,6 +2836,12 @@ type UDTTypeInfo struct {
 	Keyspace string
 	Name     string
 	Elements []UDTField
+
+	// indicates whether to encode nil maps as initialized UDTs with all fields set to NULL.
+	encodeNilMapAsNull bool
+	warnOnNilMap       bool
+
+	logger StructuredLogger
 }
 
 func (u UDTTypeInfo) Type() Type {
@@ -2836,6 +2852,8 @@ func (u UDTTypeInfo) Type() Type {
 func (UDTTypeInfo) Zero() interface{} {
 	return map[string]interface{}(nil)
 }
+
+const nilMapOnUDTWarningFormat = "UDT marshal: nil map passed for UDT %s.%s, please follow the documentation on RegisteredTypes.WithNullableUDTs option"
 
 // Marshal marshals the value into a byte slice.
 func (udt UDTTypeInfo) Marshal(value interface{}) ([]byte, error) {
@@ -2855,6 +2873,16 @@ func (udt UDTTypeInfo) Marshal(value interface{}) ([]byte, error) {
 
 		return buf, nil
 	case map[string]interface{}:
+		if v == nil && udt.encodeNilMapAsNull {
+			// Nullable UDTs encoding for maps is enabled,
+			// so it should return nil and framer encodes []byte(nil) as NULL.
+			return nil, nil
+		}
+
+		if v == nil && udt.warnOnNilMap {
+			udt.logger.Warning(fmt.Sprintf(nilMapOnUDTWarningFormat, udt.Keyspace, udt.Name))
+		}
+
 		var buf []byte
 		for i := range udt.Elements {
 			val, ok := v[udt.Elements[i].Name]

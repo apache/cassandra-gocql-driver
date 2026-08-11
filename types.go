@@ -105,6 +105,13 @@ type RegisteredTypes struct {
 	// the types are immutable
 	mut         sync.Mutex
 	initialized sync.Once
+
+	// encodeNilMapAsNull is a flag that indicates whether nullable UDTs are enabled.
+	encodeNilMapAsNull bool
+	// warns when nil map is passed to UDT marshal
+	warnOnNilMap bool
+
+	logger StructuredLogger
 }
 
 func (r *RegisteredTypes) init() {
@@ -593,19 +600,67 @@ func (r *RegisteredTypes) Copy() *RegisteredTypes {
 
 	copy := &RegisteredTypes{}
 	copy.init()
+	copy.encodeNilMapAsNull = r.encodeNilMapAsNull
+	copy.warnOnNilMap = r.warnOnNilMap
+	// Adding default types to the copy so collection type codecs will have a pointer to the copy instead of the original.
+	copy.addDefaultTypes()
 	for typ, t := range r.byType {
-		copy.byType[typ] = t
+		if _, exists := copy.byType[typ]; !exists {
+			copy.byType[typ] = t
+		}
 	}
 	for typ, t := range r.simples {
-		copy.simples[typ] = t
+		if _, exists := copy.simples[typ]; !exists {
+			copy.simples[typ] = t
+		}
 	}
 	for name, typ := range r.byString {
-		copy.byString[name] = typ
+		if _, exists := copy.byString[name]; !exists {
+			copy.byString[name] = typ
+		}
 	}
 	for name, t := range r.custom {
-		copy.custom[name] = t
+		if _, exists := copy.custom[name]; !exists {
+			copy.custom[name] = t
+		}
 	}
 	return copy
+}
+
+// WithNullableUDTs creates a shallow copy of the RegisteredTypes with the nullable UDTs flag set to the given value.
+//
+// If enabled, UDTs will be encoded as null CQL values when map is marshaled.
+// When disabled, UDTs will be encoded as initialized UDT values with all its fields set to NULL when passed map[string]any{} is nil.
+// For example, there are following UDT and table definitions:
+//
+//	CREATE TYPE my_udt (field_a text, field_b int);
+//	CREATE TABLE my_table (id int PRIMARY KEY, value frozen<my_udt>);
+//
+// If this option is disabled, the following code will insert a UDT object with both fields set to NULL:
+//
+//	var nilMap map[string]any = nil
+//	session.Query("INSERT INTO my_table (id, value) VALUES (?, ?)", 1, nilMap).Exec()
+//
+// The table my_table will contain:
+//
+//	id | value
+//	1  | {field_a: null, field_b: null}
+//
+// If this option is enabled, the same code will insert a NULL value:
+//
+//	id | value
+//	1  | null
+//
+// Default: false
+func (r *RegisteredTypes) WithNullableUDTs(enabled bool) *RegisteredTypes {
+	copy := r.Copy()
+	copy.encodeNilMapAsNull = enabled
+	copy.warnOnNilMap = false
+	return copy
+}
+
+func (r *RegisteredTypes) setLogger(logger StructuredLogger) {
+	r.logger = logger
 }
 
 // GlobalTypes is the set of types that are registered globally and are copied
@@ -614,6 +669,8 @@ func (r *RegisteredTypes) Copy() *RegisteredTypes {
 // own before a session is created.
 var GlobalTypes = func() *RegisteredTypes {
 	r := &RegisteredTypes{}
+	// by default, we warn when nil map is passed to UDT marshal
+	r.warnOnNilMap = true
 	// we init because we end up calling GlobalTypes in tests and other spots before
 	// init would get called
 	r.init()

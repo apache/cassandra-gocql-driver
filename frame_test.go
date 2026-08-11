@@ -785,7 +785,7 @@ func TestFrameReadTypeInfo(t *testing.T) {
 	// org.apache.cassandra.db.marshal.VectorType(%s, 2)
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			f := newFramer(nil, 4, GlobalTypes)
+			f := newFramer(nil, 4, GlobalTypes.WithNullableUDTs(false))
 			f.writeShort(uint16(test.typ))
 			if test.typ == TypeCustom {
 				f.writeString(test.custom)
