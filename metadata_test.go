@@ -415,6 +415,27 @@ func TestTypeParser(t *testing.T) {
 	)
 }
 
+// a bare CompositeType (no parameter list) and an unterminated parameter
+// list used to panic instead of returning an error
+func TestTypeParserMalformedCompositeType(t *testing.T) {
+	session := &Session{
+		cfg: ClusterConfig{
+			ProtoVersion: 4,
+		},
+		logger: NewLogger(LogLevelNone),
+		types:  GlobalTypes,
+	}
+
+	require.NotPanics(t, func() {
+		_, err := parseType(session, "org.apache.cassandra.db.marshal.CompositeType")
+		require.Error(t, err)
+	})
+
+	require.NotPanics(t, func() {
+		_, _ = parseType(session, "org.apache.cassandra.db.marshal.CompositeType(")
+	})
+}
+
 // expected data holder
 type assertTypeInfo struct {
 	Type     Type

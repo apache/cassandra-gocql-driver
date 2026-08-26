@@ -2254,6 +2254,9 @@ func (t *typeParser) parse() (typeParserResult, bool, error) {
 	// interpret the AST
 	if strings.HasPrefix(ast.name, COMPOSITE_TYPE) {
 		count := len(ast.params)
+		if count == 0 {
+			return typeParserResult{}, false, fmt.Errorf("type '%s' has no parameters", t.input)
+		}
 
 		// look for a collections param
 		last := ast.params[count-1]
@@ -2385,7 +2388,7 @@ func (t *typeParser) parseParamNodes() (params []typeParserParamNode, ok bool) {
 
 	t.skipWhitespace()
 
-	for t.input[t.index] != ')' {
+	for t.index < len(t.input) && t.input[t.index] != ')' {
 		// look for a named param, but if no colon, then we want to backup
 		backupIndex := t.index
 
@@ -2400,7 +2403,7 @@ func (t *typeParser) parseParamNodes() (params []typeParserParamNode, ok bool) {
 
 		t.skipWhitespace()
 
-		if t.input[t.index] == ':' {
+		if t.index < len(t.input) && t.input[t.index] == ':' {
 			// there is a name for this parameter
 
 			// consume the ':'
@@ -2433,12 +2436,17 @@ func (t *typeParser) parseParamNodes() (params []typeParserParamNode, ok bool) {
 
 		t.skipWhitespace()
 
-		if t.input[t.index] == ',' {
+		if t.index < len(t.input) && t.input[t.index] == ',' {
 			// consume the comma
 			t.index++
 
 			t.skipWhitespace()
 		}
+	}
+
+	if t.index >= len(t.input) {
+		// reached end of input without a closing ')'
+		return nil, false
 	}
 
 	// consume the ')'
