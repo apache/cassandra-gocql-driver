@@ -15,8 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Query.Binding() method to override binding function for a query object.
 
 ### Fixed
+
 - Correct protocol negotiation with non-Cassandra servers (CASSGO-131)
 - LZ4 test fails on arm64 (CASSGO-128)
+- Prevent syntetic CREATED events on HostSelectionPolicy.KeyspaceChanged during session init (CASSGO-132)
 
 ## [2.1.2]
 

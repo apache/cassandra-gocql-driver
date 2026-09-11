@@ -43,6 +43,8 @@ func HostPoolHostPolicy(hp hostpool.HostPool) *hostPoolHostPolicy {
 	return &hostPoolHostPolicy{hostMap: map[string]*gocql.HostInfo{}, hp: hp}
 }
 
+var _ gocql.MetadataRequiredPolicy = (*hostPoolHostPolicy)(nil)
+
 type hostPoolHostPolicy struct {
 	hp      hostpool.HostPool
 	mu      sync.RWMutex
@@ -139,6 +141,10 @@ func (r *hostPoolHostPolicy) Pick(qry gocql.ExecutableStatement) gocql.NextHost 
 			hostR:  hostR,
 		}
 	}
+}
+
+func (r *hostPoolHostPolicy) MetadataRequired() bool {
+	return false
 }
 
 // selectedHostPoolHost is a host returned by the hostPoolHostPolicy and
