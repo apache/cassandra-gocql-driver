@@ -2205,12 +2205,19 @@ type segmentReader struct {
 	readBufferDecoded bytes.Reader
 	// Reusable buffer for reading frame header
 	frameHeaderBuf [frameHeadSize]byte
+
+	// read socket timeout applied to the underlying reader on a segment body call.
+	// readSegmentHeader ignores the timeout while waiting for a segment to arrive (while reading header).
+	// Once there is a segment body in flight, the timeout is applied to the segment body read.
+	// If segment is non self-contained, the timeout will be applied to the entire frame read.
+	timeout time.Duration
 }
 
 func newSegmentReader(r ConnReader, segmentCodec segmentCodec) *segmentReader {
 	return &segmentReader{
 		r:            r,
 		segmentCodec: segmentCodec,
+		timeout:      r.GetTimeout(),
 	}
 }
 
@@ -2243,11 +2250,12 @@ func (sr *segmentReader) SetWriteDeadline(t time.Time) error {
 }
 
 func (sr *segmentReader) SetTimeout(timeout time.Duration) {
+	sr.timeout = timeout
 	sr.r.SetTimeout(timeout)
 }
 
 func (sr *segmentReader) GetTimeout() time.Duration {
-	return sr.r.GetTimeout()
+	return sr.timeout
 }
 
 func (sr *segmentReader) Read(p []byte) (n int, err error) {
@@ -2265,12 +2273,19 @@ func (sr *segmentReader) Read(p []byte) (n int, err error) {
 }
 
 func (sr *segmentReader) readSegment() error {
-	payload, isSelfContained, err := sr.segmentCodec.decode(sr.r)
+	header, err := sr.readSegmentHeader()
 	if err != nil {
 		return err
 	}
 
-	if isSelfContained {
+	// The payload is already in flight at this point, so it is read under the configured
+	// read timeout applied by the underlying reader
+	payload, err := sr.segmentCodec.decodeSegmentPayload(sr.r, header)
+	if err != nil {
+		return err
+	}
+
+	if header.isSelfContained {
 		// Reset the buffer to the new segment
 		// It might contain multiple frames so Read should be called multiple times to read all of them
 		sr.readBufferDecoded.Reset(payload)
@@ -2285,6 +2300,22 @@ func (sr *segmentReader) readSegment() error {
 	// Contains a single frame so we can read it all at once
 	sr.readBufferDecoded.Reset(payload)
 	return nil
+}
+
+// readSegmentHeader reads the header of the next segment with the read timeout suppressed.
+// The recv loop parks here for as long as the connection is idle, so a deadline would tear
+// down healthy connections.
+func (sr *segmentReader) readSegmentHeader() (segmentHeader, error) {
+	if sr.timeout > 0 {
+		sr.r.SetTimeout(0)
+		defer sr.r.SetTimeout(sr.timeout)
+
+		if err := sr.r.SetReadDeadline(time.Time{}); err != nil {
+			return segmentHeader{}, err
+		}
+	}
+
+	return sr.segmentCodec.decodeSegmentHeader(sr.r)
 }
 
 // Non self-contained segment contains only part of a bigger frame that is split into multiple segments.
@@ -2320,13 +2351,20 @@ func (sr *segmentReader) readNonSelfContainedSegment(payload []byte) ([]byte, er
 // Called by readNonSelfContainedSegment.
 func (sr *segmentReader) readPartialFrames(dstBuf *bytes.Buffer, bytesToRead int) error {
 	for bytesToRead > 0 {
-		frame, isSelfContained, err := sr.segmentCodec.decode(sr.r)
+		// Unlike readSegment, the header is read under the read timeout as well: the rest of
+		// the frame is already being sent, so there is nothing to wait for indefinitely here.
+		header, err := sr.segmentCodec.decodeSegmentHeader(sr.r)
 		if err != nil {
 			return err
 		}
 		// Expected to receive only non self-contained segments
-		if isSelfContained {
+		if header.isSelfContained {
 			return errUnexpectedSelfContainedSegment
+		}
+
+		frame, err := sr.segmentCodec.decodeSegmentPayload(sr.r, header)
+		if err != nil {
+			return err
 		}
 		if totalLength := dstBuf.Len() + len(frame); totalLength > dstBuf.Cap() {
 			return fmt.Errorf("gocql: expected partial frame of length %d, got %d", dstBuf.Cap(), totalLength)

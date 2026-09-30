@@ -49,7 +49,7 @@ type segmentHeader struct {
 	isSelfContained bool
 }
 
-func (segment *segmentHeader) String() string {
+func (segment segmentHeader) String() string {
 	return fmt.Sprintf("segmentHeader(len=%d, uncompressedLen=%d, isSelfContained=%v)",
 		segment.payloadLength,
 		segment.uncompressedPayloadLength,
@@ -226,54 +226,54 @@ func (sc *segmentCodec) encodePayloadAndChecksum(payload []byte, dest []byte) {
 	binary.LittleEndian.PutUint32(dest[len(payload):], payloadCRC32)
 }
 
-func (sc *segmentCodec) decode(r io.Reader) ([]byte, bool, error) {
+// decodeSegmentHeader reads and verifies the header of the next segment from the given reader.
+func (sc *segmentCodec) decodeSegmentHeader(r io.Reader) (segmentHeader, error) {
 	if sc.compressed {
-		return sc.decodeCompressedSegment(r)
+		header, err := sc.decodeCompressedSegmentHeader(r)
+		if err != nil {
+			return segmentHeader{}, fmt.Errorf("gocql: failed to read compressed segment header, err: %w", err)
+		}
+		return header, nil
 	}
-	return sc.decodeUncompressedSegment(r)
+
+	header, err := sc.decodeUncompressedSegmentHeader(r)
+	if err != nil {
+		return segmentHeader{}, fmt.Errorf("gocql: failed to read uncompressed segment header, err: %w", err)
+	}
+	return header, nil
 }
 
-func (sc *segmentCodec) decodeCompressedSegment(r io.Reader) ([]byte, bool, error) {
-	header, err := sc.decodeCompressedSegmentHeader(r)
-	if err != nil {
-		return nil, false, fmt.Errorf("gocql: failed to read compressed segment header, err: %w", err)
+// decodeSegmentPayload reads, verifies and, if needed, decompresses the payload of the segment
+// described by the given header, which must come from a preceding decodeSegmentHeader call.
+func (sc *segmentCodec) decodeSegmentPayload(r io.Reader, header segmentHeader) ([]byte, error) {
+	if !sc.compressed {
+		payload, err := sc.decodePayload(r, header)
+		if err != nil {
+			return nil, fmt.Errorf("gocql: failed to read uncompressed segment payload, err: %w", err)
+		}
+		return payload, nil
 	}
 
 	compressedPayload, err := sc.decodePayload(r, header)
 	if err != nil {
-		return nil, false, fmt.Errorf("gocql: failed to read compressed segment payload, err: %w", err)
+		return nil, fmt.Errorf("gocql: failed to read compressed segment payload, err: %w", err)
 	}
 
-	var uncompressedPayload []byte
-	if header.uncompressedPayloadLength > 0 {
-		uncompressedPayload, err = sc.compressor.AppendDecompressed(nil, compressedPayload, uint32(header.uncompressedPayloadLength))
-		if err != nil {
-			return nil, false, err
-		}
-		// Verify that the decompressed length matches the expected length
-		if uint32(len(uncompressedPayload)) != uint32(header.uncompressedPayloadLength) {
-			return nil, false, fmt.Errorf("gocql: length mismatch after payload decompressing, got %d, expected %d", len(uncompressedPayload), header.uncompressedPayloadLength)
-		}
-	} else {
-		// in case when the segment was not compressed because compression was not worth it
-		uncompressedPayload = compressedPayload
+	// in case when the segment was not compressed because compression was not worth it
+	if header.uncompressedPayloadLength == 0 {
+		return compressedPayload, nil
 	}
 
-	return uncompressedPayload, header.isSelfContained, nil
-}
-
-func (sc *segmentCodec) decodeUncompressedSegment(r io.Reader) ([]byte, bool, error) {
-	header, err := sc.decodeUncompressedSegmentHeader(r)
+	uncompressedPayload, err := sc.compressor.AppendDecompressed(nil, compressedPayload, uint32(header.uncompressedPayloadLength))
 	if err != nil {
-		return nil, false, fmt.Errorf("gocql: failed to read uncompressed segment header, err: %w", err)
+		return nil, err
+	}
+	// Verify that the decompressed length matches the expected length
+	if uint32(len(uncompressedPayload)) != uint32(header.uncompressedPayloadLength) {
+		return nil, fmt.Errorf("gocql: length mismatch after payload decompressing, got %d, expected %d", len(uncompressedPayload), header.uncompressedPayloadLength)
 	}
 
-	payload, err := sc.decodePayload(r, header)
-	if err != nil {
-		return nil, false, fmt.Errorf("gocql: failed to read uncompressed segment payload, err: %w", err)
-	}
-
-	return payload, header.isSelfContained, nil
+	return uncompressedPayload, nil
 }
 
 // verifySegmentHeaderChecksum verifies the CRC24 checksum of the segment header.
@@ -295,23 +295,23 @@ func (sc *segmentCodec) verifySegmentPayloadChecksum(data []byte, expected uint3
 }
 
 // decodeCompressedSegmentHeader reads and verifies the header of a compressed segment from the given reader.
-func (sc *segmentCodec) decodeCompressedSegmentHeader(r io.Reader) (*segmentHeader, error) {
+func (sc *segmentCodec) decodeCompressedSegmentHeader(r io.Reader) (segmentHeader, error) {
 	headerBuf := sc.readHeaderBuf[:compressedHeaderSize]
 	if _, err := io.ReadFull(r, headerBuf); err != nil {
-		return nil, err
+		return segmentHeader{}, err
 	}
 
 	readHeaderChecksum := uint32(headerBuf[5]) | uint32(headerBuf[6])<<8 | uint32(headerBuf[7])<<16
 	err := sc.verifySegmentHeaderChecksum(headerBuf[:5], readHeaderChecksum)
 	if err != nil {
-		return nil, err
+		return segmentHeader{}, err
 	}
 
 	compressedLen := uint32(headerBuf[0]) | uint32(headerBuf[1])<<8 | uint32(headerBuf[2]&0x1)<<16
 	uncompressedLen := (uint32(headerBuf[2]) >> 1) | uint32(headerBuf[3])<<7 | uint32(headerBuf[4]&0b11)<<15
 	selfContained := (headerBuf[4] & 0b100) != 0
 
-	return &segmentHeader{
+	return segmentHeader{
 		payloadLength:             int(compressedLen),
 		uncompressedPayloadLength: int(uncompressedLen),
 		isSelfContained:           selfContained,
@@ -319,30 +319,30 @@ func (sc *segmentCodec) decodeCompressedSegmentHeader(r io.Reader) (*segmentHead
 }
 
 // decodeUncompressedSegmentHeader reads and verifies the header of an uncompressed segment from the given reader.
-func (sc *segmentCodec) decodeUncompressedSegmentHeader(r io.Reader) (*segmentHeader, error) {
+func (sc *segmentCodec) decodeUncompressedSegmentHeader(r io.Reader) (segmentHeader, error) {
 	headerBuf := sc.readHeaderBuf[:uncompressedHeaderSize]
 	if _, err := io.ReadFull(r, headerBuf); err != nil {
-		return nil, err
+		return segmentHeader{}, err
 	}
 
 	readHeaderCRC24 := uint32(headerBuf[3]) | uint32(headerBuf[4])<<8 | uint32(headerBuf[5])<<16
 	err := sc.verifySegmentHeaderChecksum(headerBuf[:3], readHeaderCRC24)
 	if err != nil {
-		return nil, err
+		return segmentHeader{}, err
 	}
 
 	headerInt := uint32(headerBuf[0]) | uint32(headerBuf[1])<<8 | uint32(headerBuf[2])<<16
 	payloadLen := int(headerInt & maxSegmentPayloadSize)
 	isSelfContained := (headerInt & (1 << 17)) != 0
 
-	return &segmentHeader{
+	return segmentHeader{
 		payloadLength:   payloadLen,
 		isSelfContained: isSelfContained,
 	}, nil
 }
 
 // decodePayload reads and verifies the payload of a segment from the given reader.
-func (sc *segmentCodec) decodePayload(r io.Reader, header *segmentHeader) ([]byte, error) {
+func (sc *segmentCodec) decodePayload(r io.Reader, header segmentHeader) ([]byte, error) {
 	payload := make([]byte, header.payloadLength)
 	if _, err := io.ReadFull(r, payload); err != nil {
 		return nil, err

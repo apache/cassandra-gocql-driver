@@ -1183,7 +1183,7 @@ func (srv *TestServer) serve() {
 				var reader io.Reader = conn
 
 				if useProtoV5 && startupCompleted {
-					frame, _, err := segmentCodec.decode(conn)
+					frame, _, err := decodeSegment(&segmentCodec, conn)
 					if err != nil {
 						if errors.Is(err, io.EOF) {
 							return
@@ -1628,7 +1628,7 @@ func TestSegmentWriter_MultipleFrames(t *testing.T) {
 	go func() {
 		defer close(readCh)
 		segmentCodec := newSegmentCodec(nil)
-		body, isSelfContained, err := segmentCodec.decode(server)
+		body, isSelfContained, err := decodeSegment(&segmentCodec, server)
 		require.NoError(t, err)
 		require.True(t, isSelfContained)
 		readCh <- body
@@ -1702,7 +1702,7 @@ func writeToSegmentWriterOrderedlyAndWait(t *testing.T, sw *segmentWriter, frame
 func decodeSegmentFromBytes(t *testing.T, data []byte) ([]byte, bool) {
 	t.Helper()
 	codec := newSegmentCodec(nil)
-	payload, selfContained, err := codec.decode(bytes.NewReader(data))
+	payload, selfContained, err := decodeSegment(&codec, bytes.NewReader(data))
 	require.NoError(t, err)
 	return payload, selfContained
 }
@@ -1953,11 +1953,19 @@ type recordingConnReader struct {
 	buf                      *bytes.Buffer
 	returnErr                error
 	returnErrAfterCallsCount int
+
+	timeout time.Duration
+	// timeoutPerRead records the timeout that was in effect on every Read call.
+	timeoutPerRead []time.Duration
+	// readDeadlines records every deadline passed to SetReadDeadline.
+	readDeadlines []time.Time
 }
 
 var _ ConnReader = (*recordingConnReader)(nil)
 
 func (r *recordingConnReader) Read(p []byte) (n int, err error) {
+	r.timeoutPerRead = append(r.timeoutPerRead, r.timeout)
+
 	if r.returnErr != nil {
 		if r.returnErrAfterCallsCount == 0 || r.readCalls == r.returnErrAfterCallsCount {
 			return 0, r.returnErr
@@ -1975,10 +1983,20 @@ func (r *recordingConnReader) Write(p []byte) (n int, err error)  { return 0, ni
 func (r *recordingConnReader) LocalAddr() net.Addr                { return nil }
 func (r *recordingConnReader) RemoteAddr() net.Addr               { return nil }
 func (r *recordingConnReader) SetDeadline(t time.Time) error      { return nil }
-func (r *recordingConnReader) SetReadDeadline(t time.Time) error  { return nil }
 func (r *recordingConnReader) SetWriteDeadline(t time.Time) error { return nil }
-func (r *recordingConnReader) SetTimeout(timeout time.Duration)   {}
-func (r *recordingConnReader) GetTimeout() time.Duration          { return 0 }
+
+func (r *recordingConnReader) SetReadDeadline(t time.Time) error {
+	r.readDeadlines = append(r.readDeadlines, t)
+	return nil
+}
+
+func (r *recordingConnReader) SetTimeout(timeout time.Duration) {
+	r.timeout = timeout
+}
+
+func (r *recordingConnReader) GetTimeout() time.Duration {
+	return r.timeout
+}
 
 func encodeSegment(t *testing.T, payload []byte, selfContained bool) []byte {
 	t.Helper()
@@ -2093,5 +2111,43 @@ func Test_segmentReader_Read(t *testing.T) {
 		_, err := sr.Read(headerBuf[:])
 		require.ErrorIs(t, err, expectedErr)
 		require.Equal(t, 3, r.readCalls, "expected to read 3 calls to the underlying reader")
+	})
+}
+
+func Test_segmentReader_readTimeout(t *testing.T) {
+	const timeout = 5 * time.Second
+
+	t.Run("segment header is read without a timeout, its payload with one", func(t *testing.T) {
+		payload := buildResponseTestFrame(t, 20)
+
+		r := createTestConnReaderMockFromBytes(encodeSegment(t, payload, true))
+		sr := newSegmentReader(r, newSegmentCodec(nil))
+		sr.SetTimeout(timeout)
+
+		frame := readFrameFromSegmentReader(t, sr)
+		require.Equal(t, payload, frame)
+
+		// The reads are, in order: segment header, payload and payload checksum.
+		require.Equal(t, []time.Duration{0, timeout, timeout}, r.timeoutPerRead)
+		require.Equal(t, []time.Time{{}}, r.readDeadlines,
+			"expected the socket deadline to be cleared before reading the segment header")
+		require.Equal(t, timeout, sr.GetTimeout(), "expected the timeout to be restored after the read")
+	})
+
+	t.Run("continuation segments of a split frame are read with a timeout", func(t *testing.T) {
+		payload := buildResponseTestFrame(t, maxSegmentPayloadSize+100)
+		segment1 := encodeSegment(t, payload[:maxSegmentPayloadSize], false)
+		segment2 := encodeSegment(t, payload[maxSegmentPayloadSize:], false)
+
+		r := createTestConnReaderMockFromBytes(append(segment1, segment2...))
+		sr := newSegmentReader(r, newSegmentCodec(nil))
+		sr.SetTimeout(timeout)
+
+		frame := readFrameFromSegmentReader(t, sr)
+		require.Equal(t, payload, frame)
+
+		// Only the header of the first segment is read without a timeout: once the frame is known
+		// to be split, the rest of it is already on its way.
+		require.Equal(t, []time.Duration{0, timeout, timeout, timeout, timeout, timeout}, r.timeoutPerRead)
 	})
 }

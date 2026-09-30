@@ -163,7 +163,7 @@ func Test_readUncompressedFrame(t *testing.T) {
 				frame = tt.modifyFrame(frame)
 			}
 
-			readFrame, isSelfContained, err := segmentCodec.decode(bytes.NewReader(frame))
+			readFrame, isSelfContained, err := decodeSegment(&segmentCodec, bytes.NewReader(frame))
 
 			if tt.expectedErr != "" {
 				require.Error(t, err)
@@ -276,7 +276,7 @@ func Test_readCompressedFrame(t *testing.T) {
 			}
 
 			segmentCodec2 := newSegmentCodec(tt.compressor)
-			readFrame, selfContained, err := segmentCodec2.decode(bytes.NewReader(frame))
+			readFrame, selfContained, err := decodeSegment(&segmentCodec2, bytes.NewReader(frame))
 
 			switch {
 			case tt.expectedErrorMsg != "":
@@ -496,7 +496,7 @@ func Test_segmentCodec_roundtrip_uncompressed(t *testing.T) {
 			encoded, err := codec.encode([][]byte{tt.payload}, tt.isSelfContained)
 			require.NoError(t, err)
 
-			decoded, selfContained, err := codec.decode(bytes.NewReader(encoded))
+			decoded, selfContained, err := decodeSegment(&codec, bytes.NewReader(encoded))
 			require.NoError(t, err)
 			assert.Equal(t, tt.payload, decoded)
 			assert.Equal(t, tt.isSelfContained, selfContained)
@@ -540,7 +540,7 @@ func Test_segmentCodec_roundtrip_compressed(t *testing.T) {
 			encoded, err := codec.encode([][]byte{tt.payload}, tt.isSelfContained)
 			require.NoError(t, err)
 
-			decoded, selfContained, err := codec.decode(bytes.NewReader(encoded))
+			decoded, selfContained, err := decodeSegment(&codec, bytes.NewReader(encoded))
 			require.NoError(t, err)
 			assert.Equal(t, tt.payload, decoded)
 			assert.Equal(t, tt.isSelfContained, selfContained)
@@ -576,6 +576,22 @@ func benchmarkSegmentCodecEncode(b *testing.B, codec segmentCodec) {
 	})
 }
 
+// decodeSegment decodes a whole segment, header and payload, in a single call. The driver
+// itself reads the two separately so that it can apply a different read deadline to each.
+func decodeSegment(sc *segmentCodec, r io.Reader) ([]byte, bool, error) {
+	header, err := sc.decodeSegmentHeader(r)
+	if err != nil {
+		return nil, false, err
+	}
+
+	payload, err := sc.decodeSegmentPayload(r, header)
+	if err != nil {
+		return nil, false, err
+	}
+
+	return payload, header.isSelfContained, nil
+}
+
 // Basically a copy of bytes.Reader.Read, but with Reset method that doesn't allocate a new buffer instance.
 type bufReader struct {
 	buf []byte
@@ -604,7 +620,7 @@ func benchmarkSegmentCodecDecode(b *testing.B, codec segmentCodec) {
 		reader := &bufReader{buf: encodedSegment}
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			_, _, err := codec.decode(reader)
+			_, _, err := decodeSegment(&codec, reader)
 			require.NoError(b, err)
 			reader.Reset()
 		}
