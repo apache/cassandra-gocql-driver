@@ -32,6 +32,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 )
 
 // Deprecated: use StructuredLogger instead
@@ -416,4 +417,49 @@ func (t LogFieldValueType) String() string {
 		return logFieldValueTypeStrings[t]
 	}
 	return "<unknown gocql.LogFieldValueType>"
+}
+
+// Wrapper around a StructuredLogger that limits the number of messages logged to eachNum'th messages including the first message.
+// In case of using it in concurrent scenarios, it doesn't guarantee that the number of messages logged will be exactly eachNum,
+// but it will be close to 1 per eachNum.
+type limitedLogger struct {
+	// log each eachNum'th message
+	eachNum int32
+	// current message number
+	count  atomic.Int32
+	logger StructuredLogger
+}
+
+func newLimitedLogger(eachNum int, logger StructuredLogger) *limitedLogger {
+	return &limitedLogger{
+		eachNum: int32(eachNum),
+		count:   atomic.Int32{},
+		logger:  logger,
+	}
+}
+
+func (r *limitedLogger) log(logFunc func(msg string, fields ...LogField), msg string, fields []LogField) {
+	curr := r.count.Load()
+	if curr == 0 || curr%r.eachNum == 0 {
+		r.count.Add(1)
+		logFunc(msg, fields...)
+	} else {
+		r.count.Add(1)
+	}
+}
+
+func (r *limitedLogger) Error(msg string, fields ...LogField) {
+	r.log(r.logger.Error, msg, fields)
+}
+
+func (r *limitedLogger) Warning(msg string, fields ...LogField) {
+	r.log(r.logger.Warning, msg, fields)
+}
+
+func (r *limitedLogger) Info(msg string, fields ...LogField) {
+	r.log(r.logger.Info, msg, fields)
+}
+
+func (r *limitedLogger) Debug(msg string, fields ...LogField) {
+	r.log(r.logger.Debug, msg, fields)
 }
