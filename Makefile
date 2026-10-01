@@ -2,7 +2,7 @@ SHELL := bash
 MAKEFILE_PATH := $(abspath $(dir $(abspath $(lastword $(MAKEFILE_LIST)))))
 KEY_PATH = ${MAKEFILE_PATH}/testdata/pki
 
-CASSANDRA_VERSION ?= 4.1.6
+CASSANDRA_VERSION ?= 4.1.11
 TEST_CQL_PROTOCOL ?= 4
 TEST_COMPRESSOR ?= no-compression
 TEST_INTEGRATION_TAGS ?= integration
