@@ -26,15 +26,22 @@ package gocql_test
 
 import (
 	"context"
+	"fmt"
 	"log"
-	"time"
+	"testing"
+
+	"github.com/stretchr/testify/require"
 
 	gocql "github.com/apache/cassandra-gocql-driver/v2"
 )
 
 type MyRequestInterceptor struct {
 	injectFault bool
+	contextStr  string
+	t           *testing.T
 }
+
+type traceIDKey struct{}
 
 var _ gocql.RequestInterceptor = (*MyRequestInterceptor)(nil)
 
@@ -52,27 +59,25 @@ func (q MyRequestInterceptor) InterceptPreAttempt(
 	}
 
 	// Inspect or modify context
-	ctx = context.WithValue(ctx, "trace-id", "123")
+	ctx = context.WithValue(ctx, traceIDKey{}, q.contextStr)
 
-	// Optionally bypass the handler and return an error to prevent query execution.
-	// For example, to simulate query timeouts.
+	// Optionally bypass request issuance by returning an error to prevent query execution.
+	// For example, to simulate query timeouts, or to perform client-side load shedding.
 	if q.injectFault {
-		<-time.After(1 * time.Second)
-		return gocql.InterceptResult{}, gocql.RequestErrWriteTimeout{}
+		return gocql.InterceptResult{}, fmt.Errorf("timeout")
 	}
 
-	// The interceptor *must* invoke the handler to execute the query.
 	return gocql.InterceptResult{Ctx: ctx}, nil
 }
 
-func (q MyRequestInterceptor) InterceptPostAttempt(_ gocql.InterceptResult, _ error) {
-	// Pass.
+func (q MyRequestInterceptor) InterceptPostAttempt(res gocql.InterceptResult, _ error) {
+	require.Equal(q.t, q.contextStr, res.Ctx.Value(traceIDKey{}))
 }
 
-// Example_interceptor demonstrates how to implement a RequestInterceptor.
-func Example_interceptor() {
+// Demonstrates how a RequestInterceptor might be used to inject faults.
+func TestExampleInterceptorFault(t *testing.T) {
 	cluster := gocql.NewCluster("localhost:9042")
-	cluster.ExecAttemptInterceptor = MyRequestInterceptor{injectFault: true}
+	cluster.RequestInterceptor = MyRequestInterceptor{injectFault: true, t: t}
 
 	session, err := cluster.CreateSession()
 	if err != nil {
@@ -86,19 +91,37 @@ func Example_interceptor() {
 	err = session.Query("select now() from system.local").
 		RetryPolicy(&gocql.SimpleRetryPolicy{NumRetries: 2}).
 		ScanContext(ctx, &stringValue)
-	if err != nil {
-		log.Fatalf("query failed %T", err)
-	}
+	require.Equal(t, err, fmt.Errorf("timeout"))
 }
 
-// Example_interceptor_chain demonstrates how to chain ExecAttemptInterceptors.
-func Example_interceptor_chain() {
+// Demonstrates how a RequestInterceptor might be used to propagate ancillary data to post-processing via the context.
+func TestExampleInterceptorContext(t *testing.T) {
 	cluster := gocql.NewCluster("localhost:9042")
-	cluster.ExecAttemptInterceptor = gocql.RequestInterceptorChain{
+	cluster.RequestInterceptor = MyRequestInterceptor{injectFault: false, t: t}
+
+	session, err := cluster.CreateSession()
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer session.Close()
+
+	ctx := context.Background()
+
+	var stringValue string
+	err = session.Query("select now() from system.local").
+		RetryPolicy(&gocql.SimpleRetryPolicy{NumRetries: 2}).
+		ScanContext(ctx, &stringValue)
+	require.NoError(t, err)
+}
+
+// Demonstrates how to use a request interceptor chain.
+func TestInterceptorChain(t *testing.T) {
+	cluster := gocql.NewCluster("localhost:9042")
+	cluster.RequestInterceptor = gocql.RequestInterceptorChain{
 		[]gocql.RequestInterceptor{
-			MyRequestInterceptor{},
-			MyRequestInterceptor{},
-			MyRequestInterceptor{},
+			MyRequestInterceptor{t: t, contextStr: "123"},
+			MyRequestInterceptor{t: t, contextStr: "234"},
+			MyRequestInterceptor{t: t, contextStr: "345"},
 		},
 	}
 
@@ -114,7 +137,5 @@ func Example_interceptor_chain() {
 	err = session.Query("select now() from system.local").
 		RetryPolicy(&gocql.SimpleRetryPolicy{NumRetries: 2}).
 		ScanContext(ctx, &stringValue)
-	if err != nil {
-		log.Fatalf("query failed %T", err)
-	}
+	require.NoError(t, err)
 }

@@ -232,7 +232,7 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 	s.executor = &queryExecutor{
 		pool:        s.pool,
 		policy:      cfg.PoolConfig.HostSelectionPolicy,
-		interceptor: cfg.ExecAttemptInterceptor,
+		interceptor: cfg.RequestInterceptor,
 	}
 
 	s.policy.Init(s)
@@ -995,11 +995,11 @@ func (qm *queryMetrics) recordAttempt(addLatency time.Duration) {
 	qm.attemptsCompleted++
 }
 
-// Returns total number of attempts completed.
+// Returns total number of attempts started.
 func (qm *queryMetrics) attempts() int {
 	qm.l.RLock()
 	defer qm.l.RUnlock()
-	return qm.attemptsCompleted
+	return qm.attemptsStarted
 }
 
 func (qm *queryMetrics) latency() int64 {
@@ -1072,6 +1072,7 @@ type Query struct {
 	prefetch              float64
 	trace                 Tracer
 	observer              QueryObserver
+	interceptor           RequestInterceptor
 	session               *Session
 	rt                    RetryPolicy
 	spec                  SpeculativeExecutionPolicy
@@ -1208,6 +1209,13 @@ func (q *Query) Trace(trace Tracer) *Query {
 // The provided observer will be called every time this query is executed.
 func (q *Query) Observer(observer QueryObserver) *Query {
 	q.observer = observer
+	return q
+}
+
+// Interceptor enables query-level interceptor on this query.
+// The provided interceptor will be called every time this query is executed.
+func (q *Query) Interceptor(interceptor RequestInterceptor) *Query {
+	q.interceptor = interceptor
 	return q
 }
 
@@ -2022,6 +2030,7 @@ type Batch struct {
 	spec                  SpeculativeExecutionPolicy
 	trace                 Tracer
 	observer              BatchObserver
+	interceptor           RequestInterceptor
 	session               *Session
 	serialCons            Consistency
 	defaultTimestamp      bool
@@ -2068,6 +2077,13 @@ func (b *Batch) Trace(trace Tracer) *Batch {
 // The provided observer will be called every time this batched query is executed.
 func (b *Batch) Observer(observer BatchObserver) *Batch {
 	b.observer = observer
+	return b
+}
+
+// Interceptor enables batch-level interceptor on this query.
+// The provided interceptor will be called every time this batched query is executed.
+func (b *Batch) Interceptor(interceptor RequestInterceptor) *Batch {
+	b.interceptor = interceptor
 	return b
 }
 
