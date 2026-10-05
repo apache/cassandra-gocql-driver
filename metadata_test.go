@@ -415,6 +415,34 @@ func TestTypeParser(t *testing.T) {
 	)
 }
 
+func TestTypeParserMalformed(t *testing.T) {
+	session := &Session{
+		cfg: ClusterConfig{
+			ProtoVersion: 4,
+		},
+		logger: NewLogger(LogLevelNone),
+		types:  GlobalTypes,
+	}
+
+	// A bare CompositeType with no parameter list and type strings with an
+	// unterminated parameter list must be reported as unparseable rather than
+	// panicking inside the parser.
+	for _, def := range []string{
+		"org.apache.cassandra.db.marshal.CompositeType",
+		"org.apache.cassandra.db.marshal.CompositeType(",
+		"org.apache.cassandra.db.marshal.ListType(org.apache.cassandra.db.marshal.Int32Type",
+	} {
+		result, err := parseType(session, def)
+		if err != nil {
+			t.Errorf("%s: unexpected error: %v", def, err)
+			continue
+		}
+		if result.isComposite {
+			t.Errorf("%s: expected malformed input to fall back to a non-composite type", def)
+		}
+	}
+}
+
 // expected data holder
 type assertTypeInfo struct {
 	Type     Type

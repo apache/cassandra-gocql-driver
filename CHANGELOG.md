@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Correct protocol negotiation with non-Cassandra servers (CASSGO-131)
 - LZ4 test fails on arm64 (CASSGO-128)
+- Prevent panic in schema type parser on a bare CompositeType and unterminated parameter lists (#1963)
 
 ## [2.1.2]
 
