@@ -57,8 +57,9 @@ type Statement interface {
 }
 
 type internalRequest interface {
-	execute(ctx context.Context, conn *Conn) *Iter
-	attempt(keyspace string, end, start time.Time, iter *Iter, host *HostInfo)
+	execute(ctx context.Context, conn *Conn, bytes *byteMetrics) *Iter
+	attempt(keyspace string, end, start time.Time, iter *Iter, host *HostInfo, bytes *byteMetrics)
+	hasObserver() bool
 	retryPolicy() RetryPolicy
 	speculativeExecutionPolicy() SpeculativeExecutionPolicy
 	getQueryMetrics() *queryMetrics
@@ -73,12 +74,58 @@ type queryExecutor struct {
 	policy HostSelectionPolicy
 }
 
+// byteMetrics belongs to one observer attempt, unlike queryMetrics, which is
+// shared across retries within a page. Preparation and receive processing can
+// update it from other goroutines, including after an attempt has timed out.
+type byteMetrics struct {
+	mu sync.Mutex
+	byteCounts
+}
+
+type byteCounts struct {
+	bytesTx, bytesRx                         int
+	uncompressedBytesTx, uncompressedBytesRx int
+}
+
+func (m *byteMetrics) addTx(wire, uncompressed int) {
+	if m == nil {
+		return
+	}
+	m.mu.Lock()
+	m.bytesTx += wire
+	m.uncompressedBytesTx += uncompressed
+	m.mu.Unlock()
+}
+
+func (m *byteMetrics) addRx(wire, uncompressed int) {
+	if m == nil {
+		return
+	}
+	m.mu.Lock()
+	m.bytesRx += wire
+	m.uncompressedBytesRx += uncompressed
+	m.mu.Unlock()
+}
+
+func (m *byteMetrics) snapshot() byteCounts {
+	if m == nil {
+		return byteCounts{}
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.byteCounts
+}
+
 func (q *queryExecutor) attemptQuery(ctx context.Context, qry internalRequest, conn *Conn) *Iter {
+	var bytes *byteMetrics
+	if qry.hasObserver() {
+		bytes = &byteMetrics{}
+	}
 	start := time.Now()
-	iter := qry.execute(ctx, conn)
+	iter := qry.execute(ctx, conn, bytes)
 	end := time.Now()
 
-	qry.attempt(q.pool.keyspace, end, start, iter, conn.host)
+	qry.attempt(q.pool.keyspace, end, start, iter, conn.host, bytes)
 
 	return iter
 }
@@ -376,11 +423,12 @@ func (q *internalQuery) Attempts() int {
 	return q.metrics.attempts()
 }
 
-func (q *internalQuery) attempt(keyspace string, end, start time.Time, iter *Iter, host *HostInfo) {
+func (q *internalQuery) attempt(keyspace string, end, start time.Time, iter *Iter, host *HostInfo, bytes *byteMetrics) {
 	latency := end.Sub(start)
 	attempt := q.metrics.attempt(latency)
 
 	if q.qryOpts.observer != nil {
+		counts := bytes.snapshot()
 		metricsForHost := q.hostMetricsManager.attempt(latency, host)
 		q.qryOpts.observer.ObserveQuery(q.qryOpts.context, ObservedQuery{
 			Keyspace:  keyspace,
@@ -389,22 +437,30 @@ func (q *internalQuery) attempt(keyspace string, end, start time.Time, iter *Ite
 				Keyspace: q.routingInfo.getKeyspace(),
 				Table:    q.routingInfo.getTable(),
 			},
-			IsPrepared: q.routingInfo.isPrepared(),
-			Values:     q.qryOpts.values,
-			Start:      start,
-			End:        end,
-			Rows:       iter.numRows,
-			Host:       host,
-			Metrics:    metricsForHost,
-			Err:        iter.err,
-			Attempt:    attempt,
-			Query:      q.originalQuery,
+			IsPrepared:          q.routingInfo.isPrepared(),
+			Values:              q.qryOpts.values,
+			Start:               start,
+			End:                 end,
+			Rows:                iter.numRows,
+			Host:                host,
+			Metrics:             metricsForHost,
+			Err:                 iter.err,
+			Attempt:             attempt,
+			Query:               q.originalQuery,
+			BytesTx:             counts.bytesTx,
+			BytesRx:             counts.bytesRx,
+			UncompressedBytesTx: counts.uncompressedBytesTx,
+			UncompressedBytesRx: counts.uncompressedBytesRx,
 		})
 	}
 }
 
-func (q *internalQuery) execute(ctx context.Context, conn *Conn) *Iter {
-	return conn.executeQuery(ctx, q)
+func (q *internalQuery) execute(ctx context.Context, conn *Conn, bytes *byteMetrics) *Iter {
+	return conn.executeQueryWithMetrics(ctx, q, bytes)
+}
+
+func (q *internalQuery) hasObserver() bool {
+	return q.qryOpts.observer != nil
 }
 
 func (q *internalQuery) retryPolicy() RetryPolicy {
@@ -606,7 +662,7 @@ func (b *internalBatch) Attempts() int {
 	return b.metrics.attempts()
 }
 
-func (b *internalBatch) attempt(keyspace string, end, start time.Time, iter *Iter, host *HostInfo) {
+func (b *internalBatch) attempt(keyspace string, end, start time.Time, iter *Iter, host *HostInfo, bytes *byteMetrics) {
 	latency := end.Sub(start)
 	attempt := b.metrics.attempt(latency)
 
@@ -615,6 +671,7 @@ func (b *internalBatch) attempt(keyspace string, end, start time.Time, iter *Ite
 	}
 
 	metricsForHost := b.hostMetricsManager.attempt(latency, host)
+	counts := bytes.snapshot()
 
 	n := len(b.batchOpts.entries)
 	statements := make([]string, n)
@@ -641,11 +698,15 @@ func (b *internalBatch) attempt(keyspace string, end, start time.Time, iter *Ite
 		Start:            start,
 		End:              end,
 		// Rows not used in batch observations // TODO - might be able to support it when using BatchCAS
-		Host:    host,
-		Metrics: metricsForHost,
-		Err:     iter.err,
-		Attempt: attempt,
-		Batch:   b.originalBatch,
+		Host:                host,
+		Metrics:             metricsForHost,
+		Err:                 iter.err,
+		Attempt:             attempt,
+		Batch:               b.originalBatch,
+		BytesTx:             counts.bytesTx,
+		BytesRx:             counts.bytesRx,
+		UncompressedBytesTx: counts.uncompressedBytesTx,
+		UncompressedBytesRx: counts.uncompressedBytesRx,
 	})
 }
 
@@ -732,6 +793,10 @@ func (b *internalBatch) getKeyspaceFunc() func() string {
 	return nil
 }
 
-func (b *internalBatch) execute(ctx context.Context, conn *Conn) *Iter {
-	return conn.executeBatch(ctx, b)
+func (b *internalBatch) execute(ctx context.Context, conn *Conn, bytes *byteMetrics) *Iter {
+	return conn.executeBatchWithMetrics(ctx, b, bytes)
+}
+
+func (b *internalBatch) hasObserver() bool {
+	return b.batchOpts.observer != nil
 }

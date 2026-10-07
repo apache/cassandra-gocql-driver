@@ -1420,10 +1420,14 @@ func (q *Query) IterContext(ctx context.Context) *Iter {
 }
 
 func (q *Query) iterInternal(c *Conn, ctx context.Context) *Iter {
+	return q.iterInternalWithMetrics(c, ctx, nil)
+}
+
+func (q *Query) iterInternalWithMetrics(c *Conn, ctx context.Context, bytes *byteMetrics) *Iter {
 	internalQry := newInternalQuery(q, ctx)
 	internalQry.conn = c
 
-	iter := c.executeQuery(internalQry.Context(), internalQry)
+	iter := c.executeQueryWithMetrics(internalQry.Context(), internalQry, bytes)
 	if iter != nil {
 		// set iter.host so that the caller can retrieve the connect address which should be preferable (if valid) for the local host
 		iter.host = c.host
@@ -1982,6 +1986,10 @@ type nextIter struct {
 	oncea sync.Once
 	once  sync.Once
 	next  *Iter
+	// Internal queries pinned to a connection can be part of a surrounding
+	// attempt (for example, schema agreement checks). Public pages get their
+	// own byteMetrics through queryExecutor instead.
+	bytes *byteMetrics
 }
 
 func (n *nextIter) fetchAsync() {
@@ -1995,7 +2003,7 @@ func (n *nextIter) fetch() *Iter {
 		// if the query was specifically run on a connection then re-use that
 		// connection when fetching the next results
 		if n.q.conn != nil {
-			n.next = n.q.conn.executeQuery(n.q.qryOpts.context, n.q)
+			n.next = n.q.conn.executeQueryWithMetrics(n.q.qryOpts.context, n.q, n.bytes)
 		} else {
 			n.next = n.q.session.executeQuery(n.q)
 		}
@@ -2441,6 +2449,32 @@ type ObservedQuery struct {
 
 	// Query object associated with this request. Should be used as read only.
 	Query *Query
+
+	// BytesTx is the number of native protocol bytes written during this attempt,
+	// including frame headers and, for protocol v5+, segment headers and checksums.
+	// Compression is reflected in this count; TLS and TCP overhead are excluded.
+	// Preparation, UNPREPARED recovery and schema agreement requests initiated
+	// within the attempt contribute to these counts. Shared preparation is charged
+	// only to the attempt that initiates it; cache hits and waiters are not charged.
+	// Counts are snapshots when the observer is called; later responses are excluded.
+	BytesTx int
+	// BytesRx is the number of native protocol bytes received for this attempt
+	// before the observer is called, including frame and segment overhead. For protocol v5+,
+	// wire bytes of a segment shared by multiple responses are allocated in
+	// proportion to their uncompressed frame sizes, including frame headers.
+	BytesRx int
+	// UncompressedBytesTx counts uncompressed bodies of fully written messages
+	// during this attempt, excluding the 9-byte frame headers and segment overhead.
+	// If a write fails after sending part of a message, the partial write contributes
+	// to BytesTx, but that message contributes zero here. This count can therefore
+	// be zero even when BytesTx is nonzero. Fully written messages remain counted
+	// if the attempt later fails, for example while waiting for a response.
+	UncompressedBytesTx int
+	// UncompressedBytesRx counts uncompressed bodies of fully received and
+	// decompressed messages during this attempt, excluding all headers and checksums.
+	// A partial read or decompression failure contributes zero here for that
+	// message, even if its received wire bytes are included in BytesRx.
+	UncompressedBytesRx int
 }
 
 // QueryObserver is the interface implemented by query observers / stat collectors.
@@ -2490,6 +2524,13 @@ type ObservedBatch struct {
 
 	// Batch object associated with this request. Should be used as read only.
 	Batch *Batch
+
+	// BytesTx, BytesRx, UncompressedBytesTx and UncompressedBytesRx have the same
+	// semantics as the corresponding fields of ObservedQuery, for this batch attempt.
+	BytesTx             int
+	BytesRx             int
+	UncompressedBytesTx int
+	UncompressedBytesRx int
 }
 
 // BatchObserver is the interface implemented by batch observers / stat collectors.
