@@ -591,7 +591,9 @@ func (c *controlConn) query(statement string, values ...interface{}) (iter *Iter
 				NewLogFieldString("statement", statement), NewLogFieldError("err", iter.err))
 		}
 
-		qry.metrics.attempt(0)
+		// Make sure that calls to attempts()/latency() do not unexpectedly encounter zeroes.
+		qry.metrics.getNextAttempt()
+		qry.metrics.recordAttempt(0)
 		qry.hostMetricsManager.attempt(0, c.getConn().host)
 		if iter.err == nil || !c.retry.Attempt(qry) {
 			break

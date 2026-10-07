@@ -235,8 +235,9 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 
 	// set the executor here in case the policy needs to execute queries in Init
 	s.executor = &queryExecutor{
-		pool:   s.pool,
-		policy: cfg.PoolConfig.HostSelectionPolicy,
+		pool:        s.pool,
+		policy:      cfg.PoolConfig.HostSelectionPolicy,
+		interceptor: cfg.RequestInterceptor,
 	}
 
 	s.policy.Init(s)
@@ -973,26 +974,47 @@ type hostMetrics struct {
 	TotalLatency int64
 }
 
+// Query attempts could be started and finished out of order when using speculative execution. Therefore,
+// we issue attempt indexes at query start time (so that Interceptors can use them) then track those attempts
+// at completion time. Later we can change latency metrics to correctly use the number completed to more accurately
+// track average latency.
 type queryMetrics struct {
-	totalAttempts int64
-	totalLatency  int64
+	l                 sync.RWMutex
+	attemptsStarted   int
+	attemptsCompleted int
+	totalLatency      int64
 }
 
-func (qm *queryMetrics) attempt(addLatency time.Duration) int {
-	atomic.AddInt64(&qm.totalLatency, addLatency.Nanoseconds())
-	return int(atomic.AddInt64(&qm.totalAttempts, 1) - 1)
+func (qm *queryMetrics) getNextAttempt() int {
+	qm.l.Lock()
+	defer qm.l.Unlock()
+	attempt := qm.attemptsStarted
+	qm.attemptsStarted++
+	return attempt
 }
 
+func (qm *queryMetrics) recordAttempt(addLatency time.Duration) {
+	qm.l.Lock()
+	defer qm.l.Unlock()
+	qm.totalLatency += addLatency.Nanoseconds()
+	qm.attemptsCompleted++
+}
+
+// Returns total number of attempts started.
 func (qm *queryMetrics) attempts() int {
-	return int(atomic.LoadInt64(&qm.totalAttempts))
+	qm.l.RLock()
+	defer qm.l.RUnlock()
+	return qm.attemptsStarted
 }
 
 func (qm *queryMetrics) latency() int64 {
-	attempts := atomic.LoadInt64(&qm.totalAttempts)
+	qm.l.RLock()
+	defer qm.l.RUnlock()
+	attempts := qm.attemptsCompleted
 	if attempts == 0 {
-		return atomic.LoadInt64(&qm.totalLatency)
+		return qm.totalLatency
 	}
-	return atomic.LoadInt64(&qm.totalLatency) / attempts
+	return qm.totalLatency / int64(attempts)
 }
 
 type hostMetricsManager interface {
@@ -1055,6 +1077,7 @@ type Query struct {
 	prefetch              float64
 	trace                 Tracer
 	observer              QueryObserver
+	interceptor           RequestInterceptor
 	session               *Session
 	rt                    RetryPolicy
 	spec                  SpeculativeExecutionPolicy
@@ -1191,6 +1214,13 @@ func (q *Query) Trace(trace Tracer) *Query {
 // The provided observer will be called every time this query is executed.
 func (q *Query) Observer(observer QueryObserver) *Query {
 	q.observer = observer
+	return q
+}
+
+// Interceptor enables query-level interceptor on this query.
+// The provided interceptor will be called every time this query is executed.
+func (q *Query) Interceptor(interceptor RequestInterceptor) *Query {
+	q.interceptor = interceptor
 	return q
 }
 
@@ -2013,6 +2043,7 @@ type Batch struct {
 	spec                  SpeculativeExecutionPolicy
 	trace                 Tracer
 	observer              BatchObserver
+	interceptor           RequestInterceptor
 	session               *Session
 	serialCons            Consistency
 	defaultTimestamp      bool
@@ -2059,6 +2090,13 @@ func (b *Batch) Trace(trace Tracer) *Batch {
 // The provided observer will be called every time this batched query is executed.
 func (b *Batch) Observer(observer BatchObserver) *Batch {
 	b.observer = observer
+	return b
+}
+
+// Interceptor enables batch-level interceptor on this query.
+// The provided interceptor will be called every time this batched query is executed.
+func (b *Batch) Interceptor(interceptor RequestInterceptor) *Batch {
+	b.interceptor = interceptor
 	return b
 }
 

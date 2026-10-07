@@ -254,7 +254,7 @@ func TestSimpleRetryPolicy(t *testing.T) {
 	}
 
 	for _, c := range cases {
-		q.metrics = &queryMetrics{totalAttempts: int64(c.attempts)}
+		q.metrics = &queryMetrics{attemptsStarted: c.attempts}
 		q.hostMetricsManager = preFilledHostMetricsMetricsManager(map[string]*hostMetrics{"127.0.0.1": {Attempts: c.attempts}})
 		if c.allow && !rt.Attempt(q) {
 			t.Fatalf("should allow retry after %d attempts", c.attempts)
@@ -339,7 +339,7 @@ func TestDowngradingConsistencyRetryPolicy(t *testing.T) {
 	}
 
 	for _, c := range cases {
-		q.metrics = &queryMetrics{totalAttempts: int64(c.attempts)}
+		q.metrics = &queryMetrics{attemptsStarted: c.attempts}
 		q.hostMetricsManager = preFilledHostMetricsMetricsManager(map[string]*hostMetrics{"127.0.0.1": {Attempts: c.attempts}})
 		if c.retryType != rt.GetRetryType(c.err) {
 			t.Fatalf("retry type should be %v", c.retryType)

@@ -813,6 +813,17 @@
 //
 // See Example_userDefinedTypesMap, Example_userDefinedTypesStruct, ExampleUDTMarshaler, ExampleUDTUnmarshaler.
 //
+// # Interceptors
+//
+// A RequestInterceptor wraps query/batch execution and can be used to inject logic that should apply to all request
+// execution attempts. For example, interceptors can be used for rate limiting, logging, attaching distributed tracing
+// metadata to the context, and inspecting request results. However, the query/batch itself cannot be modified.
+//
+// A RequestInterceptor will be invoked once prior to each request execution attempt, including retry attempts
+// and speculative execution attempts. It may optionally return an error to prevent that request from being executed.
+//
+// See Example_interceptor for full example.
+//
 // # Metrics and tracing
 //
 // It is possible to provide observer implementations that could be used to gather metrics:

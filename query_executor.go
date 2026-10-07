@@ -58,7 +58,8 @@ type Statement interface {
 
 type internalRequest interface {
 	execute(ctx context.Context, conn *Conn) *Iter
-	attempt(keyspace string, end, start time.Time, iter *Iter, host *HostInfo)
+	getNextAttempt() int
+	recordAttempt(attemptNum int, keyspace string, end, start time.Time, iter *Iter, host *HostInfo)
 	retryPolicy() RetryPolicy
 	speculativeExecutionPolicy() SpeculativeExecutionPolicy
 	getQueryMetrics() *queryMetrics
@@ -69,16 +70,153 @@ type internalRequest interface {
 }
 
 type queryExecutor struct {
-	pool   *policyConnPool
-	policy HostSelectionPolicy
+	pool        *policyConnPool
+	policy      HostSelectionPolicy
+	interceptor RequestInterceptor
 }
 
-func (q *queryExecutor) attemptQuery(ctx context.Context, qry internalRequest, conn *Conn) *Iter {
-	start := time.Now()
-	iter := qry.execute(ctx, conn)
-	end := time.Now()
+type StatementType int
 
-	qry.attempt(q.pool.keyspace, end, start, iter, conn.host)
+const (
+	StatementQuery StatementType = iota
+	StatementBatch
+)
+
+type ExecAttempt struct {
+	// The statement type, whether query or batch.
+	Type StatementType
+	// Only one of Query or Batch will be set, depending on the op type. Both should be considered
+	// immutable.
+	*Query
+	*Batch
+	// The host that will receive the query.
+	Host *HostInfo
+}
+
+type InterceptResult struct {
+	Ctx context.Context
+}
+
+// RequestInterceptor is the interface implemented by interceptors / middleware.
+//
+// Interceptors are well-suited to logic that is not specific to a single query or batch, such as flow control.
+type RequestInterceptor interface {
+	// InterceptPreAttempt is invoked once immediately before a query or batch execution attempt, including retry
+	// attempts and speculative execution attempts.
+	//
+	// The method may inspect the ExecAttempt and its contents (e.g. Query/Batch, connection information, etc.), along
+	// with the context ctx. If a ctx is specified in the returned InterceptResult, it is used when performing the
+	// execution, offering a way to adjust deadline or other metadata. To prevent request execution, return a non-nil
+	// error.
+	InterceptPreAttempt(ctx context.Context, attempt ExecAttempt) (InterceptResult, error)
+
+	// InterceptPostAttempt is called with the intercept result created at pre-attempt time, along with any
+	// request execution error. Note that if this attempt failed, another attempt in flight could still succeed.
+	// Must not panic.
+	// N.B.: InterceptPostAttempt is not called if InterceptPreAttempt returns an error.
+	InterceptPostAttempt(res InterceptResult, execResult error)
+}
+
+// RequestInterceptorChain can be used to apply multiple Interceptors at Intercept time.
+// Each interceptor is passed the previous one's context if that previous one returned a non-nil
+// context, and the final request attempt is performed with the last interceptor's context.
+//
+// InterceptPreAttempt is called on the Interceptors in order, and InterceptPostAttempt is called
+// in reverse order. At post-attempt time, Interceptors are each handed back the context they synthesized at
+// pre-attempt time, rather than the final context. This is to avoid confusion if e.g. a pre-attempt grabbed some
+// resource that must be released, and multiple interceptors might use the same context key to attach that
+// resource to the attempt's request. However, this also means that if an Interceptor returns an InterceptResult
+// with a nil context, they will be handed back a nil.
+type RequestInterceptorChain struct {
+	Interceptors []RequestInterceptor
+}
+
+type interceptorChainContextList []context.Context
+
+type interceptorChainContextListKey struct{}
+
+var _ RequestInterceptor = (*RequestInterceptorChain)(nil)
+
+func (c RequestInterceptorChain) InterceptPreAttempt(
+	ctx context.Context,
+	attempt ExecAttempt,
+) (InterceptResult, error) {
+	capturedContexts := make([]context.Context, 0, len(c.Interceptors))
+	lastCtx := ctx
+	for i, interceptor := range c.Interceptors {
+		result, err := interceptor.InterceptPreAttempt(lastCtx, attempt)
+		if err != nil {
+			// We must unwind all previously-successful interceptors before returning err, since
+			// those interceptors may be counting on InterceptPostAttempt being invoked.
+			for j := i - 1; j >= 0; j-- {
+				c.Interceptors[j].InterceptPostAttempt(InterceptResult{Ctx: capturedContexts[j]}, nil)
+			}
+			return InterceptResult{}, err
+		}
+		capturedContexts = append(capturedContexts, result.Ctx)
+		if result.Ctx != nil {
+			lastCtx = result.Ctx
+		}
+	}
+
+	finalContext := context.WithValue(lastCtx, interceptorChainContextListKey{}, interceptorChainContextList(capturedContexts))
+	// Returns a result whose context wraps all the captured contexts for all the chained interceptors.
+	return InterceptResult{Ctx: finalContext}, nil
+}
+
+func (c RequestInterceptorChain) InterceptPostAttempt(
+	res InterceptResult, execResult error,
+) {
+	ctxList := res.Ctx.Value(interceptorChainContextListKey{}).(interceptorChainContextList)
+	for i := len(ctxList) - 1; i >= 0; i-- {
+		interceptor := c.Interceptors[i]
+		ctx := ctxList[i]
+		interceptor.InterceptPostAttempt(InterceptResult{Ctx: ctx}, execResult)
+	}
+}
+
+func (q *queryExecutor) attemptQuery(ctx context.Context, iRequest internalRequest, conn *Conn) *Iter {
+	start := time.Now()
+
+	var iter *Iter
+	var err error
+	attempt := iRequest.getNextAttempt()
+	defer func() {
+		end := time.Now()
+		iRequest.recordAttempt(attempt, q.pool.keyspace, end, start, iter, conn.host)
+	}()
+	var res InterceptResult
+	interceptors := RequestInterceptorChain{}
+	if q.interceptor != nil {
+		interceptors.Interceptors = append(interceptors.Interceptors, q.interceptor)
+	}
+	iq := ExecAttempt{
+		Host: conn.host,
+	}
+	if iQuery, ok := iRequest.(*internalQuery); ok {
+		iq.Type = StatementQuery
+		iq.Query = iQuery.originalQuery
+		if iQuery.originalQuery.interceptor != nil {
+			interceptors.Interceptors = append(interceptors.Interceptors, iQuery.originalQuery.interceptor)
+		}
+	}
+	if iBatch, ok := iRequest.(*internalBatch); ok {
+		iq.Type = StatementBatch
+		iq.Batch = iBatch.originalBatch
+		if iBatch.originalBatch.interceptor != nil {
+			interceptors.Interceptors = append(interceptors.Interceptors, iBatch.originalBatch.interceptor)
+		}
+	}
+	res, err = interceptors.InterceptPreAttempt(ctx, iq)
+	if err != nil {
+		iter = newErrIter(err, iRequest.getQueryMetrics(), iRequest.Keyspace(), iRequest.getRoutingInfo(), iRequest.getKeyspaceFunc())
+		return iter
+	}
+	if res.Ctx != nil {
+		ctx = res.Ctx
+	}
+	iter = iRequest.execute(ctx, conn)
+	interceptors.InterceptPostAttempt(res, iter.err)
 
 	return iter
 }
@@ -371,14 +509,18 @@ func newInternalQuery(q *Query, ctx context.Context) *internalQuery {
 	}
 }
 
-// Attempts returns the number of times the query was executed.
+// getNextAttempt returns the index of the next attempt. Calling this increments the attempt counter by one.
+func (q *internalQuery) getNextAttempt() int {
+	return q.metrics.getNextAttempt()
+}
+
 func (q *internalQuery) Attempts() int {
 	return q.metrics.attempts()
 }
 
-func (q *internalQuery) attempt(keyspace string, end, start time.Time, iter *Iter, host *HostInfo) {
+func (q *internalQuery) recordAttempt(attemptNum int, keyspace string, end, start time.Time, iter *Iter, host *HostInfo) {
 	latency := end.Sub(start)
-	attempt := q.metrics.attempt(latency)
+	q.metrics.recordAttempt(latency)
 
 	if q.qryOpts.observer != nil {
 		metricsForHost := q.hostMetricsManager.attempt(latency, host)
@@ -397,7 +539,7 @@ func (q *internalQuery) attempt(keyspace string, end, start time.Time, iter *Ite
 			Host:       host,
 			Metrics:    metricsForHost,
 			Err:        iter.err,
-			Attempt:    attempt,
+			Attempt:    attemptNum,
 			Query:      q.originalQuery,
 		})
 	}
@@ -601,14 +743,18 @@ func newInternalBatch(batch *Batch, ctx context.Context) *internalBatch {
 	}
 }
 
+func (b *internalBatch) getNextAttempt() int {
+	return b.metrics.getNextAttempt()
+}
+
 // Attempts returns the number of attempts made to execute the batch.
 func (b *internalBatch) Attempts() int {
 	return b.metrics.attempts()
 }
 
-func (b *internalBatch) attempt(keyspace string, end, start time.Time, iter *Iter, host *HostInfo) {
+func (b *internalBatch) recordAttempt(attemptNum int, keyspace string, end, start time.Time, iter *Iter, host *HostInfo) {
 	latency := end.Sub(start)
-	attempt := b.metrics.attempt(latency)
+	b.metrics.recordAttempt(latency)
 
 	if b.batchOpts.observer == nil {
 		return
@@ -644,7 +790,7 @@ func (b *internalBatch) attempt(keyspace string, end, start time.Time, iter *Ite
 		Host:    host,
 		Metrics: metricsForHost,
 		Err:     iter.err,
-		Attempt: attempt,
+		Attempt: attemptNum,
 		Batch:   b.originalBatch,
 	})
 }
