@@ -1322,6 +1322,24 @@ var unmarshalTests = []struct {
 		}(),
 		nil,
 	},
+	{
+		uuidType{},
+		[]byte(nil),
+		[16]byte{},
+		nil,
+	},
+	{
+		timeUUIDType{},
+		[]byte(nil),
+		[16]byte{},
+		nil,
+	},
+	{
+		timeUUIDType{},
+		[]byte(nil),
+		time.Time{},
+		nil,
+	},
 }
 
 func decimalize(s string) *inf.Dec {
