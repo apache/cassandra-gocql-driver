@@ -390,6 +390,13 @@ func TestTypeParser(t *testing.T) {
 		},
 		nil,
 	)
+	// bare CompositeType with no params should not panic (see #1963)
+	assertParseCompositeType(
+		t,
+		"org.apache.cassandra.db.marshal.CompositeType",
+		[]assertTypeInfo{},
+		nil,
+	)
 	assertParseCompositeType(
 		t,
 		"org.apache.cassandra.db.marshal.CompositeType(org.apache.cassandra.db.marshal.ReversedType(org.apache.cassandra.db.marshal.DateType),org.apache.cassandra.db.marshal.UTF8Type)",
@@ -413,6 +420,26 @@ func TestTypeParser(t *testing.T) {
 			},
 		},
 	)
+}
+
+func TestTypeParserUnterminatedParen(t *testing.T) {
+	// an unterminated '(' should be treated as an unparsed custom type
+	// rather than panicking (see #1963)
+	session := &Session{
+		cfg: ClusterConfig{
+			ProtoVersion: 4,
+		},
+		logger: NewLogger(LogLevelNone),
+		types:  GlobalTypes,
+	}
+	def := "org.apache.cassandra.db.marshal.CompositeType(org.apache.cassandra.db.marshal.UTF8Type"
+	result, err := parseType(session, def)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.isComposite {
+		t.Errorf("%s: expected unterminated type to fall back to a custom type", def)
+	}
 }
 
 // expected data holder
