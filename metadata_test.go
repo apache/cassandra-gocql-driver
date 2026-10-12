@@ -424,6 +424,33 @@ type assertTypeInfo struct {
 	Custom   string
 }
 
+func TestParseTypeBareCompositeDoesNotPanic(t *testing.T) {
+	session := &Session{
+		cfg: ClusterConfig{
+			ProtoVersion: 4,
+		},
+		logger: NewLogger(LogLevelNone),
+		types:  GlobalTypes,
+	}
+	inputs := []string{
+		"org.apache.cassandra.db.marshal.CompositeType",
+		"org.apache.cassandra.db.marshal.CompositeType(",
+		"org.apache.cassandra.db.marshal.CompositeType(org.apache.cassandra.db.marshal.UTF8Type",
+	}
+	for _, def := range inputs {
+		func() {
+			defer func() {
+				if rec := recover(); rec != nil {
+					t.Errorf("parseType(%q) panicked: %v", def, rec)
+				}
+			}()
+			if _, err := parseType(session, def); err != nil {
+				t.Errorf("parseType(%q) error: %v", def, err)
+			}
+		}()
+	}
+}
+
 // Helper function for asserting that the type parser returns the expected
 // results for the given definition
 func assertParseNonCompositeType(
