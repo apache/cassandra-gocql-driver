@@ -34,6 +34,7 @@ import (
 	"io"
 	"io/ioutil"
 	"net"
+	gotrace "runtime/trace"
 	"strconv"
 	"strings"
 	"sync"
@@ -698,7 +699,9 @@ func (c *Conn) processFrame(ctx context.Context, r io.Reader) error {
 
 	headStartTime := time.Now()
 	// were just reading headers over and over and copy bodies
+	headerWaitReg := gotrace.StartRegion(ctx, "gocql.reader.header-wait")
 	head, err := readHeader(r, c.headerBuf[:])
+	headerWaitReg.End()
 	headEndTime := time.Now()
 	if err != nil {
 		return err
@@ -767,7 +770,9 @@ func (c *Conn) processFrame(ctx context.Context, r io.Reader) error {
 
 	framer := newFramer(c.compressor, c.version, c.session.types)
 
+	bodyReadReg := gotrace.StartRegion(ctx, "gocql.reader.body-read")
 	err = framer.readFrame(r, &head)
+	bodyReadReg.End()
 	if err != nil {
 		// only net errors should cause the connection to be closed. Though
 		// cassandra returning corrupt frames will be returned here as well.
@@ -778,12 +783,14 @@ func (c *Conn) processFrame(ctx context.Context, r io.Reader) error {
 
 	// we either, return a response to the caller, the caller timedout, or the
 	// connection has closed. Either way we should never block indefinatly here
+	dispatchReg := gotrace.StartRegion(ctx, "gocql.reader.dispatch")
 	select {
 	case call.resp <- callResp{framer: framer, err: err}:
 	case <-call.timeout:
 		c.releaseStream(call)
 	case <-ctx.Done():
 	}
+	dispatchReg.End()
 
 	return nil
 }
@@ -1108,20 +1115,26 @@ func (w *writeCoalescer) writeContext(ctx context.Context, p []byte) (int, error
 		data:       p,
 	}
 
+	enqueueReg := gotrace.StartRegion(ctx, "gocql.write.enqueue-wait")
 	select {
 	case <-ctx.Done():
+		enqueueReg.End()
 		return 0, ctx.Err()
 	case <-w.quit:
+		enqueueReg.End()
 		return 0, io.EOF // TODO: better error here?
 	case w.writeCh <- wr:
 		// enqueued for writing
 	}
+	enqueueReg.End()
 
 	if w.testEnqueuedHook != nil {
 		w.testEnqueuedHook()
 	}
 
+	flushWaitReg := gotrace.StartRegion(ctx, "gocql.write.flush-wait")
 	result := <-resultChan
+	flushWaitReg.End()
 	return result.n, result.err
 }
 
@@ -1192,7 +1205,14 @@ func (w *writeCoalescer) flush(resultChans []chan<- writeResult, buffers net.Buf
 	// Copy buffers because WriteTo modifies buffers in-place.
 	buffers2 := make(net.Buffers, len(buffers))
 	copy(buffers2, buffers)
+	var flushReg *gotrace.Region
+	if gotrace.IsEnabled() {
+		flushReg = gotrace.StartRegion(context.Background(), "gocql.flusher.writeto")
+	}
 	n, err := buffers2.WriteTo(w.c)
+	if flushReg != nil {
+		flushReg.End()
+	}
 	// Writes of bytes before n succeeded, writes of bytes starting from n failed with err.
 	// Use n as remaining byte counter.
 	for i := range buffers {
@@ -1242,7 +1262,9 @@ func (c *Conn) execInternal(ctx context.Context, req frameBuilder, tracer Tracer
 	}
 
 	// TODO: move tracer onto conn
+	getStreamReg := gotrace.StartRegion(ctx, "gocql.getstream")
 	stream, ok := c.streams.GetStream()
+	getStreamReg.End()
 	if !ok {
 		return nil, ErrNoStreams
 	}
@@ -1278,7 +1300,9 @@ func (c *Conn) execInternal(ctx context.Context, req frameBuilder, tracer Tracer
 		})
 	}
 
+	buildFrameReg := gotrace.StartRegion(ctx, "gocql.buildframe")
 	err := req.buildFrame(framer, stream)
+	buildFrameReg.End()
 	if err != nil {
 		// closeWithError will block waiting for this stream to either receive a response
 		// or for us to timeout.
@@ -1354,8 +1378,10 @@ func (c *Conn) execInternal(ctx context.Context, req frameBuilder, tracer Tracer
 		ctxDone = ctx.Done()
 	}
 
+	respWaitReg := gotrace.StartRegion(ctx, "gocql.resp-wait")
 	select {
 	case resp := <-call.resp:
+		respWaitReg.End()
 		close(call.timeout)
 		if resp.err != nil {
 			if !c.Closed() {
@@ -1395,17 +1421,20 @@ func (c *Conn) execInternal(ctx context.Context, req frameBuilder, tracer Tracer
 
 		return resp.framer, nil
 	case <-timeoutCh:
+		respWaitReg.End()
 		close(call.timeout)
 		c.logger.Debug("Request timed out on connection.",
 			NewLogFieldString("host_id", c.host.HostID()), NewLogFieldIP("addr", c.host.ConnectAddress()))
 		return nil, ErrTimeoutNoResponse
 	case <-ctxDone:
+		respWaitReg.End()
 		c.logger.Debug("Request failed because context elapsed out on connection.",
 			NewLogFieldString("host_id", c.host.HostID()), NewLogFieldIP("addr", c.host.ConnectAddress()),
 			NewLogFieldError("ctx_err", ctx.Err()))
 		close(call.timeout)
 		return nil, ctx.Err()
 	case <-c.ctx.Done():
+		respWaitReg.End()
 		c.logger.Debug("Request failed because connection closed.",
 			NewLogFieldString("host_id", c.host.HostID()), NewLogFieldIP("addr", c.host.ConnectAddress()))
 		close(call.timeout)
@@ -1482,6 +1511,12 @@ func (c *Conn) prepareStatement(ctx context.Context, stmt string, tracer Tracer,
 		lru.Add(stmtCacheKey, flight)
 		return flight
 	})
+
+	if ok {
+		gotrace.Log(ctx, "gocql.prepare", "hit")
+	} else {
+		gotrace.Log(ctx, "gocql.prepare", "miss")
+	}
 
 	if !ok {
 		go func() {
@@ -1607,7 +1642,9 @@ func (c *Conn) executeQuery(ctx context.Context, q *internalQuery) *Iter {
 	if !qryOpts.skipPrepare && shouldPrepare(qryOpts.stmt) {
 		// Prepare all DML queries. Other queries can not be prepared.
 		var err error
+		prepReg := gotrace.StartRegion(ctx, "gocql.prepare")
 		info, err = c.prepareStatement(ctx, qryOpts.stmt, qryOpts.trace, usedKeyspace)
+		prepReg.End()
 		if err != nil {
 			iter.err = err
 			return iter

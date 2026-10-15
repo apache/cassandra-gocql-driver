@@ -141,6 +141,22 @@ const (
 	Rethrow       RetryType = 0x03 // raise error and stop retrying
 )
 
+// String returns the name of the retry type, or "Unknown" for an unrecognized value.
+func (r RetryType) String() string {
+	switch r {
+	case Retry:
+		return "Retry"
+	case RetryNextHost:
+		return "RetryNextHost"
+	case Ignore:
+		return "Ignore"
+	case Rethrow:
+		return "Rethrow"
+	default:
+		return "Unknown"
+	}
+}
+
 // ErrUnknownRetryType is returned if the retry policy returns a retry type
 // unknown to the query executor.
 var ErrUnknownRetryType = errors.New("unknown retry type returned by retry policy")

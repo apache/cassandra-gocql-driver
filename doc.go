@@ -829,6 +829,28 @@
 // Gathering trace information might be essential for debugging and optimizing queries, but writing traces has overhead,
 // so this feature should not be used on production systems with very high load unless you know what you are doing.
 //
+// # Go execution tracing
+//
+// When Go execution tracing is enabled with runtime/trace.Start, the driver emits
+// regions for query attempts, connection selection, statement preparation, stream
+// allocation, frame building, write queuing and flushing, response waiting, and
+// retry policy evaluation (including backoff). The region names use the "gocql."
+// prefix. Logs record prepared statement cache hits and misses and retry decisions.
+// These events can be inspected with go tool trace.
+//
+// To associate query regions with an application task, create a task with
+// runtime/trace.NewTask and pass its context to Query.ExecContext, Query.IterContext,
+// or Batch.ExecContext. End the task after consuming the results. Each speculative
+// execution has its own gocql.do region containing its retry loop.
+//
+// Reader and write flusher regions run on shared connection goroutines and are
+// not associated with an individual query task. Reader regions cover frame header
+// reads, body reads, and response dispatch; with protocol v5, segment reading and
+// decompression happen before these frame regions. A cache hit can refer to a
+// preparation that is still in progress. Trace logs contain no statement text or
+// bound values. Recording an execution trace adds overhead and should be limited
+// to a suitable diagnostic interval.
+//
 // # Event listening
 //
 // The driver supports event listening for cluster schema changes and host state changes. It is useful for monitoring and debugging the driver's behavior.
