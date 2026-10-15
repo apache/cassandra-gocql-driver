@@ -26,6 +26,7 @@ package gocql
 
 import (
 	"context"
+	gotrace "runtime/trace"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -74,6 +75,7 @@ type queryExecutor struct {
 }
 
 func (q *queryExecutor) attemptQuery(ctx context.Context, qry internalRequest, conn *Conn) *Iter {
+	defer gotrace.StartRegion(ctx, "gocql.attempt").End()
 	start := time.Now()
 	iter := qry.execute(ctx, conn)
 	end := time.Now()
@@ -168,6 +170,7 @@ func (q *queryExecutor) executeQuery(qry internalRequest) (*Iter, error) {
 }
 
 func (q *queryExecutor) do(ctx context.Context, qry internalRequest, hostIter NextHost) *Iter {
+	defer gotrace.StartRegion(ctx, "gocql.do").End()
 	selectedHost := hostIter()
 	rt := qry.retryPolicy()
 
@@ -180,13 +183,16 @@ func (q *queryExecutor) do(ctx context.Context, qry internalRequest, hostIter Ne
 			continue
 		}
 
+		pickReg := gotrace.StartRegion(ctx, "gocql.pick")
 		pool, ok := q.pool.getPool(host)
 		if !ok {
+			pickReg.End()
 			selectedHost = hostIter()
 			continue
 		}
 
 		conn := pool.Pick()
+		pickReg.End()
 		if conn == nil {
 			selectedHost = hostIter()
 			continue
@@ -211,8 +217,11 @@ func (q *queryExecutor) do(ctx context.Context, qry internalRequest, hostIter Ne
 			return iter
 		}
 
+		backoffReg := gotrace.StartRegion(ctx, "gocql.retry.backoff")
 		attemptsReached := !rt.Attempt(qry)
+		backoffReg.End()
 		retryType := rt.GetRetryType(iter.err)
+		gotrace.Log(ctx, "gocql.retry", retryType.String())
 
 		var stopRetries bool
 
