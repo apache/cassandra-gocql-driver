@@ -137,8 +137,9 @@ func connConfig(cfg *ClusterConfig) (*ConnConfig, error) {
 		}
 
 		hostDialer = &defaultHostDialer{
-			dialer:    dialer,
-			tlsConfig: tlsConfig,
+			dialer:         dialer,
+			tlsConfig:      tlsConfig,
+			connectTimeout: cfg.ConnectTimeout,
 		}
 	}
 
