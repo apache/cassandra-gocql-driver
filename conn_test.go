@@ -497,6 +497,41 @@ func (t *testRetryPolicy) GetRetryType(err error) RetryType {
 	return Retry
 }
 
+func TestSpeculativeExecutionWithoutAlternateHost(t *testing.T) {
+	srv := NewTestServer(t, defaultProto, context.Background())
+	defer srv.Stop()
+
+	cluster := testCluster(defaultProto, srv.Address)
+	cluster.PoolConfig.HostSelectionPolicy = RoundRobinHostPolicy()
+	db, err := cluster.CreateSession()
+	require.NoError(t, err)
+	defer db.Close()
+
+	for _, tc := range []struct {
+		name    string
+		query   string
+		timeout time.Duration
+		wantErr error
+	}{
+		{name: "primary succeeds", query: "slow", timeout: time.Second},
+		{name: "caller deadline", query: "timeout", timeout: 100 * time.Millisecond, wantErr: context.DeadlineExceeded},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), tc.timeout)
+			defer cancel()
+			iter := db.Query(tc.query).Idempotent(true).
+				SetSpeculativeExecutionPolicy(&SimpleSpeculativeExecution{
+					NumAttempts:  1,
+					TimeoutDelay: time.Millisecond,
+				}).IterContext(ctx)
+			require.ErrorIs(t, iter.Close(), tc.wantErr)
+			if tc.wantErr == nil {
+				require.Equal(t, 1, iter.Attempts())
+			}
+		})
+	}
+}
+
 func TestSpeculativeExecution(t *testing.T) {
 	log := newTestLogger(LogLevelDebug)
 	defer func() {

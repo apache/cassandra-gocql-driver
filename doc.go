@@ -711,6 +711,9 @@
 // is still executing. The two parallel executions of the query race to return a result, the first received result will
 // be returned.
 //
+// A speculative execution that cannot start a database attempt because no usable host or connection is available
+// is skipped without interrupting other executions already in progress.
+//
 // # User-defined types
 //
 // Cassandra User-Defined Types (UDTs) are composite data types that group related fields together.

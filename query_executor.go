@@ -91,7 +91,7 @@ func (q *queryExecutor) speculate(ctx context.Context, qry internalRequest, sp S
 	for i := 0; i < sp.Attempts(); i++ {
 		select {
 		case <-ticker.C:
-			go q.run(ctx, qry, hostIter, results)
+			go q.run(ctx, qry, hostIter, results, true)
 		case <-ctx.Done():
 			return newErrIter(ctx.Err(), qry.getQueryMetrics(), qry.Keyspace(), qry.getRoutingInfo(), qry.getKeyspaceFunc())
 		case iter := <-results:
@@ -131,7 +131,8 @@ func (q *queryExecutor) executeQuery(qry internalRequest) (*Iter, error) {
 	// it is, we force the policy to NonSpeculative
 	sp := qry.speculativeExecutionPolicy()
 	if qry.GetHostID() != "" || !qry.IsIdempotent() || sp.Attempts() == 0 {
-		return q.do(qry.Context(), qry, hostIter), nil
+		iter, _ := q.do(qry.Context(), qry, hostIter)
+		return iter, nil
 	}
 
 	// When speculative execution is enabled, we could be accessing the host iterator from multiple goroutines below.
@@ -150,7 +151,7 @@ func (q *queryExecutor) executeQuery(qry internalRequest) (*Iter, error) {
 	results := make(chan *Iter, 1)
 
 	// Launch the main execution
-	go q.run(ctx, qry, hostIter, results)
+	go q.run(ctx, qry, hostIter, results, false)
 
 	// The speculative executions are launched _in addition_ to the main
 	// execution, on a timer. So Speculation{2} would make 3 executions running
@@ -167,12 +168,14 @@ func (q *queryExecutor) executeQuery(qry internalRequest) (*Iter, error) {
 	}
 }
 
-func (q *queryExecutor) do(ctx context.Context, qry internalRequest, hostIter NextHost) *Iter {
+// do returns the result and whether this execution made any attempts.
+func (q *queryExecutor) do(ctx context.Context, qry internalRequest, hostIter NextHost) (*Iter, bool) {
 	selectedHost := hostIter()
 	rt := qry.retryPolicy()
 
 	var lastErr error
 	var iter *Iter
+	started := false
 	for selectedHost != nil {
 		host := selectedHost.Info()
 		if host == nil || !host.IsUp() {
@@ -192,6 +195,7 @@ func (q *queryExecutor) do(ctx context.Context, qry internalRequest, hostIter Ne
 			continue
 		}
 
+		started = true
 		iter = q.attemptQuery(ctx, qry, conn)
 		iter.host = selectedHost.Info()
 		// Update host
@@ -200,7 +204,7 @@ func (q *queryExecutor) do(ctx context.Context, qry internalRequest, hostIter Ne
 			// those errors represents logical errors, they should not count
 			// toward removing a node from the pool
 			selectedHost.Mark(nil)
-			return iter
+			return iter, started
 		default:
 			selectedHost.Mark(iter.err)
 		}
@@ -208,7 +212,7 @@ func (q *queryExecutor) do(ctx context.Context, qry internalRequest, hostIter Ne
 		// Exit if the query was successful
 		// or query is not idempotent or no retry policy defined
 		if iter.err == nil || !qry.IsIdempotent() || rt == nil {
-			return iter
+			return iter, started
 		}
 
 		attemptsReached := !rt.Attempt(qry)
@@ -230,11 +234,11 @@ func (q *queryExecutor) do(ctx context.Context, qry internalRequest, hostIter Ne
 			stopRetries = true
 		default:
 			// Undefined? Return nil and error, this will panic in the requester
-			return newErrIter(ErrUnknownRetryType, qry.getQueryMetrics(), qry.Keyspace(), qry.getRoutingInfo(), qry.getKeyspaceFunc())
+			return newErrIter(ErrUnknownRetryType, qry.getQueryMetrics(), qry.Keyspace(), qry.getRoutingInfo(), qry.getKeyspaceFunc()), started
 		}
 
 		if stopRetries || attemptsReached {
-			return iter
+			return iter, started
 		}
 
 		lastErr = iter.err
@@ -242,15 +246,19 @@ func (q *queryExecutor) do(ctx context.Context, qry internalRequest, hostIter Ne
 	}
 
 	if lastErr != nil {
-		return newErrIter(lastErr, qry.getQueryMetrics(), qry.Keyspace(), qry.getRoutingInfo(), qry.getKeyspaceFunc())
+		return newErrIter(lastErr, qry.getQueryMetrics(), qry.Keyspace(), qry.getRoutingInfo(), qry.getKeyspaceFunc()), started
 	}
 
-	return newErrIter(ErrNoConnections, qry.getQueryMetrics(), qry.Keyspace(), qry.getRoutingInfo(), qry.getKeyspaceFunc())
+	return newErrIter(ErrNoConnections, qry.getQueryMetrics(), qry.Keyspace(), qry.getRoutingInfo(), qry.getKeyspaceFunc()), started
 }
 
-func (q *queryExecutor) run(ctx context.Context, qry internalRequest, hostIter NextHost, results chan<- *Iter) {
+func (q *queryExecutor) run(ctx context.Context, qry internalRequest, hostIter NextHost, results chan<- *Iter, speculative bool) {
+	iter, started := q.do(ctx, qry, hostIter)
+	if speculative && !started {
+		return
+	}
 	select {
-	case results <- q.do(ctx, qry, hostIter):
+	case results <- iter:
 	case <-ctx.Done():
 	}
 }
