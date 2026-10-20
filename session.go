@@ -62,6 +62,7 @@ type Session struct {
 	connectObserver      ConnectObserver
 	frameObserver        FrameHeaderObserver
 	streamObserver       StreamObserver
+	interceptor          RequestInterceptor
 	hostSource           *ringDescriber
 	ringRefresher        *refreshDebouncer
 	stmtsLRU             *preparedLRU
@@ -194,6 +195,7 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 	s.connectObserver = cfg.ConnectObserver
 	s.frameObserver = cfg.FrameHeaderObserver
 	s.streamObserver = cfg.StreamObserver
+	s.interceptor = cfg.RequestInterceptor
 
 	// Propagate node status, topology and schema change listeners
 	s.hostListeners = newInternalHostStateListeners(
@@ -973,26 +975,50 @@ type hostMetrics struct {
 	TotalLatency int64
 }
 
+// queryMetrics tracks attempt counts and latency for a query or batch.
+//
+// When speculative execution is active, attempts can start and finish out of order
+// across concurrent goroutines. Attempt indices are issued at start time via getNextAttempt()
+// so observers receive stable attempt numbers, while attemptsCompleted and totalLatency
+// are recorded at completion time under lock so latency() (average latency) and attempts()
+// remain consistent mid-flight.
 type queryMetrics struct {
-	totalAttempts int64
-	totalLatency  int64
+	l                 sync.RWMutex
+	attemptsStarted   int
+	attemptsCompleted int
+	totalLatency      int64
 }
 
-func (qm *queryMetrics) attempt(addLatency time.Duration) int {
-	atomic.AddInt64(&qm.totalLatency, addLatency.Nanoseconds())
-	return int(atomic.AddInt64(&qm.totalAttempts, 1) - 1)
+func (qm *queryMetrics) getNextAttempt() int {
+	qm.l.Lock()
+	defer qm.l.Unlock()
+	attempt := qm.attemptsStarted
+	qm.attemptsStarted++
+	return attempt
 }
 
+func (qm *queryMetrics) recordAttempt(addLatency time.Duration) {
+	qm.l.Lock()
+	defer qm.l.Unlock()
+	qm.totalLatency += addLatency.Nanoseconds()
+	qm.attemptsCompleted++
+}
+
+// Returns total number of attempts completed.
 func (qm *queryMetrics) attempts() int {
-	return int(atomic.LoadInt64(&qm.totalAttempts))
+	qm.l.RLock()
+	defer qm.l.RUnlock()
+	return qm.attemptsCompleted
 }
 
 func (qm *queryMetrics) latency() int64 {
-	attempts := atomic.LoadInt64(&qm.totalAttempts)
+	qm.l.RLock()
+	defer qm.l.RUnlock()
+	attempts := qm.attemptsCompleted
 	if attempts == 0 {
-		return atomic.LoadInt64(&qm.totalLatency)
+		return qm.totalLatency
 	}
-	return atomic.LoadInt64(&qm.totalLatency) / attempts
+	return qm.totalLatency / int64(attempts)
 }
 
 type hostMetricsManager interface {
@@ -1055,6 +1081,7 @@ type Query struct {
 	prefetch              float64
 	trace                 Tracer
 	observer              QueryObserver
+	interceptor           RequestInterceptor
 	session               *Session
 	rt                    RetryPolicy
 	spec                  SpeculativeExecutionPolicy
@@ -1120,6 +1147,7 @@ func (q *Query) defaultsFromSession() {
 	q.pageSize = s.pageSize
 	q.trace = s.trace
 	q.observer = s.queryObserver
+	q.interceptor = s.interceptor
 	q.prefetch = s.prefetch
 	q.rt = s.cfg.RetryPolicy
 	q.serialCons = s.cfg.SerialConsistency
@@ -1191,6 +1219,14 @@ func (q *Query) Trace(trace Tracer) *Query {
 // The provided observer will be called every time this query is executed.
 func (q *Query) Observer(observer QueryObserver) *Query {
 	q.observer = observer
+	return q
+}
+
+// Interceptor specifies a query-level interceptor on this query.
+// The provided interceptor will be called every time this query is executed.
+// This replaces any session-level inherited interceptor for this query.
+func (q *Query) Interceptor(interceptor RequestInterceptor) *Query {
+	q.interceptor = interceptor
 	return q
 }
 
@@ -1601,6 +1637,9 @@ type Iter struct {
 	next    *nextIter
 	host    *HostInfo
 	metrics *queryMetrics
+
+	// rejectedByInterceptor is set when a RequestInterceptor aborted the attempt before it was sent.
+	rejectedByInterceptor bool
 
 	getKeyspace func() string
 	keyspace    string
@@ -2013,6 +2052,7 @@ type Batch struct {
 	spec                  SpeculativeExecutionPolicy
 	trace                 Tracer
 	observer              BatchObserver
+	interceptor           RequestInterceptor
 	session               *Session
 	serialCons            Consistency
 	defaultTimestamp      bool
@@ -2038,6 +2078,7 @@ func (s *Session) Batch(typ BatchType) *Batch {
 		serialCons:       s.cfg.SerialConsistency,
 		trace:            s.trace,
 		observer:         s.batchObserver,
+		interceptor:      s.interceptor,
 		session:          s,
 		Cons:             s.cons,
 		defaultTimestamp: s.cfg.DefaultTimestamp,
@@ -2059,6 +2100,14 @@ func (b *Batch) Trace(trace Tracer) *Batch {
 // The provided observer will be called every time this batched query is executed.
 func (b *Batch) Observer(observer BatchObserver) *Batch {
 	b.observer = observer
+	return b
+}
+
+// Interceptor specifies a batch-level interceptor on this batch.
+// The provided interceptor will be called every time this batched query is executed.
+// This replaces any session-level interceptor for this batch.
+func (b *Batch) Interceptor(interceptor RequestInterceptor) *Batch {
+	b.interceptor = interceptor
 	return b
 }
 
@@ -2441,6 +2490,10 @@ type ObservedQuery struct {
 
 	// Query object associated with this request. Should be used as read only.
 	Query *Query
+
+	// Whether the attempt was aborted by the interceptor before it was issued. In this case, the request was never
+	// actually sent to the above host.
+	RejectedByInterceptor bool
 }
 
 // QueryObserver is the interface implemented by query observers / stat collectors.
@@ -2490,6 +2543,10 @@ type ObservedBatch struct {
 
 	// Batch object associated with this request. Should be used as read only.
 	Batch *Batch
+
+	// Whether the attempt was aborted by the interceptor before it was issued. In this case, the request was never
+	// actually sent to the above host.
+	RejectedByInterceptor bool
 }
 
 // BatchObserver is the interface implemented by batch observers / stat collectors.

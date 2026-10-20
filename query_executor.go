@@ -58,7 +58,8 @@ type Statement interface {
 
 type internalRequest interface {
 	execute(ctx context.Context, conn *Conn) *Iter
-	attempt(keyspace string, end, start time.Time, iter *Iter, host *HostInfo)
+	getNextAttempt() int
+	recordAttempt(attemptNum int, keyspace string, end, start time.Time, iter *Iter, host *HostInfo)
 	retryPolicy() RetryPolicy
 	speculativeExecutionPolicy() SpeculativeExecutionPolicy
 	getQueryMetrics() *queryMetrics
@@ -73,12 +74,164 @@ type queryExecutor struct {
 	policy HostSelectionPolicy
 }
 
-func (q *queryExecutor) attemptQuery(ctx context.Context, qry internalRequest, conn *Conn) *Iter {
-	start := time.Now()
-	iter := qry.execute(ctx, conn)
-	end := time.Now()
+type StatementType int
 
-	qry.attempt(q.pool.keyspace, end, start, iter, conn.host)
+const (
+	StatementQuery StatementType = iota
+	StatementBatch
+)
+
+type RequestAttempt struct {
+	// The statement type, whether query or batch.
+	Type StatementType
+	// Only one of Query or Batch will be set, depending on the op type. Both should be considered
+	// immutable.
+	Query *Query
+	Batch *Batch
+	// The host that will receive the query.
+	Host *HostInfo
+}
+
+type InterceptResult struct {
+	Ctx context.Context
+}
+
+// RequestInterceptor is the interface implemented by interceptors / middleware.
+//
+// Interceptors are well-suited to logic that is not specific to a single query or batch, such as flow control.
+type RequestInterceptor interface {
+	// InterceptPreAttempt is invoked once immediately before a query or batch execution attempt, including retry
+	// attempts and speculative execution attempts.
+	//
+	// The method may inspect the RequestAttempt and its contents (e.g. Query/Batch, connection information, etc.), along
+	// with the context ctx. If a ctx is specified in the returned InterceptResult, it is used when performing the
+	// execution, offering a way to adjust deadline or other metadata. To prevent request execution, return a non-nil
+	// error.
+	InterceptPreAttempt(ctx context.Context, attempt RequestAttempt) (InterceptResult, error)
+
+	// InterceptPostAttempt is called with the intercept result created at pre-attempt time, along with any
+	// request execution error. Note that if this attempt failed, another attempt in flight could still succeed.
+	// Must not panic.
+	// N.B.: InterceptPostAttempt is not called if InterceptPreAttempt returns an error.
+	InterceptPostAttempt(res InterceptResult, execResult error)
+}
+
+// RequestInterceptorChain can be used to apply multiple Interceptors at Intercept time.
+// Each interceptor is passed the previous one's context if that previous one returned a non-nil
+// context, and the final request attempt is performed with the last interceptor's context.
+//
+// InterceptPreAttempt is called on the Interceptors in order, and InterceptPostAttempt is called
+// in reverse order. At post-attempt time, Interceptors are each handed back the context they synthesized at
+// pre-attempt time, rather than the final context. This is to avoid confusion if e.g. a pre-attempt grabbed some
+// resource that must be released, and multiple interceptors might use the same context key to attach that
+// resource to the attempt's request. However, this also means that if an Interceptor returns an InterceptResult
+// with a nil context, they will be handed back a nil.
+//
+// Finally, if Interceptor i's InterceptPreAttempt returns an error, indicating that execution should not occur,
+// InterceptPostAttempt is still called on all the interceptors that were chained before i. They are given the error
+// that the failing InterceptPreAttempt returned, in order to signal that execution was not successful.
+type RequestInterceptorChain struct {
+	Interceptors []RequestInterceptor
+}
+
+type interceptorChainContextList []context.Context
+
+type interceptorChainContextListKey struct{}
+
+var _ RequestInterceptor = (*RequestInterceptorChain)(nil)
+
+func (c RequestInterceptorChain) InterceptPreAttempt(
+	ctx context.Context,
+	attempt RequestAttempt,
+) (InterceptResult, error) {
+	capturedContexts := make([]context.Context, 0, len(c.Interceptors))
+	lastCtx := ctx
+	for i, interceptor := range c.Interceptors {
+		result, err := interceptor.InterceptPreAttempt(lastCtx, attempt)
+		if err != nil {
+			// We must unwind all previously-successful interceptors before returning err, since
+			// those interceptors may be counting on InterceptPostAttempt being invoked.
+			for j := i - 1; j >= 0; j-- {
+				// Pass in the final err to all PostAttempt intercepts, to signal that execution was not successful
+				// (because it never actually happened).
+				c.Interceptors[j].InterceptPostAttempt(InterceptResult{Ctx: capturedContexts[j]}, err)
+			}
+			return InterceptResult{}, err
+		}
+		capturedContexts = append(capturedContexts, result.Ctx)
+		if result.Ctx != nil {
+			lastCtx = result.Ctx
+		}
+	}
+
+	finalContext := context.WithValue(lastCtx, interceptorChainContextListKey{}, interceptorChainContextList(capturedContexts))
+	// Returns a result whose context wraps all the captured contexts for all the chained interceptors.
+	return InterceptResult{Ctx: finalContext}, nil
+}
+
+func (c RequestInterceptorChain) InterceptPostAttempt(
+	res InterceptResult, execResult error,
+) {
+	// res must be the result returned by this chain's InterceptPreAttempt, which carries each interceptor's context.
+	// If it isn't, those contexts are lost, so skip the post-attempt calls rather than panic.
+	if res.Ctx == nil {
+		return
+	}
+	ctxList, ok := res.Ctx.Value(interceptorChainContextListKey{}).(interceptorChainContextList)
+	if !ok {
+		return
+	}
+	for i := len(ctxList) - 1; i >= 0; i-- {
+		interceptor := c.Interceptors[i]
+		ctx := ctxList[i]
+		interceptor.InterceptPostAttempt(InterceptResult{Ctx: ctx}, execResult)
+	}
+}
+
+func (q *queryExecutor) attemptQuery(ctx context.Context, iRequest internalRequest, conn *Conn) *Iter {
+	var res InterceptResult
+	var interceptor RequestInterceptor
+	iq := RequestAttempt{
+		Host: conn.host,
+	}
+	if iQuery, ok := iRequest.(*internalQuery); ok {
+		iq.Type = StatementQuery
+		iq.Query = iQuery.originalQuery
+		interceptor = iQuery.qryOpts.interceptor
+	}
+	if iBatch, ok := iRequest.(*internalBatch); ok {
+		iq.Type = StatementBatch
+		iq.Batch = iBatch.originalBatch
+		interceptor = iBatch.batchOpts.interceptor
+	}
+	attempt := iRequest.getNextAttempt()
+	if interceptor != nil {
+		var err error
+		res, err = interceptor.InterceptPreAttempt(ctx, iq)
+		if err != nil {
+			iter := newErrIter(err, iRequest.getQueryMetrics(), iRequest.Keyspace(), iRequest.getRoutingInfo(), iRequest.getKeyspaceFunc())
+			iter.rejectedByInterceptor = true
+			// Always record the attempt, even if the interceptor aborts it before it is actually executed. This way, a
+			// custom retry policy will see the retry count increase and respond accordingly if the interceptor decides
+			// to abort the attempt, rather than getting into an infinite retry loop with zero perceived attempts.
+			// Nothing was sent, so the attempt has zero latency.
+			now := time.Now()
+			iRequest.recordAttempt(attempt, q.pool.keyspace, now, now, iter, conn.host)
+			return iter
+		}
+		if res.Ctx != nil {
+			ctx = res.Ctx
+		}
+	}
+
+	// Time only the execution, so that time spent in interceptors isn't reported as query latency.
+	start := time.Now()
+	iter := iRequest.execute(ctx, conn)
+	end := time.Now()
+	if interceptor != nil {
+		interceptor.InterceptPostAttempt(res, iter.err)
+	}
+	iRequest.recordAttempt(attempt, q.pool.keyspace, end, start, iter, conn.host)
 
 	return iter
 }
@@ -199,10 +352,16 @@ func (q *queryExecutor) do(ctx context.Context, qry internalRequest, hostIter Ne
 		case context.Canceled, context.DeadlineExceeded, ErrNotFound:
 			// those errors represents logical errors, they should not count
 			// toward removing a node from the pool
-			selectedHost.Mark(nil)
+			if !iter.rejectedByInterceptor {
+				// However, if the error comes from an interceptor, it's not
+				// actually a success, so we don't Mark(nil) in that case.
+				selectedHost.Mark(nil)
+			}
 			return iter
 		default:
-			selectedHost.Mark(iter.err)
+			if !iter.rejectedByInterceptor {
+				selectedHost.Mark(iter.err)
+			}
 		}
 
 		// Exit if the query was successful
@@ -262,9 +421,10 @@ type queryOptions struct {
 	pageSize        int
 	disableAutoPage bool
 
-	// Monitoring
-	trace    Tracer
-	observer QueryObserver
+	// Monitoring and intercepting
+	trace       Tracer
+	observer    QueryObserver
+	interceptor RequestInterceptor
 
 	// Parameters
 	values  []interface{}
@@ -313,6 +473,7 @@ func newQueryOptions(q *Query, ctx context.Context) *queryOptions {
 		prefetch:              q.prefetch,
 		trace:                 q.trace,
 		observer:              q.observer,
+		interceptor:           q.interceptor,
 		rt:                    q.rt,
 		spec:                  q.spec,
 		binding:               q.binding,
@@ -371,14 +532,18 @@ func newInternalQuery(q *Query, ctx context.Context) *internalQuery {
 	}
 }
 
-// Attempts returns the number of times the query was executed.
+// getNextAttempt returns the index of the next attempt. Calling this increments the attempt counter by one.
+func (q *internalQuery) getNextAttempt() int {
+	return q.metrics.getNextAttempt()
+}
+
 func (q *internalQuery) Attempts() int {
 	return q.metrics.attempts()
 }
 
-func (q *internalQuery) attempt(keyspace string, end, start time.Time, iter *Iter, host *HostInfo) {
+func (q *internalQuery) recordAttempt(attemptNum int, keyspace string, end, start time.Time, iter *Iter, host *HostInfo) {
 	latency := end.Sub(start)
-	attempt := q.metrics.attempt(latency)
+	q.metrics.recordAttempt(latency)
 
 	if q.qryOpts.observer != nil {
 		metricsForHost := q.hostMetricsManager.attempt(latency, host)
@@ -389,16 +554,17 @@ func (q *internalQuery) attempt(keyspace string, end, start time.Time, iter *Ite
 				Keyspace: q.routingInfo.getKeyspace(),
 				Table:    q.routingInfo.getTable(),
 			},
-			IsPrepared: q.routingInfo.isPrepared(),
-			Values:     q.qryOpts.values,
-			Start:      start,
-			End:        end,
-			Rows:       iter.numRows,
-			Host:       host,
-			Metrics:    metricsForHost,
-			Err:        iter.err,
-			Attempt:    attempt,
-			Query:      q.originalQuery,
+			IsPrepared:            q.routingInfo.isPrepared(),
+			Values:                q.qryOpts.values,
+			Start:                 start,
+			End:                   end,
+			Rows:                  iter.numRows,
+			Host:                  host,
+			Metrics:               metricsForHost,
+			Err:                   iter.err,
+			Attempt:               attemptNum,
+			Query:                 q.originalQuery,
+			RejectedByInterceptor: iter.rejectedByInterceptor,
 		})
 	}
 }
@@ -505,8 +671,9 @@ func (q *internalQuery) getKeyspaceFunc() func() string {
 }
 
 type batchOptions struct {
-	trace    Tracer
-	observer BatchObserver
+	trace       Tracer
+	observer    BatchObserver
+	interceptor RequestInterceptor
 
 	bType   BatchType
 	entries []BatchEntry
@@ -549,6 +716,7 @@ func newBatchOptions(b *Batch, ctx context.Context) *batchOptions {
 		spec:                  b.spec,
 		trace:                 b.trace,
 		observer:              b.observer,
+		interceptor:           b.interceptor,
 		serialCons:            b.serialCons,
 		defaultTimestamp:      b.defaultTimestamp,
 		defaultTimestampValue: b.defaultTimestampValue,
@@ -601,14 +769,18 @@ func newInternalBatch(batch *Batch, ctx context.Context) *internalBatch {
 	}
 }
 
+func (b *internalBatch) getNextAttempt() int {
+	return b.metrics.getNextAttempt()
+}
+
 // Attempts returns the number of attempts made to execute the batch.
 func (b *internalBatch) Attempts() int {
 	return b.metrics.attempts()
 }
 
-func (b *internalBatch) attempt(keyspace string, end, start time.Time, iter *Iter, host *HostInfo) {
+func (b *internalBatch) recordAttempt(attemptNum int, keyspace string, end, start time.Time, iter *Iter, host *HostInfo) {
 	latency := end.Sub(start)
-	attempt := b.metrics.attempt(latency)
+	b.metrics.recordAttempt(latency)
 
 	if b.batchOpts.observer == nil {
 		return
@@ -641,11 +813,12 @@ func (b *internalBatch) attempt(keyspace string, end, start time.Time, iter *Ite
 		Start:            start,
 		End:              end,
 		// Rows not used in batch observations // TODO - might be able to support it when using BatchCAS
-		Host:    host,
-		Metrics: metricsForHost,
-		Err:     iter.err,
-		Attempt: attempt,
-		Batch:   b.originalBatch,
+		Host:                  host,
+		Metrics:               metricsForHost,
+		Err:                   iter.err,
+		Attempt:               attemptNum,
+		Batch:                 b.originalBatch,
+		RejectedByInterceptor: iter.rejectedByInterceptor,
 	})
 }
 

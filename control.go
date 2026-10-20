@@ -591,7 +591,11 @@ func (c *controlConn) query(statement string, values ...interface{}) (iter *Iter
 				NewLogFieldString("statement", statement), NewLogFieldError("err", iter.err))
 		}
 
-		qry.metrics.attempt(0)
+		// Record each attempt so the retry policy sees an increasing attempt count and
+		// eventually stops retrying. getNextAttempt() is called to keep attemptsStarted
+		// in sync with attemptsCompleted, as queryMetrics assumes started >= completed.
+		qry.metrics.getNextAttempt()
+		qry.metrics.recordAttempt(0)
 		qry.hostMetricsManager.attempt(0, c.getConn().host)
 		if iter.err == nil || !c.retry.Attempt(qry) {
 			break
