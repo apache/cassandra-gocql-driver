@@ -207,7 +207,7 @@ func (h *HostInfo) Equal(host *HostInfo) bool {
 		return true
 	}
 
-	return h.ConnectAddress().Equal(host.ConnectAddress())
+	return h.HostID() == host.HostID() && h.ConnectAddressAndPort() == host.ConnectAddressAndPort()
 }
 
 func (h *HostInfo) Peer() net.IP {
