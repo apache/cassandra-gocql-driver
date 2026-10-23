@@ -7,7 +7,7 @@ TEST_CQL_PROTOCOL ?= 4
 TEST_COMPRESSOR ?= no-compression
 TEST_INTEGRATION_TAGS ?= integration
 
-CCM_VERSION ?= 39b8222b31a6c7afe8fe845d16981088a5a735ad
+CCM_VERSION ?= 7efd4c6cabd85499e53a475be81e028d59bcb15b
 GOLANGCI_VERSION = v2.1.6
 JVM_EXTRA_OPTS ?= -Dcassandra.test.fail_writes_ks=test -Dcassandra.custom_query_handler_class=org.apache.cassandra.cql3.CustomPayloadMirroringQueryHandler
 ifeq (${CCM_CONFIG_DIR},)
@@ -39,6 +39,9 @@ else
 	CASSANDRA_CONFIG += "user_defined_functions_enabled: true" \
 "materialized_views_enabled: true"
 endif
+
+JAVA11_HOME ?= ${JAVA_HOME_11_X64}
+JAVA17_HOME ?= ${JAVA_HOME_17_X64}
 
 ifneq (${JAVA11_HOME},)
 	export JAVA11_HOME
@@ -113,7 +116,11 @@ fix: .prepare-golangci
 	golangci-lint run --fix
 
 .prepare-java:
-ifeq ($(shell if [ -f ~/.sdkman/bin/sdkman-init.sh ]; then echo "installed"; else echo "not-installed"; fi), not-installed)
+ifneq (${JAVA11_HOME},)
+	@exit 0
+else ifneq (${JAVA_HOME_11_X64},)
+	@exit 0
+else ifeq ($(shell if [ -f ~/.sdkman/bin/sdkman-init.sh ]; then echo "installed"; else echo "not-installed"; fi), not-installed)
 	@$(MAKE) install-java
 else
 	@exit 0
