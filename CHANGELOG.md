@@ -7,25 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-
-- Add request attempt interceptors for queries and batches (CASSGO-39)
-
 ## [2.2.0]
 
 ### Added
 
 - Security-model discoverability (CASSANDRA-21464)
-- Improve host_source locking and ring refresh concurrency (CASSGO-121)
 - Add PreparedMetadata (Keyspace, Table) and IsPrepared fields to ObservedQuery, and parallel PreparedMetadata / IsPrepared slices to ObservedBatch, for statement-level observability without CQL parsing (CASSGO-119)
-- Query.Binding() method to override binding function for a query object.
+- Query.Binding() method to override binding function for a query object (CASSGO-130)
 - MetadataRequiredPolicy interface to allow users to disable metadata if host selection policy does not need it (CASSGO-132)
+- Add request attempt interceptors API for queries and batches (CASSGO-39)
+- Exposed transmitted and received bytes metrics in ObservedQuery and ObservedBatch (CASSGO-136)
+- RegisteredTypes.WithNilMapAsNullUDT() method which enables null encoding of nil maps for UDT typed columns (CASSGO-118)
+
+### Changed
+
+- Bump Cassandra versions in CI matrix (CASSGO-123)
+- Improve host_source locking and ring refresh concurrency (CASSGO-121)
 
 ### Fixed
 
 - Correct protocol negotiation with non-Cassandra servers (CASSGO-131)
 - LZ4 test fails on arm64 (CASSGO-128)
 - Prevent synthetic CREATED events on HostSelectionPolicy.KeyspaceChanged during session init (CASSGO-132)
+- Fix token generation failure on GitHub runners by pinning Java and bumping CCM (CASSGO-140)
+- Handle null UUID columns when unmarshaling into *[16]byte and *time.Time (CASSGO-134)
+- Composite type codecs retain reference to parent RegisteredTypes instead of Session registry (CASSGO-141)
 
 ## [2.1.2]
 
