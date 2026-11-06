@@ -26,6 +26,8 @@ linters:
       enable-all: true
       disable:
         - shadow
+        # Disabled for now: flags deprecated reflect.Ptr and io/ioutil calls. TODO(CASSGO-144): migrate them and re-enable.
+        - inline
         - fieldalignment
 
     nolintlint:

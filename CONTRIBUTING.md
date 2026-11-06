@@ -29,10 +29,9 @@ The following is a check list of requirements that need to be satisfied in order
 * Pull request raised to apache/cassandra-gocql-driver on Github
 * The pull request has a title that clearly summarizes the purpose of the patch and references the relevant CASSGO JIRA issue if there is one
 * The motivation behind the patch is clearly defined in the pull request summary
-* JIRA issue is added to the "UNRELEASED" section of CHANGELOG.md
+* CHANGELOG.md is not updated by the pull request, it is updated by the committers before each release
   * If there's no JIRA issue yet then the author is encouraged to create it
-  * If the author is not able to create the JIRA issue then the committer that merges the PR will take care of this (creating the JIRA and adding it to CHANGELOG.md)
-  * Updating CHANGELOG.md is not required if the change is not "releasable" (e.g. changes to documentation, CI, etc.)
+  * If the author is not able to create the JIRA issue then the committer that merges the PR will create it
 * You agree that your contribution is donated to the Apache Software Foundation (appropriate copyright is on all new files)
 * The patch will merge cleanly
 * The test coverage does not fall

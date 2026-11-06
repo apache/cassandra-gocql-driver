@@ -5,8 +5,6 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
-
 ## [2.2.0]
 
 ### Added
@@ -22,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Bump Cassandra versions in CI matrix (CASSGO-123)
+- Bump Go version support from 1.25 and 1.26 to 1.26 and 1.27 (CASSGO-143)
 - Improve host_source locking and ring refresh concurrency (CASSGO-121)
 
 ### Fixed

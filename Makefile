@@ -8,7 +8,7 @@ TEST_COMPRESSOR ?= no-compression
 TEST_INTEGRATION_TAGS ?= integration
 
 CCM_VERSION ?= 7efd4c6cabd85499e53a475be81e028d59bcb15b
-GOLANGCI_VERSION = v2.1.6
+GOLANGCI_VERSION = v2.15.0
 JVM_EXTRA_OPTS ?= -Dcassandra.test.fail_writes_ks=test -Dcassandra.custom_query_handler_class=org.apache.cassandra.cql3.CustomPayloadMirroringQueryHandler
 ifeq (${CCM_CONFIG_DIR},)
 	CCM_CONFIG_DIR = ~/.ccm
