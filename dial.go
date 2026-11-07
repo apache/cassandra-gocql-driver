@@ -30,6 +30,7 @@ import (
 	"fmt"
 	"net"
 	"strings"
+	"time"
 )
 
 // HostDialer allows customizing connection to cluster nodes.
@@ -55,8 +56,9 @@ type DialedHost struct {
 
 // defaultHostDialer dials host in a default way.
 type defaultHostDialer struct {
-	dialer    Dialer
-	tlsConfig *tls.Config
+	dialer         Dialer
+	tlsConfig      *tls.Config
+	connectTimeout time.Duration
 }
 
 func (hd *defaultHostDialer) DialHost(ctx context.Context, host *HostInfo) (*DialedHost, error) {
@@ -67,6 +69,13 @@ func (hd *defaultHostDialer) DialHost(ctx context.Context, host *HostInfo) (*Dia
 		return nil, fmt.Errorf("host missing connect ip address: %v", ip)
 	} else if port == 0 {
 		return nil, fmt.Errorf("host missing port: %v", port)
+	}
+
+	// Use a single timeout for both the TCP connection and the TLS handshake.
+	if hd.connectTimeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, hd.connectTimeout)
+		defer cancel()
 	}
 
 	connAddr := host.ConnectAddressAndPort()

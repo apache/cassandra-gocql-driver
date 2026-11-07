@@ -123,8 +123,9 @@ type ClusterConfig struct {
 	// During initial connection setup, internal queries, AUTH requests will return an error if the client
 	// does not receive a response within the ConnectTimeout period.
 	// ConnectTimeout is applied to the connection setup queries independently.
-	// ConnectTimeout also limits the duration of dialing a new TCP connection
-	// in case there is no Dialer nor HostDialer configured.
+	// When positive, ConnectTimeout limits the combined duration of dialing a new TCP
+	// connection and completing the TLS handshake, including when Dialer is configured.
+	// This limit does not apply when HostDialer is configured.
 	// ConnectTimeout has a default value of 11 seconds.
 	ConnectTimeout time.Duration
 
