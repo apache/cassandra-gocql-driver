@@ -44,7 +44,7 @@ import (
 	"time"
 	"unicode"
 
-	inf "gopkg.in/inf.v0"
+	"gopkg.in/inf.v0"
 
 	"github.com/stretchr/testify/require"
 )
@@ -105,6 +105,40 @@ func TestUseStatementError(t *testing.T) {
 		}
 	} else {
 		t.Fatal("expected err, got nil.")
+	}
+}
+
+// TestDisableHostLookupRingRefresh checks that session.ring will not be updated if cluster.DisableInitialHostLookup == true
+func TestDisableHostLookupRingRefresh(t *testing.T) {
+	cluster := createCluster()
+	cluster.DisableInitialHostLookup = true
+
+	cluster.NumConns = 1
+	session := createSessionFromCluster(cluster, t)
+	defer session.Close()
+
+	oldHosts := make(map[string]*HostInfo)
+
+	for key, host := range session.ring.hosts {
+		host.broadcastAddress = net.ParseIP("10.10.10.10")
+		oldHosts[key] = host
+	}
+
+	// if DisableInitialHostLookup == true - host.broadcastAddress must not be updated.
+	err := session.refreshRing()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for key, host := range session.ring.hosts {
+		oldHost, ok := oldHosts[key]
+		if !ok {
+			t.Fatalf("old host not found for key: %s", key)
+		}
+
+		if !oldHost.broadcastAddress.Equal(host.broadcastAddress) {
+			t.Fatalf("broadcast addresses do not match for key: %s", key)
+		}
 	}
 }
 

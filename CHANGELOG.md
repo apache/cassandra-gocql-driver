@@ -23,6 +23,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Bump Go version support from 1.25 and 1.26 to 1.26 and 1.27 (CASSGO-143)
 - Improve host_source locking and ring refresh concurrency (CASSGO-121)
 
+- Fix DisableInitialHostLookup flag ignored when querying system.peers (CASSGO-5)
+
 ### Fixed
 
 - Correct protocol negotiation with non-Cassandra servers (CASSGO-131)
