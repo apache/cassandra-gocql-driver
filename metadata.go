@@ -2261,20 +2261,22 @@ func (t *typeParser) parse() (typeParserResult, bool, error) {
 	if strings.HasPrefix(ast.name, COMPOSITE_TYPE) {
 		count := len(ast.params)
 
-		// look for a collections param
-		last := ast.params[count-1]
 		collections := map[string]TypeInfo{}
-		if strings.HasPrefix(last.class.name, COLLECTION_TYPE) {
-			count--
+		if count > 0 {
+			// look for a collections param
+			last := ast.params[count-1]
+			if strings.HasPrefix(last.class.name, COLLECTION_TYPE) {
+				count--
 
-			for _, param := range last.class.params {
-				decoded, err := hex.DecodeString(*param.name)
-				if err != nil {
-					return typeParserResult{}, false, fmt.Errorf("type '%s' contains collection name '%s' with an invalid format: %w", t.input, *param.name, err)
-				}
-				collections[string(decoded)], err = param.class.asTypeInfo()
-				if err != nil {
-					return typeParserResult{}, false, err
+				for _, param := range last.class.params {
+					decoded, err := hex.DecodeString(*param.name)
+					if err != nil {
+						return typeParserResult{}, false, fmt.Errorf("type '%s' contains collection name '%s' with an invalid format: %w", t.input, *param.name, err)
+					}
+					collections[string(decoded)], err = param.class.asTypeInfo()
+					if err != nil {
+						return typeParserResult{}, false, err
+					}
 				}
 			}
 		}
@@ -2391,7 +2393,7 @@ func (t *typeParser) parseParamNodes() (params []typeParserParamNode, ok bool) {
 
 	t.skipWhitespace()
 
-	for t.input[t.index] != ')' {
+	for t.index < len(t.input) && t.input[t.index] != ')' {
 		// look for a named param, but if no colon, then we want to backup
 		backupIndex := t.index
 
@@ -2406,7 +2408,7 @@ func (t *typeParser) parseParamNodes() (params []typeParserParamNode, ok bool) {
 
 		t.skipWhitespace()
 
-		if t.input[t.index] == ':' {
+		if t.index < len(t.input) && t.input[t.index] == ':' {
 			// there is a name for this parameter
 
 			// consume the ':'
@@ -2439,12 +2441,17 @@ func (t *typeParser) parseParamNodes() (params []typeParserParamNode, ok bool) {
 
 		t.skipWhitespace()
 
-		if t.input[t.index] == ',' {
+		if t.index < len(t.input) && t.input[t.index] == ',' {
 			// consume the comma
 			t.index++
 
 			t.skipWhitespace()
 		}
+	}
+
+	if t.index >= len(t.input) {
+		// unterminated '(' in the type string
+		return nil, false
 	}
 
 	// consume the ')'
